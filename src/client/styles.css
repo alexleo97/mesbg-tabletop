@@ -91,8 +91,9 @@ h1, h3, h4, .topbar .room, .phases .turn, .roster-summary b, .name-input, .tabs 
 .grid.major { stroke: var(--grid-major); stroke-width: 0.04; }
 .terrain .ground { stroke: #0007; stroke-width: 0.08; }
 .terrain.water .ground { stroke: #1a3b52; stroke-width: 0.12; opacity: 0.92; }
-.terrain.hill .ground { filter: brightness(1.18); stroke: #2c3a1a; }
-.terrain.cliff .ground { stroke: #1d1b19; stroke-width: 0.25; filter: brightness(0.75); }
+.terrain.hill .ground { stroke: #2c3a1a; }
+.terrain .tint { stroke: none; pointer-events: none; }
+.terrain.cliff .ground { stroke: #1d1b19; stroke-width: 0.25; }
 .terrain.ruin .ground { stroke: #2b2722; stroke-width: 0.18; stroke-dasharray: 0.9 0.35 0.3 0.4; }
 .terrain.wall .ground { stroke: #2b2722; stroke-width: 0.06; }
 .terrain.building .ground { stroke: #2b2722; stroke-width: 0.14; }

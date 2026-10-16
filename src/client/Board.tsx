@@ -72,17 +72,28 @@ function Trees({ t }: { t: Terrain }) {
   return <g pointerEvents="none">{trees}</g>;
 }
 
+// A wash over the texture so pieces stand out from a mat of the same material.
+// (Overlays rather than CSS filters, which Safari ignores on SVG shapes.)
+const TINT: Partial<Record<Terrain['kind'], string>> = {
+  building: '#5a3b1f66',
+  ruin: '#2a201855',
+  wall: '#1a161266',
+  cliff: '#0e0d0c80',
+  hill: '#e8f0b026',
+};
+
 function TerrainPiece({ t }: { t: Terrain }) {
-  const fill = `url(#tex-${TERRAIN_MATERIAL[t.kind]})`;
-  const shape =
+  const outline = (className: string, fill: string) =>
     t.shape === 'rect' ? (
-      <rect className="ground" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} rx={t.kind === 'wall' || t.kind === 'building' ? 0.05 : 0.3} fill={fill} />
+      <rect className={className} x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} rx={t.kind === 'wall' || t.kind === 'building' ? 0.05 : 0.3} fill={fill} />
     ) : (
-      <ellipse className="ground" rx={t.w / 2} ry={t.h / 2} fill={fill} />
+      <ellipse className={className} rx={t.w / 2} ry={t.h / 2} fill={fill} />
     );
+  const tint = TINT[t.kind];
   return (
     <>
-      {shape}
+      {outline('ground', `url(#tex-${TERRAIN_MATERIAL[t.kind]})`)}
+      {tint && outline('tint', tint)}
       {t.kind === 'hill' &&
         [0.72, 0.44].map(k =>
           t.shape === 'rect' ? (
