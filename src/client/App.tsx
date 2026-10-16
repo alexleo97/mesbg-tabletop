@@ -4,7 +4,8 @@ import { Board, type Tool } from './Board.tsx';
 import { RoomConnection, useRoom } from './net.ts';
 import { pictureUrl } from '../shared/catalog.ts';
 import { useCatalog } from './ListBuilder.tsx';
-import { ArmyPanel, DicePanel, SelectionPanel, TablePanel } from './Panels.tsx';
+import { ArmyPanel, DicePanel, SelectionPanel, SettingsPanel, TablePanel } from './Panels.tsx';
+import { useSettings, type Settings } from './settings.ts';
 
 const PLACES = ['osgiliath', 'helms-deep', 'weathertop', 'amon-hen', 'pelennor', 'fornost', 'dale', 'erebor', 'moria', 'isengard', 'edoras', 'lothlorien'];
 const PHASE_LABEL: Record<(typeof PHASES)[number], string> = { priority: 'Priority', move: 'Move', shoot: 'Shoot', fight: 'Fight', end: 'End' };
@@ -53,9 +54,9 @@ function Lobby() {
   );
 }
 
-type PanelTab = 'model' | 'dice' | 'army' | 'table';
+type PanelTab = 'model' | 'dice' | 'army' | 'table' | 'settings';
 
-function Game({ room }: { room: string }) {
+function Game({ room, settings, updateSettings }: { room: string; settings: Settings; updateSettings: (p: Partial<Settings>) => void }) {
   const roleKey = `role:${room}`;
   const [role, setRole] = useState<Role | null>(() => (storage.get(roleKey) as Role | null) ?? null);
   // One connection per room; role changes are sent over it rather than reconnecting.
@@ -66,8 +67,6 @@ function Game({ room }: { room: string }) {
   const [selectedTerrain, setSelectedTerrain] = useState<string | null>(null);
   const [tab, setTab] = useState<PanelTab>('army');
   const [panelOpen, setPanelOpen] = useState(() => window.innerWidth > 800);
-  const [showZones, setShowZones] = useState(true);
-  const [showPhotos, setShowPhotos] = useState(() => storage.get('photos') !== 'off');
   const { catalog } = useCatalog();
   const [copied, setCopied] = useState(false);
 
@@ -199,9 +198,10 @@ function Game({ room }: { room: string }) {
             }
           }}
           dispatch={role === 'spectator' ? () => {} : dispatch}
-          showZones={showZones}
+          showZones={settings.zones}
+          showGrid={settings.grid}
           photoFor={m => {
-            const unit = showPhotos && m.profileId ? catalog?.units[m.profileId] : undefined;
+            const unit = settings.photos && m.profileId ? catalog?.units[m.profileId] : undefined;
             return unit && pictureUrl(unit);
           }}
         />
@@ -214,6 +214,7 @@ function Game({ room }: { room: string }) {
                   ['dice', 'Dice'],
                   ['army', 'Army'],
                   ['table', 'Table'],
+                  ['settings', '⚙'],
                 ] as const
               ).map(([t, label]) => (
                 <button key={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>
@@ -225,6 +226,7 @@ function Game({ room }: { room: string }) {
               </button>
             </nav>
             {tab === 'model' && <SelectionPanel state={state} selected={selected} dispatch={dispatch} clear={() => setSelected(new Set())} />}
+            {tab === 'settings' && <SettingsPanel settings={settings} update={updateSettings} />}
             {tab === 'dice' && <DicePanel state={state} dispatch={dispatch} role={role} />}
             {tab === 'army' && <ArmyPanel state={state} dispatch={dispatch} role={role} />}
             {tab === 'table' && (
@@ -252,13 +254,6 @@ function Game({ room }: { room: string }) {
                 dispatch={dispatch}
                 selectedTerrain={selectedTerrain}
                 setSelectedTerrain={setSelectedTerrain}
-                showZones={showZones}
-                setShowZones={setShowZones}
-                showPhotos={showPhotos}
-                setShowPhotos={v => {
-                  setShowPhotos(v);
-                  storage.set('photos', v ? 'on' : 'off');
-                }}
               />
               </>
             )}
@@ -300,6 +295,9 @@ function Game({ room }: { room: string }) {
         <button className={panelOpen && tab === 'table' ? 'on' : ''} onClick={() => openTab('table')}>
           <span>⛰</span>Table
         </button>
+        <button className={panelOpen && tab === 'settings' ? 'on' : ''} onClick={() => openTab('settings')} aria-label="Settings">
+          <span>⚙</span>Look
+        </button>
       </footer>
     </div>
   );
@@ -307,5 +305,6 @@ function Game({ room }: { room: string }) {
 
 export function App() {
   const room = cleanRoom(new URLSearchParams(location.search).get('room') ?? '');
-  return room.length >= 3 ? <Game room={room} /> : <Lobby />;
+  const [settings, updateSettings] = useSettings();
+  return room.length >= 3 ? <Game room={room} settings={settings} updateSettings={updateSettings} /> : <Lobby />;
 }

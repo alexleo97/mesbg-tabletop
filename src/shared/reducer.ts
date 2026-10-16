@@ -1,4 +1,4 @@
-import { PHASES, type Action, type Base, type DiceRoll, type GameState, type Model, type Phase, type Seat, type Terrain } from './types.ts';
+import { MATS, PHASES, TERRAIN_KINDS, type Action, type Mat, type Base, type DiceRoll, type GameState, type Model, type Phase, type Seat, type Terrain } from './types.ts';
 
 export const MAX_MODELS = 600;
 export const MAX_TERRAIN = 200;
@@ -7,7 +7,7 @@ export const MAX_DICE = 60;
 
 export function initialState(): GameState {
   return {
-    board: { w: 48, h: 48 },
+    board: { w: 48, h: 48, mat: 'grass' },
     models: {},
     terrain: {},
     turn: 1,
@@ -25,6 +25,7 @@ const str = (v: unknown, max: number, fallback = '') => (typeof v === 'string' ?
 const isSeat = (v: unknown): v is Seat => v === 'p1' || v === 'p2';
 const isPhase = (v: unknown): v is Phase => PHASES.includes(v as Phase);
 const id = (v: unknown) => str(v, 64);
+const isMat = (v: unknown): v is Mat => MATS.includes(v as Mat);
 
 function cleanBase(b: unknown, fallback: Base): Base {
   if (!b || typeof b !== 'object') return fallback;
@@ -80,10 +81,9 @@ export function cleanModel(m: Partial<Model>, prev?: Model): Model | null {
 
 function cleanTerrain(t: Partial<Terrain>, prev?: Terrain): Terrain | null {
   const base: Terrain = prev ?? { id: '', kind: 'rock', shape: 'circle', x: 24, y: 24, w: 4, h: 4, rot: 0, locked: false };
-  const kinds = ['wood', 'rock', 'building', 'water', 'hill', 'wall'];
   const out: Terrain = {
     id: prev ? prev.id : id(t.id),
-    kind: kinds.includes(t.kind as string) ? (t.kind as Terrain['kind']) : base.kind,
+    kind: TERRAIN_KINDS.includes(t.kind as Terrain['kind']) ? (t.kind as Terrain['kind']) : base.kind,
     shape: t.shape === 'rect' || t.shape === 'circle' ? t.shape : base.shape,
     x: num(t.x, -24, 200, base.x),
     y: num(t.y, -24, 200, base.y),
@@ -184,7 +184,17 @@ export function reduce(state: GameState, action: Action): GameState {
       if (!isSeat(action.seat)) return state;
       return { ...state, names: { ...state.names, [action.seat]: str(action.name, 40) } };
     case 'setBoard':
-      return { ...state, board: { w: int(action.w, 12, 96, state.board.w), h: int(action.h, 12, 96, state.board.h) } };
+      return {
+        ...state,
+        board: { w: int(action.w, 12, 96, state.board.w), h: int(action.h, 12, 96, state.board.h), mat: isMat(action.mat) ? action.mat : state.board.mat },
+      };
+    case 'setScenery': {
+      if (!Array.isArray(action.terrain)) return state;
+      let out: GameState = { ...state, terrain: {} };
+      out = reduce(out, { type: 'setBoard', w: action.w, h: action.h, mat: action.mat });
+      for (const t of action.terrain.slice(0, MAX_TERRAIN)) out = reduce(out, { type: 'addTerrain', terrain: t });
+      return out;
+    }
     case 'rolled': {
       const r = cleanRoll(action.roll);
       if (!r) return state;
@@ -204,7 +214,7 @@ export function loadState(raw: unknown): GameState {
   const s = initialState();
   if (!raw || typeof raw !== 'object') return s;
   const o = raw as Partial<GameState>;
-  let out: GameState = reduce(s, { type: 'setBoard', w: o.board?.w ?? 48, h: o.board?.h ?? 48 });
+  let out: GameState = reduce(s, { type: 'setBoard', w: o.board?.w ?? 48, h: o.board?.h ?? 48, mat: o.board?.mat });
   out = reduce(out, { type: 'addModels', models: Object.values(o.models ?? {}) });
   for (const t of Object.values(o.terrain ?? {})) out = reduce(out, { type: 'addTerrain', terrain: t });
   if (isPhase(o.phase)) out = reduce(out, { type: 'setPhase', phase: o.phase, turn: o.turn });

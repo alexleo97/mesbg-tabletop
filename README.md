@@ -20,7 +20,8 @@ Build your army in the [MESBG List Builder](https://v2024.mesbg-list-builder.com
 - **Dice rolled on the server**, so nobody can fudge them. The shared log shows who rolled what, and counts successes against a target (e.g. 4+).
 - **Turn tracker.** It shows the turn number and phase (Priority, Move, Shoot, Fight, End), plus who has priority and a priority roll.
 - **Model cards.** Each model tracks wounds, Might/Will/Fate for heroes, facing and base size. A casualty pile and a Broken check (half or more of the army lost) are built in.
-- **Terrain.** Add woods, rocks, hills, buildings, walls and water; resize, rotate and lock them.
+- **Terrain and starter boards.** Four original starter boards (River Crossing, Ruined City, Woodland Edge, Mountain Pass), textured ground (grassland, plains, forest floor, mud, flagstones, snow, sand), and terrain to add, resize, rotate and lock: woods, rocks, hills, buildings, ruins, walls, water, rivers, cliffs and fields.
+- **Your look.** The ⚙ Look menu has six colour themes (Classic, The Shire, Gondor, Rohan, Rivendell, Mordor) and Middle-earth style fonts, and lets you toggle photos, zones and the grid. These only change your own screen.
 - **Save and load** a game as a file.
 
 ### Controls
@@ -59,6 +60,12 @@ The production server is a single Node process: it serves the built app, the Web
 - `src/shared/`: game state, the reducer that applies every action, measuring geometry, and list import. Both server and browser use this code.
 - `server/`: a small Node HTTP and WebSocket server. It is authoritative: it validates every action, rolls the dice, and broadcasts results to everyone in the room.
 - `src/client/`: the React app. The board is an SVG drawn in inches, with pointer events for mouse and touch.
+
+## Credits
+
+- Unit data: [MESBG List Builder](https://github.com/mhollink/mesbg-list-builder-v2024) (AGPL-3.0); see [src/data/README.md](src/data/README.md).
+- Fonts (SIL Open Font License, via Fontsource): Cinzel, Uncial Antiqua, MedievalSharp, Almendra, IM Fell English, Alegreya, EB Garamond.
+- Ground and terrain textures are generated procedurally by the app (`src/client/textures.ts`).
 
 ## Licence
 

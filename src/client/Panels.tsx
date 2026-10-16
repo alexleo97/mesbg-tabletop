@@ -1,8 +1,10 @@
 import { useRef, useState } from 'react';
+import { STARTER_BOARDS, starterTerrain } from '../shared/boards.ts';
 import { loadCatalog, parseBuilderExport, STAT_NAMES, statsWithOptions } from '../shared/catalog.ts';
 import { deployList, guessBase, newId, parseList, type ListEntry } from '../shared/importList.ts';
 import { ListBuilder, Portrait, useCatalog } from './ListBuilder.tsx';
-import type { Action, Base, GameState, Model, Role, Seat, Terrain } from '../shared/types.ts';
+import { MATS, type Action, type Base, type GameState, type Mat, type Model, type Role, type Seat, type Terrain } from '../shared/types.ts';
+import { BODY_FONTS, HEADING_FONTS, THEMES, type Settings } from './settings.ts';
 
 type Dispatch = (a: Action) => void;
 
@@ -309,6 +311,16 @@ export function ArmyPanel({ state, dispatch, role }: { state: GameState; dispatc
   );
 }
 
+const MAT_NAMES: Record<Mat, string> = {
+  grass: 'Grassland',
+  plains: 'Dry plains',
+  forest: 'Forest floor',
+  mud: 'Mud',
+  stone: 'Flagstones',
+  snow: 'Snow',
+  sand: 'Sand',
+};
+
 const TERRAIN_PRESETS: { label: string; t: Omit<Terrain, 'id' | 'x' | 'y' | 'locked'> }[] = [
   { label: 'Wood', t: { kind: 'wood', shape: 'circle', w: 8, h: 6, rot: 0 } },
   { label: 'Rocks', t: { kind: 'rock', shape: 'circle', w: 4, h: 3, rot: 0 } },
@@ -316,6 +328,10 @@ const TERRAIN_PRESETS: { label: string; t: Omit<Terrain, 'id' | 'x' | 'y' | 'loc
   { label: 'Building', t: { kind: 'building', shape: 'rect', w: 5, h: 4, rot: 0 } },
   { label: 'Wall', t: { kind: 'wall', shape: 'rect', w: 6, h: 0.5, rot: 0 } },
   { label: 'Water', t: { kind: 'water', shape: 'circle', w: 9, h: 4, rot: 0 } },
+  { label: 'River', t: { kind: 'water', shape: 'rect', w: 3, h: 20, rot: 0 } },
+  { label: 'Ruin', t: { kind: 'ruin', shape: 'rect', w: 4, h: 3, rot: 0 } },
+  { label: 'Cliff', t: { kind: 'cliff', shape: 'circle', w: 6, h: 8, rot: 0 } },
+  { label: 'Field', t: { kind: 'field', shape: 'rect', w: 8, h: 5, rot: 0 } },
 ];
 
 export function TablePanel({
@@ -323,19 +339,11 @@ export function TablePanel({
   dispatch,
   selectedTerrain,
   setSelectedTerrain,
-  showZones,
-  setShowZones,
-  showPhotos,
-  setShowPhotos,
 }: {
   state: GameState;
   dispatch: Dispatch;
   selectedTerrain: string | null;
   setSelectedTerrain: (id: string | null) => void;
-  showZones: boolean;
-  setShowZones: (v: boolean) => void;
-  showPhotos: boolean;
-  setShowPhotos: (v: boolean) => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const t = selectedTerrain ? state.terrain[selectedTerrain] : undefined;
@@ -361,11 +369,31 @@ export function TablePanel({
 
   return (
     <div className="panel-body">
-      <label className="check">
-        <input type="checkbox" checked={showZones} onChange={e => setShowZones(e.target.checked)} /> Show move and 1" control zones
-      </label>
-      <label className="check">
-        <input type="checkbox" checked={showPhotos} onChange={e => setShowPhotos(e.target.checked)} /> Show unit photos on bases
+      <h4>Starter boards</h4>
+      <div className="boards">
+        {STARTER_BOARDS.map(b => (
+          <button
+            key={b.id}
+            onClick={() => {
+              if (Object.keys(state.terrain).length && !confirm(`Replace the current terrain with ${b.name}? Models stay where they are.`)) return;
+              dispatch({ type: 'setScenery', w: b.w, h: b.h, mat: b.mat, terrain: starterTerrain(b, newId) });
+              setSelectedTerrain(null);
+            }}
+          >
+            <b>{b.name}</b>
+            <small>{b.blurb}</small>
+          </button>
+        ))}
+      </div>
+      <label>
+        Ground
+        <select value={state.board.mat} onChange={e => dispatch({ type: 'setBoard', w: state.board.w, h: state.board.h, mat: e.target.value as Mat })}>
+          {MATS.map(m => (
+            <option key={m} value={m}>
+              {MAT_NAMES[m]}
+            </option>
+          ))}
+        </select>
       </label>
 
       <h4>Add terrain</h4>
@@ -441,6 +469,63 @@ export function TablePanel({
       >
         Clear table
       </button>
+    </div>
+  );
+}
+
+export function SettingsPanel({ settings, update }: { settings: Settings; update: (p: Partial<Settings>) => void }) {
+  return (
+    <div className="panel-body">
+      <p className="hint">These only change how the game looks for you.</p>
+      <h4>Colour theme</h4>
+      <div className="theme-swatches">
+        {THEMES.map(t => (
+          <button key={t.id} className={settings.theme === t.id ? 'on' : ''} onClick={() => update({ theme: t.id })} aria-pressed={settings.theme === t.id}>
+            <span className="swatch">
+              {[t.vars.bg, t.vars.panel, t.vars.gold, t.vars.p1, t.vars.p2].map((c, i) => (
+                <span key={i} style={{ background: c }} />
+              ))}
+            </span>
+            {t.name}
+          </button>
+        ))}
+      </div>
+
+      <h4>Heading font</h4>
+      <select value={settings.headingFont} onChange={e => update({ headingFont: e.target.value })} aria-label="Heading font">
+        {HEADING_FONTS.map(f => (
+          <option key={f.id} value={f.id}>
+            {f.name}
+          </option>
+        ))}
+      </select>
+      <p className="font-preview" style={{ fontFamily: HEADING_FONTS.find(f => f.id === settings.headingFont)?.css }}>
+        The Battle of the Pelennor Fields
+      </p>
+
+      <h4>Text font</h4>
+      <select value={settings.bodyFont} onChange={e => update({ bodyFont: e.target.value })} aria-label="Text font">
+        {BODY_FONTS.map(f => (
+          <option key={f.id} value={f.id}>
+            {f.name}
+          </option>
+        ))}
+      </select>
+      <p className="font-preview" style={{ fontFamily: BODY_FONTS.find(f => f.id === settings.bodyFont)?.css }}>
+        Twelve warriors advance 6" towards the ford.
+      </p>
+
+      <h4>Table</h4>
+      <label className="check">
+        <input type="checkbox" checked={settings.photos} onChange={e => update({ photos: e.target.checked })} /> Unit photos on bases
+      </label>
+      <label className="check">
+        <input type="checkbox" checked={settings.zones} onChange={e => update({ zones: e.target.checked })} /> Move and 1" control zones
+      </label>
+      <label className="check">
+        <input type="checkbox" checked={settings.grid} onChange={e => update({ grid: e.target.checked })} /> 1" grid
+      </label>
+      <p className="fine">Fonts are open-licence (SIL OFL). Textures are generated by the app.</p>
     </div>
   );
 }

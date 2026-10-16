@@ -35,7 +35,12 @@ export interface Model {
   options?: string[];
 }
 
-export type TerrainKind = 'wood' | 'rock' | 'building' | 'water' | 'hill' | 'wall';
+export const TERRAIN_KINDS = ['wood', 'rock', 'building', 'water', 'hill', 'wall', 'ruin', 'cliff', 'field'] as const;
+export type TerrainKind = (typeof TERRAIN_KINDS)[number];
+
+/** Battle mat surfaces. */
+export const MATS = ['grass', 'plains', 'forest', 'mud', 'stone', 'snow', 'sand'] as const;
+export type Mat = (typeof MATS)[number];
 
 export interface Terrain {
   id: string;
@@ -63,7 +68,7 @@ export const PHASES = ['priority', 'move', 'shoot', 'fight', 'end'] as const;
 export type Phase = (typeof PHASES)[number];
 
 export interface GameState {
-  board: { w: number; h: number };
+  board: { w: number; h: number; mat: Mat };
   models: Record<string, Model>;
   terrain: Record<string, Terrain>;
   turn: number;
@@ -85,7 +90,9 @@ export type Action =
   | { type: 'nextPhase' }
   | { type: 'setPriority'; seat: Seat | null }
   | { type: 'setName'; seat: Seat; name: string }
-  | { type: 'setBoard'; w: number; h: number }
+  | { type: 'setBoard'; w: number; h: number; mat?: Mat }
+  /** Replaces the mat and all terrain at once, e.g. when loading a starter board. Models stay. */
+  | { type: 'setScenery'; w: number; h: number; mat: Mat; terrain: Terrain[] }
   /** Request from a client; the server turns it into a `rolled` action with real dice. */
   | { type: 'roll'; count: number; target?: number; label: string }
   | { type: 'rolled'; roll: DiceRoll }
