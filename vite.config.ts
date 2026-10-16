@@ -8,6 +8,8 @@ export default defineConfig({
       '/ws': { target: 'ws://localhost:8787', ws: true },
     },
   },
+  // The unit data is its own lazily loaded chunk of about 600 kB.
+  build: { chunkSizeWarningLimit: 700 },
   test: {
     include: ['tests/**/*.test.ts'],
   },

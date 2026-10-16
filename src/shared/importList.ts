@@ -11,6 +11,12 @@ export interface ListEntry {
   might?: number;
   will?: number;
   fate?: number;
+  /** Known base; otherwise it's guessed from the name. */
+  base?: Base;
+  /** Unit id in the bundled MESBG data, for stats and photos. */
+  profileId?: string;
+  /** Chosen wargear and upgrades. */
+  options?: string[];
 }
 
 const NAME_KEYS = ['name', 'profile_origin', 'model_name', 'unit_name', 'title'];
@@ -173,7 +179,7 @@ export function deployList(entries: ListEntry[], owner: Seat, state: Pick<GameSt
   let rowDepth = 0;
 
   for (const e of entries) {
-    const base = guessBase(e.name);
+    const base = e.base ?? guessBase(e.name);
     const wIn = mmToIn(base.w);
     const hIn = mmToIn(base.h);
     for (let i = 0; i < e.count; i++) {
@@ -199,6 +205,8 @@ export function deployList(entries: ListEntry[], owner: Seat, state: Pick<GameSt
         fate: e.fate ?? 0,
         hero: e.hero,
         dead: false,
+        ...(e.profileId ? { profileId: e.profileId } : {}),
+        ...(e.options?.length ? { options: e.options } : {}),
       });
       x += wIn + gap;
       rowDepth = Math.max(rowDepth, hIn);

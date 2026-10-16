@@ -30,6 +30,9 @@ export interface Model {
   fate: number;
   hero: boolean;
   dead: boolean;
+  /** Unit id in the bundled MESBG data, used for the stat card and photo. */
+  profileId?: string;
+  options?: string[];
 }
 
 export type TerrainKind = 'wood' | 'rock' | 'building' | 'water' | 'hill' | 'wall';

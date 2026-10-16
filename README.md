@@ -10,7 +10,9 @@ Build your army in the [MESBG List Builder](https://v2024.mesbg-list-builder.com
 
 - **Real-scale board.** The board is 48"×48" by default (or 72"×48" / 24"×24"), with a 1" grid. Bases are real sizes: 25mm infantry, 25×50mm cavalry, and 40mm/60mm monsters.
 - **Two players in real time** over a room link, plus spectators. Moves, dice and phases sync instantly, and you reconnect automatically if the connection drops.
-- **List import.** Upload or paste the list builder's export, or a plain list like `12x Warrior of Minas Tirith`. Each army deploys in its own zone (player 1 at the bottom, player 2 at the top), so armies never spawn on top of each other.
+- **Built-in list builder.** Pick an army (all 106 army lists), add heroes and warriors, choose wargear and mounts, and see points as you go. Lists are saved in your browser. The data comes from the open-source [MESBG List Builder](https://github.com/mhollink/mesbg-list-builder-v2024) (see [src/data/README.md](src/data/README.md)).
+- **Unit photos and stat cards.** Models show their unit's photo on the base, and selecting a model shows its profile: Mv, Fv, Sv, S, D, A, W, C, I, wargear and special rule names. Mounted heroes get a cavalry base and their mount's move. Photos load from the list builder's image host and can be turned off in the Table panel.
+- **List import.** Upload the list builder's .json export (read exactly, with options and mounts), or paste a plain list like `12x Warrior of Minas Tirith`. Each army deploys in its own zone (player 1 at the bottom, player 2 at the top), so armies never spawn on top of each other.
 - **Measuring the MESBG way**, base edge to base edge:
   - **Ruler tool:** shows base-to-base distance when you start or end on a model.
   - **Move and control zones:** a selected model shows its move distance and its 1" control zone.

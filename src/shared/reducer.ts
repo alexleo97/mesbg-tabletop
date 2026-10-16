@@ -70,6 +70,10 @@ export function cleanModel(m: Partial<Model>, prev?: Model): Model | null {
     hero: typeof m.hero === 'boolean' ? m.hero : base.hero,
     dead: typeof m.dead === 'boolean' ? m.dead : base.dead,
   };
+  const profileId = m.profileId !== undefined ? str(m.profileId, 120) : base.profileId;
+  if (profileId) out.profileId = profileId;
+  const options = Array.isArray(m.options) ? m.options.slice(0, 12).map(o => str(o, 60)) : base.options;
+  if (options?.length) out.options = options;
   out.wounds = int(m.wounds, 0, out.maxWounds, Math.min(base.wounds, out.maxWounds));
   return out.id ? out : null;
 }

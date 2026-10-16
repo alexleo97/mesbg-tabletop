@@ -1,5 +1,7 @@
 import { useRef, useState } from 'react';
-import { deployList, guessBase, newId, parseList } from '../shared/importList.ts';
+import { loadCatalog, parseBuilderExport, STAT_NAMES, statsWithOptions } from '../shared/catalog.ts';
+import { deployList, guessBase, newId, parseList, type ListEntry } from '../shared/importList.ts';
+import { ListBuilder, Portrait, useCatalog } from './ListBuilder.tsx';
 import type { Action, Base, GameState, Model, Role, Seat, Terrain } from '../shared/types.ts';
 
 type Dispatch = (a: Action) => void;
@@ -25,6 +27,37 @@ function Stepper({ label, value, min, max, onChange }: { label: string; value: n
       <b>{value}</b>
       <button onClick={() => onChange(Math.min(max, value + 1))} aria-label={`${label} up`}>+</button>
     </label>
+  );
+}
+
+function StatCard({ m }: { m: Model }) {
+  const { catalog } = useCatalog();
+  const unit = m.profileId ? catalog?.units[m.profileId] : undefined;
+  if (!unit) return null;
+  const optionIds = unit.options.filter(o => m.options?.includes(o.name)).map(o => o.id);
+  const stats = statsWithOptions(unit, optionIds);
+  return (
+    <div className="stat-card">
+      <div className="stat-head">
+        <Portrait unit={unit} size={64} />
+        <div>
+          <small>{unit.type}</small>
+          {m.options?.length ? <small>{m.options.join(', ')}</small> : null}
+        </div>
+      </div>
+      {stats && (
+        <table className="stats">
+          <thead>
+            <tr>{STAT_NAMES.map(n => <th key={n}>{n}</th>)}</tr>
+          </thead>
+          <tbody>
+            <tr>{stats.map((v, i) => <td key={i}>{v}</td>)}</tr>
+          </tbody>
+        </table>
+      )}
+      {unit.wargear.length > 0 && <p className="muted"><b>Wargear:</b> {unit.wargear.join(', ')}</p>}
+      {unit.rules.length > 0 && <p className="muted"><b>Rules:</b> {unit.rules.join(', ')}</p>}
+    </div>
   );
 }
 
@@ -76,6 +109,7 @@ export function SelectionPanel({ state, selected, dispatch, clear }: { state: Ga
   return (
     <div className="panel-body">
       <input className="name-input" value={m.name} onChange={e => patch({ name: e.target.value })} aria-label="Model name" />
+      <StatCard m={m} />
       <div className="row muted">
         <span>{m.owner === 'p1' ? 'Player 1' : 'Player 2'}</span>
         <label className="check">
@@ -169,17 +203,33 @@ export function ArmyPanel({ state, dispatch, role }: { state: GameState; dispatc
   const [owner, setOwner] = useState<Seat>(role === 'p2' ? 'p2' : 'p1');
   const [message, setMessage] = useState('');
   const [single, setSingle] = useState('');
+  const [mode, setMode] = useState<'build' | 'import'>('build');
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const importText = (input: string) => {
-    const entries = parseList(input);
+  const deploy = (entries: ListEntry[], note = '') => {
     const count = entries.reduce((a, e) => a + e.count, 0);
-    if (!count) {
-      setMessage("Couldn't find any models in that list. Paste the list builder's export, or lines like \"12x Warrior of Minas Tirith\".");
+    dispatch({ type: 'addModels', models: deployList(entries, owner, state) });
+    setMessage(`Deployed ${count} models for ${state.names[owner] || (owner === 'p1' ? 'Player 1' : 'Player 2')}.${note}`);
+  };
+
+  const importText = async (input: string) => {
+    const exported = parseBuilderExport(input, await loadCatalog());
+    if (exported) {
+      if (!exported.entries.length) {
+        setMessage("That export didn't contain any units I recognise.");
+        return;
+      }
+      const note = exported.missing.length ? ` ${exported.missing.length} unit(s) weren't recognised and were skipped.` : '';
+      deploy(exported.entries, note);
+      setText('');
       return;
     }
-    dispatch({ type: 'addModels', models: deployList(entries, owner, state) });
-    setMessage(`Deployed ${count} models from ${entries.length} entries. Check bases and stats; heroes may need Might/Will/Fate set.`);
+    const entries = parseList(input);
+    if (!entries.reduce((a, e) => a + e.count, 0)) {
+      setMessage("Couldn't find any models in that list. Upload the list builder's .json export, or paste lines like \"12x Warrior of Minas Tirith\".");
+      return;
+    }
+    deploy(entries, ' Check bases and stats: a pasted text list has no profile data.');
     setText('');
   };
 
@@ -208,15 +258,26 @@ export function ArmyPanel({ state, dispatch, role }: { state: GameState; dispatc
           </button>
         ))}
       </div>
-      <p className="hint">
-        In the <a href="https://v2024.mesbg-list-builder.com/" target="_blank" rel="noreferrer">list builder</a>, export your list, then upload the file or paste
-        it here.
-      </p>
-      <button onClick={() => fileRef.current?.click()}>Upload list file</button>
-      <input ref={fileRef} type="file" accept=".json,.txt,application/json,text/plain" hidden onChange={e => onFile(e.target.files?.[0])} />
-      <textarea rows={5} placeholder={'Paste a list here, e.g.\nCaptain of Minas Tirith (70 pts)\n12x Warrior of Minas Tirith with shield'} value={text} onChange={e => setText(e.target.value)} />
-      <button className="primary" disabled={!text.trim()} onClick={() => importText(text)}>Deploy list</button>
+      {role === 'spectator' && <p className="hint">Spectators can watch but can't deploy armies. Pick a player seat in the top bar to join in.</p>}
+      <div className="row seg">
+        <button className={mode === 'build' ? 'on' : ''} onClick={() => setMode('build')}>Build a list</button>
+        <button className={mode === 'import' ? 'on' : ''} onClick={() => setMode('import')}>Import</button>
+      </div>
       {message && <p className="hint">{message}</p>}
+      {mode === 'build' ? (
+        <ListBuilder onDeploy={entries => deploy(entries)} deployLabel={`Deploy for ${state.names[owner] || (owner === 'p1' ? 'Player 1' : 'Player 2')}`} />
+      ) : (
+        <>
+          <p className="hint">
+            In the <a href="https://v2024.mesbg-list-builder.com/" target="_blank" rel="noreferrer">MESBG List Builder</a>, export your list as a file, then upload
+            it here. You can also paste a plain list.
+          </p>
+          <button onClick={() => fileRef.current?.click()}>Upload list file</button>
+          <input ref={fileRef} type="file" accept=".json,.txt,application/json,text/plain" hidden onChange={e => onFile(e.target.files?.[0])} />
+          <textarea rows={5} placeholder={'Paste a list here, e.g.\nCaptain of Minas Tirith (70 pts)\n12x Warrior of Minas Tirith with shield'} value={text} onChange={e => setText(e.target.value)} />
+          <button className="primary" disabled={!text.trim()} onClick={() => importText(text)}>Deploy list</button>
+        </>
+      )}
 
       <h4>Add a single model</h4>
       <div className="row">
@@ -264,6 +325,8 @@ export function TablePanel({
   setSelectedTerrain,
   showZones,
   setShowZones,
+  showPhotos,
+  setShowPhotos,
 }: {
   state: GameState;
   dispatch: Dispatch;
@@ -271,6 +334,8 @@ export function TablePanel({
   setSelectedTerrain: (id: string | null) => void;
   showZones: boolean;
   setShowZones: (v: boolean) => void;
+  showPhotos: boolean;
+  setShowPhotos: (v: boolean) => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const t = selectedTerrain ? state.terrain[selectedTerrain] : undefined;
@@ -298,6 +363,9 @@ export function TablePanel({
     <div className="panel-body">
       <label className="check">
         <input type="checkbox" checked={showZones} onChange={e => setShowZones(e.target.checked)} /> Show move and 1" control zones
+      </label>
+      <label className="check">
+        <input type="checkbox" checked={showPhotos} onChange={e => setShowPhotos(e.target.checked)} /> Show unit photos on bases
       </label>
 
       <h4>Add terrain</h4>

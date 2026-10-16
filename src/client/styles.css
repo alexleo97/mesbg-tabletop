@@ -183,3 +183,36 @@ label.check input { width: auto; min-height: 0; }
   .main.panel-open .zoom-controls { display: none; }
   .toolbar button { min-width: 54px; padding: 4px 6px; }
 }
+
+/* List builder and stat cards */
+.builder { display: flex; flex-direction: column; gap: 8px; }
+.row > .shrink, button.shrink { flex: 0 0 auto; }
+.roster-summary { display: flex; justify-content: space-between; align-items: baseline; padding: 6px 2px; border-bottom: 1px solid var(--line); }
+.roster-summary b { color: var(--gold); font-size: 1.15rem; }
+.roster-summary span { color: var(--muted); font-size: 0.85rem; }
+.roster, .unit-picker ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.roster li { background: var(--panel-2); border-radius: 10px; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.roster-head { display: flex; align-items: center; gap: 8px; }
+.roster-name { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.roster-name small, .unit-name small { color: var(--muted); font-size: 0.78rem; }
+.roster .options { display: flex; flex-direction: column; gap: 2px; padding-left: 4px; }
+.roster .options small { color: var(--muted); }
+.unit-picker { display: flex; flex-direction: column; gap: 6px; }
+.unit-picker ul { max-height: 340px; overflow-y: auto; }
+.unit-picker li button { width: 100%; display: flex; align-items: center; gap: 8px; text-align: left; padding: 6px 8px; }
+.unit-name { flex: 1; display: flex; flex-direction: column; }
+.unit-picker .pts { color: var(--gold); font-weight: 600; }
+.portrait { border-radius: 50%; object-fit: cover; flex: 0 0 auto; background: #15130f; display: inline-block; }
+.portrait.fallback { border: 1px solid var(--line); }
+.fine { color: var(--muted); font-size: 0.78rem; margin: 0; }
+.stat-card { display: flex; flex-direction: column; gap: 6px; background: var(--panel-2); border-radius: 10px; padding: 8px; }
+.stat-head { display: flex; gap: 10px; align-items: center; }
+.stat-head div { display: flex; flex-direction: column; gap: 2px; color: var(--muted); }
+.stats { width: 100%; border-collapse: collapse; text-align: center; font-size: 0.85rem; }
+.stats th { color: var(--gold); font-weight: 600; padding: 2px 0; }
+.stats td { padding: 2px 0; }
+.model .ring { fill: none; stroke-width: 0.09; }
+.model.p1 .ring { stroke: var(--p1); }
+.model.p2 .ring { stroke: var(--p2); }
+.model.hero .ring { stroke: var(--gold); }
+.model.selected .ring { stroke: #fff; stroke-width: 0.12; }

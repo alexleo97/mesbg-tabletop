@@ -13,6 +13,8 @@ interface Props {
   setSelectedTerrain: (id: string | null) => void;
   dispatch: (a: Action) => void;
   showZones: boolean;
+  /** Photo URL for a model's unit, if photos are on and known. */
+  photoFor: (m: Model) => string | undefined;
 }
 
 interface View {
@@ -54,13 +56,15 @@ function ZoneShape({ m, pad, className }: { m: Model; pad: number; className: st
   return <ellipse className={className} rx={rx + pad} ry={ry + pad} />;
 }
 
-function BaseShape({ m }: { m: Model }) {
+function BaseShape({ m, className = 'base' }: { m: Model; className?: string }) {
   const { rx, ry } = halfExtents(m.base);
-  if (m.base.shape === 'rect') return <rect className="base" x={-rx} y={-ry} width={2 * rx} height={2 * ry} rx={0.04} />;
-  return <ellipse className="base" rx={rx} ry={ry} />;
+  if (m.base.shape === 'rect') return <rect className={className} x={-rx} y={-ry} width={2 * rx} height={2 * ry} rx={0.04} />;
+  return <ellipse className={className} rx={rx} ry={ry} />;
 }
 
-export function Board({ state, tool, selected, setSelected, selectedTerrain, setSelectedTerrain, dispatch, showZones }: Props) {
+const clipId = (m: Model) => `clip-${m.base.shape}-${m.base.w}-${m.base.h}`;
+
+export function Board({ state, tool, selected, setSelected, selectedTerrain, setSelectedTerrain, dispatch, showZones, photoFor }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [view, setView] = useState<View>({ x: 0, y: 0, s: 10 });
   const [gesture, setGesture] = useState<Gesture | null>(null);
@@ -342,6 +346,13 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
         onPointerCancel={onPointerUp}
         onContextMenu={e => e.preventDefault()}
       >
+        <defs>
+          {[...new Map(models.map(m => [clipId(m), m])).values()].map(m => (
+            <clipPath key={clipId(m)} id={clipId(m)}>
+              <BaseShape m={m} className="" />
+            </clipPath>
+          ))}
+        </defs>
         <g transform={`translate(${view.x} ${view.y}) scale(${view.s})`} style={{ fontSize }}>
           <rect className="mat" width={state.board.w} height={state.board.h} />
           {gridLines}
@@ -391,7 +402,8 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
 
           {models.map(m0 => {
             const m = shown(m0);
-            const { ry } = halfExtents(m.base);
+            const { rx, ry } = halfExtents(m.base);
+            const photo = photoFor(m);
             return (
               <g
                 key={m.id}
@@ -399,10 +411,32 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
                 className={`model ${m.owner} ${m.hero ? 'hero' : ''} ${selected.has(m.id) ? 'selected' : ''}`}
               >
                 <BaseShape m={m} />
+                {photo && (
+                  <>
+                    <text className="label" textAnchor="middle" dominantBaseline="central" transform={`rotate(${-m.rot})`} style={{ fontSize: Math.min(ry * 0.8, 0.32) }}>
+                      {initials(m.name)}
+                    </text>
+                    {/* The clip follows the base; the photo inside stays upright. */}
+                    <g clipPath={`url(#${clipId(m)})`}>
+                      <image
+                        href={photo}
+                        x={-Math.max(rx, ry)}
+                        y={-Math.max(rx, ry)}
+                        width={2 * Math.max(rx, ry)}
+                        height={2 * Math.max(rx, ry)}
+                        preserveAspectRatio="xMidYMid slice"
+                        transform={`rotate(${-m.rot})`}
+                      />
+                    </g>
+                    <BaseShape m={m} className="ring" />
+                  </>
+                )}
                 <path className="facing" d={`M ${-0.12} ${-ry + 0.04} L 0 ${-ry - 0.1} L ${0.12} ${-ry + 0.04} Z`} />
-                <text className="label" textAnchor="middle" dominantBaseline="central" transform={`rotate(${-m.rot})`} style={{ fontSize: Math.min(ry * 0.8, 0.32) }}>
-                  {initials(m.name)}
-                </text>
+                {!photo && (
+                  <text className="label" textAnchor="middle" dominantBaseline="central" transform={`rotate(${-m.rot})`} style={{ fontSize: Math.min(ry * 0.8, 0.32) }}>
+                    {initials(m.name)}
+                  </text>
+                )}
                 {m.maxWounds > 1 && (
                   <text className="wounds" textAnchor="middle" transform={`rotate(${-m.rot}) translate(0 ${ry + 0.25})`} style={{ fontSize: 0.25 }}>
                     {m.wounds}/{m.maxWounds}W

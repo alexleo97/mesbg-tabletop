@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { PHASES, type Role, type Seat } from '../shared/types.ts';
 import { Board, type Tool } from './Board.tsx';
 import { RoomConnection, useRoom } from './net.ts';
+import { pictureUrl } from '../shared/catalog.ts';
+import { useCatalog } from './ListBuilder.tsx';
 import { ArmyPanel, DicePanel, SelectionPanel, TablePanel } from './Panels.tsx';
 
 const PLACES = ['osgiliath', 'helms-deep', 'weathertop', 'amon-hen', 'pelennor', 'fornost', 'dale', 'erebor', 'moria', 'isengard', 'edoras', 'lothlorien'];
@@ -65,6 +67,8 @@ function Game({ room }: { room: string }) {
   const [tab, setTab] = useState<PanelTab>('army');
   const [panelOpen, setPanelOpen] = useState(() => window.innerWidth > 800);
   const [showZones, setShowZones] = useState(true);
+  const [showPhotos, setShowPhotos] = useState(() => storage.get('photos') !== 'off');
+  const { catalog } = useCatalog();
   const [copied, setCopied] = useState(false);
 
   useEffect(() => () => conn.close(), [conn]);
@@ -196,6 +200,10 @@ function Game({ room }: { room: string }) {
           }}
           dispatch={role === 'spectator' ? () => {} : dispatch}
           showZones={showZones}
+          photoFor={m => {
+            const unit = showPhotos && m.profileId ? catalog?.units[m.profileId] : undefined;
+            return unit && pictureUrl(unit);
+          }}
         />
         {panelOpen && (
           <aside className="panel">
@@ -246,6 +254,11 @@ function Game({ room }: { room: string }) {
                 setSelectedTerrain={setSelectedTerrain}
                 showZones={showZones}
                 setShowZones={setShowZones}
+                showPhotos={showPhotos}
+                setShowPhotos={v => {
+                  setShowPhotos(v);
+                  storage.set('photos', v ? 'on' : 'off');
+                }}
               />
               </>
             )}
