@@ -1,0 +1,445 @@
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { distanceBetween, distanceToBase, formatInches, halfExtents, type Point } from '../shared/geometry.ts';
+import type { Action, GameState, Model, Terrain } from '../shared/types.ts';
+
+export type Tool = 'move' | 'select' | 'measure';
+
+interface Props {
+  state: GameState;
+  tool: Tool;
+  selected: Set<string>;
+  setSelected: (s: Set<string>) => void;
+  selectedTerrain: string | null;
+  setSelectedTerrain: (id: string | null) => void;
+  dispatch: (a: Action) => void;
+  showZones: boolean;
+}
+
+interface View {
+  x: number;
+  y: number;
+  s: number; // pixels per inch
+}
+
+type Gesture =
+  | { kind: 'pan'; start: Point; view: View; moved: boolean }
+  | { kind: 'drag'; start: Point; origin: Record<string, Point>; moved: boolean; tapId: string; multi: boolean; wasSelected: boolean }
+  | { kind: 'terrain'; id: string; start: Point; origin: Point; moved: boolean }
+  | { kind: 'box'; start: Point; end: Point; additive: boolean }
+  | { kind: 'measure'; start: Point; end: Point; from?: string }
+  | { kind: 'pinch'; dist: number; mid: Point; view: View };
+
+const TERRAIN_FILL: Record<Terrain['kind'], string> = {
+  wood: 'var(--t-wood)',
+  rock: 'var(--t-rock)',
+  building: 'var(--t-building)',
+  water: 'var(--t-water)',
+  hill: 'var(--t-hill)',
+  wall: 'var(--t-wall)',
+};
+
+const SEND_EVERY_MS = 60;
+const TAP_SLOP_PX = 6;
+
+function initials(name: string) {
+  const words = name.replace(/[^\p{L}\s']/gu, ' ').split(/\s+/).filter(w => w && !/^(of|the|on|with|and|de)$/i.test(w));
+  return words.length === 1 ? words[0].slice(0, 3) : words.slice(0, 3).map(w => w[0]).join('');
+}
+
+/** A base outline grown outward by `pad` inches, used for move and control zones. */
+function ZoneShape({ m, pad, className }: { m: Model; pad: number; className: string }) {
+  const { rx, ry } = halfExtents(m.base);
+  if (m.base.shape === 'rect')
+    return <rect className={className} x={-rx - pad} y={-ry - pad} width={2 * (rx + pad)} height={2 * (ry + pad)} rx={pad} />;
+  return <ellipse className={className} rx={rx + pad} ry={ry + pad} />;
+}
+
+function BaseShape({ m }: { m: Model }) {
+  const { rx, ry } = halfExtents(m.base);
+  if (m.base.shape === 'rect') return <rect className="base" x={-rx} y={-ry} width={2 * rx} height={2 * ry} rx={0.04} />;
+  return <ellipse className="base" rx={rx} ry={ry} />;
+}
+
+export function Board({ state, tool, selected, setSelected, selectedTerrain, setSelectedTerrain, dispatch, showZones }: Props) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [view, setView] = useState<View>({ x: 0, y: 0, s: 10 });
+  const [gesture, setGesture] = useState<Gesture | null>(null);
+  const [dragPos, setDragPos] = useState<Record<string, Point> | null>(null);
+  const [ruler, setRuler] = useState<{ start: Point; end: Point; from?: string } | null>(null);
+  const pointers = useRef(new Map<number, Point>());
+  const lastSend = useRef(0);
+  const fitted = useRef(false);
+
+  const models = useMemo(() => Object.values(state.models).filter(m => !m.dead), [state.models]);
+  const terrain = useMemo(() => Object.values(state.terrain), [state.terrain]);
+
+  const fit = useCallback(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const pad = 16;
+    const s = Math.min((r.width - pad * 2) / state.board.w, (r.height - pad * 2) / state.board.h);
+    setView({ s, x: (r.width - state.board.w * s) / 2, y: (r.height - state.board.h * s) / 2 });
+  }, [state.board.w, state.board.h]);
+
+  useLayoutEffect(() => {
+    if (!fitted.current) {
+      fit();
+      fitted.current = true;
+    }
+  }, [fit]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
+      if (e.key === 'f') fit();
+      if ((e.key === 'q' || e.key === 'e') && selected.size) {
+        const d = e.key === 'q' ? -45 : 45;
+        dispatch({ type: 'moveModels', moves: [...selected].flatMap(id => {
+          const m = state.models[id];
+          return m ? [{ id, x: m.x, y: m.y, rot: m.rot + d }] : [];
+        }) });
+      }
+      if (e.key === 'Escape') {
+        setSelected(new Set());
+        setRuler(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [fit, selected, state.models, dispatch, setSelected]);
+
+  const toBoard = useCallback(
+    (clientX: number, clientY: number, v: View = view): Point => {
+      const r = svgRef.current!.getBoundingClientRect();
+      return { x: (clientX - r.left - v.x) / v.s, y: (clientY - r.top - v.y) / v.s };
+    },
+    [view],
+  );
+
+  const zoomAt = useCallback((factor: number, sx: number, sy: number, base: View) => {
+    const s = Math.min(200, Math.max(3, base.s * factor));
+    const k = s / base.s;
+    setView({ s, x: sx - (sx - base.x) * k, y: sy - (sy - base.y) * k });
+  }, []);
+
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const r = el.getBoundingClientRect();
+      setView(v => {
+        const s = Math.min(200, Math.max(3, v.s * Math.exp(-e.deltaY * 0.0015)));
+        const k = s / v.s;
+        const sx = e.clientX - r.left;
+        const sy = e.clientY - r.top;
+        return { s, x: sx - (sx - v.x) * k, y: sy - (sy - v.y) * k };
+      });
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+
+  const modelAt = (p: Point) => {
+    // Topmost first, so the model drawn last wins.
+    for (let i = models.length - 1; i >= 0; i--) if (distanceToBase(models[i], p) === 0) return models[i];
+    return null;
+  };
+
+  const terrainAt = (p: Point) => {
+    for (let i = terrain.length - 1; i >= 0; i--) {
+      const t = terrain[i];
+      if (t.locked) continue;
+      const a = (-t.rot * Math.PI) / 180;
+      const dx = p.x - t.x;
+      const dy = p.y - t.y;
+      const lx = dx * Math.cos(a) - dy * Math.sin(a);
+      const ly = dx * Math.sin(a) + dy * Math.cos(a);
+      const inside = t.shape === 'rect' ? Math.abs(lx) <= t.w / 2 && Math.abs(ly) <= t.h / 2 : (lx / (t.w / 2)) ** 2 + (ly / (t.h / 2)) ** 2 <= 1;
+      if (inside) return t;
+    }
+    return null;
+  };
+
+  const sendMoves = (pos: Record<string, Point>, force: boolean) => {
+    const now = performance.now();
+    if (!force && now - lastSend.current < SEND_EVERY_MS) return;
+    lastSend.current = now;
+    dispatch({ type: 'moveModels', moves: Object.entries(pos).map(([id, p]) => ({ id, x: p.x, y: p.y })) });
+  };
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    svgRef.current!.setPointerCapture(e.pointerId);
+    const r = svgRef.current!.getBoundingClientRect();
+    pointers.current.set(e.pointerId, { x: e.clientX - r.left, y: e.clientY - r.top });
+
+    if (pointers.current.size === 2) {
+      // Second finger: switch to pinch-zoom and drop whatever the first finger started.
+      if (gesture?.kind === 'drag' && dragPos) sendMoves(dragPos, true);
+      setDragPos(null);
+      const [a, b] = [...pointers.current.values()];
+      setGesture({ kind: 'pinch', dist: Math.hypot(a.x - b.x, a.y - b.y), mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, view });
+      return;
+    }
+    if (pointers.current.size > 2) return;
+
+    const p = toBoard(e.clientX, e.clientY);
+    const additive = e.shiftKey || e.ctrlKey || e.metaKey;
+    const hit = modelAt(p);
+
+    if (tool === 'measure') {
+      setRuler(null);
+      setGesture({ kind: 'measure', start: p, end: p, from: hit?.id });
+      return;
+    }
+    if (hit) {
+      // In select mode, or with shift/ctrl held, taps build up a group instead of replacing it.
+      const multi = additive || tool === 'select';
+      const wasSelected = selected.has(hit.id);
+      const group = wasSelected ? selected : multi ? new Set([...selected, hit.id]) : new Set([hit.id]);
+      if (!wasSelected) setSelected(group);
+      setSelectedTerrain(null);
+      const origin: Record<string, Point> = {};
+      for (const id of group) if (state.models[id]) origin[id] = { x: state.models[id].x, y: state.models[id].y };
+      setGesture({ kind: 'drag', start: p, origin, moved: false, tapId: hit.id, multi, wasSelected });
+      return;
+    }
+    if (tool === 'select') {
+      setGesture({ kind: 'box', start: p, end: p, additive });
+      return;
+    }
+    const t = terrainAt(p);
+    if (t) {
+      setSelectedTerrain(t.id);
+      setGesture({ kind: 'terrain', id: t.id, start: p, origin: { x: t.x, y: t.y }, moved: false });
+      return;
+    }
+    setGesture({ kind: 'pan', start: { x: e.clientX, y: e.clientY }, view, moved: false });
+  };
+
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (!pointers.current.has(e.pointerId)) return;
+    const r = svgRef.current!.getBoundingClientRect();
+    pointers.current.set(e.pointerId, { x: e.clientX - r.left, y: e.clientY - r.top });
+    if (!gesture) return;
+
+    if (gesture.kind === 'pinch') {
+      const [a, b] = [...pointers.current.values()];
+      if (!b) return;
+      const dist = Math.hypot(a.x - b.x, a.y - b.y);
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const v = gesture.view;
+      const s = Math.min(200, Math.max(3, v.s * (dist / gesture.dist)));
+      const k = s / v.s;
+      setView({ s, x: mid.x - (gesture.mid.x - v.x) * k, y: mid.y - (gesture.mid.y - v.y) * k });
+      return;
+    }
+    if (gesture.kind === 'pan') {
+      const dx = e.clientX - gesture.start.x;
+      const dy = e.clientY - gesture.start.y;
+      if (!gesture.moved && Math.hypot(dx, dy) < TAP_SLOP_PX) return;
+      setGesture({ ...gesture, moved: true });
+      setView({ ...gesture.view, x: gesture.view.x + dx, y: gesture.view.y + dy });
+      return;
+    }
+    const p = toBoard(e.clientX, e.clientY);
+    if (gesture.kind === 'drag') {
+      const dx = p.x - gesture.start.x;
+      const dy = p.y - gesture.start.y;
+      if (!gesture.moved && Math.hypot(dx, dy) * view.s < TAP_SLOP_PX) return;
+      if (!gesture.moved) setGesture({ ...gesture, moved: true });
+      const pos: Record<string, Point> = {};
+      for (const [id, o] of Object.entries(gesture.origin)) pos[id] = { x: o.x + dx, y: o.y + dy };
+      setDragPos(pos);
+      sendMoves(pos, false);
+    } else if (gesture.kind === 'terrain') {
+      const dx = p.x - gesture.start.x;
+      const dy = p.y - gesture.start.y;
+      if (!gesture.moved && Math.hypot(dx, dy) * view.s < TAP_SLOP_PX) return;
+      setGesture({ ...gesture, moved: true });
+      const now = performance.now();
+      if (now - lastSend.current >= SEND_EVERY_MS) {
+        lastSend.current = now;
+        dispatch({ type: 'updateTerrain', id: gesture.id, patch: { x: gesture.origin.x + dx, y: gesture.origin.y + dy } });
+      }
+    } else if (gesture.kind === 'box' || gesture.kind === 'measure') {
+      setGesture({ ...gesture, end: p });
+    }
+  };
+
+  const onPointerUp = (e: React.PointerEvent) => {
+    pointers.current.delete(e.pointerId);
+    if (!gesture) return;
+    if (gesture.kind === 'pinch') {
+      if (pointers.current.size === 0) setGesture(null);
+      return;
+    }
+    const p = toBoard(e.clientX, e.clientY);
+    if (gesture.kind === 'drag') {
+      if (gesture.moved && dragPos) sendMoves(dragPos, true);
+      else if (gesture.wasSelected && gesture.multi) {
+        const next = new Set(selected);
+        next.delete(gesture.tapId);
+        setSelected(next);
+      } else if (gesture.wasSelected) setSelected(new Set([gesture.tapId]));
+      setDragPos(null);
+    } else if (gesture.kind === 'terrain') {
+      if (gesture.moved)
+        dispatch({ type: 'updateTerrain', id: gesture.id, patch: { x: gesture.origin.x + p.x - gesture.start.x, y: gesture.origin.y + p.y - gesture.start.y } });
+    } else if (gesture.kind === 'pan') {
+      if (!gesture.moved) {
+        setSelected(new Set());
+        setSelectedTerrain(null);
+      }
+    } else if (gesture.kind === 'box') {
+      const x0 = Math.min(gesture.start.x, gesture.end.x);
+      const x1 = Math.max(gesture.start.x, gesture.end.x);
+      const y0 = Math.min(gesture.start.y, gesture.end.y);
+      const y1 = Math.max(gesture.start.y, gesture.end.y);
+      const inBox = models.filter(m => m.x >= x0 && m.x <= x1 && m.y >= y0 && m.y <= y1).map(m => m.id);
+      setSelected(new Set(gesture.additive ? [...selected, ...inBox] : inBox));
+    } else if (gesture.kind === 'measure') {
+      setRuler({ start: gesture.start, end: p, from: gesture.from });
+    }
+    setGesture(null);
+  };
+
+  const shown = (m: Model): Model => (dragPos?.[m.id] ? { ...m, ...dragPos[m.id] } : m);
+
+  const activeRuler = gesture?.kind === 'measure' ? gesture : ruler;
+  const rulerInfo = useMemo(() => {
+    if (!activeRuler) return null;
+    const { start, end, from } = activeRuler;
+    const a = from ? state.models[from] : undefined;
+    const target = models.find(m => m.id !== from && distanceToBase(m, end) === 0);
+    let d: number;
+    if (a && target) d = distanceBetween(a, target);
+    else if (a) d = distanceToBase(a, end);
+    else if (target) d = distanceToBase(target, start);
+    else d = Math.hypot(end.x - start.x, end.y - start.y);
+    return { start, end, d, baseToBase: Boolean(a || target) };
+  }, [activeRuler, state.models, models]);
+
+  const fontSize = Math.max(0.22, 11 / view.s);
+  const gridLines = useMemo(() => {
+    const lines: React.ReactElement[] = [];
+    for (let x = 0; x <= state.board.w; x++)
+      lines.push(<line key={`x${x}`} className={x % 6 === 0 ? 'grid major' : 'grid'} x1={x} y1={0} x2={x} y2={state.board.h} />);
+    for (let y = 0; y <= state.board.h; y++)
+      lines.push(<line key={`y${y}`} className={y % 6 === 0 ? 'grid major' : 'grid'} x1={0} y1={y} x2={state.board.w} y2={y} />);
+    return lines;
+  }, [state.board.w, state.board.h]);
+
+  return (
+    <div className="board-wrap">
+      <svg
+        ref={svgRef}
+        className={`board tool-${tool}`}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        onContextMenu={e => e.preventDefault()}
+      >
+        <g transform={`translate(${view.x} ${view.y}) scale(${view.s})`} style={{ fontSize }}>
+          <rect className="mat" width={state.board.w} height={state.board.h} />
+          {gridLines}
+          {terrain.map(t => (
+            <g key={t.id} transform={`translate(${t.x} ${t.y}) rotate(${t.rot})`} className={`terrain ${t.locked ? 'locked' : ''} ${selectedTerrain === t.id ? 'selected' : ''}`}>
+              {t.shape === 'rect' ? (
+                <rect x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} rx={t.kind === 'wall' ? 0 : 0.2} fill={TERRAIN_FILL[t.kind]} />
+              ) : (
+                <ellipse rx={t.w / 2} ry={t.h / 2} fill={TERRAIN_FILL[t.kind]} />
+              )}
+            </g>
+          ))}
+
+          {models.filter(m => selected.has(m.id)).map(m => {
+            // While dragging, zones stay where the move started so you can see the limit.
+            const s = m;
+            return (
+              <g key={`z-${m.id}`} transform={`translate(${s.x} ${s.y}) rotate(${s.rot})`} pointerEvents="none">
+                {showZones && <ZoneShape m={m} pad={m.move} className="zone-move" />}
+                {showZones && <ZoneShape m={m} pad={1} className="zone-control" />}
+              </g>
+            );
+          })}
+
+          {dragPos &&
+            gesture?.kind === 'drag' &&
+            Object.entries(gesture.origin).map(([id, o]) => {
+              const m = state.models[id];
+              const now = dragPos[id];
+              if (!m || !now) return null;
+              const d = Math.hypot(now.x - o.x, now.y - o.y);
+              const over = d > m.move + 1e-6;
+              return (
+                <g key={`g-${id}`} pointerEvents="none">
+                  <g transform={`translate(${o.x} ${o.y}) rotate(${m.rot})`} className="ghost">
+                    <BaseShape m={m} />
+                  </g>
+                  <line className={`trail ${over ? 'over' : ''}`} x1={o.x} y1={o.y} x2={now.x} y2={now.y} />
+                  {id === gesture.tapId && (
+                    <text className={`trail-label ${over ? 'over' : ''}`} x={now.x} y={now.y - halfExtents(m.base).ry - 0.3} textAnchor="middle">
+                      {formatInches(d)} / {m.move}"
+                    </text>
+                  )}
+                </g>
+              );
+            })}
+
+          {models.map(m0 => {
+            const m = shown(m0);
+            const { ry } = halfExtents(m.base);
+            return (
+              <g
+                key={m.id}
+                transform={`translate(${m.x} ${m.y}) rotate(${m.rot})`}
+                className={`model ${m.owner} ${m.hero ? 'hero' : ''} ${selected.has(m.id) ? 'selected' : ''}`}
+              >
+                <BaseShape m={m} />
+                <path className="facing" d={`M ${-0.12} ${-ry + 0.04} L 0 ${-ry - 0.1} L ${0.12} ${-ry + 0.04} Z`} />
+                <text className="label" textAnchor="middle" dominantBaseline="central" transform={`rotate(${-m.rot})`} style={{ fontSize: Math.min(ry * 0.8, 0.32) }}>
+                  {initials(m.name)}
+                </text>
+                {m.maxWounds > 1 && (
+                  <text className="wounds" textAnchor="middle" transform={`rotate(${-m.rot}) translate(0 ${ry + 0.25})`} style={{ fontSize: 0.25 }}>
+                    {m.wounds}/{m.maxWounds}W
+                  </text>
+                )}
+              </g>
+            );
+          })}
+
+          {gesture?.kind === 'box' && (
+            <rect
+              className="box"
+              x={Math.min(gesture.start.x, gesture.end.x)}
+              y={Math.min(gesture.start.y, gesture.end.y)}
+              width={Math.abs(gesture.end.x - gesture.start.x)}
+              height={Math.abs(gesture.end.y - gesture.start.y)}
+            />
+          )}
+
+          {rulerInfo && (
+            <g className="ruler" pointerEvents="none">
+              <line x1={rulerInfo.start.x} y1={rulerInfo.start.y} x2={rulerInfo.end.x} y2={rulerInfo.end.y} />
+              <circle cx={rulerInfo.start.x} cy={rulerInfo.start.y} r={fontSize * 0.25} />
+              <circle cx={rulerInfo.end.x} cy={rulerInfo.end.y} r={fontSize * 0.25} />
+              <text x={rulerInfo.end.x} y={rulerInfo.end.y - fontSize} textAnchor="middle">
+                {formatInches(rulerInfo.d)}
+                {rulerInfo.baseToBase ? ' base-to-base' : ''}
+              </text>
+            </g>
+          )}
+        </g>
+      </svg>
+      <div className="zoom-controls">
+        <button aria-label="Zoom in" onClick={() => { const r = svgRef.current!.getBoundingClientRect(); zoomAt(1.25, r.width / 2, r.height / 2, view); }}>+</button>
+        <button aria-label="Zoom out" onClick={() => { const r = svgRef.current!.getBoundingClientRect(); zoomAt(0.8, r.width / 2, r.height / 2, view); }}>−</button>
+        <button aria-label="Fit board" onClick={fit}>⤢</button>
+      </div>
+    </div>
+  );
+}
