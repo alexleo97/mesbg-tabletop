@@ -16,6 +16,8 @@ import { distanceBetween, formatInches } from '../shared/geometry.ts';
 import { scenarioById, vpTotal } from '../shared/scenarios.ts';
 import { useSettings, type Settings } from './settings.ts';
 
+const DISCORD_INVITE = 'https://discord.gg/YfCCgbKDv';
+
 const PLACES = ['osgiliath', 'helms-deep', 'weathertop', 'amon-hen', 'pelennor', 'fornost', 'dale', 'erebor', 'moria', 'isengard', 'edoras', 'lothlorien'];
 const PHASE_LABEL: Record<(typeof PHASES)[number], string> = { priority: 'Priority', move: 'Move', shoot: 'Shoot', fight: 'Fight', end: 'End' };
 
@@ -102,6 +104,9 @@ function Lobby({ settings, updateSettings }: { settings: Settings; updateSetting
         })}
       </section>
 
+      <a className="discord-link" href={DISCORD_INVITE} target="_blank" rel="noreferrer">
+        Join our Discord to find opponents, report bugs and suggest features
+      </a>
       <button onClick={() => setShowSettings(v => !v)} aria-expanded={showSettings}>
         ⚙ Settings
       </button>

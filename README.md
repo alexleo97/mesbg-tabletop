@@ -44,6 +44,10 @@ Build your army in the [MESBG List Builder](https://v2024.mesbg-list-builder.com
 | Turn models | Q / E, or the Turn buttons | Turn buttons |
 | Fit board | F | ⤢ button |
 
+## Community
+
+Come and find opponents, report bugs or suggest features on [Discord](https://discord.gg/YfCCgbKDv).
+
 ## Running it
 
 Requires Node 22+.

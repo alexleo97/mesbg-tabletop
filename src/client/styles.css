@@ -453,3 +453,5 @@ table.vp tr.total td:first-child { text-align: left; }
   .coach-head .phase-dots { flex: 1; }
   .coach-head h3 { order: 3; flex-basis: 100%; }
 }
+.discord-link { display: block; padding: 12px; border-radius: 8px; background: #5865f2; color: #fff; text-decoration: none; font-weight: 600; }
+.discord-link:hover { background: #4752c4; }
