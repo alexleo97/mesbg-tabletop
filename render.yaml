@@ -1,0 +1,9 @@
+# One-click deploy on Render: New > Blueprint, then pick this repo.
+services:
+  - type: web
+    name: mesbg-tabletop
+    runtime: node
+    plan: free
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /healthz
