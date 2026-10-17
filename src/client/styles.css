@@ -229,6 +229,19 @@ small.muted, p.small { font-size: 0.8rem; }
 .seen-partial .sight-ring { stroke: var(--gold); stroke-dasharray: 0.2 0.12; }
 .seen-hidden .sight-ring { stroke: #ff6b5e; stroke-dasharray: 0.08 0.12; }
 .seen-hidden { opacity: 0.55; }
+.sight-line { stroke-width: 0.05; stroke-linecap: round; }
+.sight-line.clear { stroke: var(--ok); }
+.sight-line.partial { stroke: var(--gold); stroke-dasharray: 0.25 0.15; }
+.sight-line.hidden { stroke: #ff6b5e; stroke-opacity: 0.35; stroke-dasharray: 0.06 0.2; }
+.sight-range { fill: none; stroke: #fff; stroke-opacity: 0.5; stroke-width: 0.05; stroke-dasharray: 0.4 0.2; }
+.sight-label { fill: #fff; font-weight: 700; paint-order: stroke; stroke: #000; stroke-width: 0.08; font-size: 0.85em; }
+.sight-label.partial { fill: var(--gold); }
+.sight-hint {
+  position: absolute; left: 50%; transform: translateX(-50%); top: 10px; z-index: 3; max-width: calc(100% - 160px);
+  background: #26231fee; border: 1px solid var(--gold); border-radius: 999px; padding: 6px 14px; font-size: 0.9rem; text-align: center;
+}
+@media (max-width: 700px) { .sight-hint { font-size: 0.8rem; padding: 4px 10px; top: 6px; max-width: calc(100% - 80px); border-radius: 12px; } }
+.sight-hint .clear { color: var(--ok); } .sight-hint .partial { color: var(--gold); } .sight-hint .hidden { color: #ff6b5e; }
 .heroic-mark { fill: var(--gold); paint-order: stroke; stroke: #000; stroke-width: 0.05; }
 
 /* Training */

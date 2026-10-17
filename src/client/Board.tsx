@@ -5,7 +5,7 @@ import { TerrainArt, TerrainDefs } from './TerrainArt.tsx';
 import { ScenarioZones } from './ScenarioZones.tsx';
 import { scenarioById } from '../shared/scenarios.ts';
 import { MATERIALS, textures } from './textures.ts';
-import { inDifficult, isDifficult, moveCost, outline, shadowPath, sightTo } from '../shared/sight.ts';
+import { inDifficult, inTheWay, isDifficult, moveCost, outline, shadowPath, sightTo } from '../shared/sight.ts';
 
 export type Tool = 'move' | 'select' | 'measure';
 
@@ -31,6 +31,8 @@ interface Props {
   onFightTap?: (key: string) => void;
   /** Shade what this model can't see and mark which enemies it can. */
   sightFrom?: string;
+  /** How far the sight model can shoot, drawn as a ring around it. */
+  sightRange?: number;
 }
 
 interface View {
@@ -71,7 +73,7 @@ function BaseShape({ m, className = 'base' }: { m: Model; className?: string }) 
 
 const clipId = (m: Model) => `clip-${m.base.shape}-${m.base.w}-${m.base.h}`;
 
-export function Board({ state, tool, selected, setSelected, selectedTerrain, setSelectedTerrain, dispatch, showZones, showDeployment, showGrid, photoFor, onModelTap, links, fights, onFightTap, sightFrom }: Props) {
+export function Board({ state, tool, selected, setSelected, selectedTerrain, setSelectedTerrain, dispatch, showZones, showDeployment, showGrid, photoFor, onModelTap, links, fights, onFightTap, sightFrom, sightRange }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const tex = useMemo(() => textures(), []);
   const [view, setView] = useState<View>({ x: 0, y: 0, s: 10 });
@@ -90,8 +92,10 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
   const viewer = sightFrom ? state.models[sightFrom] : undefined;
   const sight = useMemo(() => {
     if (!viewer || viewer.dead) return null;
-    const seen = new Map(Object.values(state.models).filter(m => !m.dead && m.owner !== viewer.owner).map(m => [m.id, sightTo(state, viewer, m)]));
-    return { path: shadowPath(state, viewer), seen };
+    const enemies = Object.values(state.models).filter(m => !m.dead && m.owner !== viewer.owner);
+    const seen = new Map(enemies.map(m => [m.id, sightTo(state, viewer, m)]));
+    const lines = enemies.map(m => ({ m, seen: seen.get(m.id)!, dist: distanceBetween(viewer, m), between: inTheWay(state, viewer, m).length }));
+    return { path: shadowPath(state, viewer), seen, lines };
   }, [viewer, state]);
   const heroicIds = useMemo(() => new Set(state.flow.heroics.map(h => h.model)), [state.flow.heroics]);
 
@@ -404,6 +408,9 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
           {sight && (
             <g clipPath="url(#board-clip)" pointerEvents="none">
               <path className="los-shadow" d={sight.path} />
+              {sightRange && viewer && <circle className="sight-range" cx={viewer.x} cy={viewer.y} r={sightRange + Math.max(halfExtents(viewer.base).rx, halfExtents(viewer.base).ry)} />}
+              {viewer &&
+                sight.lines.map(l => <line key={`sl-${l.m.id}`} className={`sight-line ${l.seen}`} x1={viewer.x} y1={viewer.y} x2={l.m.x} y2={l.m.y} />)}
             </g>
           )}
           {showDeployment && scenarioById(state.scenario) && <ScenarioZones s={scenarioById(state.scenario)!} w={state.board.w} h={state.board.h} />}
@@ -496,6 +503,15 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
               </g>
             );
           })}
+
+          {sight?.lines
+            .filter(l => l.seen !== 'hidden')
+            .map(l => (
+              <text key={`st-${l.m.id}`} className={`sight-label ${l.seen}`} x={l.m.x} y={l.m.y - halfExtents(l.m.base).ry - fontSize * 0.5} textAnchor="middle" pointerEvents="none">
+                {formatInches(l.dist)}
+                {l.between > 0 ? ` · ${l.between} in the way` : ''}
+              </text>
+            ))}
 
           {links?.map(l => {
             const a = state.models[l.from];
