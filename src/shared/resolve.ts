@@ -83,7 +83,8 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       return { apply: [{ type: 'uncovered', model: m.id, marker: t.id, roll }] };
     }
     case 'rollPriority': {
-      if (state.phase !== 'priority') return null;
+      // Once per turn: whoever asks first rolls for both players.
+      if (state.phase !== 'priority' || (state.flow.chooserTurn === state.turn && state.flow.chooser)) return null;
       // Roll off; a first-turn tie is simply rolled again.
       const apply: Action[] = [];
       let roll: [number, number];

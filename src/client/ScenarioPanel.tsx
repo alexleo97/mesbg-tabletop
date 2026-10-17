@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { newId } from '../shared/importList.ts';
 import { COMMON_RULES, POOLS, SCENARIOS, scenarioById, scenarioFromDice, scenarioMarkers, SELECTION_RULE, vpTotal } from '../shared/scenarios.ts';
-import { generalOf, scoreLines, vpTotals } from '../shared/scoring.ts';
+import { PICKS, pickOptions } from '../shared/picks.ts';
+import { scoreLines, vpTotals } from '../shared/scoring.ts';
 import { gameEnded } from '../shared/status.ts';
-import type { Action, GameState, Model, Picks, Role, Seat } from '../shared/types.ts';
+import type { Action, GameState, Role, Seat } from '../shared/types.ts';
 
 type Dispatch = (a: Action) => void;
 const ROLL_LABEL = 'Scenario roll (pool, then scenario)';
@@ -172,38 +173,6 @@ export function ScenarioPanel({ state, dispatch, role }: { state: GameState; dis
   );
 }
 
-type PickKey = keyof Picks;
-interface PickSpec {
-  key: PickKey;
-  label: string;
-  /** Whose models it names: your own or the enemy's. A terrain pick names a piece in the enemy half. */
-  of: 'own' | 'enemy' | 'terrain';
-  /** The General can't be picked unless it's that side's only Hero. */
-  notGeneral?: boolean;
-}
-
-/** The secret choices each scenario asks for. */
-const PICKS: Record<string, PickSpec[]> = {
-  assassination: [
-    { key: 'target', label: 'Your Target (an enemy Hero)', of: 'enemy', notGeneral: true },
-    { key: 'assassin', label: 'Your Assassin', of: 'own', notGeneral: true },
-  ],
-  'contest-of-champions': [{ key: 'champion', label: 'Your Champion', of: 'own' }],
-  'fog-of-war': [
-    { key: 'protect', label: 'Your Hero to protect', of: 'own', notGeneral: true },
-    { key: 'hunt', label: 'The enemy Hero to hunt', of: 'enemy', notGeneral: true },
-    { key: 'terrain', label: 'Terrain to hold (in the enemy half)', of: 'terrain' },
-  ],
-};
-
-/** Heroes a side may pick: not its General, unless the General is its only Hero. */
-function pickableHeroes(state: GameState, seat: Seat, notGeneral?: boolean): Model[] {
-  const side = Object.values(state.models).filter(m => m.owner === seat);
-  const heroes = side.filter(m => m.hero);
-  const general = generalOf(side);
-  return notGeneral && heroes.length > 1 ? heroes.filter(m => m !== general) : heroes;
-}
-
 /**
  * Secret picks for scenarios that need them. Your own are yours to set before the game starts; your opponent's stay
  * hidden until the game is over.
@@ -212,18 +181,7 @@ function PicksPanel({ state, dispatch, role, seatName }: { state: GameState; dis
   const specs = state.scenario ? PICKS[state.scenario] : undefined;
   if (!specs) return null;
   const over = gameEnded(state) || !!state.result;
-  const enemy = (s: Seat): Seat => (s === 'p1' ? 'p2' : 'p1');
   const nameOf = (id: string | undefined) => (id ? (state.models[id]?.name ?? 'a terrain piece') : 'nothing');
-  const options = (seat: Seat, p: PickSpec): { id: string; name: string }[] => {
-    if (p.of === 'terrain') {
-      const half = state.board.h / 2;
-      // Wholly in the opponent's half: the top half for player 1.
-      return Object.values(state.terrain)
-        .filter(t => t.kind !== 'objective' && t.kind !== 'road' && (seat === 'p1' ? t.y + t.h / 2 <= half : t.y - t.h / 2 >= half))
-        .map((t, i) => ({ id: t.id, name: `${t.kind[0].toUpperCase()}${t.kind.slice(1)} ${i + 1} (${Math.round(t.x)}", ${Math.round(t.y)}")` }));
-    }
-    return pickableHeroes(state, p.of === 'own' ? seat : enemy(seat), p.notGeneral).map(m => ({ id: m.id, name: m.name }));
-  };
   const mine = role === 'p1' || role === 'p2' ? role : null;
   return (
     <div className="picks">
@@ -231,7 +189,7 @@ function PicksPanel({ state, dispatch, role, seatName }: { state: GameState; dis
       {mine ? (
         specs.map(p => {
           const value = state.flow.picks?.[mine]?.[p.key] ?? '';
-          const opts = options(mine, p);
+          const opts = pickOptions(state, mine, p);
           return (
             <div key={p.key} className="pick-row">
               <span>{p.label}</span>

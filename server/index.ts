@@ -12,6 +12,11 @@ import { announceGame, discordEnabled, discordMember } from './discord.ts';
 import { saveResult, verifyToken } from './accounts.ts';
 import { gameWinner } from '../src/shared/status.ts';
 import { diffForUndo, mergeReverts, UNDOABLE } from '../src/shared/undo.ts';
+import { botStep, newMemo, type BotMemo } from '../src/shared/bot.ts';
+import type { Catalog } from '../src/shared/catalog.ts';
+import catalogJson from '../src/data/mesbg-data.json';
+
+const CATALOG = catalogJson as unknown as Catalog;
 
 const PORT = Number(process.env.PORT ?? 8787);
 const DIST = resolve(process.env.DIST_DIR ?? 'dist');
@@ -48,6 +53,8 @@ interface Room {
   blank: boolean;
   /** A private game's invite code. Kept on the server and handed only to seated players. */
   invite?: string;
+  /** The computer player's memory and its next step, in a game against it. */
+  bot?: { memo: BotMemo; timer?: NodeJS.Timeout; busy?: boolean };
 }
 
 interface UndoEntry {
@@ -154,6 +161,11 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
     }
     case 'setPick':
       return action.seat === client.role ? action : null;
+    case 'setBot':
+      // A player can hand the other seat to the computer (if nobody's sitting in it), or take it back.
+      if (action.seat === null) return action;
+      if (action.seat !== 'p1' && action.seat !== 'p2') return null;
+      return action.seat !== client.role ? action : null;
     case 'useMight': {
       // Only on your own hero's roll (in a fight, either player may have rolled it).
       const r = state.log.find(x => x.id === action.roll);
@@ -218,6 +230,7 @@ function apply(room: Room, action: Action) {
       if (room.state !== before) broadcast(room, { type: 'action', action: { type: 'gameOver', winner } });
     }
   }
+  scheduleBot(room);
   const r = room.state.result;
   const a = room.state.accounts;
   if (r?.agreed && !r.saved && a?.p1 && a.p2 && !room.saving && (room.saveTries ?? 0) < 3) {
@@ -228,6 +241,50 @@ function apply(room: Room, action: Action) {
       if (ok) apply(room, { type: 'resultSaved' });
     });
   }
+}
+
+const BOT_PAUSE = 500;
+
+/** Lines up the computer's next step, if it plays in this game and someone is here to see it. */
+function scheduleBot(room: Room, delay = BOT_PAUSE) {
+  if (!room.state.bot) {
+    if (room.bot?.timer) clearTimeout(room.bot.timer);
+    room.bot = undefined;
+    return;
+  }
+  room.bot ??= { memo: newMemo() };
+  const bot = room.bot;
+  if (bot.timer || bot.busy || ![...room.clients].some(c => c.role !== 'spectator')) return;
+  bot.timer = setTimeout(() => {
+    bot.timer = undefined;
+    runBot(room);
+  }, delay);
+}
+
+/** Plays the computer's next step: one move, roll or choice, then a pause before the next. */
+function runBot(room: Room) {
+  const seat = room.state.bot;
+  const bot = room.bot;
+  if (!seat || !bot) return;
+  let step;
+  try {
+    step = botStep(room.state, seat, CATALOG, bot.memo);
+  } catch (err) {
+    console.warn('The computer player failed a step:', err);
+    return;
+  }
+  if (!step) return;
+  bot.busy = true;
+  try {
+    const action = step.action;
+    if (action && DICE_REQUESTS.has(action.type)) {
+      const out = resolveRequest(room.state, seat, action, () => randomInt(1, 7), () => `${Date.now().toString(36)}-${randomInt(1e9).toString(36)}`);
+      for (const a of [...(out?.apply ?? []), ...(out?.record ? [out.record] : [])]) apply(room, a);
+    } else if (action) apply(room, action);
+  } finally {
+    bot.busy = false;
+  }
+  scheduleBot(room, step.delay);
 }
 
 /** Applies a player's action and remembers how to take it back. */
@@ -400,6 +457,10 @@ wss.on('connection', (ws, req) => {
     }
     if (msg.type === 'hello') {
       client.role = msg.role === 'p1' || msg.role === 'p2' ? msg.role : 'spectator';
+      if (client.role !== 'spectator' && client.role === room.state.bot) {
+        client.role = 'spectator';
+        send(ws, { type: 'seatRefused', message: 'The computer is playing that side. Take the other seat to play against it.' });
+      }
       if (client.role !== 'spectator' && room.state.private && msg.invite !== room.invite) {
         // Invite-only: without the code you can still watch.
         client.role = 'spectator';
@@ -410,6 +471,7 @@ wss.on('connection', (ws, req) => {
       broadcast(room, { type: 'presence', players: players(room) });
       if (client.role !== 'spectator') sendUndoDepth(room, client.role);
       seatAccount(room, client);
+      scheduleBot(room);
       return;
     }
     if (msg.type === 'restore') {
@@ -468,6 +530,8 @@ wss.on('connection', (ws, req) => {
     }
     const action = authorise(client, msg.action, room.state);
     if (!action) return;
+    // The computer can't take a seat someone is sitting in.
+    if (action.type === 'setBot' && action.seat && [...room.clients].some(c => c.role === action.seat)) return;
     record(room, client.role, action);
     if (action.type === 'loadState') room.undo = { p1: [], p2: [] };
     if (action.type === 'startGame') room.saveTries = 0;

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { entriesFor, entryPoints, isHeroType, loadCatalog, loadRulesText, pictureUrl, STAT_NAMES, statsWithOptions, type Catalog, type CatalogArmy, type CatalogUnit } from '../shared/catalog.ts';
-import { armyLeader, checkList, isWarrior, leadsWarband, modelCount, organise, tierOf, type WarbandEntry } from '../shared/warbands.ts';
+import { entryPoints, isHeroType, loadCatalog, loadRulesText, pictureUrl, STAT_NAMES, statsWithOptions, type Catalog, type CatalogArmy, type CatalogUnit } from '../shared/catalog.ts';
+import { armyLeader, checkList, isWarrior, leadsWarband, listEntries, modelCount, organise, tierOf, type WarbandEntry } from '../shared/warbands.ts';
 import RULES from '../data/special-rules.json';
 import type { ListEntry } from '../shared/importList.ts';
 import { useAuth } from './auth.ts';
@@ -74,26 +74,6 @@ export function Portrait({ unit, size = 40 }: { unit: Pick<CatalogUnit, 'origin'
   const [failed, setFailed] = useState(false);
   if (failed) return <span className="portrait fallback" style={{ width: size, height: size }} />;
   return <img className="portrait" src={pictureUrl(unit)} alt="" width={size} height={size} loading="lazy" onError={() => setFailed(true)} />;
-}
-
-/** A saved list as deployable entries, warband by warband, each tagged with its warband. */
-export function listEntries(r: Roster, catalog: Catalog): { label: string; entries: ListEntry[] }[] {
-  const { warbands, independents, loose } = organise(r.entries, catalog);
-  const general = armyLeader(r.entries, catalog, r.leader);
-  const toEntries = (es: RosterEntry[], group: string) =>
-    es.flatMap(e => {
-      const unit = catalog.units[e.unitId];
-      if (!unit) return [];
-      const points = entryPoints(unit, e.optionIds, 1);
-      const tier = tierOf(unit);
-      // A profile with a companion lists the hero first; only the hero is the General.
-      return entriesFor(e.unitId, unit, e.optionIds, e.count).map((x, i) => ({ ...x, group, points, tier, ...(e === general && i === 0 ? { general: true } : {}) }));
-    });
-  return [
-    ...warbands.map(w => ({ label: w.members.length ? `${w.unit.name}'s warband` : w.unit.name, entries: toEntries([w.leader, ...w.members], w.leader.key) })),
-    ...independents.map(e => ({ label: catalog.units[e.unitId]?.name ?? 'Hero', entries: toEntries([e], e.key) })),
-    ...(loose.length ? [{ label: 'Not in a warband', entries: toEntries(loose, 'loose') }] : []),
-  ];
 }
 
 /** Your saved lists, each ready to deploy in one tap, or one warband at a time. */

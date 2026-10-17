@@ -5,6 +5,7 @@
 Start a game, send your opponent the link, and play on a computer or phone. There's nothing to install.
 
 - **Learn to play** in a guided practice battle.
+- **Play the computer** when nobody's around: it weighs up fights, uses Might and heroic actions, and plays the scenario.
 - **Build your army** from every army list, or import one from the [MESBG List Builder](https://v2024.mesbg-list-builder.com/).
 - **The turn guide runs the game:** priority, heroic actions, moving, shooting, fights, Might, Fate and the end of the game.
 - **Fair dice:** the server rolls them, so nobody can fudge a roll.

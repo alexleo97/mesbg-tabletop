@@ -80,7 +80,7 @@ export function whollyIn(zones: Zone[], m: Model): boolean {
 export const inHalf = (state: GameState, seat: Seat, p: Point) => (seat === 'p1' ? p.y > state.board.h / 2 : p.y < state.board.h / 2);
 
 /** Which edges a model may leave the table by in this scenario, if any. */
-function exitEdges(state: GameState, m: Model): ('top' | 'bottom' | 'left' | 'right')[] {
+export function exitEdges(state: GameState, m: Model): ('top' | 'bottom' | 'left' | 'right')[] {
   const enemyEdge = m.owner === 'p1' ? 'top' : 'bottom';
   const carrying = carriedBy(state, m);
   switch (state.scenario) {

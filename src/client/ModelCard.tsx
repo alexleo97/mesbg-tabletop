@@ -66,7 +66,6 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
   const drag = useDraggable('model-card');
   const [photoFailed, setPhotoFailed] = useState(false);
   const [openRule, setOpenRule] = useState<string | null>(null);
-  const [appliedShot, setAppliedShot] = useState<string | null>(null);
   // What's between the shooter and its target, as a starting count of In the Way rolls.
   const between = target ? inTheWay(state, m, target) : [];
   const seen = target ? sightTo(state, m, target) : null;
@@ -143,13 +142,8 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
             </button>
             <button onClick={clearTarget}>Change target</button>
           </div>
-          {shotWounds > 0 && lastShot && lastShot.against === target.id && appliedShot !== lastShot.group && !target.dead && (
-            <button
-              onClick={() => {
-                dispatch({ type: 'wound', id: target.id, count: shotWounds, by: [m.id], how: 'shoot' });
-                setAppliedShot(lastShot.group ?? null);
-              }}
-            >
+          {shotWounds > 0 && lastShot && lastShot.against === target.id && !state.flow.applied?.includes(lastShot.group ?? '') && !target.dead && (
+            <button onClick={() => dispatch({ type: 'wound', id: target.id, count: shotWounds, by: [m.id], how: 'shoot', group: lastShot.group })}>
               Wound {target.name} {shotWounds} time{shotWounds === 1 ? '' : 's'}
               {target.hero && target.fate > 0 ? ' (Fate can be rolled)' : target.wounds - shotWounds <= 0 ? ' (slain)' : ''}
             </button>
