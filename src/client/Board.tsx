@@ -5,6 +5,7 @@ import { TerrainArt, TerrainDefs } from './TerrainArt.tsx';
 import { ScenarioZones } from './ScenarioZones.tsx';
 import { scenarioById } from '../shared/scenarios.ts';
 import { MATERIALS, textures } from './textures.ts';
+import { TERRAIN_INFO, terrainRules } from '../shared/terrain.ts';
 import { inDifficult, inTheWay, isDifficult, moveCost, outline, shadowPath, sightTo } from '../shared/sight.ts';
 
 export type Tool = 'move' | 'select' | 'measure';
@@ -81,6 +82,8 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
   const [view, setView] = useState<View>({ x: 0, y: 0, s: 10 });
   const [gesture, setGesture] = useState<Gesture | null>(null);
   const [dragPos, setDragPos] = useState<Record<string, Point> | null>(null);
+  const [hover, setHover] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [pinned, setPinned] = useState<{ id: string; x: number; y: number } | null>(null);
   const [ruler, setRuler] = useState<{ start: Point; end: Point; from?: string } | null>(null);
   useEffect(() => {
     if (tool !== 'measure') setRuler(null);
@@ -175,10 +178,10 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
     return null;
   };
 
-  const terrainAt = (p: Point) => {
+  const terrainAt = (p: Point, any = false) => {
     for (let i = terrain.length - 1; i >= 0; i--) {
       const t = terrain[i];
-      if (t.locked) continue;
+      if (t.locked && !any) continue;
       const a = (-t.rot * Math.PI) / 180;
       const dx = p.x - t.x;
       const dy = p.y - t.y;
@@ -199,6 +202,8 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
 
   const onPointerDown = (e: React.PointerEvent) => {
     svgRef.current!.setPointerCapture(e.pointerId);
+    setPinned(null);
+    setHover(null);
     const r = svgRef.current!.getBoundingClientRect();
     pointers.current.set(e.pointerId, { x: e.clientX - r.left, y: e.clientY - r.top });
 
@@ -247,7 +252,19 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
     setGesture({ kind: 'pan', start: { x: e.clientX, y: e.clientY }, view, moved: false });
   };
 
+  /** Where a terrain label sits, in pixels inside the board. */
+  const tipAt = (e: { clientX: number; clientY: number }) => {
+    const r = svgRef.current!.getBoundingClientRect();
+    // Just off the pointer, and kept inside the board.
+    return { x: Math.max(4, Math.min(e.clientX - r.left + 14, r.width - 290)), y: Math.max(4, Math.min(e.clientY - r.top + 14, r.height - 180)) };
+  };
+
   const onPointerMove = (e: React.PointerEvent) => {
+    // A mouse resting over terrain names it, so you always know what you're looking at.
+    if (e.pointerType === 'mouse' && !gesture) {
+      const t = terrainAt(toBoard(e.clientX, e.clientY), true);
+      setHover(t ? { id: t.id, ...tipAt(e) } : null);
+    }
     if (!pointers.current.has(e.pointerId)) return;
     const r = svgRef.current!.getBoundingClientRect();
     pointers.current.set(e.pointerId, { x: e.clientX - r.left, y: e.clientY - r.top });
@@ -316,10 +333,14 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
     } else if (gesture.kind === 'terrain') {
       if (gesture.moved)
         dispatch({ type: 'updateTerrain', id: gesture.id, patch: { x: gesture.origin.x + p.x - gesture.start.x, y: gesture.origin.y + p.y - gesture.start.y } });
+      else setPinned({ id: gesture.id, ...tipAt(e) });
     } else if (gesture.kind === 'pan') {
       if (!gesture.moved) {
         setSelected(new Set());
         setSelectedTerrain(null);
+        // Tapping any piece, even a locked one, shows what it is and how it plays.
+        const t = terrainAt(p, true);
+        setPinned(t ? { id: t.id, ...tipAt(e) } : null);
       }
     } else if (gesture.kind === 'box') {
       const x0 = Math.min(gesture.start.x, gesture.end.x);
@@ -371,6 +392,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
+        onPointerLeave={() => setHover(null)}
         onContextMenu={e => e.preventDefault()}
       >
         <defs>
@@ -507,6 +529,14 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
           })}
 
           {showNames &&
+            terrain
+              .filter(t => t.kind !== 'objective')
+              .map(t => (
+                <text key={`tn-${t.id}`} className="terrain-name" x={t.x} y={t.y} textAnchor="middle" dominantBaseline="middle" pointerEvents="none">
+                  {TERRAIN_INFO[t.kind].name}
+                </text>
+              ))}
+          {showNames &&
             models.map(m0 => {
               const m = shown(m0);
               const { ry } = halfExtents(m.base);
@@ -587,6 +617,26 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
           )}
         </g>
       </svg>
+      {(() => {
+        const at = pinned ?? hover;
+        const t = at && state.terrain[at.id];
+        if (!at || !t) return null;
+        const info = TERRAIN_INFO[t.kind];
+        return (
+          <div className={`terrain-tip ${pinned ? 'pinned' : ''}`} style={{ left: at.x, top: at.y }} role="status">
+            <b>{info.name}</b> <small>{info.type}</small>
+            {pinned ? (
+              <ul>
+                {terrainRules(t).map(r => (
+                  <li key={r}>{r}</li>
+                ))}
+              </ul>
+            ) : (
+              <small className="tip-more">Click for its rules</small>
+            )}
+          </div>
+        );
+      })()}
       <div className="zoom-controls">
         <button aria-label="Zoom in" onClick={() => { const r = svgRef.current!.getBoundingClientRect(); zoomAt(1.25, r.width / 2, r.height / 2, view); }}>+</button>
         <button aria-label="Zoom out" onClick={() => { const r = svgRef.current!.getBoundingClientRect(); zoomAt(0.8, r.width / 2, r.height / 2, view); }}>−</button>

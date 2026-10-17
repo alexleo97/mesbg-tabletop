@@ -12,6 +12,7 @@ const DIFFICULT: ReadonlySet<TerrainKind> = new Set(['wood', 'water', 'ruin']);
 
 export const blocksSight = (t: Terrain) => BLOCKS.has(t.kind);
 export const isDifficult = (t: Terrain) => t.difficult ?? DIFFICULT.has(t.kind);
+export const slowsShots = (t: Terrain) => IN_THE_WAY.has(t.kind);
 
 /** A terrain piece's outline in board inches. */
 export function outline(t: Terrain, sides = 20): Point[] {

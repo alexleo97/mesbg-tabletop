@@ -84,6 +84,16 @@ h1, h3, h4, .topbar .room, .phases .turn, .roster-summary b, .name-input, .tabs 
 
 .main { flex: 1; display: flex; min-height: 0; position: relative; }
 .board-wrap { flex: 1; position: relative; min-width: 0; }
+.terrain-tip { position: absolute; z-index: 6; pointer-events: none; max-width: 280px; background: #1c1a17f2; border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; box-shadow: 0 6px 18px #0008; font-size: 0.85rem; }
+.terrain-tip small { color: var(--muted); }
+.terrain-tip b { color: var(--gold); }
+.terrain-tip .tip-more { display: block; font-size: 0.75rem; }
+.terrain-tip.pinned { border-color: var(--gold); }
+.terrain-tip ul { margin: 4px 0 0; padding-left: 16px; display: flex; flex-direction: column; gap: 3px; }
+.terrain-group { display: flex; flex-direction: column; gap: 4px; }
+.terrain-group > small { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.terrain-rules { margin: 0; padding-left: 18px; font-size: 0.85rem; color: var(--muted); display: flex; flex-direction: column; gap: 2px; }
+.terrain-name { fill: #fff; font-size: 0.85em; font-weight: 600; paint-order: stroke; stroke: #000b; stroke-width: 0.09; opacity: 0.9; }
 .board { width: 100%; height: 100%; display: block; touch-action: none; user-select: none; -webkit-user-select: none; cursor: grab; }
 .board.tool-measure { cursor: crosshair; }
 .board.tool-select { cursor: default; }
