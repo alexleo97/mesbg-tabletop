@@ -218,34 +218,13 @@ export function RollRow({ r, state, role, dispatch }: { r: DiceRoll; state: Game
   );
 }
 
+/** Every roll made this game, newest first. The game makes the rolls itself, so there is nothing to roll here. */
 export function DicePanel({ state, dispatch, role }: { state: GameState; dispatch: Dispatch; role: Role }) {
-  const [count, setCount] = useState(1);
-  const [target, setTarget] = useState<number | ''>('');
-  const [label, setLabel] = useState('');
-  const logRef = useRef<HTMLOListElement>(null);
-  const roll = (n = count, t: number | '' = target, l = label) =>
-    dispatch({ type: 'roll', count: n, target: t === '' ? undefined : t, label: l || `${n}D6${t ? ` (${t}+)` : ''}` });
-
   return (
     <div className="panel-body">
-      {role === 'spectator' && <p className="hint">Spectators can watch rolls but not make them.</p>}
-      <div className="row">
-        <Stepper label="Dice" value={count} min={1} max={60} onChange={setCount} />
-      </div>
-      <div className="row targets">
-        <span>Need</span>
-        {[2, 3, 4, 5, 6].map(t => (
-          <button key={t} className={target === t ? 'on' : ''} onClick={() => setTarget(target === t ? '' : t)}>{t}+</button>
-        ))}
-      </div>
-      <input placeholder="What's this roll for? (optional)" value={label} onChange={e => setLabel(e.target.value)} />
-      <button className="primary" disabled={role === 'spectator'} onClick={() => roll()}>Roll {count}D6</button>
-      <div className="row quick">
-        <button disabled={role === 'spectator'} onClick={() => roll(1, '', 'In the Way')}>In the Way</button>
-        <button disabled={role === 'spectator'} onClick={() => roll(1, '', 'Courage')}>D6</button>
-        <button disabled={role === 'spectator'} onClick={() => roll(2, '', 'Courage test')}>Courage (2D6)</button>
-      </div>
-      <ol className="log" ref={logRef}>
+      <p className="hint">The game rolls every fight, shot, Courage test and Fate roll for you, and they all appear here. For anything else, such as a Thrown Rider test, use the roller in Rules.</p>
+      {!state.log.length && <p className="muted">No rolls yet.</p>}
+      <ol className="log">
         {[...state.log].reverse().map(r => (
           <RollRow key={r.id} r={r} state={state} role={role} dispatch={dispatch} />
         ))}
