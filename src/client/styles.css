@@ -160,6 +160,18 @@ h1, h3, h4, .topbar .room, .phases .turn, .roster-summary b, .name-input, .tabs 
 .trail-label { fill: #fff; font-weight: 700; paint-order: stroke; stroke: #000; stroke-width: 0.06; }
 .trail-label.over { stroke: #000; }
 .box { fill: #c9a22722; stroke: var(--gold); stroke-width: 0.06; }
+.marks .arrow, .marks .ping { --mark: var(--gold); }
+.marks .p1 { --mark: var(--p1); }
+.marks .p2 { --mark: var(--p2); }
+.marks .spectator { --mark: #c9c9c9; }
+.marks .arrow line { stroke: var(--mark); stroke-width: 0.22; stroke-linecap: round; opacity: 0.9; }
+.marks .arrow polygon { fill: var(--mark); opacity: 0.9; }
+.marks .arrow text { fill: #fff; font-weight: 700; paint-order: stroke; stroke: #000; stroke-width: 0.08; }
+.marks .ping-dot { fill: var(--mark); }
+.marks .ping-ring { fill: none; stroke: var(--mark); stroke-width: 0.15; transform-box: fill-box; transform-origin: center; animation: ping 1.5s ease-out 2 both; }
+.marks .ping-ring.late { animation-delay: 0.4s; }
+@keyframes ping { from { transform: scale(0.2); opacity: 1; } to { transform: scale(3); opacity: 0; } }
+.board.tool-mark { cursor: crosshair; }
 .ruler line { stroke: var(--gold); stroke-width: 0.08; }
 .ruler circle { fill: var(--gold); }
 .ruler text { fill: #fff; font-weight: 700; paint-order: stroke; stroke: #000; stroke-width: 0.08; }

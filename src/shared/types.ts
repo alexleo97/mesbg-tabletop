@@ -324,8 +324,23 @@ export interface Revert {
   fields?: Partial<Pick<GameState, 'board' | 'turn' | 'phase' | 'priority' | 'names' | 'scenario' | 'vp' | 'listed' | 'flow'>>;
 }
 
+/** A ping or a planning arrow someone put on the table. Shared live but never saved with the game. */
+export interface Mark {
+  id: string;
+  by: Role;
+  kind: 'ping' | 'arrow';
+  x: number;
+  y: number;
+  /** Where an arrow points. */
+  x2?: number;
+  y2?: number;
+}
+
 export type ClientMessage =
   | { type: 'action'; action: Action }
+  /** A ping or an arrow to show the other players, or `clear` to take your arrows away. */
+  | { type: 'mark'; mark: Pick<Mark, 'kind' | 'x' | 'y' | 'x2' | 'y2'> }
+  | { type: 'clearMarks' }
   /** `invite`: the private game's invite code, if this browser has one. */
   | { type: 'hello'; role: Role; invite?: string }
   /** A seated player making the game invite-only, or open to anyone again. */
@@ -336,6 +351,8 @@ export type ClientMessage =
   | { type: 'identify'; token: string | null };
 
 export type ServerMessage =
+  | { type: 'mark'; mark: Mark }
+  | { type: 'clearMarks'; by: Role }
   /** `blank`: the server has nothing for this room yet, so a player may restore it. */
   | { type: 'snapshot'; state: GameState; players: Role[]; blank?: boolean }
   | { type: 'action'; action: Action }

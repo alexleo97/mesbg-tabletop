@@ -212,7 +212,7 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
   const [role, setRole] = useState<Role | null>(() => (practice ? 'p1' : ((storage.get(roleKey) as Role | null) ?? null)));
   // One connection per room; role changes are sent over it rather than reconnecting.
   const conn = useMemo<Connection>(() => practice ?? new RoomConnection(room, role ?? 'spectator'), [room, practice]);
-  const { state, status, players, undoDepth, invite, refused } = useRoom(conn);
+  const { state, status, players, undoDepth, invite, refused, marks } = useRoom(conn);
   const [refusedNote, setRefusedNote] = useState<string | null>(null);
   // Asked for a seat in a private game without the invite: watch instead, and say why.
   useEffect(() => {
@@ -434,6 +434,8 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
               sightFrom={sight && single ? single.id : undefined}
               sightRange={sight && single ? weaponOf(single, catalog)?.range : undefined}
               showNames={settings.names}
+              marks={marks}
+              onMark={m => conn.mark(m)}
             />
 
             <div className="tool-rail" role="toolbar" aria-label="Tools">
@@ -442,9 +444,16 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
                   ['move', '✋', 'Drag'],
                   ['select', '⬚', 'Select'],
                   ['measure', '📏', 'Measure'],
+                  ['mark', '📍', 'Mark'],
                 ] as const
               ).map(([t, icon, label]) => (
-                <button key={t} className={tool === t ? 'on' : ''} onClick={() => setTool(t)} title={label} aria-label={label}>
+                <button
+                  key={t}
+                  className={tool === t ? 'on' : ''}
+                  onClick={() => setTool(t)}
+                  title={t === 'mark' ? 'Click to ping a spot, drag to draw an arrow (or hold Alt with any tool)' : label}
+                  aria-label={label}
+                >
                   <span>{icon}</span>
                   <small>{label}</small>
                 </button>
@@ -469,6 +478,12 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
                 <span>🏷</span>
                 <small>Names</small>
               </button>
+              {marks?.some(m => m.kind === 'arrow' && m.by === role) && (
+                <button onClick={() => conn.clearMarks()} title="Take your arrows off the table" aria-label="Clear arrows">
+                  <span>✕</span>
+                  <small>Arrows</small>
+                </button>
+              )}
               <button onClick={() => dispatch({ type: 'undo' })} disabled={!canUndo} title="Undo your last change (Ctrl+Z)" aria-label="Undo">
                 <span>↶</span>
                 <small>Undo</small>

@@ -2,8 +2,9 @@ import { activeSeat } from '../shared/flow.ts';
 import { heroicTurn } from '../shared/heroics.ts';
 import { reduce } from '../shared/reducer.ts';
 import { DICE_REQUESTS, resolveRequest } from '../shared/resolve.ts';
-import type { Action, GameState, Role } from '../shared/types.ts';
-import type { Connection, Snapshot } from './net.ts';
+import { cleanMark } from '../shared/marks.ts';
+import type { Action, GameState, Mark, Role } from '../shared/types.ts';
+import { showMark, turnMarks, type Connection, type Snapshot } from './net.ts';
 
 const d6 = () => 1 + Math.floor(Math.random() * 6);
 let n = 0;
@@ -55,8 +56,21 @@ export class PracticeGame implements Connection {
   }
 
   private set(state: GameState) {
-    this.snap = { ...this.snap, state };
+    this.patch({ state, ...turnMarks(this.snap.state, state, this.snap.marks) });
+  }
+
+  private patch(p: Partial<Snapshot>) {
+    this.snap = { ...this.snap, ...p };
     for (const l of this.listeners) l();
+  }
+
+  mark(raw: Pick<Mark, 'kind' | 'x' | 'y' | 'x2' | 'y2'>) {
+    const mark = cleanMark(raw, 'p1', uid());
+    if (mark) showMark(this.getSnapshot, p => this.patch(p), mark);
+  }
+
+  clearMarks() {
+    this.patch({ marks: (this.snap.marks ?? []).filter(m => m.by !== 'p1') });
   }
 
   setRole(_role: Role) {}
