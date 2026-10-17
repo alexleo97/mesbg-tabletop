@@ -5,6 +5,9 @@ import type { FightRequest, ShotRequest } from './fight.ts';
 export type Seat = 'p1' | 'p2';
 export type Role = Seat | 'spectator';
 
+/** What the solo opponent is called. */
+export const BOT_NAME = 'The Palantír';
+
 export type BaseShape = 'round' | 'oval' | 'rect';
 
 export interface Base {

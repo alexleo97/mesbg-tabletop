@@ -8,11 +8,12 @@ import { objectiveMarkers, river, STARTER_BOARDS, starterTerrain } from '../shar
 import { baseLabel, loadCatalog, parseBuilderExport, STAT_NAMES, startingPoints, statsWithOptions } from '../shared/catalog.ts';
 import { deployList, guessBase, newId, parseList, type ListEntry } from '../shared/importList.ts';
 import { BASE_SIZES } from '../shared/bases.ts';
-import { addSavedList, ListBuilder, SavedLists, Portrait, useCatalog } from './ListBuilder.tsx';
+import { addSavedList, ListBuilder, loadSaved, SavedLists, Portrait, useCatalog } from './ListBuilder.tsx';
+import { PREMADE, premadeRoster } from '../shared/premade.ts';
 import { listEntries } from '../shared/warbands.ts';
 import { botRoster, playableArmies } from '../shared/botList.ts';
 import { parseAdmiral } from '../shared/admiral.ts';
-import { MATS, TERRAIN_KINDS, type Action, type Base, type DiceRoll, type GameState, type Mat, type Model, type Role, type Seat, type Terrain, type TerrainKind } from '../shared/types.ts';
+import { BOT_NAME, MATS, TERRAIN_KINDS, type Action, type Base, type DiceRoll, type GameState, type Mat, type Model, type Role, type Seat, type Terrain, type TerrainKind } from '../shared/types.ts';
 import { BODY_FONTS, HEADING_FONTS, THEMES, type Settings } from './settings.ts';
 
 type Dispatch = (a: Action) => void;
@@ -252,62 +253,104 @@ export function DicePanel({ state, dispatch, role }: { state: GameState; dispatc
   );
 }
 
-/** In a game against the computer: a random army for it to play, from any army at the size you pick. */
-function ComputerArmy({ state, dispatch, seat }: { state: GameState; dispatch: Dispatch; seat: Seat }) {
+/** In a solo game: the opponent's army, a ready-made one, a random one from any army, or one of your own lists. Once. */
+function OpponentArmy({ state, dispatch, seat }: { state: GameState; dispatch: Dispatch; seat: Seat }) {
   const { catalog } = useCatalog();
-  const [army, setArmy] = useState('');
+  const [pick, setPick] = useState(PREMADE[6].id);
   const mine = Object.values(state.models).filter(m => m.owner !== seat).reduce((n, m) => n + (m.points ?? 0), 0);
   const [points, setPoints] = useState(() => (mine > 0 ? Math.max(200, Math.round(mine / 50) * 50) : 500));
   const theirs = Object.values(state.models).filter(m => m.owner === seat);
   if (!catalog) return <p className="hint">Loading armies…</p>;
   const armies = playableArmies(catalog);
+  const lists = loadSaved().filter(r => r.entries.length);
+  const fromList = pick.startsWith('list:');
   const deploy = () => {
-    const pick = army || armies[Math.floor(Math.random() * armies.length)];
-    const roster = botRoster(catalog, pick, points);
-    const entries = listEntries(roster, catalog).flatMap(g => g.entries);
-    const rest = { ...state, models: Object.fromEntries(Object.entries(state.models).filter(([, m]) => m.owner !== seat)) };
-    if (theirs.length) dispatch({ type: 'removeModels', ids: theirs.map(m => m.id) });
-    dispatch({ type: 'addModels', models: deployList(entries, seat, rest) });
-    dispatch({ type: 'setName', seat, name: `Computer (${pick})` });
+    let entries: ListEntry[];
+    let name: string;
+    if (fromList) {
+      const roster = lists.find(r => `list:${r.id}` === pick);
+      if (!roster) return;
+      entries = listEntries(roster, catalog).flatMap(g => g.entries);
+      name = roster.name;
+    } else {
+      const premade = PREMADE.find(p => p.id === pick);
+      const army = premade?.army ?? (pick.startsWith('army:') ? pick.slice(5) : armies[Math.floor(Math.random() * armies.length)]);
+      const roster = premade ? premadeRoster(catalog, premade.id, points)! : botRoster(catalog, army, points);
+      entries = listEntries(roster, catalog).flatMap(g => g.entries);
+      name = premade?.name ?? army;
+    }
+    dispatch({ type: 'addModels', models: deployList(entries, seat, state) });
+    dispatch({ type: 'setName', seat, name: `${BOT_NAME} (${name})` });
   };
+  if (theirs.length)
+    return (
+      <div className="computer-army">
+        <h4>{BOT_NAME}'s army</h4>
+        <p>
+          {state.names[seat]}: {theirs.length} models, {theirs.reduce((n, m) => n + (m.points ?? 0), 0)} pts, deployed.
+        </p>
+        {!state.flow.started && <button onClick={() => dispatch({ type: 'removeModels', ids: theirs.map(m => m.id) })}>Pick a different army</button>}
+      </div>
+    );
   return (
     <div className="computer-army">
-      <h4>The computer's army</h4>
+      <h4>{BOT_NAME}'s army</h4>
       <div className="row wrap">
-        <select value={army} onChange={e => setArmy(e.target.value)} aria-label="The computer's army">
-          <option value="">Any army</option>
-          {armies.map(a => (
-            <option key={a} value={a}>
-              {a}
-            </option>
-          ))}
+        <select value={pick} onChange={e => setPick(e.target.value)} aria-label={`${BOT_NAME}'s army`}>
+          <optgroup label="Ready-made armies">
+            {PREMADE.map(p => (
+              <option key={p.id} value={p.id}>
+                {p.name} ({p.army})
+              </option>
+            ))}
+          </optgroup>
+          {lists.length > 0 && (
+            <optgroup label="Your lists">
+              {lists.map(r => (
+                <option key={r.id} value={`list:${r.id}`}>
+                  {r.name} ({r.army})
+                </option>
+              ))}
+            </optgroup>
+          )}
+          <optgroup label="A random list from">
+            <option value="random">Any army</option>
+            {armies.map(a => (
+              <option key={a} value={`army:${a}`}>
+                {a}
+              </option>
+            ))}
+          </optgroup>
         </select>
-        <label className="mini-stat">
-          Points
-          <input type="number" min={100} max={2000} step={50} value={points} onChange={e => setPoints(Math.max(100, Math.min(2000, Number(e.target.value) || 500)))} />
-        </label>
+        {!fromList && (
+          <label className="mini-stat">
+            Points
+            <input type="number" min={100} max={2000} step={50} value={points} onChange={e => setPoints(Math.max(100, Math.min(2000, Number(e.target.value) || 500)))} />
+          </label>
+        )}
         <button className="primary" disabled={state.flow.started} onClick={deploy}>
-          {theirs.length ? 'Deal a new army' : 'Deploy its army'}
+          Deploy its army
         </button>
       </div>
-      <p className="fine">
-        {theirs.length
-          ? `${theirs.length} models on the table, ${theirs.reduce((n, m) => n + (m.points ?? 0), 0)} pts. You can also give it one of your lists: pick its side above, then a list.`
-          : 'Pick an army and a size, or let it choose. You can also give it one of your lists: pick its side above, then a list.'}
-      </p>
     </div>
   );
 }
 
 export function ArmyPanel({ state, dispatch, role }: { state: GameState; dispatch: Dispatch; role: Role }) {
   const [text, setText] = useState('');
-  const [owner, setOwner] = useState<Seat>(role === 'p2' ? 'p2' : 'p1');
+  const [chosen, setOwner] = useState<Seat>(role === 'p2' ? 'p2' : 'p1');
+  // In a solo game you only deploy your own army; the opponent's is picked above.
+  const owner: Seat = state.bot && role !== 'spectator' ? (role as Seat) : chosen;
+  /** Seats deploying one warband at a time, who can keep adding warbands. */
+  const [byWarband, setByWarband] = useState<Set<Seat>>(new Set());
   const [message, setMessage] = useState('');
   const [single, setSingle] = useState('');
   const [mode, setMode] = useState<'lists' | 'build' | 'import'>('lists');
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const deploy = (entries: ListEntry[], note = '') => {
+  const deploy = (entries: ListEntry[], note = '', warband = false) => {
+    if (onTable(owner) && !(warband && byWarband.has(owner))) return;
+    if (warband) setByWarband(prev => new Set(prev).add(owner));
     const count = entries.reduce((a, e) => a + e.count, 0);
     dispatch({ type: 'addModels', models: deployList(entries, owner, state) });
     setMessage(`Deployed ${count === 1 ? '1 model' : `${count} models`} for ${state.names[owner] || (owner === 'p1' ? 'Player 1' : 'Player 2')}.${note}`);
@@ -363,39 +406,60 @@ export function ArmyPanel({ state, dispatch, role }: { state: GameState; dispatc
   const casualties = Object.values(state.models).filter(m => m.dead);
   const alive = (seat: Seat) => Object.values(state.models).filter(m => m.owner === seat && !m.dead).length;
   const total = (seat: Seat) => Object.values(state.models).filter(m => m.owner === seat).length;
+  const onTable = (seat: Seat) => total(seat) > 0;
+  const seatName = (seat: Seat) => state.names[seat] || (seat === 'p1' ? 'Player 1' : 'Player 2');
+  // Each army goes on the table once; clearing it before the battle lets you pick another.
+  const locked = onTable(owner) && !byWarband.has(owner);
 
   return (
     <div className="panel-body">
-      <div className="row seg">
+      {!state.bot && <div className="row seg">
         {(['p1', 'p2'] as const).map(s => (
           <button key={s} className={owner === s ? 'on' : ''} onClick={() => setOwner(s)}>
             {state.names[s] || (s === 'p1' ? 'Player 1' : 'Player 2')}
           </button>
         ))}
-      </div>
+      </div>}
       {role === 'spectator' && <p className="hint">Spectators can watch but can't deploy armies. Pick a player seat in the top bar to join in.</p>}
-      {state.bot && role !== 'spectator' && <ComputerArmy state={state} dispatch={dispatch} seat={state.bot} />}
-      <div className="row seg">
-        <button className={mode === 'lists' ? 'on' : ''} onClick={() => setMode('lists')}>My lists</button>
-        <button className={mode === 'build' ? 'on' : ''} onClick={() => setMode('build')}>Build</button>
-        <button className={mode === 'import' ? 'on' : ''} onClick={() => setMode('import')}>Import</button>
-      </div>
-      {message && <p className="hint">{message}</p>}
-      {mode === 'lists' ? (
-        <SavedLists onDeploy={entries => deploy(entries)} onBuild={() => setMode('build')} />
-      ) : mode === 'build' ? (
-        <ListBuilder onDeploy={entries => deploy(entries)} deployLabel={`Deploy for ${state.names[owner] || (owner === 'p1' ? 'Player 1' : 'Player 2')}`} />
+      {state.bot && role !== 'spectator' && <OpponentArmy state={state} dispatch={dispatch} seat={state.bot} />}
+      {role !== 'spectator' && locked ? (
+        <div className="deployed">
+          {state.bot && <h4>Your army</h4>}
+          <p>
+            {seatName(owner)}'s army is on the table: {total(owner)} models, {Object.values(state.models).filter(m => m.owner === owner).reduce((n, m) => n + (m.points ?? 0), 0)} pts.
+          </p>
+          {!state.flow.started && (
+            <button onClick={() => dispatch({ type: 'removeModels', ids: Object.values(state.models).filter(m => m.owner === owner).map(m => m.id) })}>
+              Take it off to deploy a different army
+            </button>
+          )}
+        </div>
       ) : (
         <>
-          <p className="hint">
-            In the <a href="https://v2024.mesbg-list-builder.com/" target="_blank" rel="noreferrer">MESBG List Builder</a>, export your list as a file, then upload
-            it here. From <a href="https://modular.tabletopadmiral.com/mesbg" target="_blank" rel="noreferrer">Tabletop Admiral</a>, open Tools, then TTS/JSON View, and paste
-            what it shows. You can also paste a plain list.
-          </p>
-          <button onClick={() => fileRef.current?.click()}>Upload list file</button>
-          <input ref={fileRef} type="file" accept=".json,.txt,application/json,text/plain" hidden onChange={e => onFile(e.target.files?.[0])} />
-          <textarea rows={5} placeholder={'Paste a list here, e.g.\nCaptain of Minas Tirith (70 pts)\n12x Warrior of Minas Tirith with shield'} value={text} onChange={e => setText(e.target.value)} />
-          <button className="primary" disabled={!text.trim()} onClick={() => importText(text)}>Deploy list</button>
+          {state.bot && role !== 'spectator' && <h4>Your army</h4>}
+        <div className="row seg">
+          <button className={mode === 'lists' ? 'on' : ''} onClick={() => setMode('lists')}>My lists</button>
+          <button className={mode === 'build' ? 'on' : ''} onClick={() => setMode('build')}>Build</button>
+          <button className={mode === 'import' ? 'on' : ''} onClick={() => setMode('import')}>Import</button>
+        </div>
+        {message && <p className="hint">{message}</p>}
+        {mode === 'lists' ? (
+          <SavedLists onDeploy={(entries, _name, warband) => deploy(entries, '', warband)} onBuild={() => setMode('build')} />
+        ) : mode === 'build' ? (
+          <ListBuilder onDeploy={entries => deploy(entries)} deployLabel={`Deploy for ${state.names[owner] || (owner === 'p1' ? 'Player 1' : 'Player 2')}`} />
+        ) : (
+          <>
+            <p className="hint">
+              In the <a href="https://v2024.mesbg-list-builder.com/" target="_blank" rel="noreferrer">MESBG List Builder</a>, export your list as a file, then upload
+              it here. From <a href="https://modular.tabletopadmiral.com/mesbg" target="_blank" rel="noreferrer">Tabletop Admiral</a>, open Tools, then TTS/JSON View, and paste
+              what it shows. You can also paste a plain list.
+            </p>
+            <button onClick={() => fileRef.current?.click()}>Upload list file</button>
+            <input ref={fileRef} type="file" accept=".json,.txt,application/json,text/plain" hidden onChange={e => onFile(e.target.files?.[0])} />
+            <textarea rows={5} placeholder={'Paste a list here, e.g.\nCaptain of Minas Tirith (70 pts)\n12x Warrior of Minas Tirith with shield'} value={text} onChange={e => setText(e.target.value)} />
+            <button className="primary" disabled={!text.trim()} onClick={() => importText(text)}>Deploy list</button>
+          </>
+        )}
         </>
       )}
 

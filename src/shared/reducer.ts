@@ -3,7 +3,7 @@ import { heroicInfo } from './heroics.ts';
 import { limitMove, moveStart, movesLimited } from './movement.ts';
 import { canPickUp, markerUpkeep, syncCarried, touching, canEscape } from './objects.ts';
 import { endPhaseUpkeep } from './scoring.ts';
-import { MARKER_OBJECTS, MATS, PHASES, PICK_KEYS, TERRAIN_KINDS, type Action, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type Phase, type Picks, type Seat, type Terrain } from './types.ts';
+import { BOT_NAME, MARKER_OBJECTS, MATS, PHASES, PICK_KEYS, TERRAIN_KINDS, type Action, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type Phase, type Picks, type Seat, type Terrain } from './types.ts';
 
 export const MAX_MODELS = 600;
 export const MAX_TERRAIN = 200;
@@ -504,8 +504,8 @@ function step(state: GameState, action: Action): GameState {
     case 'setBot': {
       if (action.seat === null) return { ...state, bot: undefined };
       if (!isSeat(action.seat)) return state;
-      // Nobody else can join a game against the computer, so it leaves the open games list.
-      return { ...state, bot: action.seat, listed: false, names: { ...state.names, [action.seat]: state.names[action.seat] || 'Computer' } };
+      // Nobody else can join a solo game, so it leaves the open games list.
+      return { ...state, bot: action.seat, listed: false, names: { ...state.names, [action.seat]: state.names[action.seat] || BOT_NAME } };
     }
     case 'setPriority':
       return { ...state, priority: isSeat(action.seat) ? action.seat : null };

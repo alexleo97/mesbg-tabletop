@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { PHASES, type Terrain, type Model, type Role, type RoomSummary, type Seat } from '../shared/types.ts';
+import { BOT_NAME, PHASES, type Terrain, type Model, type Role, type RoomSummary, type Seat } from '../shared/types.ts';
 import { Board, type Tool } from './Board.tsx';
 import { RoomConnection, useRoom, type Connection } from './net.ts';
 import { pictureUrl } from '../shared/catalog.ts';
@@ -112,7 +112,7 @@ function Lobby({ settings, updateSettings }: { settings: Settings; updateSetting
               Start a new game
             </button>
             <button className="big" onClick={() => (location.search = `?room=${randomRoom()}&vs=computer`)}>
-              Play the computer
+              Solo battle
             </button>
             <button className="big" onClick={() => (location.search = '?learn')}>
               Learn to play
@@ -325,7 +325,7 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
           {(['p1', 'p2'] as const).map(s => (
             <button key={s} className={`seat ${s}`} disabled={(!!state.private && !invite) || state.bot === s} onClick={() => setRole(s)}>
               {state.names[s] || (s === 'p1' ? 'Player 1' : 'Player 2')}
-              <small>{state.bot === s ? 'played by the computer' : taken(s) ? 'connected now' : s === 'p1' ? 'deploys from the bottom' : 'deploys from the top'}</small>
+              <small>{state.bot === s ? `played by ${BOT_NAME.replace(/^The /, 'the ')}` : taken(s) ? 'connected now' : s === 'p1' ? 'deploys from the bottom' : 'deploys from the top'}</small>
             </button>
           ))}
         </div>
@@ -598,7 +598,7 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
                         disabled={!state.bot && players.includes(other(seat))}
                         onChange={e => dispatch({ type: 'setBot', seat: e.target.checked ? other(seat) : null })}
                       />
-                      The computer plays {seatName(other(seat))}
+                      {BOT_NAME} plays {seatName(other(seat))}
                       {!state.bot && players.includes(other(seat)) ? ' (someone is sitting there now)' : ''}
                     </label>
                   )}

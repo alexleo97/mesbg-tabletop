@@ -3,7 +3,7 @@ import { modelStats } from '../shared/catalog.ts';
 import { duelLeader, strikeWounds, type Fighter } from '../shared/fight.ts';
 import { declared } from '../shared/heroics.ts';
 import { waitingOnMight } from '../shared/bot.ts';
-import type { Action, GameState, Model, Role, Seat } from '../shared/types.ts';
+import { BOT_NAME, type Action, type GameState, type Model, type Role, type Seat } from '../shared/types.ts';
 import { useCatalog } from './ListBuilder.tsx';
 import { RollRow } from './Panels.tsx';
 
@@ -159,7 +159,7 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
                 Heroes can spend Might on their own dice first.
               </p>
               {state.bot && state.bot !== role && combat && waitingOnMight(state) === combat && (
-                <p className="warn">The computer is waiting for you: spend Might on your hero's dice if you want to, then roll the strikes.</p>
+                <p className="warn">{BOT_NAME} is waiting for you: spend Might on your hero's dice if you want to, then roll the strikes.</p>
               )}
               {ready && (
                 <div className="row wrap">
