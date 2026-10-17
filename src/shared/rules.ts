@@ -158,3 +158,11 @@ export const HEROIC_ACTIONS: { name: string; phase: string; text: string }[] = [
   { name: 'Heroic Strength', phase: 'Fight', text: 'Double Strength (max 10) for strikes until the End phase.' },
   { name: 'Heroic Strike', phase: 'Fight', text: 'Add D3 to Fight value (max 10) for the Fight phase.' },
 ];
+
+const BY_LENGTH = [...MISSILE_WEAPONS].sort((a, b) => b.name.length - a.name.length);
+
+/** The best-known missile weapon named in a model's wargear or chosen options, if any (e.g. "Elf bow", "Throwing spears"). */
+export function missileWeapon(gear: string[]): (typeof MISSILE_WEAPONS)[number] | undefined {
+  const text = gear.join(', ').toLowerCase().replace(/throwing daggers?/g, 'throwing weapon');
+  return BY_LENGTH.find(w => new RegExp(`\\b${w.name.toLowerCase()}s?\\b`).test(text));
+}

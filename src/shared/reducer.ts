@@ -1,4 +1,4 @@
-import { MATS, PHASES, TERRAIN_KINDS, type Action, type Mat, type Base, type DiceRoll, type GameState, type Model, type Phase, type Seat, type Terrain } from './types.ts';
+import { MATS, PHASES, TERRAIN_KINDS, type Action, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type Phase, type Seat, type Terrain } from './types.ts';
 
 export const MAX_MODELS = 600;
 export const MAX_TERRAIN = 200;
@@ -18,6 +18,21 @@ export function initialState(): GameState {
     scenario: null,
     vp: { p1: {}, p2: {} },
     listed: true,
+    flow: newFlow(),
+  };
+}
+
+const newFlow = (): Flow => ({ started: false, chooser: null, chooserTurn: 0, roll: null, done: [], resolved: [] });
+
+/** Moves to a phase (and turn), clearing who has finished; a new turn also clears fights and priority. */
+function goTo(state: GameState, phase: Phase, turn: number): GameState {
+  const newTurn = turn !== state.turn;
+  return {
+    ...state,
+    phase,
+    turn,
+    priority: newTurn && state.flow.started ? null : state.priority,
+    flow: { ...state.flow, done: [], resolved: newTurn ? [] : state.flow.resolved },
   };
 }
 
@@ -111,6 +126,7 @@ function cleanRoll(r: unknown): DiceRoll | null {
     ...(o.then !== undefined && Array.isArray(o.follow)
       ? { then: int(o.then, 1, 6, 4), follow: o.follow.slice(0, MAX_DICE).map(d => int(d, 1, 6, 1)) }
       : {}),
+    ...(o.sum !== undefined ? { sum: int(o.sum, 2, 12, 7) } : {}),
     ...(o.group ? { group: id(o.group) } : {}),
     ...(o.note ? { note: str(o.note, 140) } : {}),
     ...(o.against ? { against: id(o.against) } : {}),
@@ -180,12 +196,32 @@ export function reduce(state: GameState, action: Action): GameState {
     }
     case 'setPhase':
       if (!isPhase(action.phase)) return state;
-      return { ...state, phase: action.phase, turn: int(action.turn, 1, 99, state.turn) };
+      return goTo(state, action.phase, int(action.turn, 1, 99, state.turn));
     case 'nextPhase': {
       const i = PHASES.indexOf(state.phase);
-      return i === PHASES.length - 1
-        ? { ...state, phase: PHASES[0], turn: Math.min(99, state.turn + 1) }
-        : { ...state, phase: PHASES[i + 1] };
+      return i === PHASES.length - 1 ? goTo(state, PHASES[0], Math.min(99, state.turn + 1)) : goTo(state, PHASES[i + 1], state.turn);
+    }
+    case 'startGame':
+      return { ...goTo(state, 'priority', 1), turn: 1, priority: null, flow: { ...newFlow(), started: true } };
+    case 'priorityRolled': {
+      if (!isSeat(action.chooser) || !Array.isArray(action.roll)) return state;
+      const roll: [number, number] = [int(action.roll[0], 1, 6, 1), int(action.roll[1], 1, 6, 1)];
+      return { ...state, flow: { ...state.flow, roll, chooser: action.chooser, chooserTurn: state.turn } };
+    }
+    case 'choosePriority':
+      if (!isSeat(action.seat)) return state;
+      return { ...goTo(state, state.phase === 'priority' ? 'move' : state.phase, state.turn), priority: action.seat };
+    case 'endActivation': {
+      if (!isSeat(action.seat) || state.flow.done.includes(action.seat)) return state;
+      const done = [...state.flow.done, action.seat];
+      // Once both players have activated in the Move or Shoot phase, play moves on.
+      if (done.length === 2 && (state.phase === 'move' || state.phase === 'shoot')) return goTo(state, state.phase === 'move' ? 'shoot' : 'fight', state.turn);
+      return { ...state, flow: { ...state.flow, done } };
+    }
+    case 'resolveCombat': {
+      const key = str(action.key, 2000);
+      if (!key || state.flow.resolved.includes(key)) return state;
+      return { ...state, flow: { ...state.flow, resolved: [...state.flow.resolved, key].slice(-100) } };
     }
     case 'setPriority':
       return { ...state, priority: isSeat(action.seat) ? action.seat : null };
@@ -261,6 +297,8 @@ export function reduce(state: GameState, action: Action): GameState {
     }
     case 'undo':
     case 'fight':
+    case 'shoot':
+    case 'rollPriority':
     case 'roll':
     default:
       return state;
@@ -286,6 +324,21 @@ export function loadState(raw: unknown): GameState {
     for (const [key, value] of Object.entries(o.vp?.[seat] ?? {}).slice(0, 40)) out = reduce(out, { type: 'setVP', seat, key, value: value as number });
   }
   if (o.listed === false) out = { ...out, listed: false };
+  if (o.flow && typeof o.flow === 'object') {
+    const f = o.flow as Partial<Flow>;
+    const seats = (v: unknown) => (Array.isArray(v) ? [...new Set(v.filter(isSeat))] : []);
+    out = {
+      ...out,
+      flow: {
+        started: f.started === true,
+        chooser: isSeat(f.chooser) ? f.chooser : null,
+        chooserTurn: int(f.chooserTurn, 0, 99, 0),
+        roll: Array.isArray(f.roll) && f.roll.length === 2 ? [int(f.roll[0], 1, 6, 1), int(f.roll[1], 1, 6, 1)] : null,
+        done: seats(f.done),
+        resolved: Array.isArray(f.resolved) ? f.resolved.filter(k => typeof k === 'string').map(k => k.slice(0, 2000)).slice(-100) : [],
+      },
+    };
+  }
   if (Array.isArray(o.log)) out = { ...out, log: o.log.map(cleanRoll).filter(r => r !== null).slice(-MAX_LOG) };
   return out;
 }

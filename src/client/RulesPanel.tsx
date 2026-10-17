@@ -37,8 +37,8 @@ export function RulesPanel({ state, dispatch, role, selected }: { state: GameSta
   const need = woundNeed(s, d);
   const spectator = role === 'spectator';
 
-  const roll = (count: number, label: string, target?: number, then?: number) => {
-    dispatch({ type: 'roll', count, target, then, label });
+  const roll = (count: number, label: string, target?: number, then?: number, sum?: number) => {
+    dispatch({ type: 'roll', count, target, then, label, ...(sum ? { sum } : {}) });
     setLastLabel(label);
   };
   const last = lastLabel ? [...state.log].reverse().find(r => r.label === lastLabel && r.by === role) : undefined;
@@ -47,7 +47,7 @@ export function RulesPanel({ state, dispatch, role, selected }: { state: GameSta
 
   return (
     <div className="panel-body rules">
-      <FightPanel state={state} dispatch={dispatch} role={role} selected={selected} />
+      <FightPanel state={state} dispatch={dispatch} role={role} ids={[...selected]} />
 
       <h4>Roll to wound</h4>
       {one && stats && (
@@ -106,8 +106,8 @@ export function RulesPanel({ state, dispatch, role, selected }: { state: GameSta
 
       <h4>Tests</h4>
       <div className="row wrap">
-        <button disabled={spectator} onClick={() => roll(2, `Courage test${stats?.C ? ` (need ${stats.C})` : ''}`)}>Courage 2D6</button>
-        <button disabled={spectator} onClick={() => roll(2, `Intelligence test${stats?.I ? ` (need ${stats.I})` : ''}`)}>Intelligence 2D6</button>
+        <button disabled={spectator} onClick={() => roll(2, 'Courage test', undefined, undefined, stats?.C)}>Courage 2D6</button>
+        <button disabled={spectator} onClick={() => roll(2, 'Intelligence test', undefined, undefined, stats?.I)}>Intelligence 2D6</button>
         {D6_TABLES.map(t => (
           <button key={t.name} disabled={spectator} onClick={() => roll(1, `${t.name} test`)}>
             {t.name}

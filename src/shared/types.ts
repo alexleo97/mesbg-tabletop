@@ -1,4 +1,4 @@
-import type { FightRequest } from './fight.ts';
+import type { FightRequest, ShotRequest } from './fight.ts';
 
 // All board positions and distances are in inches; base sizes are in millimetres.
 
@@ -67,6 +67,8 @@ export interface DiceRoll {
   then?: number;
   /** Follow-up dice, one per first die that met `target`, in order. */
   follow?: number[];
+  /** For Courage and Intelligence tests: the 2D6 total needed to pass. */
+  sum?: number;
   /** Rolls made together (one fight) share a group id. */
   group?: string;
   /** For strikes in a fight: the model they were rolled against. */
@@ -94,6 +96,23 @@ export interface GameState {
   vp: Record<Seat, Record<string, number>>;
   /** Shown in the home screen's list of open games. */
   listed: boolean;
+  flow: Flow;
+}
+
+/** Where the guided turn sequence is up to. */
+export interface Flow {
+  /** Setup is over and turns are being played. */
+  started: boolean;
+  /** Who won the priority roll-off and chose; kept for the next turn's tie-break. */
+  chooser: Seat | null;
+  /** The turn `chooser` was decided in. */
+  chooserTurn: number;
+  /** The last priority roll-off as [player 1, player 2]. */
+  roll: [number, number] | null;
+  /** Players who have finished activating their models this phase. */
+  done: Seat[];
+  /** Fights resolved this turn, by combat key. */
+  resolved: string[];
 }
 
 export type Action =
@@ -111,11 +130,21 @@ export type Action =
   | { type: 'setScenario'; id: string | null }
   | { type: 'setVP'; seat: Seat; key: string; value: number }
   | { type: 'setListed'; listed: boolean }
+  | { type: 'startGame' }
+  /** Request from a client; the server rolls off and sends `priorityRolled`. */
+  | { type: 'rollPriority' }
+  | { type: 'priorityRolled'; roll: [number, number]; chooser: Seat }
+  | { type: 'choosePriority'; seat: Seat }
+  /** A player has finished activating their models for this phase. */
+  | { type: 'endActivation'; seat: Seat }
+  | { type: 'resolveCombat'; key: string }
+  /** Request from a client: the server rolls to hit, In the Way and to wound, then sends `rolled`. */
+  | { type: 'shoot'; shot: ShotRequest }
   | { type: 'setBoard'; w: number; h: number; mat?: Mat }
   /** Replaces the mat and all terrain at once, e.g. when loading a starter board. Models stay. */
   | { type: 'setScenery'; w: number; h: number; mat: Mat; terrain: Terrain[] }
   /** Request from a client; the server turns it into a `rolled` action with real dice. */
-  | { type: 'roll'; count: number; target?: number; then?: number; label: string }
+  | { type: 'roll'; count: number; target?: number; then?: number; sum?: number; label: string }
   | { type: 'rolled'; roll: DiceRoll }
   /** Request from a client: the server rolls the duel and strikes, then sends the results as `rolled`. */
   | { type: 'fight'; fight: FightRequest }
@@ -141,7 +170,7 @@ export interface RoomSummary {
 export interface Revert {
   models?: Record<string, Model | null>;
   terrain?: Record<string, Terrain | null>;
-  fields?: Partial<Pick<GameState, 'board' | 'turn' | 'phase' | 'priority' | 'names' | 'scenario' | 'vp' | 'listed'>>;
+  fields?: Partial<Pick<GameState, 'board' | 'turn' | 'phase' | 'priority' | 'names' | 'scenario' | 'vp' | 'listed' | 'flow'>>;
 }
 
 export type ClientMessage = { type: 'action'; action: Action } | { type: 'hello'; role: Role };

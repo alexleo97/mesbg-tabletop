@@ -334,3 +334,122 @@ table.vp tr.total td:first-child { text-align: left; }
 .lobby .link { background: none; border: none; color: var(--muted); text-decoration: underline; }
 .topbar .leave { padding: 0 10px; }
 .game-panel { gap: 10px; }
+.dice .pass { color: #6fbf73; } .dice .fail { color: #e06c5a; }
+
+/* Guided play layout: header with sides and panels, the table with a tool rail and model card, the turn guide below */
+.topbar { flex-wrap: nowrap; }
+.topbar .sides { display: flex; gap: 6px; align-items: center; min-width: 0; }
+.side { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); font-weight: 600; white-space: nowrap; }
+.side.p1 { color: var(--p1); }
+.side.p2 { color: var(--p2); }
+.side.has-priority { border-color: currentColor; background: #ffffff0d; }
+.side small { color: var(--muted); font-weight: 400; }
+.panel-buttons { margin-left: auto; display: flex; gap: 4px; }
+.panel-buttons button { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 3px 8px; min-width: 52px; }
+.panel-buttons button span { font-size: 1.05rem; line-height: 1.1; }
+.panel-buttons small { font-size: 0.68rem; }
+
+.table-area { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.stage { flex: 1; position: relative; min-height: 0; display: flex; }
+
+.tool-rail { position: absolute; left: 10px; top: 10px; display: flex; flex-direction: column; gap: 6px; z-index: 3; }
+.tool-rail button { width: 52px; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 4px 0; background: #26231fe6; }
+.tool-rail button.on { background: var(--gold); }
+.tool-rail span { font-size: 1.1rem; line-height: 1.1; }
+.tool-rail small { font-size: 0.66rem; }
+
+.fight-mark { cursor: pointer; }
+.fight-mark circle { fill: #1c1a17e6; stroke: var(--gold); stroke-width: 0.08; }
+.fight-mark text { fill: var(--gold); font-weight: 700; }
+.fight-mark.done circle { stroke: var(--ok); }
+.fight-mark.done text { fill: var(--ok); }
+.aim line { stroke-width: 0.08; stroke-dasharray: 0.25 0.15; }
+.aim.ok line { stroke: var(--ok); }
+.aim.bad line { stroke: #ff6b5e; }
+.aim text { fill: #fff; font-weight: 700; paint-order: stroke; stroke: #000; stroke-width: 0.08; }
+
+.model-card {
+  position: absolute; left: 72px; bottom: 10px; z-index: 4; width: min(380px, calc(100% - 140px));
+  background: #26231ff2; border: 1px solid var(--line); border-left: 4px solid var(--muted); border-radius: 12px;
+  padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 8px 24px #0008;
+}
+.model-card.p1 { border-left-color: var(--p1); }
+.model-card.p2 { border-left-color: var(--p2); }
+.model-card .close { position: absolute; top: 6px; right: 6px; width: 32px; min-height: 32px; padding: 0; }
+.card-head { display: flex; gap: 10px; align-items: center; padding-right: 34px; }
+.card-head img, .card-head .avatar { width: 46px; height: 46px; border-radius: 50%; object-fit: cover; background: var(--field); flex: 0 0 auto; }
+.card-head .avatar { display: inline-flex; align-items: center; justify-content: center; font-family: var(--font-head); font-size: 1.3rem; color: var(--gold); }
+.stat-line { display: flex; flex-wrap: wrap; gap: 2px 8px; font-size: 0.85rem; margin-top: 2px; }
+.stat-line small { color: var(--muted); margin-right: 2px; font-size: 0.7rem; }
+.counters { gap: 8px; }
+.row.wrap.counters > * { flex: 0 0 auto; }
+.wound-pips { display: inline-flex; gap: 2px; }
+.wound-pips button { min-height: 30px; width: 30px; padding: 0; color: var(--muted); background: none; border-color: transparent; }
+.wound-pips button.on { color: #e06c5a; }
+.counter { display: inline-flex; align-items: center; gap: 4px; font-size: 0.85rem; }
+.counter button { min-height: 30px; width: 30px; padding: 0; }
+.counter b { color: var(--gold); }
+.card-actions button { flex: 1 1 auto; min-height: 36px; padding: 4px 10px; }
+.aim-card { background: var(--panel-2); border-radius: 8px; padding: 8px; display: grid; gap: 6px; }
+.aim-card p { margin: 0; }
+.selection-chip { bottom: 10px; }
+
+.coach {
+  background: var(--panel); border-top: 1px solid var(--gold); padding: 8px 14px;
+  padding-bottom: max(8px, env(safe-area-inset-bottom)); max-height: 42vh; overflow-y: auto;
+}
+.coach-head { display: flex; align-items: center; gap: 10px; }
+.coach-head h3 { margin: 0; flex: 1; font-size: 1.05rem; color: var(--gold); min-width: 0; }
+.coach-toggle { min-height: 30px; width: 34px; padding: 0; }
+.phase-dots { list-style: none; display: flex; gap: 2px; margin: 0; padding: 0; font-size: 0.75rem; }
+.phase-dots li { padding: 3px 8px; border-radius: 999px; color: var(--muted); border: 1px solid transparent; }
+.phase-dots li.past { color: var(--text); opacity: 0.6; }
+.phase-dots li.on { background: var(--gold); color: var(--ink); font-weight: 700; }
+.phase-dots .turn { font-family: var(--font-head); color: var(--gold); font-weight: 700; }
+.coach-body { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 6px; }
+.coach-body p { margin: 0; flex: 1 1 320px; }
+.coach-body .warn { color: #ffb08a; flex-basis: 100%; }
+.coach-body .result { font-family: var(--font-head); color: var(--gold); font-size: 1.1rem; }
+.coach-body .go { min-width: 180px; min-height: 46px; font-size: 1.02rem; }
+.coach-body .row { flex: 0 0 auto; }
+.coach .p1 { color: var(--p1); }
+.coach .p2 { color: var(--p2); }
+.setup-steps { margin: 0; padding-left: 22px; flex: 1 1 100%; display: grid; gap: 4px; }
+.setup-steps li { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.setup-steps li.ok::marker { color: var(--ok); }
+.setup-steps li.ok > span::after { content: ' ✓'; color: var(--ok); }
+.setup-steps button { min-height: 32px; padding: 2px 12px; flex: 0 0 auto; }
+.fight-list { display: flex; flex-wrap: wrap; gap: 6px; flex: 1 1 100%; }
+.fight-list button { border-color: var(--gold); }
+.fight-list button.done { border-color: var(--ok); color: var(--ok); }
+
+.sheet-backdrop { position: absolute; inset: 0; background: #0009; z-index: 20; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.sheet { position: relative; background: var(--panel); border: 1px solid var(--gold); border-radius: 14px; width: min(460px, 100%); max-height: 100%; overflow-y: auto; padding: 14px; }
+.sheet .close { position: absolute; top: 8px; right: 8px; width: 34px; min-height: 34px; padding: 0; }
+.sheet .fight h4 { margin-top: 0; font-size: 1rem; color: var(--gold); }
+.game-panel select { width: 100%; }
+
+@media (max-width: 800px) {
+  .topbar { flex-wrap: nowrap; }
+  .topbar .room-name { display: none; }
+  .panel-buttons small { display: none; }
+  .panel-buttons button { min-width: 38px; padding: 3px 6px; }
+  .side { padding: 3px 7px; font-size: 0.85rem; }
+  .side small { display: none; }
+  .tool-rail { left: 6px; top: 6px; }
+  .tool-rail button { width: 44px; }
+  .tool-rail small { display: none; }
+  .model-card { left: 6px; right: 6px; width: auto; bottom: 6px; }
+  .phase-dots li { padding: 2px 5px; }
+  .coach-head h3 { font-size: 0.95rem; }
+  .coach-body .go { flex: 1 1 100%; }
+  .coach-body p { flex-basis: 100%; }
+}
+@media (max-width: 800px) {
+  .topbar { flex-wrap: wrap; }
+  .panel-buttons { flex: 1 1 100%; margin-left: 0; }
+  .panel-buttons button { flex: 1; }
+  .coach-head { flex-wrap: wrap; gap: 4px 8px; }
+  .coach-head .phase-dots { flex: 1; }
+  .coach-head h3 { order: 3; flex-basis: 100%; }
+}

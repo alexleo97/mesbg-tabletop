@@ -9,15 +9,18 @@ type Dispatch = (a: Action) => void;
 type Stat = 'f' | 'a' | 's' | 'd';
 const STATS: [Stat, string][] = [['f', 'F'], ['a', 'A'], ['s', 'S'], ['d', 'D']];
 
-/** Pick models from both sides, then roll the duel and the winner's strikes in one go. */
-export function FightPanel({ state, dispatch, role, selected }: { state: GameState; dispatch: Dispatch; role: Role; selected: Set<string> }) {
+/**
+ * Rolls the duel and the winner's strikes in one go, for the given models (from both sides).
+ * With `combat`, it resolves that fight on the table and the turn tracker ticks it off.
+ */
+export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight' }: { state: GameState; dispatch: Dispatch; role: Role; ids: string[]; combat?: string; title?: string }) {
   const { catalog } = useCatalog();
   const [edits, setEdits] = useState<Record<string, Partial<Record<Stat, number>>>>({});
   const [targets, setTargets] = useState<Record<Seat, string>>({ p1: '', p2: '' });
   const [trapped, setTrapped] = useState(false);
   const [applied, setApplied] = useState<string | null>(null);
 
-  const chosen = [...selected].map(id => state.models[id]).filter((m): m is Model => !!m && !m.dead);
+  const chosen = ids.map(id => state.models[id]).filter((m): m is Model => !!m && !m.dead);
   const sides: Record<Seat, Model[]> = { p1: chosen.filter(m => m.owner === 'p1'), p2: chosen.filter(m => m.owner === 'p2') };
   const seatName = (s: Seat) => state.names[s] || (s === 'p1' ? 'Player 1' : 'Player 2');
 
@@ -28,7 +31,7 @@ export function FightPanel({ state, dispatch, role, selected }: { state: GameSta
   };
 
   // The latest fight this player rolled, if any.
-  const lastGroup = [...state.log].reverse().find(r => r.group && r.by === role)?.group;
+  const lastGroup = [...state.log].reverse().find(r => r.group?.startsWith('f-') && r.by === role)?.group;
   const lastRolls = lastGroup ? state.log.filter(r => r.group === lastGroup) : [];
   const wounds = strikeWounds(lastRolls);
   const victim = lastRolls.find(r => r.against)?.against;
@@ -39,7 +42,7 @@ export function FightPanel({ state, dispatch, role, selected }: { state: GameSta
     const target = (s: Seat) => (sides[s].some(m => m.id === targets[s]) ? targets[s] : sides[s][0].id);
     dispatch({
       type: 'fight',
-      fight: { sides: [sides.p1.map(fighter), sides.p2.map(fighter)], targets: [target('p2'), target('p1')], trapped },
+      fight: { sides: [sides.p1.map(fighter), sides.p2.map(fighter)], targets: [target('p2'), target('p1')], trapped, ...(combat ? { combat } : {}) },
     });
   };
   const applyWounds = () => {
@@ -51,7 +54,7 @@ export function FightPanel({ state, dispatch, role, selected }: { state: GameSta
 
   return (
     <div className="fight">
-      <h4>Fight</h4>
+      <h4>{title}</h4>
       {!ready && (
         <p className="hint">
           {role === 'spectator' ? 'Spectators can watch fights but not roll them.' : 'Select at least one model from each side (Select tool or shift-click) to fight.'}
