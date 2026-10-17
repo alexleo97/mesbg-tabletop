@@ -3,6 +3,7 @@ import { botStep, newMemo, type BotMemo } from '../src/shared/bot.ts';
 import { botRoster } from '../src/shared/botList.ts';
 import type { Catalog } from '../src/shared/catalog.ts';
 import { combats } from '../src/shared/flow.ts';
+import { fightDone } from '../src/shared/movement.ts';
 import { deployList } from '../src/shared/importList.ts';
 import { initialState, reduce } from '../src/shared/reducer.ts';
 import { DICE_REQUESTS, resolveRequest } from '../src/shared/resolve.ts';
@@ -93,7 +94,7 @@ export function play(state: GameState, rand: () => number, maxSteps = 20000) {
     idle = 0;
     // Both are waiting on the other player: do what a person would.
     if (state.phase === 'fight') {
-      const open = combats(state).filter(c => !state.flow.resolved.includes(c.key));
+      const open = combats(state).filter(c => !fightDone(state, c));
       const c = open[0];
       if (c) {
         const duel = openDuel(state, c);

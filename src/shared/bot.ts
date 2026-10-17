@@ -3,7 +3,7 @@ import { duelLeader, strikeWounds, type Fighter, type FightRequest } from './fig
 import { activeSeat, combats, CONTACT_SLACK, other, type Combat } from './flow.ts';
 import { distanceBetween, halfExtents, mmToIn, type Point } from './geometry.ts';
 import { canDeclare, declared, heroicInfo, heroicTurn, heroicsSettled, orderRollLabel, orderRollNeeded, phaseHeroics } from './heroics.ts';
-import { limitMove } from './movement.ts';
+import { fightDone, limitMove } from './movement.ts';
 import { carriedBy, exitEdges, markerActions, onTable, sanctuary } from './objects.ts';
 import { chance, fightOdds, woundChance, type Side } from './odds.ts';
 import { PICKS, pickOptions } from './picks.ts';
@@ -674,7 +674,7 @@ export function waitingOnMight(state: GameState): string | null {
   if (!bot || state.phase !== 'fight' || !state.flow.started) return null;
   const human = other(bot);
   for (const c of combats(state)) {
-    if (state.flow.resolved.includes(c.key)) continue;
+    if (fightDone(state, c)) continue;
     const duel = openDuel(state, c);
     if (duel && humanCanRaise(state, human, duel.rolls)) return c.key;
   }
@@ -733,7 +733,7 @@ function fightStep(ctx: Ctx): BotStep | null {
   }
   const heroic = new Set(phaseHeroics(state).filter(h => h.action === 'Heroic Combat').map(h => h.model));
   const open = combats(state)
-    .filter(c => !state.flow.resolved.includes(c.key) && c[seat].length && c[other(seat)].length)
+    .filter(c => !fightDone(state, c) && c[seat].length && c[other(seat)].length)
     .sort((a, b) => Number([...b.p1, ...b.p2].some(id => heroic.has(id))) - Number([...a.p1, ...a.p2].some(id => heroic.has(id))));
   const c = open[0];
   if (!c) return null;

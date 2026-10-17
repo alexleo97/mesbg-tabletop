@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { initialState, reduce } from '../src/shared/reducer.ts';
+import { fightDone } from '../src/shared/movement.ts';
 import { resolveRequest } from '../src/shared/resolve.ts';
 import type { Action, GameState, Model, Seat } from '../src/shared/types.ts';
 
@@ -32,5 +33,32 @@ describe('shooting', () => {
     const next = run(s, { type: 'setPhase', phase: 'move', turn: 2 }, { type: 'setPhase', phase: 'shoot' });
     expect(next.flow.shot).toEqual([]);
     expect(shoot(next, 'a', 'near', [6, 6])?.models.near.dead).toBe(true);
+  });
+});
+
+describe('fights', () => {
+  const duel = (s: GameState, seat: Seat) => {
+    const out = resolveRequest(s, seat, { type: 'fight', fight: { sides: [[{ id: 'a', name: 'Archer', f: 3, a: 1, s: 3, d: 4 }], [{ id: 'near', name: 'Orc', f: 3, a: 1, s: 3, d: 4 }]], targets: ['near', 'a'], trapped: false, combat: 'a|near' } }, () => 4, uid);
+    return out && run(s, ...out.apply);
+  };
+  const fightPhase = () => run(game(), { type: 'setPhase', phase: 'fight' });
+
+  it('rolls a duel once, even when both players ask for it at the same time', () => {
+    const s = duel(fightPhase(), 'p1')!;
+    expect(s.log.filter(r => r.label.startsWith('Duel')).length).toBe(2);
+    expect(duel(s, 'p2')).toBeNull();
+  });
+
+  it("doesn't let a duel left unstruck last turn block the next one", () => {
+    const s = duel(fightPhase(), 'p1')!;
+    const next = run(s, { type: 'setPhase', phase: 'move', turn: 2 }, { type: 'setPhase', phase: 'fight' });
+    expect(duel(next, 'p2')).not.toBeNull();
+  });
+
+  it('counts a fight as fought once a model slain in it splits it into a new one', () => {
+    const s = run(fightPhase(), { type: 'resolveCombat', key: 'a,|,far,near' });
+    // "near" fell: "a" and "far" still touch, but both have fought this turn.
+    expect(fightDone(s, { key: 'a,|,far', p1: ['a'], p2: ['far'] })).toBe(true);
+    expect(fightDone(s, { key: 'b,|,c', p1: ['b'], p2: ['c'] })).toBe(false);
   });
 });

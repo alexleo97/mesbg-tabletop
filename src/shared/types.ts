@@ -233,6 +233,8 @@ export interface Flow {
   arrived?: Seat[];
   /** Models that have shot this turn; each may shoot once. */
   shot?: string[];
+  /** Duels rolled this turn, by group, so the same one isn't rolled twice. */
+  duels?: string[];
   starts?: Record<string, [number, number]>;
   /** Each hero's Fate at the start of the game, so Fate spent can be counted. */
   startFate?: Record<string, number>;

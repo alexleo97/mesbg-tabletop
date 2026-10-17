@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ResultReport } from './ResultReport.tsx';
 import { activeSeat, other, type Combat } from '../shared/flow.ts';
+import { fightDone } from '../shared/movement.ts';
 import { canDeclare, heroicInfo, heroicsSettled, heroicTurn, HEROICS, orderRollLabel, orderRollNeeded, phaseHeroics } from '../shared/heroics.ts';
 import { RollRow } from './Panels.tsx';
 import { useDraggable } from './useDraggable.tsx';
@@ -309,7 +310,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
     const heroicCombat = new Set(phaseHeroics(state).filter(h => h.action === 'Heroic Combat').map(h => h.model));
     const isHeroic = (c: Combat) => [...c.p1, ...c.p2].some(id => heroicCombat.has(id));
     combats = [...combats].sort((a, b) => Number(isHeroic(b)) - Number(isHeroic(a)));
-    const open = combats.filter(c => !flow.resolved.includes(c.key));
+    const open = combats.filter(c => !fightDone(state, c));
     const label = (c: Combat) => {
       const n = (ids: string[]) => (ids.length === 1 ? state.models[ids[0]]?.name : `${state.models[ids[0]]?.name} +${ids.length - 1}`);
       return `${n(c.p1)} vs ${n(c.p2)}`;
@@ -321,8 +322,8 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
         {combats.length > 0 && (
           <div className="fight-list">
             {combats.map(c => (
-              <button key={c.key} className={flow.resolved.includes(c.key) ? 'done' : ''} onClick={() => openFight(c.key)}>
-                {flow.resolved.includes(c.key) ? '✓ ' : isHeroic(c) ? '⚡ ' : '⚔ '}
+              <button key={c.key} className={fightDone(state, c) ? 'done' : ''} onClick={() => openFight(c.key)}>
+                {fightDone(state, c) ? '✓ ' : isHeroic(c) ? '⚡ ' : '⚔ '}
                 {label(c)}
               </button>
             ))}
