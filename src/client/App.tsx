@@ -17,6 +17,7 @@ import { distanceBetween, formatInches } from '../shared/geometry.ts';
 import { scenarioById, vpTotal } from '../shared/scenarios.ts';
 import { useSettings, type Settings } from './settings.ts';
 import { Tutorial } from './Tutorial.tsx';
+import { HeroArt } from './HeroArt.tsx';
 import { ProfilePage } from './Account.tsx';
 import { ArmiesCard, ArmiesPage, MapsCard, MapsPage, randomRoom, SitePage, TopPlayersCard } from './Home.tsx';
 import { getMap } from './cloud.ts';
@@ -67,6 +68,29 @@ function useOpenGames() {
   return games;
 }
 
+/** The community card: an invite for newcomers, a shortcut back in for members. */
+function DiscordCard() {
+  const { signedIn, discordMember, discordGuild } = useAuth();
+  // Members go straight to the server; the invite would only ask them to accept it again.
+  const href = discordMember && discordGuild ? `https://discord.com/channels/${discordGuild}` : DISCORD_INVITE;
+  return (
+    <section className={`dash-card discord-card ${discordMember ? 'member' : ''}`}>
+      <header>
+        <h2>{discordMember ? "You're in our Discord" : 'Join the community'}</h2>
+      </header>
+      <p className="muted">
+        {discordMember
+          ? 'Find opponents, share your maps, and tell us what to build next.'
+          : 'Our Discord is where players find opponents, share maps and suggest what we build next.'}
+      </p>
+      <a className="discord-link" href={href} target="_blank" rel="noreferrer">
+        {discordMember ? 'Open Discord' : 'Join our Discord'}
+      </a>
+      {!signedIn && !discordMember && <small className="muted">Already a member? Sign in with Discord and we'll remember.</small>}
+    </section>
+  );
+}
+
 function Lobby({ settings, updateSettings }: { settings: Settings; updateSettings: (p: Partial<Settings>) => void }) {
   const [code, setCode] = useState('');
   const [showSettings, setShowSettings] = useState(false);
@@ -77,8 +101,9 @@ function Lobby({ settings, updateSettings }: { settings: Settings; updateSetting
   };
   return (
     <SitePage page="play" wide>
-      <div className="home-top">
-        <section className="home-hero">
+      <section className="home-banner">
+        <HeroArt />
+        <div className="home-hero">
           <h1>Play Middle-earth battles online</h1>
           <p className="lead">Bring your army, pick a table and play a friend. The game keeps track of turns, rolls and rules for you, on a computer or a phone.</p>
           <div className="hero-actions">
@@ -93,11 +118,38 @@ function Lobby({ settings, updateSettings }: { settings: Settings; updateSetting
             <input placeholder="Have a game code? e.g. osgiliath-1234" value={code} onChange={e => setCode(e.target.value)} onKeyDown={e => e.key === 'Enter' && go(code)} />
             <button onClick={() => go(code)}>Join</button>
           </div>
-        </section>
+        </div>
+      </section>
 
+      <ol className="home-steps">
+        <li>
+          <a href="?armies">
+            <span className="step-icon" aria-hidden>🛡</span>
+            <b>Build your army</b>
+            <small>Every army list, with points and rules explained.</small>
+          </a>
+        </li>
+        <li>
+          <a href="?maps">
+            <span className="step-icon" aria-hidden>🗺</span>
+            <b>Pick a table</b>
+            <small>Ready-made boards, or lay out your own.</small>
+          </a>
+        </li>
+        <li>
+          <button onClick={() => go(randomRoom())}>
+            <span className="step-icon" aria-hidden>⚔</span>
+            <b>Play a friend</b>
+            <small>Send them the link. The turn guide does the rest.</small>
+          </button>
+        </li>
+      </ol>
+
+      <div className="home-grid">
         <section className="open-games dash-card">
           <header>
             <h2>Open games</h2>
+            {!!games?.length && <small className="muted">{games.length} live</small>}
           </header>
           {games === null && <p className="muted">Looking for games…</p>}
           {games?.length === 0 && <p className="muted">No open games right now. Start one and share the link, or find an opponent on Discord.</p>}
@@ -118,6 +170,7 @@ function Lobby({ settings, updateSettings }: { settings: Settings; updateSetting
             );
           })}
         </section>
+        <DiscordCard />
       </div>
 
       <div className="dash-grid">
@@ -127,9 +180,6 @@ function Lobby({ settings, updateSettings }: { settings: Settings; updateSetting
       </div>
 
       <footer className="home-foot">
-        <a className="discord-link" href={DISCORD_INVITE} target="_blank" rel="noreferrer">
-          Join our Discord
-        </a>
         <button onClick={() => setShowSettings(v => !v)} aria-expanded={showSettings}>
           ⚙ Display settings
         </button>

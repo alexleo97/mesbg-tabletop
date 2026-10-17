@@ -742,9 +742,27 @@ details.finish summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
 
 /* Home: a wide two-column start on computers, stacked on phones. */
 .site-main.wide { max-width: 1160px; padding-left: 24px; padding-right: 24px; }
-.home-top { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 28px; align-items: start; }
-.home-hero { display: flex; flex-direction: column; gap: 18px; padding: 28px 0 8px; }
-.home-hero h1 { font-size: 2.6rem; line-height: 1.15; }
+.home-banner { position: relative; overflow: hidden; border-radius: 18px; border: 1px solid var(--line); min-height: 400px; display: flex; align-items: center; isolation: isolate; box-shadow: 0 18px 40px #0007; }
+.hero-art { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -2; }
+.hero-art .hero-pan { animation: hero-pan 40s ease-in-out infinite alternate; transform-origin: 36px 25px; }
+@keyframes hero-pan { from { transform: scale(1.04) translate(-0.6px, 0); } to { transform: scale(1.1) translate(1.2px, -0.6px); } }
+@media (prefers-reduced-motion: reduce) { .hero-art .hero-pan { animation: none; } }
+.hero-base { stroke: #fff; stroke-width: 0.12; filter: drop-shadow(0 0.15px 0.2px #000a); }
+.hero-base.p1 { fill: var(--p1); }
+.hero-base.p2 { fill: var(--p2); }
+.home-banner::before { content: ''; position: absolute; inset: 0; z-index: -1; background: linear-gradient(90deg, var(--bg) 0%, color-mix(in srgb, var(--bg) 88%, transparent) 38%, color-mix(in srgb, var(--bg) 30%, transparent) 70%, transparent 100%); }
+.home-hero { display: flex; flex-direction: column; gap: 18px; padding: 40px 44px; max-width: 620px; }
+.home-hero h1 { font-size: 2.8rem; line-height: 1.1; margin: 0; text-align: left; text-shadow: 0 2px 12px #000a; }
+.home-steps { list-style: none; margin: 18px 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; counter-reset: step; }
+.home-steps a, .home-steps button { width: 100%; height: 100%; display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 12px; row-gap: 2px; align-items: center; padding: 14px 16px; text-align: left; text-decoration: none; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 14px; font: inherit; transition: border-color 0.15s, transform 0.15s; }
+.home-steps a:hover, .home-steps button:hover { border-color: var(--gold); transform: translateY(-2px); }
+.step-icon { grid-row: span 2; width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; font-size: 1.35rem; background: var(--panel-2); border: 1px solid var(--line); }
+.home-steps b { font-size: 1.02rem; }
+.home-steps small { color: var(--muted); line-height: 1.35; }
+.home-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 18px; margin-bottom: 18px; align-items: stretch; }
+.discord-card { background: linear-gradient(135deg, #5865f233, var(--panel) 60%); border-color: #5865f266; }
+.discord-card .discord-link { align-self: flex-start; padding: 9px 16px; }
+.discord-card.member h2::before { content: '✓ '; color: var(--ok); }
 .home-hero .lead { font-size: 1.1rem; color: var(--muted); line-height: 1.5; max-width: 34em; }
 .hero-actions { display: flex; gap: 10px; }
 .hero-actions button { flex: 0 0 auto; min-width: 180px; }
@@ -783,9 +801,11 @@ details.finish summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
 }
 
 @media (max-width: 900px) {
-  .home-top { grid-template-columns: 1fr; gap: 16px; }
-  .home-hero { padding-top: 4px; }
+  .home-banner { min-height: 0; align-items: flex-end; }
+  .home-banner::before { background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 20%, transparent) 0%, color-mix(in srgb, var(--bg) 85%, transparent) 45%, var(--bg) 100%); }
+  .home-hero { padding: 120px 18px 20px; }
   .home-hero h1 { font-size: 2rem; }
+  .home-steps, .home-grid { grid-template-columns: 1fr; }
   .dash-grid { grid-template-columns: 1fr; }
   .hero-actions button { flex: 1; min-width: 0; }
   .home-foot .fine { margin: 0; }

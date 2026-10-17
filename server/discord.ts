@@ -33,3 +33,37 @@ export function announceGame(room: string, host: string, scenario: string | unde
   const who = plain(host) || 'Someone';
   return postToDiscord(`⚔️ **${who}** opened a game${scenario ? ` (${plain(scenario)})` : ''} and needs an opponent: ${link}`);
 }
+
+// Membership check for the home page's Discord button. The invite code names our server; its id is
+// looked up once from Discord (or set with DISCORD_GUILD_ID) and kept for the life of the process.
+const INVITE_CODE = process.env.DISCORD_INVITE_CODE ?? 'epNRWMxGws';
+let guildId: string | null = process.env.DISCORD_GUILD_ID ?? null;
+
+async function ourGuild(): Promise<string | null> {
+  if (guildId) return guildId;
+  try {
+    const res = await fetch(`https://discord.com/api/v10/invites/${encodeURIComponent(INVITE_CODE)}`);
+    const body = (await res.json()) as { guild?: { id?: string } };
+    guildId = body.guild?.id ?? null;
+  } catch {
+    guildId = null;
+  }
+  return guildId;
+}
+
+/**
+ * Whether the Discord account behind a sign-in token is in our server: true, false, or null when Discord
+ * couldn't say. The token is the player's own, used once for this request and never stored.
+ */
+export async function discordMember(token: string): Promise<{ member: boolean | null; guild?: string }> {
+  const guild = await ourGuild();
+  if (!guild || !/^[\w.-]{10,200}$/.test(token)) return { member: null };
+  try {
+    const res = await fetch('https://discord.com/api/v10/users/@me/guilds', { headers: { authorization: `Bearer ${token}` } });
+    if (!res.ok) return { member: null };
+    const list = (await res.json()) as { id: string }[];
+    return { member: Array.isArray(list) && list.some(g => g.id === guild), guild };
+  } catch {
+    return { member: null };
+  }
+}

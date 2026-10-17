@@ -151,6 +151,8 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
   const drag = useDraggable('coach');
   const name = (s: Seat) => state.names[s] || (s === 'p1' ? 'Player 1' : 'Player 2');
   const Who = ({ s, mid }: { s: Seat; mid?: boolean }) => <b className={s}>{s === role ? (mid ? 'you' : 'You') : name(s)}</b>;
+  /** "You have priority" for yourself (and the practice table's "You" seat), "Sam has priority" for others. */
+  const says = (s: Seat, you: string, them: string) => (s === role || name(s) === 'You' ? `You ${you}` : `${name(s)} ${them}`);
   const me = role === 'spectator' ? null : role;
   const { flow } = state;
 
@@ -247,7 +249,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
   } else if (state.phase === 'move' || state.phase === 'shoot') {
     const act = activeSeat(state);
     const verb = state.phase === 'move' ? 'moving' : 'shooting';
-    title = `${PHASE_LABEL[state.phase]} · ${name(state.priority ?? 'p1')} has priority`;
+    title = `${PHASE_LABEL[state.phase]} · ${says(state.priority ?? 'p1', 'have priority', 'has priority')}`;
     const broken = act && armyStatus(state, act).broken;
     body = act ? (
       <>
@@ -278,7 +280,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
       </>
     ) : null;
   } else if (state.phase === 'fight') {
-    title = `Fight · ${name(state.priority ?? 'p1')} picks the order`;
+    title = `Fight · ${says(state.priority ?? 'p1', 'pick the order', 'picks the order')}`;
     // Fights with a Heroic Combat go first.
     const heroicCombat = new Set(phaseHeroics(state).filter(h => h.action === 'Heroic Combat').map(h => h.model));
     const isHeroic = (c: Combat) => [...c.p1, ...c.p2].some(id => heroicCombat.has(id));

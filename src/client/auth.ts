@@ -27,6 +27,10 @@ export interface Auth {
   /** The current sign-in token, for telling the game server who you are. */
   token: string | null;
   profile: Profile | null;
+  /** Whether this Discord account is in our Discord server, as last checked at sign-in. */
+  discordMember?: boolean;
+  /** Our Discord server's id, for linking members straight to it. */
+  discordGuild?: string;
   error?: string;
 }
 
@@ -54,9 +58,41 @@ export function supabase(): Promise<SupabaseClient | null> {
   return client;
 }
 
+const MEMBER_KEY = 'mesbg-tabletop:discord-member';
+
+/** The last membership answer for this account, kept so the home page knows without asking Discord each visit. */
+function savedMembership(userId: string): { member: boolean; guild?: string } | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(MEMBER_KEY) ?? 'null');
+    return v?.user === userId ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Right after a Discord sign-in the session carries a Discord token that can list the player's servers.
+ * The game server asks Discord with it (so it never needs storing), and the answer is remembered here.
+ */
+async function checkMembership(session: Session) {
+  const saved = savedMembership(session.user.id);
+  if (saved) set({ discordMember: saved.member, discordGuild: saved.guild });
+  if (!session.provider_token) return;
+  try {
+    const res = await fetch('/api/discord-member', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: session.provider_token }) });
+    const out: { member: boolean | null; guild?: string } = await res.json();
+    if (out.member === null) return;
+    set({ discordMember: out.member, discordGuild: out.guild });
+    localStorage.setItem(MEMBER_KEY, JSON.stringify({ user: session.user.id, member: out.member, guild: out.guild }));
+  } catch {
+    // Discord or storage unreachable: keep the last answer.
+  }
+}
+
 async function loadProfile(sb: SupabaseClient, session: Session | null) {
-  if (!session) return set({ loading: false, signedIn: false, token: null, profile: null, error: undefined });
+  if (!session) return set({ loading: false, signedIn: false, token: null, profile: null, discordMember: undefined, discordGuild: undefined, error: undefined });
   set({ token: session.access_token });
+  void checkMembership(session);
   const { data, error } = await sb.from('profiles').select('id, username, avatar_url, created_at').eq('id', session.user.id).maybeSingle();
   if (error || !data) return set({ loading: false, signedIn: true, profile: null, error: "You're signed in, but your profile couldn't be loaded. The database may not be set up yet." });
   set({ loading: false, signedIn: true, profile: data, error: undefined });
@@ -102,7 +138,7 @@ export function useAuth(): Auth {
 export async function signIn() {
   const sb = await supabase();
   if (!sb) return;
-  const { error } = await sb.auth.signInWithOAuth({ provider: 'discord', options: { redirectTo: location.href, scopes: 'identify' } });
+  const { error } = await sb.auth.signInWithOAuth({ provider: 'discord', options: { redirectTo: location.href, scopes: 'identify guilds' } });
   if (error) set({ error: "Couldn't reach Discord. Try again in a moment." });
 }
 
