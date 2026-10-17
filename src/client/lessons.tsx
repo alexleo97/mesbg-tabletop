@@ -126,12 +126,12 @@ export const CHAPTERS: Chapter[] = [
         body: (
           <>
             <p>The game uses ordinary six-sided dice, called D6. When a roll says 4+, you need a 4, 5 or 6. A D3 is a D6 halved: 1-2 is 1, 3-4 is 2, 5-6 is 3.</p>
-            <p>The table rolls every die for you and shows the result in the log, so both players see the same thing.</p>
+            <p>The table rolls every die for you and shows the result in 🎲 Log at the top, so both players see the same thing. Fights, shots, Courage and Fate are rolled as they happen. For the odd test the game doesn't roll by itself, 📖 Rules has a roller.</p>
           </>
         ),
-        task: 'Open 🎲 Log at the top and roll any dice.',
+        task: 'Tap your Captain, open 📖 Rules and roll a Courage test for him.',
         setup: () => table(),
-        done: (s, start) => newRolls(s, start).length > 0,
+        done: rolled('Courage test'),
       },
       {
         title: 'How a turn runs',
