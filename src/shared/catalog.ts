@@ -1,3 +1,4 @@
+import { mountBase } from './bases.ts';
 import { guessBase, type ListEntry } from './importList.ts';
 import type { Base } from './types.ts';
 
@@ -124,12 +125,6 @@ function wargearMount(unit: CatalogUnit): { name: string; mv: number } | undefin
   return undefined;
 }
 
-function mountBase(name: string): Base {
-  const b = guessBase(name);
-  if (b.shape === 'round' && b.w === 25) return { shape: 'rect', w: 25, h: 50 };
-  return b;
-}
-
 /**
  * Turns a unit with chosen options into list entries ready to deploy.
  * Some units are several models (e.g. Bain with Sigrid and Tilda), so this can return more than one entry.
@@ -157,7 +152,8 @@ export function entriesFor(id: string, unit: CatalogUnit, optionIds: string[], c
       might: Number.isFinite(might) ? might : 0,
       will: Number.isFinite(will) ? will : 0,
       fate: Number.isFinite(fate) ? fate : 0,
-      base: subName && subName !== unit.name && !mount ? guessBase(subName) : base,
+      // A war machine's crew veteran stands in for the whole engine, so it takes the engine's base.
+      base: subName && !subName.startsWith(unit.name) && !mount ? guessBase(subName) : base,
       profileId: id,
       options: chosen.map(o => o.name),
     };
