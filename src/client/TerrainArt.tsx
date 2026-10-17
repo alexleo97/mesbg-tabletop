@@ -11,10 +11,10 @@ const MATERIAL: Record<Terrain['kind'], Material> = {
   building: 'stone',
   water: 'water',
   hill: 'grass',
-  wall: 'stone',
-  ruin: 'stone',
-  cliff: 'rock',
-  field: 'plains',
+  wall: 'ruin',
+  ruin: 'ruin',
+  cliff: 'cliff',
+  field: 'farmland',
   objective: 'stone',
 };
 
@@ -181,7 +181,7 @@ export function TerrainArt({ t }: { t: Terrain }) {
           {[1, 0.7, 0.42].map((k, i) => (
             <g key={k}>
               <path className="ground hill-step" d={t.shape === 'rect' ? rectPath(t.w * k, t.h * k) : blob(t, k, 0.1, i)} fill={tex} filter="url(#soft-shadow)" />
-              <path className="tint" d={t.shape === 'rect' ? rectPath(t.w * k, t.h * k) : blob(t, k, 0.1, i)} fill={`rgba(235,240,190,${0.08 + i * 0.07})`} />
+              <path className="tint" d={t.shape === 'rect' ? rectPath(t.w * k, t.h * k) : blob(t, k, 0.1, i)} fill={['rgba(20,30,10,0.18)', 'rgba(240,240,200,0.06)', 'rgba(250,245,200,0.14)'][i]} />
             </g>
           ))}
         </>
@@ -221,7 +221,7 @@ export function TerrainArt({ t }: { t: Terrain }) {
       return (
         <>
           <rect className="ground ruin-floor" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} fill={tex} />
-          <rect className="tint" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} fill="#3a302633" />
+          <rect className="tint" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} fill="#2a221a66" />
           <g pointerEvents="none" filter="url(#hard-shadow)">
             {ruinWalls(t)}
           </g>

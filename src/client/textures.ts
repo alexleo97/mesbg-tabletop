@@ -1,7 +1,8 @@
-// Seamless textures for the battle mat and terrain, generated in the browser once at startup.
-// They're original (procedural noise), so there are no licensing questions and nothing to download.
+// Seamless textures for the battle mat and terrain. Most are photographic ground textures from the
+// open-source game 0 A.D. (CC BY-SA 3.0, see tex/README.md). Water is still generated here from noise,
+// and the generator remains as a fallback for any material without a photo.
 
-export const MATERIALS = ['grass', 'plains', 'forest', 'mud', 'rock', 'stone', 'snow', 'sand', 'water'] as const;
+export const MATERIALS = ['grass', 'plains', 'forest', 'mud', 'rock', 'cliff', 'stone', 'ruin', 'snow', 'sand', 'farmland', 'dirt', 'water'] as const;
 export type Material = (typeof MATERIALS)[number];
 
 type RGB = [number, number, number];
@@ -20,7 +21,7 @@ interface Recipe {
   stretch?: number;
 }
 
-const RECIPES: Record<Material, Recipe> = {
+const RECIPES: Partial<Record<Material, Recipe>> = {
   grass: { ramp: [[58, 80, 36], [72, 98, 44], [90, 114, 52], [108, 128, 62]], scale: 5, octaves: 6, speckle: 0.18 },
   plains: { ramp: [[112, 110, 60], [132, 126, 72], [152, 142, 86], [170, 158, 102]], scale: 5, octaves: 6, speckle: 0.18 },
   forest: { ramp: [[38, 40, 22], [52, 54, 30], [68, 64, 36], [84, 74, 42]], scale: 7, octaves: 5, speckle: 0.3 },
@@ -63,7 +64,7 @@ function sampleRamp(ramp: RGB[], t: number): RGB {
 }
 
 function render(material: Material, size: number): string {
-  const r = RECIPES[material];
+  const r = RECIPES[material] ?? RECIPES.grass!;
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext('2d');
@@ -107,16 +108,29 @@ function render(material: Material, size: number): string {
   return canvas.toDataURL('image/png');
 }
 
-let cache: Record<Material, string> | null = null;
+const PHOTOS = import.meta.glob<string>('./tex/*.jpg', { eager: true, query: '?url', import: 'default' });
 
-/** Data URLs for every material, generated on first call (a few hundred ms total). */
-export function textures(): Record<Material, string> {
+/** How many inches of table one tile of each photo covers. */
+const PHOTO_INCHES: Partial<Record<Material, number>> = { stone: 8, ruin: 5, farmland: 8, rock: 8, cliff: 10 };
+
+/** How many inches one generated texture tile covers on the board. */
+const TILE_INCHES = 6;
+
+export interface Texture {
+  href: string;
+  inches: number;
+}
+
+let cache: Record<Material, Texture> | null = null;
+
+/** Image and tile size for every material. Generated ones are made on first call. */
+export function textures(): Record<Material, Texture> {
   if (!cache) {
-    cache = {} as Record<Material, string>;
-    for (const m of MATERIALS) cache[m] = render(m, 256);
+    cache = {} as Record<Material, Texture>;
+    for (const m of MATERIALS) {
+      const photo = PHOTOS[`./tex/${m}.jpg`];
+      cache[m] = photo ? { href: photo, inches: PHOTO_INCHES[m] ?? 12 } : { href: render(m, 256), inches: TILE_INCHES };
+    }
   }
   return cache;
 }
-
-/** How many inches one texture tile covers on the board. */
-export const TILE_INCHES = 6;

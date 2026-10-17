@@ -39,7 +39,7 @@ export const TERRAIN_KINDS = ['wood', 'rock', 'building', 'water', 'hill', 'wall
 export type TerrainKind = (typeof TERRAIN_KINDS)[number];
 
 /** Battle mat surfaces. */
-export const MATS = ['grass', 'plains', 'forest', 'mud', 'stone', 'snow', 'sand'] as const;
+export const MATS = ['grass', 'plains', 'forest', 'mud', 'dirt', 'stone', 'snow', 'sand'] as const;
 export type Mat = (typeof MATS)[number];
 
 export interface Terrain {

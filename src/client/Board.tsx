@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { distanceBetween, distanceToBase, formatInches, halfExtents, type Point } from '../shared/geometry.ts';
 import type { Action, GameState, Model } from '../shared/types.ts';
 import { TerrainArt, TerrainDefs } from './TerrainArt.tsx';
-import { MATERIALS, textures, TILE_INCHES } from './textures.ts';
+import { MATERIALS, textures } from './textures.ts';
 
 export type Tool = 'move' | 'select' | 'measure';
 
@@ -344,8 +344,8 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
         <defs>
           <TerrainDefs />
           {MATERIALS.map(m => (
-            <pattern key={m} id={`tex-${m}`} patternUnits="userSpaceOnUse" width={TILE_INCHES} height={TILE_INCHES}>
-              <image href={tex[m]} width={TILE_INCHES} height={TILE_INCHES} />
+            <pattern key={m} id={`tex-${m}`} patternUnits="userSpaceOnUse" width={tex[m].inches} height={tex[m].inches}>
+              <image href={tex[m].href} width={tex[m].inches} height={tex[m].inches} preserveAspectRatio="none" />
             </pattern>
           ))}
           {[...new Map(models.map(m => [clipId(m), m])).values()].map(m => (
