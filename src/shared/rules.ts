@@ -141,7 +141,7 @@ export const TURN_SUMMARY: { phase: string; points: string[] }[] = [
   },
   {
     phase: 'End',
-    points: ['Check whether each army is Broken (half or more of its models lost). Then the next turn begins.'],
+    points: ['The turn ends. At the start of the next turn, an army that has lost more than half its starting models is Broken: from then on each of its models takes a Courage test when it activates, and flees on a fail.'],
   },
 ];
 

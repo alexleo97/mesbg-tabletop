@@ -1,0 +1,285 @@
+{
+  "casting": [
+    "A model may try to cast at most one power during its own Activation, at any point after start-of-Activation effects, including partway through its move or on a turn it charges.",
+    "It needs at least 1 Will Point left, cannot be Prone, must land first if Flying, and cannot cast if it is unable to Activate that turn.",
+    "Name the power and target and commit a number of Will Points up front; roll one D6 per Will Point spent, with no adding dice after seeing the roll.",
+    "The cast works if any single die scores the power's casting value or higher; otherwise nothing happens and the Will is still spent.",
+    "Heroes may spend Might to raise a casting die, but must do so before the target resists.",
+    "The caster needs Line of Sight to its target; range comes from the profile or the power text, and a 'Self' power targets the caster. Engaged models can be targeted unless the power says otherwise.",
+    "Heroic Channelling (a Move Phase Heroic Action) makes the Hero's next casting roll that turn count as a 6 without rolling; a Will Point must still be spent.",
+    "Good models may not cast a power that could wound a friendly model. Powers against cavalry hit both rider and mount unless the power says to pick one, declared before rolling."
+  ],
+  "resisting": [
+    "After the casting roll and before effects apply, the target may commit Will Points, rolling one D6 per point (no topping up after seeing results).",
+    "The power is resisted and has no effect if any resist die equals or beats the highest die in the casting roll; Heroes may use Might to raise resist dice.",
+    "A Hero who rolls a natural 6 on a resist die bought with Will gets that Will Point back; free dice (e.g. Heroic Resolve, Resistant to Magic, Fortify Spirit) do not refund anything.",
+    "A model with no Will can only resist using free dice from rules such as Heroic Resolve, Resistant to Magic or Fortify Spirit; there is no Fate-based resist.",
+    "When a power hits several enemies, their controller picks one targeted model to resist for all; pass and none are affected, fail and all are. Either half of a cavalry model may resist a power aimed at one half.",
+    "Powers with no enemy target (self or friendly-only) cannot be resisted, and models only indirectly affected (e.g. struck by a flung model) may not resist."
+  ],
+  "durations": [
+    {
+      "name": "Instant",
+      "text": "Resolves immediately and then is over; most damaging powers are this type."
+    },
+    {
+      "name": "Temporary",
+      "text": "Lasts until the End Phase of the turn it was cast."
+    },
+    {
+      "name": "Exhaustion",
+      "text": "Stays active until the caster has 0 Will Points left, then ends at once."
+    },
+    {
+      "name": "General",
+      "text": "Any active power ends immediately if its caster is slain or leaves the battlefield."
+    }
+  ],
+  "powers": [
+    {
+      "name": "Aura of Command",
+      "range": "Self",
+      "duration": "Exhaustion",
+      "target": "The caster.",
+      "effect": "While active, the caster and every friendly model within 6\" pass all Courage Tests automatically."
+    },
+    {
+      "name": "Aura of Dismay",
+      "range": "Self",
+      "duration": "Exhaustion",
+      "target": "The caster.",
+      "effect": "While active, enemy models within 6\" of the caster take -1 on their Courage Tests."
+    },
+    {
+      "name": "Banishment",
+      "range": "Profile",
+      "duration": "Instant",
+      "target": "One enemy Spirit model in range.",
+      "effect": "The Spirit loses 1 Wound outright. Against cavalry, the caster picks rider or mount as the target."
+    },
+    {
+      "name": "Black Dart",
+      "range": "Profile",
+      "duration": "Instant",
+      "target": "One enemy model in range.",
+      "effect": "Deals a single Strength 6 hit to the target. Against cavalry, the caster picks rider or mount as the target."
+    },
+    {
+      "name": "Bladewrath",
+      "range": "Profile",
+      "duration": "Temporary",
+      "target": "One friendly model in range.",
+      "effect": "For the following Fight Phase, every Strike the target makes uses Strength 6, ignoring other modifiers."
+    },
+    {
+      "name": "Blessing of the Valar",
+      "range": "Profile",
+      "duration": "Instant",
+      "target": "One friendly model in range.",
+      "effect": "The target gets back 1 Fate Point it has already used this game."
+    },
+    {
+      "name": "Blinding Light",
+      "range": "Self",
+      "duration": "Temporary",
+      "target": "The caster.",
+      "effect": "Everything within 6\" of the caster counts as daylight, and enemy shots aimed at models within 6\" of the caster only hit on a 6. A model gets no benefit if impassable terrain fully blocks it from the caster."
+    },
+    {
+      "name": "Call Winds",
+      "range": "Profile",
+      "duration": "Instant",
+      "target": "One enemy model in range.",
+      "effect": "The target is pushed D3+3\" straight away from the caster, halting early if it hits a model or terrain, then is knocked Prone. This can pull it out of a fight."
+    },
+    {
+      "name": "Chill Soul",
+      "range": "Profile",
+      "duration": "Instant",
+      "target": "One enemy model in range.",
+      "effect": "The target loses 1 Wound outright. Against cavalry, the caster picks rider or mount as the target."
+    },
+    {
+      "name": "Collapse Rocks",
+      "range": "Profile",
+      "duration": "Instant",
+      "target": "One enemy model in range standing in or under rock or masonry (ruins, stone buildings, caves, rock piles and the like).",
+      "effect": "Deals a single Strength 7 hit and knocks the target Prone; cavalry automatically take the Knocked Flying result."
+    },
+    {
+      "name": "Compel",
+      "range": "Profile",
+      "duration": "Instant",
+      "target": "One enemy model in range.",
+      "effect": "The caster moves the target up to half its Move value, even if it already moved, and may have it charge or drop a scenario Object; it cannot be moved out of combat, made to jump, climb, leap, swim, lie down or dismount, and cannot move again that turn."
+    },
+    {
+      "name": "Curse",
+      "range": "Profile",
+      "duration": "Instant",
+      "target": "One enemy model in range.",
+      "effect": "The target loses 1 Fate Point. Against cavalry, the caster picks rider or mount as the target."
+    },
+    {
+      "name": "Drain Courage",
+      "range": "Profile",
+      "duration": "Instant",
+      "target": "One enemy model in range.",
+      "effect": "The target's Courage gets 1 worse for the rest of the game (e.g. 5+ becomes 6+); repeat uses stack. Against cavalry, the caster picks rider or mount as the target."
+    },
+    {
+      "name": "Enchant Blades",
+      "range": "Profile",
+      "duration": "Temporary",
+      "target": "One friendly model in range.",
+      "effect": "In the following Fight Phase the target may re-roll any failed To Wound rolls on its Strikes."
+    },
+    {
+      "name": "Enrage Beast",
+      "range": "Profile",
+      "duration": "Temporary",
+      "target": "One friendly Beast model in range.",
+      "effect": "Until the End Phase the target gains +2 Fight, +2 Strength, +2 Attacks and Fearless; when it ends, the target loses 1 Wound."
+    },
+    {
+      "name": "Flameburst",
+      "range": "Profile",
+      "duration": "Instant",
+      "target": "One enemy model in range.",
+      "effect": "Deals a single Strength 6 hit that counts as fire; models immune to fire ignore it."
+    },
+    {
+      "name": "Fog of Disarray",
+      "range": "Self",
+      "duration": "Exhaustion",
+      "target": "The caster.",
+      "effect": "While active, enemy models within 6\" of the caster take -1 on their Intelligence Tests."
+    },
+    {
+      "name": "Foil Magic",
+      "range": "Profile",
+      "duration": "Instant",
+      "target": "One enemy model in range.",
+      "effect": "Pick one Exhaustion-duration power the target has cast that is still active; it ends at once."
+    },
+    {
+      "name": "Fortify Spirit",
+      "range": "Profile",
+      "duration": "Exhaustion",
+      "target": "One friendly model in range.",
+      "effect": "Whenever an enemy casts a power at the target, it rolls one extra free die on its Resist Test, even with no Will or without spending any."
+    },
+    {
+      "name": "Fury (X)",
+      "range": "Self",
+      "duration": "Exhaustion",
+      "target": "The caster.",
+      "effect": "While active, friendly models within 6\" of the caster that have the keyword(s) named in the brackets pass all Courage Tests automatically."
+    },
+    {
+      "name": "Instil Fear",
+      "range": "Self",
+      "duration": "Temporary",
+      "target": "The caster.",
+      "effect": "Enemy models within 6\" of the caster gain the Fearful special rule."
+    },
+    {
+      "name": "Nature's Wrath",
+      "range": "Profile",
+      "duration": "Instant",
+      "target": "Every enemy model in range, whether or not the caster can see it.",
+      "effect": "All targets are knocked Prone; cavalry automatically take the Knocked Flying result."
+    },
+    {
+      "name": "Panic Steed",
+      "range": "Profile",
+      "duration": "Instant",
+      "target": "One enemy Cavalry model in range.",
+      "effect": "The mount bolts and is removed as a casualty, and the rider automatically takes the Knocked Flying result."
+    },
+    {
+      "name": "Paralyse",
+      "range": "Profile",
+      "duration": "Exhaustion",
+      "target": "One enemy model in range.",
+      "effect": "The target becomes Paralysed: it falls Prone and cannot activate, shoot, call Heroic Actions or use Active abilities, and adds no dice or Fight value in combat (losing automatically if alone). At the end of each End Phase it recovers on a D6 roll of 6, and friendly models touching it may then each roll a D6, freeing it on any 6."
+    },
+    {
+      "name": "Protection of the Valar",
+      "range": "Profile",
+      "duration": "Temporary",
+      "target": "One friendly model in range.",
+      "effect": "The target cannot be picked as the target of enemy powers or enemy special rules that target a model, and enemy shots at it take -1 To Hit."
+    },
+    {
+      "name": "Renew",
+      "range": "Profile",
+      "duration": "Instant",
+      "target": "One friendly model in range.",
+      "effect": "The target heals 1 Wound it lost earlier. Against cavalry, the caster picks rider or mount as the target."
+    },
+    {
+      "name": "Sorcerous Blast",
+      "range": "Profile",
+      "duration": "Instant",
+      "target": "One enemy model in range.",
+      "effect": "Deals a single Strength 5 hit; if the target lives it is knocked Prone (cavalry take Knocked Flying). If the target was in a fight, every other model in that fight with Strength 5 or less is knocked Prone too."
+    },
+    {
+      "name": "Strengthen Will",
+      "range": "Profile",
+      "duration": "Instant",
+      "target": "One friendly model in range.",
+      "effect": "The target gets back 1 Will Point it spent earlier. Against cavalry, the caster picks rider or mount as the target."
+    },
+    {
+      "name": "Terrifying Aura",
+      "range": "Self",
+      "duration": "Exhaustion",
+      "target": "The caster.",
+      "effect": "While active, the caster gains the Terror special rule."
+    },
+    {
+      "name": "Transfix",
+      "range": "Profile",
+      "duration": "Temporary",
+      "target": "One enemy model in range.",
+      "effect": "Until the End Phase the target cannot activate, call Heroic Actions, use Active abilities (including on wargear) or shoot, and makes no Strikes even if it wins a fight."
+    },
+    {
+      "name": "Tremor",
+      "range": "Self (D3+3\" line)",
+      "duration": "Instant",
+      "target": "Every model, friend or enemy, under a 1mm line running D3+3\" from the caster in a chosen direction, plus everyone else in any fight a target is part of; models with Fly are never targets.",
+      "effect": "Each target takes a single Strength 4 hit and is knocked Prone; cavalry automatically take the Knocked Flying result."
+    },
+    {
+      "name": "Wither",
+      "range": "Profile",
+      "duration": "Instant",
+      "target": "One enemy model in range.",
+      "effect": "The target's Strength drops by 1 for the rest of the game; repeat uses stack, and a model reduced to Strength 0 is slain. Against cavalry, the caster picks rider or mount as the target."
+    },
+    {
+      "name": "Wrath of Bruinen",
+      "range": "Profile",
+      "duration": "Instant",
+      "target": "Every enemy model in range, whether or not the caster can see it.",
+      "effect": "Each target takes a single Strength 2 hit (Strength 8 if it is in water) and is knocked Prone; cavalry automatically take the Knocked Flying result."
+    },
+    {
+      "name": "Writhing Vines",
+      "range": "Self",
+      "duration": "Temporary",
+      "target": "The caster.",
+      "effect": "Put a 25mm Vine Marker fully within 3\" of the caster; enemy models treat ground within 3\" of it as Difficult Terrain. The marker is removed in the End Phase."
+    },
+    {
+      "name": "Your Staff is Broken",
+      "range": "Profile",
+      "duration": "Instant",
+      "target": "One enemy model in range carrying a Staff of Power.",
+      "effect": "The target's Staff of Power is destroyed and struck from its wargear."
+    }
+  ]
+}

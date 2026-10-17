@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { PHASES, type Role, type Seat } from '../shared/types.ts';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { PHASES, type Role, type RoomSummary, type Seat } from '../shared/types.ts';
 import { Board, type Tool } from './Board.tsx';
 import { RoomConnection, useRoom } from './net.ts';
 import { pictureUrl } from '../shared/catalog.ts';
@@ -7,6 +7,7 @@ import { useCatalog } from './ListBuilder.tsx';
 import { ArmyPanel, DicePanel, SelectionPanel, SettingsPanel, TablePanel } from './Panels.tsx';
 import { RulesPanel } from './RulesPanel.tsx';
 import { ScenarioPanel } from './ScenarioPanel.tsx';
+import { BrokenTags, StatusBanner } from './StatusBanner.tsx';
 import { scenarioById, vpTotal } from '../shared/scenarios.ts';
 import { useSettings, type Settings } from './settings.ts';
 
@@ -37,8 +38,29 @@ const storage = {
 const cleanRoom = (room: string) =>
   room.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
 
-function Lobby() {
+function useOpenGames() {
+  const [games, setGames] = useState<RoomSummary[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      fetch('/api/rooms')
+        .then(r => (r.ok ? r.json() : []))
+        .then(g => alive && setGames(g))
+        .catch(() => alive && setGames([]));
+    load();
+    const t = setInterval(load, 5000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, []);
+  return games;
+}
+
+function Lobby({ settings, updateSettings }: { settings: Settings; updateSettings: (p: Partial<Settings>) => void }) {
   const [code, setCode] = useState('');
+  const [showSettings, setShowSettings] = useState(false);
+  const games = useOpenGames();
   const go = (room: string) => {
     const clean = cleanRoom(room);
     if (clean.length >= 3) location.search = `?room=${clean}`;
@@ -52,6 +74,37 @@ function Lobby() {
         <input placeholder="Game code, e.g. osgiliath-1234" value={code} onChange={e => setCode(e.target.value)} onKeyDown={e => e.key === 'Enter' && go(code)} />
         <button onClick={() => go(code)}>Join</button>
       </div>
+
+      <section className="open-games">
+        <h2>Open games</h2>
+        {games === null && <p className="muted">Looking for games…</p>}
+        {games?.length === 0 && <p className="muted">No open games right now. Start one and share the link.</p>}
+        {games?.map(g => {
+          const free = (['p1', 'p2'] as const).filter(s => !g.seated.includes(s));
+          return (
+            <button key={g.id} className="game-row" onClick={() => go(g.id)}>
+              <span className="game-id">{g.id}</span>
+              <span className="game-who">
+                <b className="p1">{g.names.p1 || 'Player 1'}</b> vs <b className="p2">{g.names.p2 || 'Player 2'}</b>
+              </span>
+              <span className="muted">
+                {scenarioById(g.scenario)?.name ?? 'Open play'} · turn {g.turn}
+                {g.spectators ? ` · ${g.spectators} watching` : ''}
+              </span>
+              <span className={`game-seat ${free.length ? 'free' : ''}`}>{free.length ? 'Seat open' : 'Full, watch'}</span>
+            </button>
+          );
+        })}
+      </section>
+
+      <button onClick={() => setShowSettings(v => !v)} aria-expanded={showSettings}>
+        ⚙ Settings
+      </button>
+      {showSettings && (
+        <div className="lobby-settings">
+          <SettingsPanel settings={settings} update={updateSettings} />
+        </div>
+      )}
       <p className="fine">Unofficial fan project. Not affiliated with Games Workshop or Middle-earth Enterprises.</p>
     </div>
   );
@@ -64,7 +117,7 @@ function Game({ room, settings, updateSettings }: { room: string; settings: Sett
   const [role, setRole] = useState<Role | null>(() => (storage.get(roleKey) as Role | null) ?? null);
   // One connection per room; role changes are sent over it rather than reconnecting.
   const conn = useMemo(() => new RoomConnection(room, role ?? 'spectator'), [room]);
-  const { state, status, players } = useRoom(conn);
+  const { state, status, players, undoDepth } = useRoom(conn);
   const [tool, setTool] = useState<Tool>('move');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [selectedTerrain, setSelectedTerrain] = useState<string | null>(null);
@@ -88,11 +141,31 @@ function Game({ room, settings, updateSettings }: { room: string; settings: Sett
     if (selectedTerrain && !state.terrain[selectedTerrain]) setSelectedTerrain(null);
   }, [state.models, state.terrain, selected, selectedTerrain]);
 
+  // Show a model's details when you start selecting, but don't pull you away from another tab
+  // when the selection only shrinks (for example after a fight removes a casualty).
+  const prevSize = useRef(0);
   useEffect(() => {
-    if (selected.size) setTab('model');
+    if (selected.size && prevSize.current === 0) setTab('model');
+    prevSize.current = selected.size;
   }, [selected.size]);
 
   const dispatch = conn.dispatch.bind(conn);
+  const leave = () => {
+    location.search = '';
+  };
+  const canUndo = role !== 'spectator' && role !== null && undoDepth > 0;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        conn.dispatch({ type: 'undo' });
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [conn]);
 
   if (!role) {
     const taken = (s: Seat) => players.includes(s);
@@ -109,6 +182,7 @@ function Game({ room, settings, updateSettings }: { room: string; settings: Sett
           ))}
         </div>
         <button onClick={() => setRole('spectator')}>Watch as a spectator</button>
+        <button className="link" onClick={leave}>Back to the home screen</button>
       </div>
     );
   }
@@ -135,6 +209,9 @@ function Game({ room, settings, updateSettings }: { room: string; settings: Sett
   return (
     <div className="game">
       <header className="topbar">
+        <button className="leave" onClick={leave} title="Leave this game and go back to the home screen" aria-label="Leave game">
+          ⟵
+        </button>
         <button className="room" onClick={copyLink} title="Copy invite link">
           {copied ? 'Link copied' : room} <span className={`dot ${status}`} />
         </button>
@@ -167,6 +244,7 @@ function Game({ room, settings, updateSettings }: { room: string; settings: Sett
             Roll
           </button>
         </div>
+        <BrokenTags state={state} />
         {scenarioById(state.scenario) && (
           <button className="vp-chip" onClick={() => openTab('table')} title={scenarioById(state.scenario)!.name}>
             VP <b className="p1">{vpTotal(state.vp.p1)}</b>–<b className="p2">{vpTotal(state.vp.p2)}</b>
@@ -193,6 +271,7 @@ function Game({ room, settings, updateSettings }: { room: string; settings: Sett
       </header>
 
       <main className={`main ${panelOpen ? 'panel-open' : ''}`}>
+        <StatusBanner state={state} dispatch={dispatch} role={role} />
         <Board
           state={state}
           tool={tool}
@@ -260,6 +339,14 @@ function Game({ room, settings, updateSettings }: { room: string; settings: Sett
                     </select>
                   </div>
                 </div>
+              <div className="panel-body game-panel">
+                <h4>Game</h4>
+                <label className="check">
+                  <input type="checkbox" checked={state.listed} disabled={role === 'spectator'} onChange={e => dispatch({ type: 'setListed', listed: e.target.checked })} />
+                  Show this game in the open games list
+                </label>
+                <button onClick={leave}>Leave game</button>
+              </div>
               <ScenarioPanel state={state} dispatch={dispatch} role={role} />
               <TablePanel
                 state={state}
@@ -297,6 +384,9 @@ function Game({ room, settings, updateSettings }: { room: string; settings: Sett
             {label}
           </button>
         ))}
+        <button onClick={() => dispatch({ type: 'undo' })} disabled={!canUndo} title="Undo your last change (Ctrl+Z)">
+          <span>↶</span>Undo
+        </button>
         <span className="sep" />
         <button className={panelOpen && tab === 'dice' ? 'on' : ''} onClick={() => openTab('dice')}>
           <span>🎲</span>Dice
@@ -321,5 +411,5 @@ function Game({ room, settings, updateSettings }: { room: string; settings: Sett
 export function App() {
   const room = cleanRoom(new URLSearchParams(location.search).get('room') ?? '');
   const [settings, updateSettings] = useSettings();
-  return room.length >= 3 ? <Game room={room} settings={settings} updateSettings={updateSettings} /> : <Lobby />;
+  return room.length >= 3 ? <Game room={room} settings={settings} updateSettings={updateSettings} /> : <Lobby settings={settings} updateSettings={updateSettings} />;
 }

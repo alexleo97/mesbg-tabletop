@@ -4,7 +4,9 @@ import { createServer } from 'node:http';
 import { extname, join, normalize, resolve } from 'node:path';
 import { WebSocket, WebSocketServer } from 'ws';
 import { initialState, loadState, MAX_DICE, reduce } from '../src/shared/reducer.ts';
-import type { Action, ClientMessage, GameState, Role, ServerMessage } from '../src/shared/types.ts';
+import type { Action, ClientMessage, GameState, Revert, Role, RoomSummary, Seat, ServerMessage } from '../src/shared/types.ts';
+import { cleanFight, resolveFight } from '../src/shared/fight.ts';
+import { diffForUndo, mergeReverts, UNDOABLE } from '../src/shared/undo.ts';
 
 const PORT = Number(process.env.PORT ?? 8787);
 const DIST = resolve(process.env.DIST_DIR ?? 'dist');
@@ -24,7 +26,19 @@ interface Room {
   clients: Set<Client>;
   touched: number;
   saveTimer?: NodeJS.Timeout;
+  /** Each player's recent changes, newest last, so they can take back their own misclicks. */
+  undo: Record<Seat, UndoEntry[]>;
 }
+
+interface UndoEntry {
+  revert: Revert;
+  /** Moves of the same models in quick succession (one drag) share an entry. */
+  key: string;
+  at: number;
+}
+
+const MAX_UNDO = 50;
+const DRAG_GAP_MS = 2000;
 
 const rooms = new Map<string, Room>();
 mkdirSync(DATA, { recursive: true });
@@ -41,7 +55,7 @@ function getRoom(id: string): Room {
         console.warn(`Could not read saved room ${id}:`, err);
       }
     }
-    room = { id, state, clients: new Set(), touched: Date.now() };
+    room = { id, state, clients: new Set(), touched: Date.now(), undo: { p1: [], p2: [] } };
     rooms.set(id, room);
   }
   return room;
@@ -69,7 +83,10 @@ function authorise(client: Client, action: Action): Action | null {
   if (client.role === 'spectator') return null;
   switch (action.type) {
     case 'rolled':
-      return null; // only the server produces dice results
+    case 'revert':
+    case 'undo':
+    case 'fight':
+      return null; // only the server produces dice results and undo changes
     case 'roll': {
       const count = Math.max(1, Math.min(MAX_DICE, Math.round(Number(action.count) || 1)));
       const target = action.target === undefined ? undefined : Math.max(1, Math.min(7, Math.round(Number(action.target) || 4)));
@@ -96,6 +113,51 @@ function authorise(client: Client, action: Action): Action | null {
   }
 }
 
+/** Listed games with at least one player connected, most recently active first. */
+function openRooms(): RoomSummary[] {
+  return [...rooms.values()]
+    .filter(r => r.state.listed && [...r.clients].some(c => c.role !== 'spectator'))
+    .sort((a, b) => b.touched - a.touched)
+    .slice(0, 50)
+    .map(r => {
+      const roles = [...r.clients].map(c => c.role);
+      return {
+        id: r.id,
+        names: r.state.names,
+        seated: (['p1', 'p2'] as const).filter(s => roles.includes(s)),
+        spectators: roles.filter(x => x === 'spectator').length,
+        scenario: r.state.scenario,
+        turn: r.state.turn,
+        models: Object.keys(r.state.models).length,
+      };
+    });
+}
+
+function apply(room: Room, action: Action) {
+  room.state = reduce(room.state, action);
+  broadcast(room, { type: 'action', action });
+  scheduleSave(room);
+}
+
+function remember(room: Room, seat: Seat, action: Action, revert: Revert) {
+  const stack = room.undo[seat];
+  const now = Date.now();
+  const key = action.type === 'moveModels' ? `move:${action.moves.map(m => m.id).sort().join(',')}` : `${action.type}:${now}`;
+  const top = stack[stack.length - 1];
+  if (top && top.key === key && now - top.at < DRAG_GAP_MS) {
+    top.revert = mergeReverts(top.revert, revert);
+    top.at = now;
+    return;
+  }
+  stack.push({ revert, key, at: now });
+  if (stack.length > MAX_UNDO) stack.shift();
+}
+
+/** Tells a player's own browsers how many changes they can take back. */
+function sendUndoDepth(room: Room, seat: Seat) {
+  for (const c of room.clients) if (c.role === seat) send(c.ws, { type: 'undo', count: room.undo[seat].length });
+}
+
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript',
@@ -112,6 +174,10 @@ const server = createServer((req, res) => {
   const url = new URL(req.url ?? '/', 'http://localhost');
   if (url.pathname === '/healthz') {
     res.writeHead(200, { 'content-type': 'text/plain' }).end('ok');
+    return;
+  }
+  if (url.pathname === '/api/rooms') {
+    res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(openRooms()));
     return;
   }
   let file = normalize(join(DIST, decodeURIComponent(url.pathname)));
@@ -155,14 +221,36 @@ wss.on('connection', (ws, req) => {
     if (msg.type === 'hello') {
       client.role = msg.role === 'p1' || msg.role === 'p2' ? msg.role : 'spectator';
       broadcast(room, { type: 'presence', players: players(room) });
+      if (client.role !== 'spectator') sendUndoDepth(room, client.role);
       return;
     }
     if (msg.type !== 'action') return;
+    if (msg.action?.type === 'undo') {
+      if (client.role === 'spectator') return;
+      const entry = room.undo[client.role].pop();
+      if (entry) apply(room, { type: 'revert', revert: entry.revert });
+      sendUndoDepth(room, client.role);
+      return;
+    }
+    if (msg.action?.type === 'fight') {
+      const req = client.role === 'spectator' ? null : cleanFight(msg.action.fight);
+      if (!req) return;
+      const group = `f-${Date.now().toString(36)}-${randomInt(1e9).toString(36)}`;
+      for (const roll of resolveFight(req, () => randomInt(1, 7), client.role, group).rolls) apply(room, { type: 'rolled', roll });
+      return;
+    }
     const action = authorise(client, msg.action);
     if (!action) return;
-    room.state = reduce(room.state, action);
-    broadcast(room, { type: 'action', action });
-    scheduleSave(room);
+    const before = room.state;
+    apply(room, action);
+    if (action.type === 'loadState') room.undo = { p1: [], p2: [] };
+    if (client.role !== 'spectator' && UNDOABLE.has(action.type)) {
+      const revert = diffForUndo(before, room.state);
+      if (revert) {
+        remember(room, client.role, action, revert);
+        sendUndoDepth(room, client.role);
+      }
+    }
   });
 
   ws.on('close', () => {

@@ -8,6 +8,8 @@ interface Snapshot {
   state: GameState;
   status: ConnectionStatus;
   players: Role[];
+  /** How many of this player's changes can be undone. */
+  undoDepth: number;
 }
 
 /** Keeps this browser's copy of a room in step with the server, reconnecting when the link drops. */
@@ -16,7 +18,7 @@ export class RoomConnection {
   private listeners = new Set<() => void>();
   private retry = 0;
   private closed = false;
-  private snap: Snapshot = { state: initialState(), status: 'connecting', players: [] };
+  private snap: Snapshot = { state: initialState(), status: 'connecting', players: [], undoDepth: 0 };
 
   constructor(
     readonly room: string,
@@ -40,6 +42,7 @@ export class RoomConnection {
       if (msg.type === 'snapshot') this.set({ state: loadState(msg.state), players: msg.players, status: 'online' });
       else if (msg.type === 'action') this.set({ state: reduce(this.snap.state, msg.action) });
       else if (msg.type === 'presence') this.set({ players: msg.players });
+      else if (msg.type === 'undo') this.set({ undoDepth: msg.count });
       else if (msg.type === 'error') console.warn(msg.message);
     };
     ws.onclose = () => {
@@ -57,6 +60,7 @@ export class RoomConnection {
 
   setRole(role: Role) {
     this.role = role;
+    this.set({ undoDepth: 0 });
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: 'hello', role }));
   }
 
