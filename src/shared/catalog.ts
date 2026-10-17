@@ -123,7 +123,9 @@ export function entriesFor(id: string, unit: CatalogUnit, optionIds: string[], c
   });
 }
 
-export function entryPoints(unit: CatalogUnit, optionIds: string[], count: number): number {
+export function entryPoints(unit: CatalogUnit | undefined, optionIds: string[], count: number): number {
+  // A unit dropped from newer data counts for nothing rather than breaking the list.
+  if (!unit) return 0;
   const opts = unit.options.filter(o => optionIds.includes(o.id) && !o.included).reduce((a, o) => a + o.points, 0);
   return (unit.points + opts) * count;
 }

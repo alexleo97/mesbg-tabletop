@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { PHASES, type Model, type Role, type RoomSummary, type Seat } from '../shared/types.ts';
+import { PHASES, type Terrain, type Model, type Role, type RoomSummary, type Seat } from '../shared/types.ts';
 import { Board, type Tool } from './Board.tsx';
 import { RoomConnection, useRoom, type Connection } from './net.ts';
 import { pictureUrl } from '../shared/catalog.ts';
@@ -17,18 +17,15 @@ import { distanceBetween, formatInches } from '../shared/geometry.ts';
 import { scenarioById, vpTotal } from '../shared/scenarios.ts';
 import { useSettings, type Settings } from './settings.ts';
 import { Tutorial } from './Tutorial.tsx';
-import { AccountButton, ProfilePage } from './Account.tsx';
+import { ProfilePage } from './Account.tsx';
+import { ArmiesCard, ArmiesPage, MapsCard, MapsPage, randomRoom, SitePage, TopPlayersCard } from './Home.tsx';
+import { getMap } from './cloud.ts';
 import { LeaderboardPage } from './Leaderboard.tsx';
 import { useAuth } from './auth.ts';
 
 const DISCORD_INVITE = 'https://discord.gg/epNRWMxGws';
 
-const PLACES = ['osgiliath', 'helms-deep', 'weathertop', 'amon-hen', 'pelennor', 'fornost', 'dale', 'erebor', 'moria', 'isengard', 'edoras', 'lothlorien'];
 const PHASE_LABEL: Record<(typeof PHASES)[number], string> = { priority: 'Priority', move: 'Move', shoot: 'Shoot', fight: 'Fight', end: 'End' };
-
-function randomRoom() {
-  return `${PLACES[Math.floor(Math.random() * PLACES.length)]}-${Math.floor(1000 + Math.random() * 9000)}`;
-}
 
 const storage = {
   get: (k: string) => {
@@ -69,12 +66,6 @@ function useOpenGames() {
   return games;
 }
 
-/** Shown only when accounts are switched on. */
-function LeaderboardLink() {
-  const { enabled } = useAuth();
-  return enabled ? <button onClick={() => (location.search = '?leaderboard')}>🏆 Leaderboard</button> : null;
-}
-
 function Lobby({ settings, updateSettings }: { settings: Settings; updateSettings: (p: Partial<Settings>) => void }) {
   const [code, setCode] = useState('');
   const [showSettings, setShowSettings] = useState(false);
@@ -84,59 +75,76 @@ function Lobby({ settings, updateSettings }: { settings: Settings; updateSetting
     if (clean.length >= 3) location.search = `?room=${clean}`;
   };
   return (
-    <div className="lobby">
-      <AccountButton />
-      <h1>MESBG Tabletop</h1>
-      <p>Play the Middle-earth Strategy Battle Game in your browser, on a computer or phone.</p>
-      <button className="primary big" onClick={() => go(randomRoom())}>Start a new game</button>
-      <button className="learn" onClick={() => (location.search = '?learn')}>
-        New to the game? <b>Learn to play</b> in a guided practice battle
-      </button>
-      <div className="join">
-        <input placeholder="Game code, e.g. osgiliath-1234" value={code} onChange={e => setCode(e.target.value)} onKeyDown={e => e.key === 'Enter' && go(code)} />
-        <button onClick={() => go(code)}>Join</button>
+    <SitePage page="play" wide>
+      <div className="home-top">
+        <section className="home-hero">
+          <h1>Play Middle-earth battles online</h1>
+          <p className="lead">Bring your army, pick a table and play a friend. The game keeps track of turns, rolls and rules for you, on a computer or a phone.</p>
+          <div className="hero-actions">
+            <button className="primary big" onClick={() => go(randomRoom())}>
+              Start a new game
+            </button>
+            <button className="big" onClick={() => (location.search = '?learn')}>
+              Learn to play
+            </button>
+          </div>
+          <div className="join">
+            <input placeholder="Have a game code? e.g. osgiliath-1234" value={code} onChange={e => setCode(e.target.value)} onKeyDown={e => e.key === 'Enter' && go(code)} />
+            <button onClick={() => go(code)}>Join</button>
+          </div>
+        </section>
+
+        <section className="open-games dash-card">
+          <header>
+            <h2>Open games</h2>
+          </header>
+          {games === null && <p className="muted">Looking for games…</p>}
+          {games?.length === 0 && <p className="muted">No open games right now. Start one and share the link, or find an opponent on Discord.</p>}
+          {games?.map(g => {
+            const free = (['p1', 'p2'] as const).filter(s => !g.seated.includes(s));
+            return (
+              <button key={g.id} className="game-row" onClick={() => go(g.id)}>
+                <span className="game-id">{g.id}</span>
+                <span className="game-who">
+                  <b className="p1">{g.names.p1 || 'Player 1'}</b> vs <b className="p2">{g.names.p2 || 'Player 2'}</b>
+                </span>
+                <span className="muted">
+                  {scenarioById(g.scenario)?.name ?? 'Open play'} · turn {g.turn}
+                  {g.spectators ? ` · ${g.spectators} watching` : ''}
+                </span>
+                <span className={`game-seat ${free.length ? 'free' : ''}`}>{free.length ? 'Join' : 'Watch'}</span>
+              </button>
+            );
+          })}
+        </section>
       </div>
 
-      <section className="open-games">
-        <h2>Open games</h2>
-        {games === null && <p className="muted">Looking for games…</p>}
-        {games?.length === 0 && <p className="muted">No open games right now. Start one and share the link.</p>}
-        {games?.map(g => {
-          const free = (['p1', 'p2'] as const).filter(s => !g.seated.includes(s));
-          return (
-            <button key={g.id} className="game-row" onClick={() => go(g.id)}>
-              <span className="game-id">{g.id}</span>
-              <span className="game-who">
-                <b className="p1">{g.names.p1 || 'Player 1'}</b> vs <b className="p2">{g.names.p2 || 'Player 2'}</b>
-              </span>
-              <span className="muted">
-                {scenarioById(g.scenario)?.name ?? 'Open play'} · turn {g.turn}
-                {g.spectators ? ` · ${g.spectators} watching` : ''}
-              </span>
-              <span className={`game-seat ${free.length ? 'free' : ''}`}>{free.length ? 'Seat open' : 'Full, watch'}</span>
-            </button>
-          );
-        })}
-      </section>
+      <div className="dash-grid">
+        <ArmiesCard />
+        <MapsCard />
+        <TopPlayersCard />
+      </div>
 
-      <LeaderboardLink />
-      <a className="discord-link" href={DISCORD_INVITE} target="_blank" rel="noreferrer">
-        Join our Discord to find opponents, report bugs and suggest features
-      </a>
-      <button onClick={() => setShowSettings(v => !v)} aria-expanded={showSettings}>
-        ⚙ Settings
-      </button>
+      <footer className="home-foot">
+        <a className="discord-link" href={DISCORD_INVITE} target="_blank" rel="noreferrer">
+          Join our Discord
+        </a>
+        <button onClick={() => setShowSettings(v => !v)} aria-expanded={showSettings}>
+          ⚙ Display settings
+        </button>
+        <p className="fine">Unofficial fan project. Not affiliated with Games Workshop or Middle-earth Enterprises.</p>
+      </footer>
       {showSettings && (
         <div className="lobby-settings">
           <SettingsPanel settings={settings} update={updateSettings} />
         </div>
       )}
-      <p className="fine">Unofficial fan project. Not affiliated with Games Workshop or Middle-earth Enterprises.</p>
-    </div>
+    </SitePage>
   );
 }
 
 type PanelTab = 'model' | 'dice' | 'rules' | 'army' | 'table' | 'settings';
+const PANEL_TITLE: Record<PanelTab, string> = { army: 'Army', table: 'Table', rules: 'Rules', dice: 'Dice log', model: 'Selected models', settings: 'Look' };
 
 interface GameProps {
   room: string;
@@ -192,6 +200,22 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
   useEffect(() => {
     if (!practice && seat && profile && players.includes(seat) && !state.names[seat]) dispatch({ type: 'setName', seat, name: profile.username });
   }, [seat, profile?.username, players.includes(seat as Seat), !state.names[seat as Seat]]);
+  // Arriving from the Maps page: lay out the chosen map once you've taken a seat at an empty table.
+  const mapId = useMemo(() => new URLSearchParams(location.search).get('map'), []);
+  const [mapNote, setMapNote] = useState<string | null>(null);
+  const tableEmpty = Object.keys(state.terrain).length === 0;
+  useEffect(() => {
+    if (!mapId || practice || !seat || !players.includes(seat) || status !== 'online') return;
+    const url = new URL(location.href);
+    url.searchParams.delete('map');
+    history.replaceState(null, '', url);
+    if (!tableEmpty) return;
+    void getMap(mapId).then(m => {
+      if (!m) return setMapNote("Couldn't load that map. Pick one from the ⛰ Table tab instead.");
+      const terrain = (m.data.terrain ?? []).map((t: Terrain) => ({ ...t, id: `t-${Math.random().toString(36).slice(2, 9)}` }));
+      dispatch({ type: 'setScenery', w: m.data.w, h: m.data.h, mat: m.data.mat, terrain });
+    });
+  }, [mapId, seat, players.includes(seat as Seat), status]);
   const leave = () => {
     location.search = '';
   };
@@ -342,6 +366,7 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
               onFightTap={setFightKey}
               sightFrom={sight && single ? single.id : undefined}
               sightRange={sight && single ? weaponOf(single, catalog)?.range : undefined}
+              showNames={settings.names}
             />
 
             <div className="tool-rail" role="toolbar" aria-label="Tools">
@@ -367,12 +392,27 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
                 <span>👁</span>
                 <small>Sight</small>
               </button>
+              <button
+                className={settings.names ? 'on' : ''}
+                onClick={() => updateSettings({ names: !settings.names })}
+                title="Show unit names under models"
+                aria-label="Unit names"
+                aria-pressed={settings.names}
+              >
+                <span>🏷</span>
+                <small>Names</small>
+              </button>
               <button onClick={() => dispatch({ type: 'undo' })} disabled={!canUndo} title="Undo your last change (Ctrl+Z)" aria-label="Undo">
                 <span>↶</span>
                 <small>Undo</small>
               </button>
             </div>
 
+            {mapNote && (
+              <button className="sight-hint" onClick={() => setMapNote(null)}>
+                {mapNote}
+              </button>
+            )}
             {sight && <SightHint state={state} viewer={single} range={single ? weaponOf(single, catalog)?.range : undefined} />}
             {single && (
               <ModelCard
@@ -413,25 +453,12 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
 
         {panelOpen && (
           <aside className="panel">
-            <nav className="tabs">
-              {(
-                [
-                  ['army', 'Army'],
-                  ['table', 'Table'],
-                  ['rules', 'Rules'],
-                  ['dice', 'Log'],
-                  ['model', selected.size ? `Selected (${selected.size})` : 'Selected'],
-                  ['settings', '⚙'],
-                ] as const
-              ).map(([t, label]) => (
-                <button key={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>
-                  {label}
-                </button>
-              ))}
+            <div className="panel-head">
+              <h3>{PANEL_TITLE[tab]}</h3>
               <button className="close" onClick={() => setPanelOpen(false)} aria-label="Close panel">
                 ✕
               </button>
-            </nav>
+            </div>
             {tab === 'model' && <SelectionPanel state={state} selected={selected} dispatch={dispatch} clear={() => setSelected(new Set())} />}
             {tab === 'settings' && <SettingsPanel settings={settings} update={updateSettings} />}
             {tab === 'dice' && <DicePanel state={state} dispatch={dispatch} role={role} />}
@@ -498,8 +525,20 @@ export function App() {
   const params = new URLSearchParams(location.search);
   const room = cleanRoom(params.get('room') ?? '');
   const [settings, updateSettings] = useSettings();
-  if (params.has('leaderboard')) return <LeaderboardPage onHome={() => (location.search = '')} />;
-  if (params.has('profile')) return <ProfilePage onHome={() => (location.search = '')} />;
+  if (params.has('armies')) return <ArmiesPage />;
+  if (params.has('maps')) return <MapsPage />;
+  if (params.has('leaderboard'))
+    return (
+      <SitePage page="leaderboard">
+        <LeaderboardPage />
+      </SitePage>
+    );
+  if (params.has('profile'))
+    return (
+      <SitePage page="profile">
+        <ProfilePage onHome={() => (location.search = '')} />
+      </SitePage>
+    );
   if (params.has('learn'))
     return <Tutorial settings={settings} updateSettings={updateSettings} onExit={() => (location.search = '')} onPlay={() => (location.search = `?room=${randomRoom()}`)} />;
   return room.length >= 3 ? <Game room={room} settings={settings} updateSettings={updateSettings} /> : <Lobby settings={settings} updateSettings={updateSettings} />;

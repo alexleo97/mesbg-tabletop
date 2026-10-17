@@ -75,9 +75,11 @@ export interface Settings {
   zones: boolean;
   deployment: boolean;
   grid: boolean;
+  /** Unit names shown under each model on the table. */
+  names: boolean;
 }
 
-const DEFAULTS: Settings = { theme: 'classic', headingFont: 'cinzel', bodyFont: 'system', photos: true, zones: true, deployment: true, grid: true };
+const DEFAULTS: Settings = { theme: 'classic', headingFont: 'cinzel', bodyFont: 'system', photos: true, zones: true, deployment: true, grid: true, names: false };
 const KEY = 'mesbg-tabletop:settings';
 
 function load(): Settings {

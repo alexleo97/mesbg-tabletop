@@ -68,7 +68,7 @@ export function ProfilePage({ onHome }: { onHome: () => void }) {
   };
 
   return (
-    <div className="lobby profile">
+    <div className="page-body profile">
       <h1>Your profile</h1>
       {loading && <p className="muted">Loading…</p>}
       {!loading && !enabled && <p>Accounts aren't switched on for this site yet.</p>}
@@ -114,7 +114,7 @@ export function ProfilePage({ onHome }: { onHome: () => void }) {
             {armies === null ? (
               <p className="muted small">Loading…</p>
             ) : armies.length === 0 ? (
-              <p className="muted small">Build a list in a game's ⚔ Army tab and it's saved here.</p>
+              <p className="muted small">Build one on the Armies page and it's saved here.</p>
             ) : (
               <ul>
                 {armies.map(a => (
@@ -151,11 +151,11 @@ export function ProfilePage({ onHome }: { onHome: () => void }) {
           </section>
         </>
       )}
-      <div className="row wrap center">
-        <button onClick={onHome}>Home</button>
-        {enabled && <button onClick={() => (location.search = '?leaderboard')}>🏆 Leaderboard</button>}
-        {signedIn && <button onClick={() => void signOut().then(onHome)}>Sign out</button>}
-      </div>
+      {signedIn && (
+        <div className="row wrap center">
+          <button onClick={() => void signOut().then(onHome)}>Sign out</button>
+        </div>
+      )}
     </div>
   );
 }

@@ -33,6 +33,8 @@ interface Props {
   sightFrom?: string;
   /** How far the sight model can shoot, drawn as a ring around it. */
   sightRange?: number;
+  /** Write each model's name under its base. */
+  showNames?: boolean;
 }
 
 interface View {
@@ -73,7 +75,7 @@ function BaseShape({ m, className = 'base' }: { m: Model; className?: string }) 
 
 const clipId = (m: Model) => `clip-${m.base.shape}-${m.base.w}-${m.base.h}`;
 
-export function Board({ state, tool, selected, setSelected, selectedTerrain, setSelectedTerrain, dispatch, showZones, showDeployment, showGrid, photoFor, onModelTap, links, fights, onFightTap, sightFrom, sightRange }: Props) {
+export function Board({ state, tool, selected, setSelected, selectedTerrain, setSelectedTerrain, dispatch, showZones, showDeployment, showGrid, photoFor, onModelTap, links, fights, onFightTap, sightFrom, sightRange, showNames }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const tex = useMemo(() => textures(), []);
   const [view, setView] = useState<View>({ x: 0, y: 0, s: 10 });
@@ -503,6 +505,17 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
               </g>
             );
           })}
+
+          {showNames &&
+            models.map(m0 => {
+              const m = shown(m0);
+              const { ry } = halfExtents(m.base);
+              return (
+                <text key={`n-${m.id}`} className={`model-name ${m.owner}`} x={m.x} y={m.y + ry + (m.maxWounds > 1 ? 0.45 : 0.1) + fontSize * 0.8} textAnchor="middle" pointerEvents="none">
+                  {m.name}
+                </text>
+              );
+            })}
 
           {sight?.lines
             .filter(l => l.seen !== 'hidden')
