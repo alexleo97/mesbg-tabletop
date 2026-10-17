@@ -13,8 +13,9 @@ function Avatar({ profile, size = 28 }: { profile: Profile; size?: number }) {
 
 /** The home page's sign-in button, or who is signed in. Hidden when the server has no sign-in set up. */
 export function AccountButton() {
-  const { enabled, loading, signedIn, profile } = useAuth();
+  const { enabled, loading, signedIn, profile, error } = useAuth();
   if (!enabled) return null;
+  const problem = error && <p className="warn small account-error">{error}</p>;
   if (loading) return <div className="account" aria-hidden />;
   if (signedIn)
     return (
@@ -23,6 +24,7 @@ export function AccountButton() {
           {profile && <Avatar profile={profile} />}
           <span>{profile?.username ?? 'Your profile'}</span>
         </button>
+        {problem}
       </div>
     );
   return (
@@ -30,6 +32,7 @@ export function AccountButton() {
       <button className="discord-signin" onClick={() => void signIn()}>
         Sign in with Discord
       </button>
+      {problem}
     </div>
   );
 }
