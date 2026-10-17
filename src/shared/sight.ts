@@ -14,13 +14,30 @@ export const blocksSight = (t: Terrain) => BLOCKS.has(t.kind);
 export const isDifficult = (t: Terrain) => t.difficult ?? DIFFICULT.has(t.kind);
 export const slowsShots = (t: Terrain) => IN_THE_WAY.has(t.kind);
 
+/** Both banks of a river from its centreline, as one outline in the piece's own inches. */
+export function bandOutline(path: [number, number, number][]): Point[] {
+  const left: Point[] = [];
+  const right: Point[] = [];
+  path.forEach(([x, y, hw], i) => {
+    const a = path[Math.max(0, i - 1)];
+    const b = path[Math.min(path.length - 1, i + 1)];
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    const nx = -(b[1] - a[1]) / len;
+    const ny = (b[0] - a[0]) / len;
+    left.push({ x: x + nx * hw, y: y + ny * hw });
+    right.push({ x: x - nx * hw, y: y - ny * hw });
+  });
+  return [...left, ...right.reverse()];
+}
+
 /** A terrain piece's outline in board inches. */
 export function outline(t: Terrain, sides = 20): Point[] {
   const a = (t.rot * Math.PI) / 180;
   const c = Math.cos(a);
   const s = Math.sin(a);
-  const local =
-    t.shape === 'rect'
+  const local = t.path && t.path.length > 1
+    ? bandOutline(t.path)
+    : t.shape === 'rect'
       ? [
           { x: -t.w / 2, y: -t.h / 2 },
           { x: t.w / 2, y: -t.h / 2 },
@@ -106,18 +123,23 @@ export function moveCost(state: GameState, a: Point, b: Point): { cost: number; 
   const d = Math.hypot(b.x - a.x, b.y - a.y);
   const slow = Object.values(state.terrain).filter(isDifficult).map(t => outline(t));
   if (!slow.length || d === 0) return { cost: d, difficult: false };
+  // Bridges carry models over rivers at full speed.
+  const bridges = Object.values(state.terrain).filter(t => t.kind === 'bridge').map(t => outline(t));
   const steps = Math.max(8, Math.ceil(d * 8));
   let inside = 0;
   for (let i = 0; i < steps; i++) {
     const t = (i + 0.5) / steps;
     const p = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
-    if (slow.some(poly => insidePolygon(poly, p))) inside++;
+    if (slow.some(poly => insidePolygon(poly, p)) && !bridges.some(poly => insidePolygon(poly, p))) inside++;
   }
   return { cost: d + (d * inside) / steps, difficult: inside > 0 };
 }
 
 /** Whether a point is in difficult terrain. */
-export const inDifficult = (state: GameState, p: Point) => Object.values(state.terrain).some(t => isDifficult(t) && insidePolygon(outline(t), p));
+export const inDifficult = (state: GameState, p: Point) => {
+  const all = Object.values(state.terrain);
+  return all.some(t => isDifficult(t) && insidePolygon(outline(t), p)) && !all.some(t => t.kind === 'bridge' && insidePolygon(outline(t), p));
+};
 
 /**
  * The areas hidden from a viewpoint by sight-blocking terrain, as an SVG path.
