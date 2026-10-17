@@ -19,6 +19,8 @@ const initials = (name: string) =>
     .map(w => w[0])
     .join('');
 
+const RING = 0.1;
+
 function PhotoToken({ t, side, i }: { t: Token; side: 'p1' | 'p2'; i: number }) {
   const r = mmToIn(t.mm) / 2;
   const id = `hero-clip-${side}-${i}`;
@@ -32,8 +34,9 @@ function PhotoToken({ t, side, i }: { t: Token; side: 'p1' | 'p2'; i: number }) 
         {initials(t.name)}
       </text>
       <image href={pictureUrl(t)} x={-r} y={-r} width={2 * r} height={2 * r} preserveAspectRatio="xMidYMid slice" clipPath={`url(#${id})`} onError={e => (e.currentTarget.style.display = 'none')} />
-      <circle className="hero-ring" r={r} />
-      {t.hero && <circle className="hero-gold" r={r - 0.1} />}
+      {/* Rings drawn inside the base's edge and touching, the hero's gold ring outermost. */}
+      {t.hero && <circle className="hero-gold" r={r - RING / 2} />}
+      <circle className="hero-ring" r={r - (t.hero ? RING * 1.5 : RING / 2)} />
     </g>
   );
 }
@@ -45,7 +48,7 @@ export function HeroArt() {
     return starterTerrain(BOARD, () => `hero-${n++}`).sort((a, b) => LAYER(a.kind) - LAYER(b.kind));
   }, []);
   return (
-    <svg className="hero-art" viewBox="1.5 19.5 36 13" preserveAspectRatio="xMaxYMid slice" aria-hidden>
+    <svg className="hero-art" viewBox="7.9 18.9 36.6 13.2" preserveAspectRatio="xMaxYMid slice" aria-hidden>
       <defs>
         <TerrainDefs />
         {MATERIALS.map(m => (
