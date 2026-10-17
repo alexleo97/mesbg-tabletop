@@ -577,3 +577,79 @@ details.finish summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
 .standings td:first-child, .standings th:first-child { width: 2em; }
 .standings tr.me td { background: var(--panel-2); }
 .standings tr:first-child td:first-child { color: var(--gold); font-weight: 700; }
+
+/* Site pages outside a game: a menu bar, then the page. */
+.site { min-height: 100%; display: flex; flex-direction: column; }
+.site-nav {
+  position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 16px; padding: 8px 20px;
+  background: var(--panel); border-bottom: 1px solid var(--line);
+}
+.site-nav .brand { font-family: var(--font-head); color: var(--gold); font-weight: 700; font-size: 1.15rem; text-decoration: none; white-space: nowrap; }
+.site-nav .brand span { color: var(--text); font-weight: 400; }
+.site-nav nav { display: flex; gap: 4px; flex: 1; }
+.site-nav nav a {
+  display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 8px; color: var(--muted); text-decoration: none; font-weight: 600;
+}
+.site-nav nav a:hover { color: var(--text); background: var(--panel-2); }
+.site-nav nav a.on { color: var(--gold); background: var(--panel-2); }
+.site-nav .account { margin: 0; min-height: 0; }
+.site-main { width: 100%; max-width: 480px; margin: 0 auto; padding: 32px 16px 48px; display: flex; flex-direction: column; gap: 14px; text-align: center; }
+.site-main.wide { max-width: 980px; text-align: left; }
+.site-main h1 { color: var(--gold); margin: 0; font-size: 2rem; }
+.site-main .hero-title { font-size: 2.2rem; }
+.site-main .big { font-size: 1.15rem; padding: 14px; }
+.site-main .join { display: flex; gap: 8px; }
+.site-main .fine { color: var(--muted); font-size: 0.8rem; margin-top: 24px; }
+.site-main .learn { border-color: var(--gold); background: transparent; line-height: 1.3; }
+.site-main .learn b { color: var(--gold); }
+.site-main .link { background: none; border: none; color: var(--muted); text-decoration: underline; }
+.site-main p { margin: 0; }
+.page-body { display: flex; flex-direction: column; gap: 14px; }
+.center-self { align-self: center; }
+.page-tabs { width: min(420px, 100%); align-self: center; }
+.armies-builder { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+.armies-builder .builder { max-width: 640px; margin: 0 auto; }
+
+.map-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+.map-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; }
+.map-preview { display: block; width: 100%; aspect-ratio: 3 / 2; background: var(--field); }
+.map-info { padding: 10px 12px 0; display: flex; flex-direction: column; gap: 2px; }
+.map-actions { padding: 10px 12px 12px; display: flex; gap: 8px; align-items: center; margin-top: auto; }
+.map-actions .primary { flex: 1; }
+.map-actions .check { white-space: nowrap; }
+.mp-mat { fill: #4d6b34; }
+.mp-wood { fill: #24461f; }
+.mp-rock { fill: #7b7569; }
+.mp-building { fill: #8a6a48; stroke: #3b2e20; stroke-width: 0.2; }
+.mp-water { fill: #3d6f95; }
+.mp-hill { fill: #6f8a45; }
+.mp-wall { fill: #b6ab95; }
+.mp-ruin { fill: #9a9285; opacity: 0.8; }
+.mp-field { fill: #b59a4c; }
+.mp-objective { fill: var(--gold); }
+
+/* The game's side panel opens on one tool at a time, chosen from the top bar. */
+.panel-head { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 14px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--panel); z-index: 1; }
+.panel-head h3 { flex: 1; margin: 0; color: var(--gold); font-size: 1.1rem; }
+.panel-head .close { flex: 0 0 40px; }
+
+@media (max-width: 700px) {
+  .site { padding-bottom: calc(60px + env(safe-area-inset-bottom)); }
+  .site-nav { padding: 8px 12px; gap: 8px; }
+  .site-nav nav {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; justify-content: space-around; gap: 0;
+    background: var(--panel); border-top: 1px solid var(--line); padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
+  }
+  .site-nav nav a { flex: 1; flex-direction: column; gap: 2px; padding: 6px 2px; font-size: 0.72rem; }
+  .site-nav nav a span { font-size: 1.25rem; }
+  .site-nav .brand { flex: 1; }
+  .site-nav .account-me span:not(.avatar) { display: none; }
+  .site-main { padding-top: 20px; }
+  .armies-builder { padding: 10px; }
+}
+.saved-lists { display: flex; flex-direction: column; gap: 8px; }
+.list-cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.list-cards li { display: flex; align-items: center; gap: 8px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.list-card-name { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.list-card-name small { color: var(--muted); }
+.button-link { display: inline-flex; align-items: center; justify-content: center; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); text-decoration: none; text-align: center; }

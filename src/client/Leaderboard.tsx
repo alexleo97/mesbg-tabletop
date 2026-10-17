@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { leaderboard, useAuth, type Standing } from './auth.ts';
 
 /** Players ranked by wins in games both sides agreed on. */
-export function LeaderboardPage({ onHome }: { onHome: () => void }) {
+export function LeaderboardPage() {
   const { enabled, loading, profile } = useAuth();
   const [rows, setRows] = useState<Standing[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -12,7 +12,7 @@ export function LeaderboardPage({ onHome }: { onHome: () => void }) {
   }, [enabled]);
 
   return (
-    <div className="lobby leaderboard">
+    <div className="page-body leaderboard">
       <h1>Leaderboard</h1>
       <p className="muted">Wins from games between two signed-in players who both agreed on the result.</p>
       {!loading && !enabled && <p>The leaderboard isn't switched on for this site yet.</p>}
@@ -56,9 +56,6 @@ export function LeaderboardPage({ onHome }: { onHome: () => void }) {
           </tbody>
         </table>
       )}
-      <div className="row wrap center">
-        <button onClick={onHome}>Home</button>
-      </div>
     </div>
   );
 }

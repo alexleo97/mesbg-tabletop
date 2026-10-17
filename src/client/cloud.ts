@@ -127,3 +127,11 @@ export async function armySummaries(): Promise<ArmySummary[] | null> {
   const { data, error } = await who.sb.from('armies').select('id, name, faction, points').eq('owner', who.id).order('updated_at', { ascending: false });
   return error ? null : data;
 }
+
+/** One map by id: your own, or anyone's shared one. */
+export async function getMap(id: string): Promise<SavedMap | null> {
+  const sb = await supabase();
+  if (!sb || !isUuid(id)) return null;
+  const { data, error } = await sb.from('maps').select(MAP_FIELDS).eq('id', id).maybeSingle();
+  return error || !data ? null : toMap(data as unknown as MapRow);
+}

@@ -6,7 +6,7 @@ import { useRef, useState } from 'react';
 import { objectiveMarkers, STARTER_BOARDS, starterTerrain } from '../shared/boards.ts';
 import { loadCatalog, parseBuilderExport, STAT_NAMES, statsWithOptions } from '../shared/catalog.ts';
 import { deployList, guessBase, newId, parseList, type ListEntry } from '../shared/importList.ts';
-import { ListBuilder, Portrait, useCatalog } from './ListBuilder.tsx';
+import { ListBuilder, SavedLists, Portrait, useCatalog } from './ListBuilder.tsx';
 import { MATS, type Action, type Base, type DiceRoll, type GameState, type Mat, type Model, type Role, type Seat, type Terrain } from '../shared/types.ts';
 import { BODY_FONTS, HEADING_FONTS, THEMES, type Settings } from './settings.ts';
 
@@ -239,7 +239,7 @@ export function ArmyPanel({ state, dispatch, role }: { state: GameState; dispatc
   const [owner, setOwner] = useState<Seat>(role === 'p2' ? 'p2' : 'p1');
   const [message, setMessage] = useState('');
   const [single, setSingle] = useState('');
-  const [mode, setMode] = useState<'build' | 'import'>('build');
+  const [mode, setMode] = useState<'lists' | 'build' | 'import'>('lists');
   const fileRef = useRef<HTMLInputElement>(null);
 
   const deploy = (entries: ListEntry[], note = '') => {
@@ -296,11 +296,14 @@ export function ArmyPanel({ state, dispatch, role }: { state: GameState; dispatc
       </div>
       {role === 'spectator' && <p className="hint">Spectators can watch but can't deploy armies. Pick a player seat in the top bar to join in.</p>}
       <div className="row seg">
-        <button className={mode === 'build' ? 'on' : ''} onClick={() => setMode('build')}>Build a list</button>
+        <button className={mode === 'lists' ? 'on' : ''} onClick={() => setMode('lists')}>My lists</button>
+        <button className={mode === 'build' ? 'on' : ''} onClick={() => setMode('build')}>Build</button>
         <button className={mode === 'import' ? 'on' : ''} onClick={() => setMode('import')}>Import</button>
       </div>
       {message && <p className="hint">{message}</p>}
-      {mode === 'build' ? (
+      {mode === 'lists' ? (
+        <SavedLists onDeploy={entries => deploy(entries)} onBuild={() => setMode('build')} />
+      ) : mode === 'build' ? (
         <ListBuilder onDeploy={entries => deploy(entries)} deployLabel={`Deploy for ${state.names[owner] || (owner === 'p1' ? 'Player 1' : 'Player 2')}`} />
       ) : (
         <>

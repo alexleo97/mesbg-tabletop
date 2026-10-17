@@ -58,8 +58,68 @@ export function Portrait({ unit, size = 40 }: { unit: Pick<CatalogUnit, 'origin'
   return <img className="portrait" src={pictureUrl(unit)} alt="" width={size} height={size} loading="lazy" onError={() => setFailed(true)} />;
 }
 
-/** Builds an army from the bundled MESBG data and hands the result to `onDeploy`. */
-export function ListBuilder({ onDeploy, deployLabel }: { onDeploy: (entries: ListEntry[], name: string) => void; deployLabel: string }) {
+/** Your saved lists, each ready to deploy in one tap. */
+export function SavedLists({ onDeploy, onBuild }: { onDeploy: (entries: ListEntry[], name: string) => void; onBuild: () => void }) {
+  const { catalog, error } = useCatalog();
+  const { profile } = useAuth();
+  const [lists, setLists] = useState<Roster[]>(loadSaved);
+  // Signed in: pick up lists built on another device.
+  useEffect(() => {
+    if (!profile) return;
+    void cloudLists().then(cloud => cloud && setLists(mergeLists(loadSaved(), cloud)));
+  }, [profile?.id]);
+
+  if (error) return <p className="hint">Couldn't load the unit data. Check your connection and reopen this tab.</p>;
+  if (!catalog) return <p className="hint">Loading armies…</p>;
+  const ready = lists.filter(r => r.entries.length);
+  return (
+    <div className="saved-lists">
+      {ready.length === 0 ? (
+        <p className="hint">You haven't built any lists yet.</p>
+      ) : (
+        <ul className="list-cards">
+          {ready.map(r => {
+            const pts = r.entries.reduce((a, e) => a + entryPoints(catalog.units[e.unitId], e.optionIds, e.count), 0);
+            const models = r.entries.reduce((a, e) => a + e.count * Math.max(1, catalog.units[e.unitId]?.mwfw?.length ?? 1), 0);
+            return (
+              <li key={r.id}>
+                <span className="list-card-name">
+                  <b>{r.name}</b>
+                  <small>
+                    {r.army} · {pts} pts · {models} models
+                  </small>
+                </span>
+                <button
+                  className="primary shrink"
+                  onClick={() =>
+                    onDeploy(
+                      r.entries.flatMap(e => {
+                        const unit = catalog.units[e.unitId];
+                        return unit ? entriesFor(e.unitId, unit, e.optionIds, e.count) : [];
+                      }),
+                      r.name,
+                    )
+                  }
+                >
+                  Deploy
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <div className="row wrap">
+        <button onClick={onBuild}>Build or edit a list here</button>
+        <a className="button-link" href="?armies" target="_blank" rel="noreferrer">
+          Open the Armies page
+        </a>
+      </div>
+    </div>
+  );
+}
+
+/** Builds an army from the bundled MESBG data and, in a game, hands the result to `onDeploy`. */
+export function ListBuilder({ onDeploy, deployLabel }: { onDeploy?: (entries: ListEntry[], name: string) => void; deployLabel?: string }) {
   const { catalog, error } = useCatalog();
   const [saved, setSaved] = useState<Roster[]>(loadSaved);
   const [roster, setRoster] = useState<Roster>(() => saved[0] ?? { id: uid(), name: 'My list', army: '', entries: [] });
@@ -146,7 +206,7 @@ export function ListBuilder({ onDeploy, deployLabel }: { onDeploy: (entries: Lis
       const unit = catalog.units[e.unitId];
       return unit ? entriesFor(e.unitId, unit, e.optionIds, e.count) : [];
     });
-    onDeploy(entries, roster.name);
+    onDeploy?.(entries, roster.name);
   };
 
   return (
@@ -189,7 +249,7 @@ export function ListBuilder({ onDeploy, deployLabel }: { onDeploy: (entries: Lis
         )}
       </div>
       <p className="hint sync">
-        {synced === 'off' && 'Lists are kept in this browser. Sign in with Discord on the home page to keep them on every device.'}
+        {synced === 'off' && 'Lists are kept in this browser. Sign in with Discord to keep them on every device.'}
         {synced === 'syncing' && 'Syncing with your account…'}
         {synced === 'saved' && '✓ Saved to your account'}
         {synced === 'failed' && "Couldn't reach your account, so changes are only in this browser for now."}
@@ -303,9 +363,11 @@ export function ListBuilder({ onDeploy, deployLabel }: { onDeploy: (entries: Lis
             <button onClick={() => setAdding(true)}>+ Add units</button>
           )}
 
-          <button className="primary" disabled={!roster.entries.length} onClick={deploy}>
-            {deployLabel}
-          </button>
+          {onDeploy && (
+            <button className="primary" disabled={!roster.entries.length} onClick={deploy}>
+              {deployLabel}
+            </button>
+          )}
           <p className="fine">Points and options come from the MESBG List Builder's data. Warband sizes and bow limits aren't checked here.</p>
         </>
       )}
