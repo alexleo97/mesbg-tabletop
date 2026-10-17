@@ -106,7 +106,6 @@ h1, h3, h4, .topbar .room, .phases .turn, .roster-summary b, .name-input, .tabs 
 .river-edge { fill: #5d5236; }
 .river-shallows { fill: #9fc4c455; }
 .river-deep { fill: none; stroke: #0a2536; stroke-opacity: 0.55; stroke-linecap: round; }
-.river-current { fill: none; stroke: #d8ecf0; stroke-opacity: 0.25; stroke-dasharray: 0.6 1.4; stroke-linecap: round; }
 .bridge-deck { fill: #7a5634; stroke: #3b2716; stroke-width: 0.06; }
 .bridge-plank { stroke: #3b2716; stroke-width: 0.04; opacity: 0.7; }
 .bridge-rail { fill: #4a3220; }

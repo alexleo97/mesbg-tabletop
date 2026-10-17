@@ -16,15 +16,6 @@ export interface StarterBoard {
 const circle = (kind: Terrain['kind'], x: number, y: number, w: number, h: number, rot = 0): Piece => ({ kind, shape: 'circle', x, y, w, h, rot });
 const rect = (kind: Terrain['kind'], x: number, y: number, w: number, h: number, rot = 0): Piece => ({ kind, shape: 'rect', x, y, w, h, rot });
 
-/**
- * Each player's half mirrored through the centre (a half turn), the way tournament tables are set
- * up so neither side gets the better deployment. Centre pieces are listed once.
- */
-function balanced(half: Piece[], centre: Piece[] = []): Piece[] {
-  const turned = half.map(p => ({ ...p, x: 48 - p.x, y: 48 - p.y, rot: ((p.rot ?? 0) + 180) % 360 }));
-  return [...centre, ...half, ...turned];
-}
-
 type Pt = [number, number];
 
 /**
@@ -69,12 +60,11 @@ const bridge = (x: number, y: number, rot: number, span = 8): Piece => ({ kind: 
 
 /**
  * Original layouts for a 48"×48" table. At this scale a model's base is about an inch, so a 6"×4"
- * building is a cottage and a 12"×8" field is a small paddock. Every board has a reason for its
- * terrain to be where it is (a road to a bridge, houses along a street, fields round a farm) and
- * follows the usual tournament guidance: a quarter to a third of the table covered, something
- * in the middle that blocks sight or funnels the armies, clear lanes, and matching terrain in front
- * of both deployment zones. Player 1 deploys from the bottom edge, player 2 from the top; rivers and
- * roads through the middle are laid out symmetrically about the centre, so they're listed once.
+ * building is a cottage and a 12"×7" field is a small paddock. Every board has a reason for its terrain
+ * to be where it is (a road to a bridge, houses along a street, fields round a farm). The two halves
+ * are laid out differently but get a similar amount of cover, so neither side starts ahead
+ * (tests/boards.test.ts checks this, and that nothing sits in a river, on a road or on top of another piece).
+ * Player 1 deploys from the bottom edge, player 2 from the top.
  */
 export const STARTER_BOARDS: StarterBoard[] = [
   {
@@ -84,54 +74,63 @@ export const STARTER_BOARDS: StarterBoard[] = [
     mat: 'grass',
     w: 48,
     h: 48,
-    pieces: balanced(
-      [
-        rect('ruin', 31.5, 31, 5, 4, 15),
-        circle('wood', 9, 32, 11, 6.5, -8),
-        rect('field', 39.5, 35.5, 8, 6),
-        rect('field', 45.75, 35.5, 4.5, 6),
-        rect('building', 29.5, 38.5, 5, 3.5, -4),
-        circle('rock', 15.5, 39, 3.2, 2.4, 30),
-        circle('wood', 18, 31.5, 5, 4, 10),
-      ],
-      [
-        road([[21, 51], [22.5, 40], [25, 32], [24, 24], [23, 16], [25.5, 8], [27, -3]]),
-        river([[-3, 19], [8, 22.5], [16, 21.5], [24, 24], [32, 26.5], [40, 25.5], [51, 29]], 4.2),
-        bridge(24, 24, 84),
-      ],
-    ),
+    pieces: [
+      road([[20, 51], [22, 40], [25, 32], [24, 24.5], [22.5, 16], [25, 8], [24, -3]]),
+      river([[-3, 20], [9, 23.5], [17, 21], [24, 24.5], [31, 27], [40, 24], [51, 27]], 4.2),
+      bridge(24, 24.5, 81),
+      // South bank: a ruined mill, a farm by the road, and a copse.
+      rect('ruin', 33, 34, 5, 4, 10),
+      rect('building', 30, 41, 5, 3.5, -4),
+      rect('field', 40.5, 39, 7, 6),
+      rect('field', 45.5, 32.5, 4.5, 6),
+      circle('wood', 9, 33, 10, 6.5, -8),
+      circle('wood', 16.5, 30.5, 4.5, 3.5, 10),
+      circle('rock', 14, 40, 3.2, 2.4, 30),
+      // North bank: a watchtower on a hill, a cottage with its garden wall, an old wood.
+      circle('hill', 37, 12, 11, 7, 15),
+      rect('ruin', 37, 12, 4, 4, 15),
+      circle('wood', 6.5, 10, 10, 8),
+      rect('building', 16, 14, 5, 3.5, 5),
+      rect('wall', 16, 10.8, 6, 0.5, 5),
+      rect('field', 30, 16.5, 7, 5),
+      circle('rock', 44.5, 19, 3, 2.2),
+      circle('wood', 45, 8, 4.5, 6),
+    ],
   },
   {
     id: 'ruined-city',
     name: 'Ruined Town',
-    blurb: 'A burned-out market town: houses along two crossing streets, walled yards behind them and a square in the middle.',
+    blurb: 'A burned-out market town: houses along two crossing streets, walled yards behind them and a manor hall to the north.',
     mat: 'grass',
     w: 48,
     h: 48,
-    pieces: balanced(
-      [
-        // Houses fronting the main street, gardens and walls behind.
-        rect('building', 4.5, 28.5, 6, 4),
-        rect('ruin', 11.5, 28.8, 6, 4.5),
-        rect('building', 18.5, 28.5, 5, 4),
-        rect('ruin', 31, 28.8, 6, 4.5),
-        rect('building', 38, 28.5, 6, 4),
-        rect('ruin', 44.8, 28.8, 5.5, 4.5),
-        rect('wall', 8, 35.5, 11, 0.5),
-        rect('wall', 2.75, 33.3, 0.5, 4.5),
-        rect('wall', 41, 35.5, 9, 0.5),
-        // Along the side street towards the edge: a ruined chapel and a cottage.
-        rect('ruin', 30.5, 39.5, 6, 8),
-        rect('building', 18.5, 40, 5, 4),
-        rect('wall', 18.5, 44.5, 7, 0.5),
-        circle('rock', 9, 39.5, 2.2, 1.6, 20),
-        circle('rock', 40, 40, 2.5, 1.8, 20),
-      ],
-      [
-        road([[-3, 23], [12, 24.4], [24, 24], [36, 23.6], [51, 25]], 3.2),
-        road([[25, 51], [24.5, 36], [24, 24], [23.5, 12], [23, -3]], 2.8),
-      ],
-    ),
+    pieces: [
+      road([[-3, 23], [12, 24.5], [24, 24], [36, 23.5], [51, 25]], 3.2),
+      road([[25, 51], [24.5, 36], [24, 24], [23.5, 12], [23, -3]], 2.8),
+      // South side of the main street.
+      rect('building', 4.5, 29.5, 7, 4),
+      rect('ruin', 12, 30, 6, 5),
+      rect('building', 19, 29.5, 4.5, 4),
+      rect('ruin', 30, 30, 5, 5),
+      rect('building', 36.5, 30, 6, 5),
+      rect('ruin', 44, 29.5, 5.5, 4),
+      rect('wall', 6, 35, 9, 0.5),
+      rect('ruin', 32, 40, 6, 7),
+      rect('building', 17.5, 40.5, 5, 4),
+      circle('rock', 9, 41, 2.4, 1.8, 20),
+      circle('rock', 41.5, 38, 2.6, 1.9),
+      // North side: a different row, and the old manor behind it.
+      rect('ruin', 4, 18, 5.5, 5),
+      rect('building', 11, 18.5, 6, 4.5),
+      rect('ruin', 18, 18, 4.5, 5.5),
+      rect('building', 29.6, 18.5, 5.5, 4.5),
+      rect('ruin', 36.5, 18, 6.5, 5.5),
+      rect('building', 43.5, 18.5, 5, 4.5),
+      rect('ruin', 12.5, 8, 9, 6),
+      rect('wall', 36, 12, 10, 0.5),
+      circle('wood', 33, 7, 6, 4),
+      circle('rock', 43, 9, 2.4, 1.8),
+    ],
   },
   {
     id: 'woodland-edge',
@@ -140,18 +139,25 @@ export const STARTER_BOARDS: StarterBoard[] = [
     mat: 'grass',
     w: 48,
     h: 48,
-    pieces: balanced(
-      [
-        circle('wood', 6, 33, 11, 15, 5),
-        circle('wood', 31, 38, 6, 4.5, -15),
-        rect('building', 37, 40.5, 4.5, 3.5, -10),
-        rect('field', 41, 29.5, 8, 6, -10),
-        circle('hill', 17, 30.5, 9, 6, 20),
-        circle('rock', 27, 37, 3, 2.2),
-        bridge(16.5, 18.5, 136, 6),
-      ],
-      [river([[-3, 6], [7, 10], [13, 15.5], [19, 21], [24, 24], [29, 27], [35, 32.5], [41, 38], [51, 42]], 2.6)],
-    ),
+    pieces: [
+      river([[-3, 7], [6, 10.5], [13, 16], [19, 20], [25, 24.5], [31, 27], [36, 33], [42, 38.5], [51, 41]], 2.6),
+      bridge(13, 16, 126, 6),
+      bridge(36, 33, 136, 6),
+      // South
+      circle('wood', 6, 34, 11, 14, 5),
+      circle('hill', 17.5, 31, 9, 6, 20),
+      circle('wood', 28, 41, 6, 4.5, -15),
+      rect('building', 37, 44, 4.5, 3.5, -10),
+      rect('field', 45, 30.5, 5, 6),
+      circle('rock', 25, 34, 3, 2.2),
+      // North
+      circle('wood', 42, 13, 11, 15, -5),
+      circle('hill', 30, 14, 8, 5.5, -15),
+      circle('wood', 20, 7, 7, 5),
+      rect('field', 5, 20.5, 7, 5),
+      rect('ruin', 23, 15, 4, 4, 10),
+      rect('building', 11, 4, 4.5, 3.5),
+    ],
   },
   {
     id: 'mountain-pass',
@@ -160,47 +166,57 @@ export const STARTER_BOARDS: StarterBoard[] = [
     mat: 'snow',
     w: 48,
     h: 48,
-    pieces: balanced(
-      [
-        // The western ridge: a chain of crags along the road, not loose boulders.
-        circle('cliff', 3, 27, 6, 9, 15),
-        circle('cliff', 7, 32.5, 7, 6, -20),
-        circle('cliff', 11.5, 36.5, 6, 5, -30),
-        circle('cliff', 4, 37, 6, 7),
-        // A spur of the eastern ridge narrowing the pass.
-        circle('cliff', 45, 30, 6, 9, 10),
-        circle('cliff', 40.5, 34.5, 8, 5.5, 25),
-        circle('cliff', 35, 37, 5, 4, 35),
-        rect('ruin', 17, 31, 5, 5, 20),
-        circle('wood', 31, 30, 6, 4.5, -10),
-        circle('rock', 26.5, 37.5, 2.8, 2.2, 15),
-        circle('rock', 13.5, 27, 3, 2.4),
-      ],
-      [road([[17, 51], [20, 41], [26, 31], [24, 24], [22, 17], [28, 7], [31, -3]], 3)],
-    ),
+    pieces: [
+      road([[17, 51], [20, 41], [26, 31], [24, 24], [21, 16], [27, 7], [30, -3]], 3),
+      // The western ridge reaches down the south half.
+      circle('cliff', 3, 27, 6, 9, 15),
+      circle('cliff', 7, 33, 7, 6, -20),
+      circle('cliff', 4, 39.5, 6, 7),
+      circle('cliff', 12, 38, 5, 4, -30),
+      rect('ruin', 15, 30, 5, 5, 20),
+      circle('wood', 33, 31, 6, 4.5),
+      circle('cliff', 44.5, 33.5, 7, 8, 10),
+      circle('cliff', 38.5, 38, 6, 4.5, 25),
+      circle('rock', 30, 41, 2.8, 2.2, 15),
+      // The eastern ridge holds the north half; a lower spur comes in from the west.
+      circle('cliff', 45, 15, 6, 10),
+      circle('cliff', 39, 10, 7, 6, 30),
+      circle('cliff', 35.5, 17, 5, 4, -20),
+      circle('cliff', 4, 13, 7, 8),
+      circle('cliff', 9.5, 9, 6, 4.5, -25),
+      rect('ruin', 31, 21, 4, 4, -10),
+      circle('wood', 13, 19, 6, 4),
+      circle('rock', 18, 6, 2.6, 2),
+      circle('cliff', 41, 21, 5, 4, 10),
+      circle('rock', 18.5, 11, 3, 2.4),
+    ],
   },
   {
     id: 'farmstead',
     name: 'Farmstead',
-    blurb: 'A farm lane runs between hedged fields, a farmhouse and barn round a yard, and an orchard.',
+    blurb: 'A farm lane runs between hedged fields, past a farmhouse and barn round a yard, an orchard and a mill.',
     mat: 'plains',
     w: 48,
     h: 48,
-    pieces: balanced(
-      [
-        // A patchwork of fields sharing hedges, south of the lane.
-        rect('field', 7, 32, 12, 7),
-        rect('field', 19, 32, 12, 7),
-        circle('wood', 13, 39.5, 7, 4.5),
-        // The farm: house, barn and a walled yard opening onto the lane.
-        rect('building', 32, 30.5, 7, 4),
-        rect('building', 38.5, 33.5, 4, 7),
-        rect('wall', 32, 37.25, 9, 0.5),
-        circle('wood', 44, 34, 6, 6),
-        circle('water', 29, 41, 5, 3.5, 15),
-      ],
-      [road([[-3, 21], [14, 24], [24, 24], [34, 24], [51, 27]], 2.6)],
-    ),
+    pieces: [
+      road([[-3, 21], [12, 23], [24, 24.5], [36, 23], [51, 26]], 2.6),
+      // South: the farm itself.
+      rect('field', 7, 33, 12, 7),
+      rect('field', 19.4, 33, 12, 7),
+      rect('building', 33, 30.5, 7, 4),
+      rect('building', 39.8, 33.5, 4, 7),
+      rect('wall', 33, 36.5, 8, 0.5),
+      circle('wood', 45.5, 39, 4.5, 7),
+      circle('water', 29, 42, 5, 3.5, 15),
+      circle('wood', 12, 41.5, 7, 4.5),
+      // North: wider fields, the mill and a spinney.
+      rect('field', 36, 13, 14, 8),
+      rect('field', 10, 14, 10, 7),
+      rect('ruin', 21.5, 15, 5, 4),
+      circle('wood', 25, 6.5, 7, 5),
+      rect('building', 4, 6, 4.5, 3.5),
+      circle('rock', 46, 19, 2.4, 1.8),
+    ],
   },
 ];
 

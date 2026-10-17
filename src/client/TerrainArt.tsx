@@ -237,7 +237,6 @@ export function TerrainArt({ t, mat }: { t: Terrain; mat: Mat }) {
             <path className="ground water-surface" d={d} fill={tex} />
             <path className="river-shallows" d={d} />
             <path className="river-deep" d={centreLine(t.path)} strokeWidth={hw * 1.1} filter="url(#bank-blur)" />
-            <path className="river-current" d={centreLine(t.path)} strokeWidth={hw * 0.12} />
           </>
         );
       }

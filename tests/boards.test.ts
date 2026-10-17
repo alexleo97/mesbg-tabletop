@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { coverage, objectiveMarkers, OBJECTIVE_SPOTS, STARTER_BOARDS, starterTerrain } from '../src/shared/boards.ts';
 import { initialState, reduce } from '../src/shared/reducer.ts';
 import { moveCost } from '../src/shared/sight.ts';
+import { halfCover, layoutProblems } from '../src/shared/boardCheck.ts';
 
 describe('starter boards', () => {
   it('load every piece and keep models on the table', () => {
@@ -25,6 +26,17 @@ describe('starter boards', () => {
     for (const b of STARTER_BOARDS) {
       expect(coverage(b)).toBeGreaterThan(0.2);
       expect(coverage(b)).toBeLessThan(0.4);
+    }
+  });
+
+  it('keep pieces out of rivers, off roads and apart from each other', () => {
+    for (const b of STARTER_BOARDS) expect([b.id, layoutProblems(b)]).toEqual([b.id, []]);
+  });
+
+  it('give both halves a similar amount of cover', () => {
+    for (const b of STARTER_BOARDS) {
+      const { p1, p2 } = halfCover(b);
+      expect(Math.abs(p1 - p2) / Math.max(p1, p2)).toBeLessThan(0.2);
     }
   });
 
