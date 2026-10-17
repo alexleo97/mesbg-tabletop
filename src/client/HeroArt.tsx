@@ -33,6 +33,7 @@ function PhotoToken({ t, side, i }: { t: Token; side: 'p1' | 'p2'; i: number }) 
       </text>
       <image href={pictureUrl(t)} x={-r} y={-r} width={2 * r} height={2 * r} preserveAspectRatio="xMidYMid slice" clipPath={`url(#${id})`} onError={e => (e.currentTarget.style.display = 'none')} />
       <circle className="hero-ring" r={r} />
+      {t.hero && <circle className="hero-gold" r={r - 0.1} />}
     </g>
   );
 }
@@ -44,7 +45,7 @@ export function HeroArt() {
     return starterTerrain(BOARD, () => `hero-${n++}`).sort((a, b) => LAYER(a.kind) - LAYER(b.kind));
   }, []);
   return (
-    <svg className="hero-art" viewBox="0.2 19.5 36 13" preserveAspectRatio="xMaxYMid slice" aria-hidden>
+    <svg className="hero-art" viewBox="1.5 19.5 36 13" preserveAspectRatio="xMaxYMid slice" aria-hidden>
       <defs>
         <TerrainDefs />
         {MATERIALS.map(m => (

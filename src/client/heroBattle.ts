@@ -38,54 +38,40 @@ function onBank(side: 'north' | 'south', x: number, mm: number, back = 0) {
     : { x, y: Math.max(...edges) + SHORE + r + back };
 }
 
-// A spot on the bridge deck, `along` inches from its middle (south is positive) and `across` inches to its east.
-const DECK = BOARD.pieces.find(p => p.kind === 'bridge')!;
-const deck = (along: number, across: number) => {
-  const a = ((DECK.rot ?? 0) * Math.PI) / 180;
-  return { x: DECK.x + along * Math.cos(a) - across * Math.sin(a), y: DECK.y + along * Math.sin(a) + across * Math.cos(a) };
-};
-
 const gondor = (name: string, at: { x: number; y: number }, mm = 25, hero = false): Token => ({ origin: 'Gondor', name, mm, hero, ...at });
 const mordor = (name: string, at: { x: number; y: number }, mm = 25, hero = false): Token => ({ origin: 'Mordor', name, mm, hero, ...at });
 
-// Mordor holds the north bank and Gondor the south. The heroes meet in the middle of the bridge, each with a column
-// behind them, while the rest of both armies stand in ranks along the water's edge.
+// Mordor holds the north bank and Gondor the south, drawn up in ranks along the water's edge with their heroes in
+// the middle of the front rank, facing each other across the river.
 export const GOOD: Token[] = [
-  gondor('Aragorn, King Elessar', deck(0.55, -0.55), 25, true),
-  gondor('Boromir, Captain of the White Tower', deck(0.55, 0.55), 25, true),
-  gondor('Citadel Guard', deck(1.65, -0.55)),
-  gondor('Citadel Guard', deck(1.65, 0.55)),
-  gondor('Osgiliath Veteran', deck(2.75, -0.55)),
-  gondor('Osgiliath Veteran', deck(2.75, 0.55)),
-  gondor('Warrior of Minas Tirith', onBank('south', 26.4, 25)),
-  gondor('Warrior of Minas Tirith', onBank('south', 27.5, 25)),
-  gondor('Warrior of Minas Tirith', onBank('south', 28.6, 25)),
-  gondor('Warrior of Minas Tirith', onBank('south', 29.7, 25)),
-  gondor('Damrod', onBank('south', 30.8, 25), 25, true),
-  gondor('Ranger of Gondor', onBank('south', 31.9, 25)),
-  gondor('Ranger of Gondor', onBank('south', 33.0, 25)),
-  gondor('Warrior of Minas Tirith', onBank('south', 27.0, 25, 1.2)),
-  gondor('Warrior of Minas Tirith', onBank('south', 28.1, 25, 1.2)),
-  gondor('Warrior of Minas Tirith', onBank('south', 29.2, 25, 1.2)),
-  gondor('Ranger of Gondor', onBank('south', 32.4, 25, 1.2)),
-  gondor('Knight of Minas Tirith', onBank('south', 34.6, 40), 40),
+  gondor('Warrior of Minas Tirith', onBank('south', 26.6, 25)),
+  gondor('Citadel Guard', onBank('south', 27.7, 25)),
+  gondor('Citadel Guard', onBank('south', 28.8, 25)),
+  gondor('Aragorn, King Elessar', onBank('south', 29.9, 25), 25, true),
+  gondor('Boromir, Captain of the White Tower', onBank('south', 31.0, 25), 25, true),
+  gondor('Citadel Guard', onBank('south', 32.1, 25)),
+  gondor('Ranger of Gondor', onBank('south', 33.2, 25)),
+  gondor('Ranger of Gondor', onBank('south', 34.3, 25)),
+  gondor('Knight of Minas Tirith', onBank('south', 36.0, 40), 40),
+  gondor('Warrior of Minas Tirith', onBank('south', 27.2, 25, 1.2)),
+  gondor('Warrior of Minas Tirith', onBank('south', 28.3, 25, 1.2)),
+  gondor('Osgiliath Veteran', onBank('south', 29.4, 25, 1.2)),
+  gondor('Osgiliath Veteran', onBank('south', 30.5, 25, 1.2)),
+  gondor('Warrior of Minas Tirith', onBank('south', 31.6, 25, 1.2)),
+  gondor('Damrod', onBank('south', 32.7, 25, 1.2), 25, true),
 ];
 export const EVIL: Token[] = [
-  mordor('Gothmog', deck(-0.55, -0.55), 25, true),
-  mordor('Mordor Orc Captain', deck(-0.55, 0.55), 25, true),
-  mordor('Mordor Uruk-Hai', deck(-1.65, -0.55)),
-  mordor('Mordor Uruk-Hai', deck(-1.65, 0.55)),
-  mordor('Mordor Orc Warrior', deck(-2.75, -0.55)),
-  mordor('Mordor Orc Warrior', deck(-2.75, 0.55)),
   mordor('Mordor Troll', onBank('north', 27.2, 60), 60),
   mordor('Morannon Orc', onBank('north', 29.2, 25)),
-  mordor('Morannon Orc', onBank('north', 30.3, 25)),
-  mordor('Morannon Orc', onBank('north', 31.4, 25)),
-  mordor('Mordor Orc Warrior', onBank('north', 32.5, 25)),
-  mordor('Mordor Orc Warrior', onBank('north', 33.6, 25)),
+  mordor('Gothmog', onBank('north', 30.3, 25), 25, true),
+  mordor('Mordor Orc Captain', onBank('north', 31.4, 25), 25, true),
+  mordor('Mordor Uruk-Hai', onBank('north', 32.5, 25)),
+  mordor('Mordor Uruk-Hai', onBank('north', 33.6, 25)),
+  mordor('Mordor Orc Warrior', onBank('north', 34.7, 25)),
+  mordor('Mordor Warg Rider', onBank('north', 36.4, 40), 40),
   mordor('Mordor Orc Warrior', onBank('north', 29.8, 25, 1.2)),
   mordor('Mordor Orc Warrior', onBank('north', 30.9, 25, 1.2)),
-  mordor('Mordor Orc Warrior', onBank('north', 32.0, 25, 1.2)),
-  mordor('Mordor Orc Warrior', onBank('north', 33.1, 25, 1.2)),
-  mordor('Mordor Warg Rider', onBank('north', 35.0, 40), 40),
+  mordor('Morannon Orc', onBank('north', 32.0, 25, 1.2)),
+  mordor('Morannon Orc', onBank('north', 33.1, 25, 1.2)),
+  mordor('Mordor Orc Warrior', onBank('north', 34.2, 25, 1.2)),
 ];

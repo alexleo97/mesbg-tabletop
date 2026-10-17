@@ -778,7 +778,7 @@ details.finish summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
 .hero-initials { fill: var(--text); font-weight: 700; }
 .hero-token.p1 .hero-ring { stroke: var(--p1); }
 .hero-token.p2 .hero-ring { stroke: var(--p2); }
-.hero-token.hero .hero-ring { stroke: var(--gold); }
+.hero-gold { fill: none; stroke: var(--gold); stroke-width: 0.06; }
 .home-banner::before { content: ''; position: absolute; inset: 0; z-index: -1; background: linear-gradient(90deg, var(--bg) 0%, color-mix(in srgb, var(--bg) 88%, transparent) 38%, color-mix(in srgb, var(--bg) 30%, transparent) 70%, transparent 100%); }
 .home-hero { display: flex; flex-direction: column; gap: 18px; padding: 40px 44px; max-width: 620px; }
 .home-hero h1 { font-size: 2.8rem; line-height: 1.1; margin: 0; text-align: left; text-shadow: 0 2px 12px #000a; }
