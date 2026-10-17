@@ -41,7 +41,7 @@ export interface Model {
   fateRoll?: string;
 }
 
-export const TERRAIN_KINDS = ['wood', 'rock', 'building', 'water', 'hill', 'wall', 'ruin', 'cliff', 'field', 'objective', 'bridge'] as const;
+export const TERRAIN_KINDS = ['wood', 'rock', 'building', 'water', 'hill', 'wall', 'ruin', 'cliff', 'field', 'objective', 'bridge', 'road'] as const;
 export type TerrainKind = (typeof TERRAIN_KINDS)[number];
 
 /** Battle mat surfaces. */

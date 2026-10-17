@@ -93,7 +93,11 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
   const fitted = useRef(false);
 
   const models = useMemo(() => Object.values(state.models).filter(m => !m.dead), [state.models]);
-  const terrain = useMemo(() => Object.values(state.terrain), [state.terrain]);
+  // Roads and water lie on the ground, under everything else; bridges sit on top of the water.
+  const terrain = useMemo(() => {
+    const layer = (k: string) => (k === 'road' ? 0 : k === 'water' ? 1 : k === 'bridge' ? 3 : 2);
+    return Object.values(state.terrain).sort((a, b) => layer(a.kind) - layer(b.kind));
+  }, [state.terrain]);
   const viewer = sightFrom ? state.models[sightFrom] : undefined;
   const sight = useMemo(() => {
     if (!viewer || viewer.dead) return null;

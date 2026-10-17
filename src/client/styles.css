@@ -111,6 +111,10 @@ h1, h3, h4, .topbar .room, .phases .turn, .roster-summary b, .name-input, .tabs 
 .bridge-plank { stroke: #3b2716; stroke-width: 0.04; opacity: 0.7; }
 .bridge-rail { fill: #4a3220; }
 .mp-bridge { fill: #7a5634; }
+.mp-road { fill: #8a7552; }
+.road-verge { fill: #5b4a30; opacity: 0.45; }
+.road-bed { opacity: 0.92; }
+.road-rut { fill: none; stroke: #3e3020; stroke-width: 0.12; stroke-opacity: 0.35; }
 .terrain .bank { fill: #5b4a30; stroke: #3d3120; stroke-width: 0.5; stroke-linejoin: round; opacity: 0.85; }
 .terrain.hill .ground { stroke: #33421f88; stroke-width: 0.05; }
 .terrain.rock .ground, .terrain.cliff .ground { stroke: #1d1b19; stroke-width: 0.1; }

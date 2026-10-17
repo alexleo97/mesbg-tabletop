@@ -18,6 +18,7 @@ const MATERIAL: Record<Terrain['kind'], Material> = {
   field: 'farmland',
   objective: 'stone',
   bridge: 'wall',
+  road: 'dirt',
 };
 
 function rand(seed: string, i: number) {
@@ -287,6 +288,17 @@ export function TerrainArt({ t, mat }: { t: Terrain; mat: Mat }) {
           <rect className="hedge" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} rx={0.2} />
         </>
       );
+    case 'road':
+      if (t.path && t.path.length > 1)
+        return (
+          <>
+            <path className="road-verge" d={bandPath(t.path, 0.35)} filter="url(#bank-blur)" />
+            <path className="ground road-bed" d={d} fill={tex} />
+            {/* Wheel ruts: two lines running along the track. */}
+            <path className="road-rut" d={bandPath(t.path.map(([x, y, hw]) => [x, y, hw * 0.4]))} />
+          </>
+        );
+      return <rect className="ground road-bed" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} fill={tex} />;
     case 'bridge': {
       // Long side runs along w: planks laid across it, a rail down each edge.
       const planks = Math.max(3, Math.round(t.w / 0.45));
