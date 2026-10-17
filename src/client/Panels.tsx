@@ -7,7 +7,8 @@ import { useRef, useState } from 'react';
 import { objectiveMarkers, river, STARTER_BOARDS, starterTerrain } from '../shared/boards.ts';
 import { loadCatalog, parseBuilderExport, STAT_NAMES, startingPoints, statsWithOptions } from '../shared/catalog.ts';
 import { deployList, guessBase, newId, parseList, type ListEntry } from '../shared/importList.ts';
-import { ListBuilder, SavedLists, Portrait, useCatalog } from './ListBuilder.tsx';
+import { addSavedList, listEntries, ListBuilder, SavedLists, Portrait, useCatalog } from './ListBuilder.tsx';
+import { parseAdmiral } from '../shared/admiral.ts';
 import { MATS, TERRAIN_KINDS, type Action, type Base, type DiceRoll, type GameState, type Mat, type Model, type Role, type Seat, type Terrain, type TerrainKind } from '../shared/types.ts';
 import { BODY_FONTS, HEADING_FONTS, THEMES, type Settings } from './settings.ts';
 
@@ -268,7 +269,21 @@ export function ArmyPanel({ state, dispatch, role }: { state: GameState; dispatc
   };
 
   const importText = async (input: string) => {
-    const exported = parseBuilderExport(input, await loadCatalog());
+    const catalog = await loadCatalog();
+    // Tabletop Admiral's TTS view: becomes one of your saved lists, then goes on the table.
+    const admiral = parseAdmiral(input, catalog, () => newId('e'));
+    if (admiral) {
+      if (!admiral.entries.length) {
+        setMessage("That looks like a Tabletop Admiral list, but I couldn't match any of its profiles.");
+        return;
+      }
+      const roster = addSavedList({ name: `${admiral.army} (Tabletop Admiral)`, army: admiral.army, entries: admiral.entries });
+      const note = admiral.missing.length ? ` Skipped what I couldn't match: ${admiral.missing.join(', ')}.` : '';
+      deploy(listEntries(roster, catalog).flatMap(g => g.entries), ` It's saved in My lists as ${admiral.army}.${note}`);
+      setText('');
+      return;
+    }
+    const exported = parseBuilderExport(input, catalog);
     if (exported) {
       if (!exported.entries.length) {
         setMessage("That export didn't contain any units I recognise.");
@@ -328,7 +343,8 @@ export function ArmyPanel({ state, dispatch, role }: { state: GameState; dispatc
         <>
           <p className="hint">
             In the <a href="https://v2024.mesbg-list-builder.com/" target="_blank" rel="noreferrer">MESBG List Builder</a>, export your list as a file, then upload
-            it here. You can also paste a plain list.
+            it here. From <a href="https://modular.tabletopadmiral.com/mesbg" target="_blank" rel="noreferrer">Tabletop Admiral</a>, open Tools, then TTS/JSON View, and paste
+            what it shows. You can also paste a plain list.
           </p>
           <button onClick={() => fileRef.current?.click()}>Upload list file</button>
           <input ref={fileRef} type="file" accept=".json,.txt,application/json,text/plain" hidden onChange={e => onFile(e.target.files?.[0])} />
