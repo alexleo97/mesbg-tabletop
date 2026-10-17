@@ -180,9 +180,13 @@ export function RollRow({ r, state, role, dispatch }: { r: DiceRoll; state: Game
   const wounds = r.then && r.follow ? r.follow.filter(d => d >= r.then!).length : null;
   const hero = r.model ? state.models[r.model] : undefined;
   const might = !!dispatch && !!hero && hero.hero && !hero.dead && hero.might > 0 && hero.owner === role;
+  // Dice from a roll made in the last moment tumble before they land.
+  const [fresh] = useState(() => Date.now() - r.at < 2500);
   const die = (d: number, i: number, target: number | undefined, follow: boolean) => (
     <span key={i} className="die-wrap">
-      <span className={`die ${target ? (d >= target ? 'hit' : 'miss') : ''}`}>{d}</span>
+      <span className={`die ${target ? (d >= target ? 'hit' : 'miss') : ''} ${fresh ? 'tumble' : ''}`} style={fresh ? { animationDelay: `${(follow ? r.dice.length + i : i) * 45}ms` } : undefined}>
+        {d}
+      </span>
       {might && d < 6 && follow === (wounds !== null) && (
         <button className="might" onClick={() => dispatch!({ type: 'useMight', roll: r.id, die: i, ...(follow ? { follow: true } : {}) })} title={`Spend 1 of ${hero!.name}'s ${hero!.might} Might to make this a ${d + 1}`}>
           +1
@@ -661,6 +665,9 @@ export function SettingsPanel({ settings, update }: { settings: Settings; update
       </label>
       <label className="check">
         <input type="checkbox" checked={settings.names} onChange={e => update({ names: e.target.checked })} /> Unit names under models
+      </label>
+      <label className="check">
+        <input type="checkbox" checked={settings.animations} onChange={e => update({ animations: e.target.checked })} /> Animations (gliding moves, dice, hits and shots)
       </label>
       <label className="check">
         <input type="checkbox" checked={settings.zones} onChange={e => update({ zones: e.target.checked })} /> Move and 1" control zones

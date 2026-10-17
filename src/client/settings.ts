@@ -77,9 +77,11 @@ export interface Settings {
   grid: boolean;
   /** Unit names shown under each model on the table. */
   names: boolean;
+  /** Moves glide, dice tumble, and wounds, deaths and shots show on the table. */
+  animations: boolean;
 }
 
-const DEFAULTS: Settings = { theme: 'classic', headingFont: 'cinzel', bodyFont: 'system', photos: true, zones: true, deployment: true, grid: true, names: false };
+const DEFAULTS: Settings = { theme: 'classic', headingFont: 'cinzel', bodyFont: 'system', photos: true, zones: true, deployment: true, grid: true, names: false, animations: true };
 const KEY = 'mesbg-tabletop:settings';
 
 function load(): Settings {
@@ -98,6 +100,7 @@ function apply(s: Settings) {
   root.style.setProperty('--p2-soft', `${theme.vars.p2}55`);
   root.style.setProperty('--font-head', (HEADING_FONTS.find(f => f.id === s.headingFont) ?? HEADING_FONTS[0]).css);
   root.style.setProperty('--font-body', (BODY_FONTS.find(f => f.id === s.bodyFont) ?? BODY_FONTS[0]).css);
+  root.classList.toggle('no-anim', !s.animations);
   root.style.colorScheme = s.theme === 'shire' ? 'light' : 'dark';
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme.vars.panel);
 }

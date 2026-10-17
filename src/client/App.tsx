@@ -279,6 +279,7 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
   };
   const canUndo = role !== 'spectator' && role !== null && undoDepth > 0;
   const fights = useMemo(() => combats(state), [state]);
+  const reducedMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -435,6 +436,7 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
               sightRange={sight && single ? weaponOf(single, catalog)?.range : undefined}
               showNames={settings.names}
               marks={marks}
+              animate={settings.animations && !reducedMotion}
               onMark={m => conn.mark(m)}
             />
 

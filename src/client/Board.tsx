@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { distanceBetween, distanceToBase, formatInches, halfExtents, type Point } from '../shared/geometry.ts';
 import type { Action, GameState, Mark, Model, Terrain } from '../shared/types.ts';
 import { markerName, markerNotes } from '../shared/objects.ts';
+import { Effects } from './Effects.tsx';
 import { TerrainArt, TerrainDefs } from './TerrainArt.tsx';
 import { ScenarioZones } from './ScenarioZones.tsx';
 import { scenarioById } from '../shared/scenarios.ts';
@@ -41,6 +42,8 @@ interface Props {
   /** Pings and arrows on the table, and how to put one down (a click pings, a drag draws an arrow). */
   marks?: Mark[];
   onMark?: (m: Pick<Mark, 'kind' | 'x' | 'y' | 'x2' | 'y2'>) => void;
+  /** Glide moves and show wounds, deaths and shots as they happen. */
+  animate?: boolean;
 }
 
 interface View {
@@ -100,7 +103,7 @@ function Arrow({ by, from, to, fontSize }: { by: string; from: Point; to: Point;
 
 const clipId = (m: Model) => `clip-${m.base.shape}-${m.base.w}-${m.base.h}`;
 
-export function Board({ state, tool, selected, setSelected, selectedTerrain, setSelectedTerrain, dispatch, showZones, showDeployment, showGrid, photoFor, onModelTap, links, fights, onFightTap, sightFrom, sightRange, showNames, marks, onMark }: Props) {
+export function Board({ state, tool, selected, setSelected, selectedTerrain, setSelectedTerrain, dispatch, showZones, showDeployment, showGrid, photoFor, onModelTap, links, fights, onFightTap, sightFrom, sightRange, showNames, marks, onMark, animate }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const tex = useMemo(() => textures(), []);
   const [view, setView] = useState<View>({ x: 0, y: 0, s: 10 });
@@ -539,6 +542,13 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
               );
             })}
 
+          {/* This Move phase's moves so far, so you can see what went where. */}
+          {state.phase === 'move' &&
+            Object.entries(state.flow.starts ?? {}).map(([id, [x, y]]) => {
+              const m = state.models[id];
+              if (!m || m.dead || dragPos?.[id] || Math.hypot(m.x - x, m.y - y) < 0.2) return null;
+              return <line key={`mt-${id}`} className={`move-trail ${m.owner}`} x1={x} y1={y} x2={m.x} y2={m.y} pointerEvents="none" />;
+            })}
           {models.map(m0 => {
             const m = shown(m0);
             const { rx, ry } = halfExtents(m.base);
@@ -546,8 +556,9 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
             return (
               <g
                 key={m.id}
-                transform={`translate(${m.x} ${m.y}) rotate(${m.rot})`}
-                className={`model ${m.owner} ${m.hero ? 'hero' : ''} ${selected.has(m.id) ? 'selected' : ''} ${sight?.seen.has(m.id) ? `seen-${sight.seen.get(m.id)}` : ''}`}
+                // A CSS transform, so models moved by the other player glide to where they went.
+                style={{ transform: `translate(${m.x}px, ${m.y}px) rotate(${m.rot}deg)` }}
+                className={`model ${animate && !dragPos?.[m.id] ? 'glide' : ''} ${m.owner} ${m.hero ? 'hero' : ''} ${selected.has(m.id) ? 'selected' : ''} ${sight?.seen.has(m.id) ? `seen-${sight.seen.get(m.id)}` : ''}`}
               >
                 <BaseShape m={m} />
                 {photo && (
@@ -599,6 +610,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
                   {TERRAIN_INFO[t.kind].name}
                 </text>
               ))}
+          {animate && <Effects state={state} fontSize={fontSize} />}
           {/* Models standing up high show how far up they are. */}
           {models.map(m0 => {
             const m = shown(m0);
