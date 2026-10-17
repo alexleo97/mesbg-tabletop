@@ -3,6 +3,7 @@ import { duelLeader, strikeWounds, type Fighter, type FightRequest } from './fig
 import { activeSeat, combats, CONTACT_SLACK, other, type Combat } from './flow.ts';
 import { distanceBetween, halfExtents, mmToIn, type Point } from './geometry.ts';
 import { canDeclare, declared, heroicInfo, heroicTurn, heroicsSettled, orderRollLabel, orderRollNeeded, phaseHeroics } from './heroics.ts';
+import { pendingSpell } from './magic.ts';
 import { fightDone, limitMove } from './movement.ts';
 import { carriedBy, exitEdges, markerActions, onTable, sanctuary } from './objects.ts';
 import { chance, fightOdds, woundChance, type Side } from './odds.ts';
@@ -143,6 +144,8 @@ export function botStep(state: GameState, seat: Seat, catalog: Catalog | null, m
   const picks = picksStep(ctx);
   if (picks) return picks;
   if (!state.flow.started) return null;
+  const spell = spellStep(ctx);
+  if (spell) return spell;
   if (++memo.steps > MAX_STEPS) return finish(ctx);
   return fateStep(ctx) ?? phaseStep(ctx);
 }
@@ -598,6 +601,15 @@ function bestShot(ctx: Ctx, m: Model, state = ctx.state): Shot | null {
     if (!best || value > best.value) best = { target: e, obstacles, value };
   }
   return best;
+}
+
+/** A power cast at one of the computer's models: resist it with a die of Will (two for a hero with Will to spare). */
+function spellStep(ctx: Ctx): BotStep | null {
+  const p = pendingSpell(ctx.state);
+  if (!p) return null;
+  if (!p.cast && p.caster.owner === ctx.seat) return { action: { type: 'letSpellFail' }, delay: THINK_PAUSE };
+  if (!p.cast || p.target.owner !== ctx.seat) return null;
+  return { action: { type: 'resist', will: Math.min(p.target.will, p.target.will > 2 ? 2 : 1) }, delay: THINK_PAUSE };
 }
 
 function shootStep(ctx: Ctx): BotStep {

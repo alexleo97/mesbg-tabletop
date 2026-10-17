@@ -141,6 +141,8 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
     case 'backAway':
     case 'courageTaken':
     case 'arrive':
+    case 'spendWill':
+    case 'spellPending':
     case 'revert':
     case 'undo':
     case 'priorityRolled':
@@ -179,6 +181,8 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
       return action.seat === client.role ? action : null;
     case 'setBotSpeed':
       return action;
+    case 'letSpellFail':
+      return state.flow.spell && state.models[state.flow.spell.caster]?.owner === client.role ? action : null;
     case 'setBot':
       // A player can hand the other seat to the computer (if nobody's sitting in it), or take it back.
       if (action.seat === null) return action;

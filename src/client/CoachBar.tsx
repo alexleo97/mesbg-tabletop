@@ -6,6 +6,7 @@ import { fightDone } from '../shared/movement.ts';
 import { canDeclare, heroicInfo, heroicsSettled, heroicTurn, HEROICS, orderRollLabel, orderRollNeeded, phaseHeroics } from '../shared/heroics.ts';
 import { RollRow } from './Panels.tsx';
 import { useDraggable } from './useDraggable.tsx';
+import { pendingSpell } from '../shared/magic.ts';
 import { isMaelstrom, waitingWarbands, warbandName } from '../shared/maelstrom.ts';
 import { scenarioById } from '../shared/scenarios.ts';
 import { scoreLines, vpTotals } from '../shared/scoring.ts';
@@ -28,6 +29,52 @@ interface Props {
 type Dispatch = (a: Action) => void;
 
 /** Declaring heroic actions at the start of the Move, Shoot and Fight phases, taking turns from the player without Priority. */
+/** A power cast and waiting: its target's player chooses whether to resist, or its caster whether to spend Might. */
+function SpellStep({ state, dispatch, role, name }: { state: GameState; dispatch: Dispatch; role: Role; name: (s: Seat) => string }) {
+  const p = pendingSpell(state);
+  const [will, setWill] = useState(1);
+  if (!p) return null;
+  const { caster, target } = p;
+  if (!p.cast)
+    return (
+      <div className="spell-step">
+        <p>
+          {caster.name} rolled a {p.best} casting {p.power} and needs {p.cv}.{' '}
+          {caster.owner === role ? 'Spend Might on the die in the log to raise it, or let it fail.' : `Waiting for ${name(caster.owner)} to spend Might or let it fail.`}
+        </p>
+        <ol className="log">
+          <RollRow r={p.rollEntry} state={state} role={role} dispatch={dispatch} />
+        </ol>
+        {caster.owner === role && <button onClick={() => dispatch({ type: 'letSpellFail' })}>Let it fail</button>}
+      </div>
+    );
+  const n = Math.max(1, Math.min(will, target.will));
+  return (
+    <div className="spell-step">
+      <p>
+        {caster.name} cast <b>{p.power}</b> at {target.name} on a {p.best}.{' '}
+        {target.owner === role
+          ? `Resist by spending Will: each point is a die, and any ${p.best === 6 ? '6' : `${p.best} or more`} stops it. ${target.name} has ${target.will} Will.`
+          : `Waiting for ${name(target.owner)} to choose whether ${target.name} resists.`}
+      </p>
+      {target.owner === role && (
+        <div className="row wrap">
+          <label className="stepper">
+            <span>Will</span>
+            <button onClick={() => setWill(Math.max(1, n - 1))} aria-label="Less Will">−</button>
+            <b>{n}</b>
+            <button onClick={() => setWill(Math.min(target.will, n + 1))} aria-label="More Will">+</button>
+          </label>
+          <button className="primary" onClick={() => dispatch({ type: 'resist', will: n })}>
+            Resist with {n} {n === 1 ? 'die' : 'dice'}
+          </button>
+          <button onClick={() => dispatch({ type: 'resist', will: 0 })}>Don't resist</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function HeroicStep({ state, dispatch, role, name }: { state: GameState; dispatch: Dispatch; role: Role; name: (s: Seat) => string }) {
   const me = role === 'spectator' ? null : role;
   const heroes = me ? canDeclare(state, me) : [];
@@ -407,6 +454,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
       </div>
       {!small && (
         <div className="coach-body">
+          {flow.started && <SpellStep state={state} dispatch={dispatch} role={role} name={name} />}
           {flow.started && <FateStep state={state} dispatch={dispatch} role={role} name={name} />}
           {flow.started && <Reinforcements state={state} name={name} />}
           {state.result && <ResultReport state={state} role={role} dispatch={dispatch} />}

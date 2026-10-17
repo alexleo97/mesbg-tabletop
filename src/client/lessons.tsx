@@ -468,7 +468,7 @@ export const CHAPTERS: Chapter[] = [
             <p>Each power on a unit card shows its range and casting value.</p>
           </>
         ),
-        task: 'Select Gandalf, press Cast a power on his card, and cast any power.',
+        task: 'Select Gandalf and cast any power from his card.',
         setup: () =>
           inPhase('move', {
             drop: ['captain'],
@@ -484,8 +484,12 @@ export const CHAPTERS: Chapter[] = [
             <p>A hero who rolls a 6 when resisting gets that Will point back.</p>
           </>
         ),
-        task: 'Select the Shaman and cast in 📖 Rules until a power works, then select your Captain and press Resist.',
-        setup: () => inPhase('move', { add: [model('shaman', 'Orc Shaman', 'p2', 10, 12, SHAMAN, { hero: true, might: 1, will: 6, fate: 1, wounds: 2, maxWounds: 2 })] }),
+        task: 'The Shaman has cast Transfix at your Captain. Resist it in the turn guide.',
+        setup: () => {
+          const s = inPhase('move', { add: [model('shaman', 'Orc Shaman', 'p2', 10, 12, SHAMAN, { hero: true, might: 1, will: 5, fate: 1, wounds: 2, maxWounds: 2 })] });
+          const roll = { id: 'w-lesson-0', by: 'p2' as const, label: 'Cast Transfix (5+) by Orc Shaman at Captain of Minas Tirith', dice: [5, 2], target: 5, model: 'shaman', aim: 'captain', note: 'Cast on a 5. Captain of Minas Tirith may resist with Will, needing a 5 or more.', at: 0 };
+          return { ...s, log: [roll], flow: { ...s.flow, spell: { roll: roll.id, caster: 'shaman', target: 'captain', power: 'Transfix', cv: 5 } } };
+        },
         done: rolled('Resist '),
       },
       {

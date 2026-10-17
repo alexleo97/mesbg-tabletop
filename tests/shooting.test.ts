@@ -90,3 +90,13 @@ describe('shooting after moving', () => {
     expect(s.flow.farMoved).toEqual([]);
   });
 });
+
+describe('a duel with a Heroic Strike', () => {
+  it('is still rolled only once', () => {
+    let s = run(game(), { type: 'setPhase', phase: 'fight' });
+    const req = { sides: [[{ id: 'a', name: 'Archer', f: 3, a: 1, s: 3, d: 4, strike: true }], [{ id: 'near', name: 'Orc', f: 3, a: 1, s: 3, d: 4 }]], targets: ['near', 'a'], trapped: false };
+    s = run(s, ...resolveRequest(s, 'p1', { type: 'fight', fight: req } as Action, () => 4, uid)!.apply);
+    expect(s.log.some(r => r.label.startsWith('Heroic Strike'))).toBe(true);
+    expect(resolveRequest(s, 'p2', { type: 'fight', fight: req } as Action, () => 4, uid)).toBeNull();
+  });
+});

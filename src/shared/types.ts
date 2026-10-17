@@ -203,6 +203,15 @@ export interface GameResult {
 }
 
 /** Where the guided turn sequence is up to. */
+export interface SpellPending {
+  /** The casting roll in the log. */
+  roll: string;
+  caster: string;
+  target: string;
+  power: string;
+  cv: number;
+}
+
 export interface Flow {
   /** Setup is over and turns are being played. */
   started: boolean;
@@ -235,6 +244,10 @@ export interface Flow {
   shot?: string[];
   /** Models that moved more than half their Move this turn, so can't shoot. */
   farMoved?: string[];
+  /** Models that have cast a power this turn; each casts at most once. */
+  cast?: string[];
+  /** A cast waiting on its target's player (resist or not), or on its caster (spend Might or let it fail). */
+  spell?: SpellPending;
   /** Duels rolled this turn, by group, so the same one isn't rolled twice. */
   duels?: string[];
   starts?: Record<string, [number, number]>;
@@ -262,6 +275,10 @@ export type Action =
   | { type: 'moveModels'; moves: { id: string; x: number; y: number; rot?: number }[] }
   /** Losers of a fight backing away, worked out with the strikes (never sent by a player). */
   | { type: 'backAway'; moves: { id: string; x: number; y: number }[] }
+  | { type: 'spendWill'; id: string; count: number }
+  | { type: 'spellPending'; spell: SpellPending | null }
+  /** The caster's player lets a cast that fell short fail rather than spend Might on it. */
+  | { type: 'letSpellFail' }
   | { type: 'arrive'; seat: Seat; moves: { id: string; x: number; y: number; rot: number }[] }
   /** Courage test results, worked out with the dice (never sent by a player). Models of a Broken side that fail flee. */
   | { type: 'courageTaken'; results: Record<string, boolean>; broken?: Seat }
@@ -319,6 +336,10 @@ export type Action =
   | { type: 'strikes'; fight: FightRequest; group: string }
   /** Request from a client: the server rolls to hit, In the Way and to wound, then sends `rolled`. */
   | { type: 'shoot'; shot: ShotRequest }
+  /** Cast a power: the server rolls one die per Will spent. */
+  | { type: 'cast'; model: string; target: string; power: string; cv: number; will: number }
+  /** Resist the power cast at your model with this much Will (0: let it take effect). */
+  | { type: 'resist'; will: number }
   | { type: 'setBoard'; w: number; h: number; mat?: Mat }
   /** Replaces the mat and all terrain at once, e.g. when loading a starter board. Models stay. */
   | { type: 'setScenery'; w: number; h: number; mat: Mat; terrain: Terrain[] }

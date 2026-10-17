@@ -3,12 +3,13 @@ import { inTheWay } from './sight.ts';
 import { cleanFight, cleanShot, resolveDuel, resolveShot, resolveStrikes, type Fighter, type FightRequest } from './fight.ts';
 import { combatFromKey, priorityChooser } from './flow.ts';
 import { fightDone, foughtThisTurn } from './movement.ts';
+import { rollCast, rollResist } from './magic.ts';
 import { touching } from './objects.ts';
 import { MAX_DICE } from './reducer.ts';
 import type { Action, DiceRoll, GameState, Seat } from './types.ts';
 
 /** Dice requests a player sends, which only whoever holds the dice (the server, or the browser in practice games) can answer. */
-export const DICE_REQUESTS = new Set<Action['type']>(['roll', 'fight', 'strikes', 'shoot', 'rollFate', 'rollPriority', 'uncover']);
+export const DICE_REQUESTS = new Set<Action['type']>(['roll', 'fight', 'strikes', 'shoot', 'rollFate', 'rollPriority', 'uncover', 'cast', 'resist']);
 
 export interface Resolved {
   /** Results everyone applies, in order. */
@@ -112,6 +113,14 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       return {
         apply: [...shot.rolls.map((roll): Action => ({ type: 'rolled', roll })), ...woundAction(state, shot.rolls, req.target.id, shot.wounds, [req.shooter.id], 'shoot', group)],
       };
+    }
+    case 'cast': {
+      const out = rollCast(state, seat, action, d6, uid, now);
+      return out && { apply: out };
+    }
+    case 'resist': {
+      const out = rollResist(state, seat, action.will, d6, uid, now);
+      return out && { apply: out };
     }
     case 'rollFate': {
       const m = state.models[String(action.id)];
