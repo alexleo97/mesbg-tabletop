@@ -6,6 +6,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import { initialState, loadState, reduce } from '../src/shared/reducer.ts';
 import type { Account, Action, ClientMessage, GameState, Revert, Role, RoomSummary, Seat, ServerMessage } from '../src/shared/types.ts';
 import { DICE_REQUESTS, resolveRequest } from '../src/shared/resolve.ts';
+import { cleanMark } from '../src/shared/marks.ts';
 import { scenarioById } from '../src/shared/scenarios.ts';
 import { announceGame, discordEnabled, discordMember } from './discord.ts';
 import { saveResult, verifyToken } from './accounts.ts';
@@ -426,6 +427,16 @@ wss.on('connection', (ws, req) => {
       room.invite = msg.private ? (room.invite ?? randomBytes(9).toString('base64url')) : undefined;
       apply(room, { type: 'setPrivate', private: !!msg.private });
       for (const c of room.clients) if (c.role !== 'spectator') send(c.ws, { type: 'invite', code: room.invite ?? null });
+      return;
+    }
+    if (msg.type === 'mark') {
+      // Pings and arrows go straight out to everyone in the room; they're not part of the saved game.
+      const mark = cleanMark(msg.mark, client.role, `k-${Date.now().toString(36)}-${randomInt(1e9).toString(36)}`);
+      if (mark) broadcast(room, { type: 'mark', mark });
+      return;
+    }
+    if (msg.type === 'clearMarks') {
+      broadcast(room, { type: 'clearMarks', by: client.role });
       return;
     }
     if (msg.type === 'identify') {

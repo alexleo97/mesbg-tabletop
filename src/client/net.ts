@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { initialState, loadState, reduce } from '../shared/reducer.ts';
-import type { Action, GameState, Role, ServerMessage } from '../shared/types.ts';
+import { addMark, PING_MS } from '../shared/marks.ts';
+import type { Action, GameState, Mark, Role, ServerMessage } from '../shared/types.ts';
 
 const SAVE_PREFIX = 'mesbg-save:';
 const MAX_SAVES = 10;
@@ -69,7 +70,19 @@ export interface Snapshot {
   invite?: string | null;
   /** Why the seat you asked for was refused (a private game without its invite). */
   refused?: string;
+  /** Pings and arrows on the table right now. */
+  marks?: Mark[];
 }
+
+/** Puts a mark on the table, taking a ping off again once it has faded. */
+export function showMark(get: () => Snapshot, set: (p: Partial<Snapshot>) => void, mark: Mark) {
+  set({ marks: addMark(get().marks ?? [], mark) });
+  if (mark.kind === 'ping') setTimeout(() => set({ marks: (get().marks ?? []).filter(m => m.id !== mark.id) }), PING_MS);
+}
+
+/** Arrows are for planning the turn at hand, so they go when a new turn starts. */
+export const turnMarks = (before: GameState, after: GameState, marks: Mark[] | undefined) =>
+  after.turn !== before.turn && marks?.some(m => m.kind === 'arrow') ? { marks: marks.filter(m => m.kind !== 'arrow') } : {};
 
 /** What the game screen needs from a game: the live server room, or a practice game in the browser. */
 export interface Connection {
@@ -82,6 +95,9 @@ export interface Connection {
   setToken?(token: string | null): void;
   /** Makes the game invite-only, or open to anyone again. */
   setPrivate?(on: boolean): void;
+  /** Shows everyone a ping or an arrow, or takes your arrows away. */
+  mark(mark: Pick<Mark, 'kind' | 'x' | 'y' | 'x2' | 'y2'>): void;
+  clearMarks(): void;
   close(): void;
 }
 
@@ -128,8 +144,11 @@ export class RoomConnection implements Connection {
         this.set({ state: loadState(msg.state), players: msg.players, status: 'online' });
         const saved = msg.blank && this.role !== 'spectator' ? readSave(this.room) : null;
         if (saved && worthKeeping(saved)) ws.send(JSON.stringify({ type: 'restore', state: saved, invite: this.snap.invite ?? undefined }));
-      } else if (msg.type === 'action') {
-        this.set({ state: reduce(this.snap.state, msg.action) });
+      } else if (msg.type === 'mark') showMark(this.getSnapshot, p => this.set(p), msg.mark);
+      else if (msg.type === 'clearMarks') this.set({ marks: (this.snap.marks ?? []).filter(m => m.by !== msg.by) });
+      else if (msg.type === 'action') {
+        const state = reduce(this.snap.state, msg.action);
+        this.set({ state, ...turnMarks(this.snap.state, state, this.snap.marks) });
         this.scheduleSave();
       } else if (msg.type === 'presence') this.set({ players: msg.players });
       else if (msg.type === 'undo') this.set({ undoDepth: msg.count });
@@ -182,6 +201,14 @@ export class RoomConnection implements Connection {
 
   dispatch(action: Action) {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: 'action', action }));
+  }
+
+  mark(mark: Pick<Mark, 'kind' | 'x' | 'y' | 'x2' | 'y2'>) {
+    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: 'mark', mark }));
+  }
+
+  clearMarks() {
+    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: 'clearMarks' }));
   }
 
   subscribe = (l: () => void) => {

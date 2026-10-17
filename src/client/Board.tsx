@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { distanceBetween, distanceToBase, formatInches, halfExtents, type Point } from '../shared/geometry.ts';
-import type { Action, GameState, Model, Terrain } from '../shared/types.ts';
+import type { Action, GameState, Mark, Model, Terrain } from '../shared/types.ts';
 import { markerName, markerNotes } from '../shared/objects.ts';
 import { TerrainArt, TerrainDefs } from './TerrainArt.tsx';
 import { ScenarioZones } from './ScenarioZones.tsx';
@@ -10,7 +10,7 @@ import { TERRAIN_INFO, terrainRules } from '../shared/terrain.ts';
 import { limitMove, moveStart, movesLimited, settleMove } from '../shared/movement.ts';
 import { inDifficult, insidePolygon, inTheWay, isDifficult, moveCost, outline, shadowPath, sightTo } from '../shared/sight.ts';
 
-export type Tool = 'move' | 'select' | 'measure';
+export type Tool = 'move' | 'select' | 'measure' | 'mark';
 
 interface Props {
   state: GameState;
@@ -38,6 +38,9 @@ interface Props {
   sightRange?: number;
   /** Write each model's name under its base. */
   showNames?: boolean;
+  /** Pings and arrows on the table, and how to put one down (a click pings, a drag draws an arrow). */
+  marks?: Mark[];
+  onMark?: (m: Pick<Mark, 'kind' | 'x' | 'y' | 'x2' | 'y2'>) => void;
 }
 
 interface View {
@@ -52,6 +55,7 @@ type Gesture =
   | { kind: 'terrain'; id: string; start: Point; origin: Point; moved: boolean }
   | { kind: 'box'; start: Point; end: Point; additive: boolean }
   | { kind: 'measure'; start: Point; end: Point; from?: string }
+  | { kind: 'mark'; start: Point; end: Point }
   | { kind: 'pinch'; dist: number; mid: Point; view: View };
 
 const SEND_EVERY_MS = 60;
@@ -76,9 +80,27 @@ function BaseShape({ m, className = 'base' }: { m: Model; className?: string }) 
   return <ellipse className={className} rx={rx} ry={ry} />;
 }
 
+/** A planning arrow in its player's colour, with how far it reaches. */
+function Arrow({ by, from, to, fontSize }: { by: string; from: Point; to: Point; fontSize: number }) {
+  const len = Math.hypot(to.x - from.x, to.y - from.y);
+  const head = Math.min(len * 0.4, Math.max(1, fontSize * 1.8));
+  const a = Math.atan2(to.y - from.y, to.x - from.x);
+  const wing = (s: number) => `${to.x - head * Math.cos(a + s * 0.45)},${to.y - head * Math.sin(a + s * 0.45)}`;
+  const neck = { x: to.x - head * 0.8 * Math.cos(a), y: to.y - head * 0.8 * Math.sin(a) };
+  return (
+    <g className={`arrow ${by}`}>
+      <line x1={from.x} y1={from.y} x2={neck.x} y2={neck.y} />
+      <polygon points={`${to.x},${to.y} ${wing(1)} ${wing(-1)}`} />
+      <text x={(from.x + to.x) / 2} y={(from.y + to.y) / 2 - fontSize * 0.6} textAnchor="middle">
+        {formatInches(len)}
+      </text>
+    </g>
+  );
+}
+
 const clipId = (m: Model) => `clip-${m.base.shape}-${m.base.w}-${m.base.h}`;
 
-export function Board({ state, tool, selected, setSelected, selectedTerrain, setSelectedTerrain, dispatch, showZones, showDeployment, showGrid, photoFor, onModelTap, links, fights, onFightTap, sightFrom, sightRange, showNames }: Props) {
+export function Board({ state, tool, selected, setSelected, selectedTerrain, setSelectedTerrain, dispatch, showZones, showDeployment, showGrid, photoFor, onModelTap, links, fights, onFightTap, sightFrom, sightRange, showNames, marks, onMark }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const tex = useMemo(() => textures(), []);
   const [view, setView] = useState<View>({ x: 0, y: 0, s: 10 });
@@ -232,6 +254,11 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
     const additive = e.shiftKey || e.ctrlKey || e.metaKey;
     const hit = modelAt(p);
 
+    // The Mark tool, or Alt with any tool: click to ping, drag to draw an arrow.
+    if (onMark && (tool === 'mark' || e.altKey)) {
+      setGesture({ kind: 'mark', start: p, end: p });
+      return;
+    }
     if (tool === 'measure') {
       setRuler(null);
       setGesture({ kind: 'measure', start: p, end: p, from: hit?.id });
@@ -325,7 +352,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
         lastSend.current = now;
         dispatch({ type: 'updateTerrain', id: gesture.id, patch: { x: gesture.origin.x + dx, y: gesture.origin.y + dy } });
       }
-    } else if (gesture.kind === 'box' || gesture.kind === 'measure') {
+    } else if (gesture.kind === 'box' || gesture.kind === 'measure' || gesture.kind === 'mark') {
       setGesture({ ...gesture, end: p });
     }
   };
@@ -369,6 +396,10 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
       const y1 = Math.max(gesture.start.y, gesture.end.y);
       const inBox = models.filter(m => m.x >= x0 && m.x <= x1 && m.y >= y0 && m.y <= y1).map(m => m.id);
       setSelected(new Set(gesture.additive ? [...selected, ...inBox] : inBox));
+    } else if (gesture.kind === 'mark') {
+      const { start } = gesture;
+      if (Math.hypot(p.x - start.x, p.y - start.y) * view.s < TAP_SLOP_PX) onMark?.({ kind: 'ping', x: start.x, y: start.y });
+      else onMark?.({ kind: 'arrow', x: start.x, y: start.y, x2: p.x, y2: p.y });
     } else if (gesture.kind === 'measure') {
       // A tap without a drag clears the ruler instead of leaving a zero-length one behind.
       const moved = Math.hypot(p.x - gesture.start.x, p.y - gesture.start.y) >= 0.25;
@@ -636,6 +667,22 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
             />
           )}
 
+          <g className="marks" pointerEvents="none">
+            {(marks ?? []).map(m =>
+              m.kind === 'ping' ? (
+                <g key={m.id} className={`ping ${m.by}`} transform={`translate(${m.x} ${m.y})`}>
+                  <circle className="ping-dot" r={fontSize * 0.35} />
+                  <circle className="ping-ring" r={1} />
+                  <circle className="ping-ring late" r={1} />
+                </g>
+              ) : (
+                <Arrow key={m.id} by={m.by} from={{ x: m.x, y: m.y }} to={{ x: m.x2!, y: m.y2! }} fontSize={fontSize} />
+              ),
+            )}
+            {gesture?.kind === 'mark' && Math.hypot(gesture.end.x - gesture.start.x, gesture.end.y - gesture.start.y) * view.s >= TAP_SLOP_PX && (
+              <Arrow by="mine" from={gesture.start} to={gesture.end} fontSize={fontSize} />
+            )}
+          </g>
           {rulerInfo && (
             <g className="ruler" pointerEvents="none">
               <line x1={rulerInfo.start.x} y1={rulerInfo.start.y} x2={rulerInfo.end.x} y2={rulerInfo.end.y} />
