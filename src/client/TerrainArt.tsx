@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
-import type { Terrain } from '../shared/types.ts';
-import type { Material } from './textures.ts';
+import type { Mat, Terrain } from '../shared/types.ts';
+import { TREES, type Material } from './textures.ts';
 
 // Top-down terrain drawn as SVG in board inches. Every random-looking detail is seeded from the
 // piece's id, so both players see exactly the same woods, rocks and riverbanks.
@@ -8,10 +8,10 @@ import type { Material } from './textures.ts';
 const MATERIAL: Record<Terrain['kind'], Material> = {
   wood: 'forest',
   rock: 'rock',
-  building: 'stone',
+  building: 'roof',
   water: 'water',
   hill: 'grass',
-  wall: 'ruin',
+  wall: 'wall',
   ruin: 'ruin',
   cliff: 'cliff',
   field: 'farmland',
@@ -91,7 +91,7 @@ function outline(t: Terrain): string {
 }
 
 /** Tree canopies spread through a wood without piling on top of each other. */
-function trees(t: Terrain): ReactElement[] {
+function trees(t: Terrain, mat: Mat): ReactElement[] {
   const target = Math.max(4, Math.round((t.w * t.h) / 4.5));
   const placed: { x: number; y: number; r: number }[] = [];
   for (let i = 0; placed.length < target && i < target * 12; i++) {
@@ -99,15 +99,21 @@ function trees(t: Terrain): ReactElement[] {
     const x = (rand(t.id, i * 3 + 1) - 0.5) * (t.w - 2 * r);
     const y = (rand(t.id, i * 3 + 2) - 0.5) * (t.h - 2 * r);
     if (t.shape === 'circle' && (x / (t.w / 2 - r * 0.6)) ** 2 + (y / (t.h / 2 - r * 0.6)) ** 2 > 1) continue;
-    if (placed.some(p => Math.hypot(p.x - x, p.y - y) < (p.r + r) * 0.72)) continue;
+    if (placed.some(p => Math.hypot(p.x - x, p.y - y) < (p.r + r) * 0.55)) continue;
     placed.push({ x, y, r });
   }
-  return placed.map((p, i) => (
-    <g key={i} transform={`translate(${p.x.toFixed(3)} ${p.y.toFixed(3)})`}>
-      <circle className="tree-shadow" cx={0.18} cy={0.24} r={p.r} />
-      <circle className="tree" r={p.r} fill={rand(t.id, i + 500) > 0.5 ? 'url(#g-canopy)' : 'url(#g-canopy-2)'} />
-    </g>
-  ));
+  return placed.map((p, i) => {
+    const pick = rand(t.id, i + 500);
+    const sprite = mat === 'snow' || pick > 0.8 ? TREES.pine : pick > 0.45 ? TREES.birch : TREES.oak;
+    const s = p.r * 3.1;
+    return (
+      <g key={i} transform={`translate(${p.x.toFixed(3)} ${p.y.toFixed(3)})`}>
+        <circle className="tree-shadow" cx={0.2} cy={0.28} r={p.r * 0.95} />
+        <circle className="tree-base" r={p.r * 0.8} />
+        <image href={sprite} x={-s / 2} y={-s / 2} width={s} height={s} transform={`rotate(${(rand(t.id, i + 700) * 360).toFixed(1)})`} />
+      </g>
+    );
+  });
 }
 
 /** Broken wall segments around a ruin's footprint, with gaps and rubble. */
@@ -135,6 +141,7 @@ function ruinWalls(t: Terrain): ReactElement[] {
         <line
           key={`${s}-${k}`}
           className="ruin-wall"
+          stroke="url(#tex-wall)"
           x1={a[0] + (b[0] - a[0]) * f0}
           y1={a[1] + (b[1] - a[1]) * f0}
           x2={a[0] + (b[0] - a[0]) * f1}
@@ -162,7 +169,7 @@ function ruinWalls(t: Terrain): ReactElement[] {
   return out;
 }
 
-export function TerrainArt({ t }: { t: Terrain }) {
+export function TerrainArt({ t, mat }: { t: Terrain; mat: Mat }) {
   const d = outline(t);
   const tex = `url(#tex-${MATERIAL[t.kind]})`;
 
@@ -172,7 +179,7 @@ export function TerrainArt({ t }: { t: Terrain }) {
         <>
           <path className="ground wood-floor" d={d} fill={tex} filter="url(#soft-shadow)" />
           <path className="tint" d={d} fill="#14240f55" />
-          <g pointerEvents="none">{trees(t)}</g>
+          <g pointerEvents="none">{trees(t, mat)}</g>
         </>
       );
     case 'hill':
@@ -208,12 +215,14 @@ export function TerrainArt({ t }: { t: Terrain }) {
     case 'building':
       return (
         <>
-          <rect className="ground roof" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} fill={tex} filter="url(#hard-shadow)" />
-          <rect className="tint" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h / 2} fill="#7a4a2a88" />
-          <rect className="tint" x={-t.w / 2} y={0} width={t.w} height={t.h / 2} fill="#4a2c1888" />
-          {Array.from({ length: Math.floor(t.w / 0.45) }, (_, i) => (
-            <line key={i} className="roof-tile" x1={-t.w / 2 + 0.45 * (i + 1)} x2={-t.w / 2 + 0.45 * (i + 1)} y1={-t.h / 2} y2={t.h / 2} />
-          ))}
+          <rect className="ground roof" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} fill="#3a2a1c" filter="url(#hard-shadow)" />
+          {/* Two roof slopes of shingles, eaves at the outside, meeting at the ridge. */}
+          <rect className="tint" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h / 2} fill={tex} />
+          <g transform="scale(1 -1)">
+            <rect className="tint" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h / 2} fill={tex} />
+          </g>
+          <rect className="tint" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h / 2} fill="#ffffff14" />
+          <rect className="tint" x={-t.w / 2} y={0} width={t.w} height={t.h / 2} fill="#00000047" />
           <line className="ridge" x1={-t.w / 2} x2={t.w / 2} y1={0} y2={0} />
         </>
       );
@@ -231,9 +240,6 @@ export function TerrainArt({ t }: { t: Terrain }) {
       return (
         <>
           <rect className="ground wall-top" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} fill={tex} filter="url(#hard-shadow)" />
-          {Array.from({ length: Math.floor(t.w / 0.6) }, (_, i) => (
-            <line key={i} className="wall-joint" x1={-t.w / 2 + 0.6 * (i + 1)} x2={-t.w / 2 + 0.6 * (i + 1)} y1={-t.h / 2} y2={t.h / 2} />
-          ))}
         </>
       );
     case 'field':

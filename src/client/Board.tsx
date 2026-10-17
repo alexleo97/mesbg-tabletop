@@ -344,8 +344,8 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
         <defs>
           <TerrainDefs />
           {MATERIALS.map(m => (
-            <pattern key={m} id={`tex-${m}`} patternUnits="userSpaceOnUse" width={tex[m].inches} height={tex[m].inches}>
-              <image href={tex[m].href} width={tex[m].inches} height={tex[m].inches} preserveAspectRatio="none" />
+            <pattern key={m} id={`tex-${m}`} patternUnits="userSpaceOnUse" width={tex[m].inches} height={tex[m].tall}>
+              <image href={tex[m].href} width={tex[m].inches} height={tex[m].tall} preserveAspectRatio="none" />
             </pattern>
           ))}
           {[...new Map(models.map(m => [clipId(m), m])).values()].map(m => (
@@ -363,7 +363,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
               transform={`translate(${t.x} ${t.y}) rotate(${t.rot})`}
               className={`terrain ${t.kind} ${t.locked ? 'locked' : ''} ${selectedTerrain === t.id ? 'selected' : ''}`}
             >
-              <TerrainArt t={t} />
+              <TerrainArt t={t} mat={state.board.mat} />
             </g>
           ))}
 

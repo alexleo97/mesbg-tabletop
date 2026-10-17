@@ -2,7 +2,7 @@
 // open-source game 0 A.D. (CC BY-SA 3.0, see tex/README.md). Water is still generated here from noise,
 // and the generator remains as a fallback for any material without a photo.
 
-export const MATERIALS = ['grass', 'plains', 'forest', 'mud', 'rock', 'cliff', 'stone', 'ruin', 'snow', 'sand', 'farmland', 'dirt', 'water'] as const;
+export const MATERIALS = ['grass', 'plains', 'forest', 'mud', 'rock', 'cliff', 'stone', 'ruin', 'snow', 'sand', 'farmland', 'dirt', 'water', 'roof', 'wall'] as const;
 export type Material = (typeof MATERIALS)[number];
 
 type RGB = [number, number, number];
@@ -110,15 +110,24 @@ function render(material: Material, size: number): string {
 
 const PHOTOS = import.meta.glob<string>('./tex/*.jpg', { eager: true, query: '?url', import: 'default' });
 
-/** How many inches of table one tile of each photo covers. */
-const PHOTO_INCHES: Partial<Record<Material, number>> = { stone: 8, ruin: 5, farmland: 8, rock: 8, cliff: 10 };
+/** How many inches of table one tile of each photo covers. Roof and wall are 4:1 strips. */
+const PHOTO_INCHES: Partial<Record<Material, number>> = { stone: 8, ruin: 5, farmland: 8, rock: 8, cliff: 10, roof: 3, wall: 3 };
+const STRIPS: Material[] = ['roof', 'wall'];
+
+const SPRITES = import.meta.glob<string>('./tex/*.webp', { eager: true, query: '?url', import: 'default' });
+
+/** Top-down tree crowns built from 0 A.D. leaf textures. */
+export const TREES = { oak: SPRITES['./tex/tree-oak.webp'], birch: SPRITES['./tex/tree-birch.webp'], pine: SPRITES['./tex/tree-pine.webp'] };
 
 /** How many inches one generated texture tile covers on the board. */
 const TILE_INCHES = 6;
 
 export interface Texture {
   href: string;
+  /** Tile width in inches. */
   inches: number;
+  /** Tile height in inches. */
+  tall: number;
 }
 
 let cache: Record<Material, Texture> | null = null;
@@ -129,7 +138,8 @@ export function textures(): Record<Material, Texture> {
     cache = {} as Record<Material, Texture>;
     for (const m of MATERIALS) {
       const photo = PHOTOS[`./tex/${m}.jpg`];
-      cache[m] = photo ? { href: photo, inches: PHOTO_INCHES[m] ?? 12 } : { href: render(m, 256), inches: TILE_INCHES };
+      const inches = photo ? (PHOTO_INCHES[m] ?? 12) : TILE_INCHES;
+      cache[m] = { href: photo ?? render(m, 256), inches, tall: STRIPS.includes(m) ? inches / 4 : inches };
     }
   }
   return cache;

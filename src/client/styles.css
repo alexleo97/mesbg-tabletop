@@ -97,17 +97,18 @@ h1, h3, h4, .topbar .room, .phases .turn, .roster-summary b, .name-input, .tabs 
 .terrain.rock .ground, .terrain.cliff .ground { stroke: #1d1b19; stroke-width: 0.1; }
 .terrain .crack { fill: none; stroke: #0005; stroke-width: 0.06; pointer-events: none; }
 .terrain.ruin .ground { stroke: #2b272255; stroke-width: 0.05; }
-.terrain .ruin-wall { stroke: #8f877a; stroke-width: 0.38; stroke-linecap: square; }
+.terrain .ruin-wall { stroke-width: 0.4; stroke-linecap: square; }
 .terrain .rubble { fill: #7d7468; stroke: #3b362f; stroke-width: 0.03; }
 .terrain.wall .ground { stroke: #2b2722; stroke-width: 0.05; }
 .terrain .wall-joint { stroke: #0004; stroke-width: 0.04; pointer-events: none; }
 .terrain.building .ground { stroke: #2b2722; stroke-width: 0.1; }
 .terrain .roof-tile { stroke: #0003; stroke-width: 0.04; pointer-events: none; }
-.terrain .ridge { stroke: #2a1a0f; stroke-width: 0.14; pointer-events: none; }
+.terrain .ridge { stroke: #3b2a1a; stroke-width: 0.18; pointer-events: none; }
 .terrain .furrow { stroke: #5d5130aa; stroke-width: 0.08; pointer-events: none; }
 .terrain .hedge { fill: none; stroke: #2f4a1f; stroke-width: 0.35; pointer-events: none; }
 .terrain .tree { stroke: #0f210c; stroke-width: 0.04; }
 .terrain .tree-shadow { fill: #0006; }
+.terrain .tree-base { fill: #2f4a1f; }
 .terrain .objective { fill: #3a342c; stroke: #c9a227; stroke-width: 0.1; }
 .terrain .objective-ring { fill: none; stroke: #c9a22788; stroke-width: 0.05; stroke-dasharray: 0.2 0.12; pointer-events: none; }
 .terrain .objective-star { fill: #e0c25a; pointer-events: none; }
