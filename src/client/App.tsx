@@ -17,6 +17,7 @@ import { scenarioById, vpTotal } from '../shared/scenarios.ts';
 import { useSettings, type Settings } from './settings.ts';
 import { Tutorial } from './Tutorial.tsx';
 import { AccountButton, ProfilePage } from './Account.tsx';
+import { LeaderboardPage } from './Leaderboard.tsx';
 import { useAuth } from './auth.ts';
 
 const DISCORD_INVITE = 'https://discord.gg/epNRWMxGws';
@@ -67,6 +68,12 @@ function useOpenGames() {
   return games;
 }
 
+/** Shown only when accounts are switched on. */
+function LeaderboardLink() {
+  const { enabled } = useAuth();
+  return enabled ? <button onClick={() => (location.search = '?leaderboard')}>🏆 Leaderboard</button> : null;
+}
+
 function Lobby({ settings, updateSettings }: { settings: Settings; updateSettings: (p: Partial<Settings>) => void }) {
   const [code, setCode] = useState('');
   const [showSettings, setShowSettings] = useState(false);
@@ -111,6 +118,7 @@ function Lobby({ settings, updateSettings }: { settings: Settings; updateSetting
         })}
       </section>
 
+      <LeaderboardLink />
       <a className="discord-link" href={DISCORD_INVITE} target="_blank" rel="noreferrer">
         Join our Discord to find opponents, report bugs and suggest features
       </a>
@@ -177,7 +185,8 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
 
   const dispatch = conn.dispatch.bind(conn);
   // Signed-in players sit down under their profile name unless they've already typed one.
-  const { profile } = useAuth();
+  const { profile, token } = useAuth();
+  useEffect(() => conn.setToken?.(token), [conn, token]);
   const seat = role === 'p1' || role === 'p2' ? role : null;
   useEffect(() => {
     if (!practice && seat && profile && players.includes(seat) && !state.names[seat]) dispatch({ type: 'setName', seat, name: profile.username });
@@ -472,7 +481,7 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
                   </div>
                 </div>
                 <ScenarioPanel state={state} dispatch={dispatch} role={role} />
-                <TablePanel state={state} dispatch={dispatch} selectedTerrain={selectedTerrain} setSelectedTerrain={setSelectedTerrain} />
+                <TablePanel state={state} dispatch={dispatch} role={role} selectedTerrain={selectedTerrain} setSelectedTerrain={setSelectedTerrain} />
               </>
             )}
           </aside>
@@ -486,6 +495,7 @@ export function App() {
   const params = new URLSearchParams(location.search);
   const room = cleanRoom(params.get('room') ?? '');
   const [settings, updateSettings] = useSettings();
+  if (params.has('leaderboard')) return <LeaderboardPage onHome={() => (location.search = '')} />;
   if (params.has('profile')) return <ProfilePage onHome={() => (location.search = '')} />;
   if (params.has('learn'))
     return <Tutorial settings={settings} updateSettings={updateSettings} onExit={() => (location.search = '')} onPlay={() => (location.search = `?room=${randomRoom()}`)} />;

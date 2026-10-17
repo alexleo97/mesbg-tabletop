@@ -147,3 +147,29 @@ describe('line of sight and terrain', () => {
     expect(moveCost(dry, { x: 0, y: 10 }, { x: 10, y: 10 }).cost).toBe(10);
   });
 });
+
+describe('reporting a result', () => {
+  it('needs the other player to agree, and either can withdraw it', () => {
+    let s = game(m('a', 'p1', 5, 5));
+    s = reduce(s, { type: 'proposeResult', seat: 'p1', winner: 'p1' });
+    expect(s.result).toEqual({ winner: 'p1', by: 'p1', agreed: false });
+    // The reporter can't agree with themselves.
+    expect(reduce(s, { type: 'answerResult', seat: 'p1', agree: true })).toBe(s);
+    expect(reduce(s, { type: 'answerResult', seat: 'p2', agree: false }).result).toBeUndefined();
+    s = reduce(s, { type: 'answerResult', seat: 'p2', agree: true });
+    expect(s.result?.agreed).toBe(true);
+    s = reduce(s, { type: 'resultSaved' });
+    // Once recorded it can't be changed or reported again.
+    expect(reduce(s, { type: 'answerResult', seat: 'p1', agree: false })).toBe(s);
+    expect(reduce(s, { type: 'proposeResult', seat: 'p2', winner: 'p2' })).toBe(s);
+  });
+
+  it('keeps accounts and the result through a save and load', () => {
+    let s = game(m('a', 'p1', 5, 5));
+    s = run(s, { type: 'seatAccount', seat: 'p1', account: { id: 'u1', name: 'Alex' } }, { type: 'proposeResult', seat: 'p2', winner: 'draw' });
+    const back = loadState(JSON.parse(JSON.stringify(s)));
+    expect(back.accounts).toEqual({ p1: { id: 'u1', name: 'Alex' } });
+    expect(back.result).toEqual({ winner: 'draw', by: 'p2', agreed: false });
+    expect(reduce(back, { type: 'seatAccount', seat: 'p1', account: null }).accounts).toEqual({});
+  });
+});

@@ -367,6 +367,26 @@ export function reduce(state: GameState, action: Action): GameState {
     }
     case 'loadState':
       return loadState(action.state);
+    case 'seatAccount': {
+      if (!isSeat(action.seat)) return state;
+      const a = action.account;
+      const accounts = { ...state.accounts };
+      if (a && typeof a.id === 'string' && typeof a.name === 'string') accounts[action.seat] = { id: a.id.slice(0, 64), name: a.name.slice(0, 32) };
+      else delete accounts[action.seat];
+      return { ...state, accounts };
+    }
+    case 'proposeResult': {
+      if (!isSeat(action.seat) || !(isSeat(action.winner) || action.winner === 'draw') || state.result?.saved) return state;
+      return { ...state, result: { winner: action.winner, by: action.seat, agreed: false } };
+    }
+    case 'answerResult': {
+      const r = state.result;
+      if (!r || r.saved || !isSeat(action.seat)) return state;
+      if (!action.agree) return { ...state, result: undefined };
+      return action.seat === r.by ? state : { ...state, result: { ...r, agreed: true } };
+    }
+    case 'resultSaved':
+      return state.result?.agreed ? { ...state, result: { ...state.result, saved: true } } : state;
     case 'revert': {
       const r = action.revert;
       if (!r || typeof r !== 'object') return state;
@@ -452,5 +472,12 @@ export function loadState(raw: unknown): GameState {
     };
   }
   if (Array.isArray(o.log)) out = { ...out, log: o.log.map(cleanRoll).filter(r => r !== null).slice(-MAX_LOG) };
+  for (const seat of ['p1', 'p2'] as const) {
+    const a = o.accounts?.[seat];
+    if (a) out = reduce(out, { type: 'seatAccount', seat, account: a });
+  }
+  const r = o.result;
+  if (r && isSeat(r.by) && (isSeat(r.winner) || r.winner === 'draw'))
+    out = { ...out, result: { winner: r.winner, by: r.by, agreed: r.agreed === true, ...(r.saved === true ? { saved: true } : {}) } };
   return out;
 }

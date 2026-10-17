@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ResultReport } from './ResultReport.tsx';
 import { activeSeat, other, type Combat } from '../shared/flow.ts';
 import { canDeclare, heroicInfo, heroicsSettled, heroicTurn, HEROICS, orderRollLabel, orderRollNeeded, phaseHeroics } from '../shared/heroics.ts';
 import { RollRow } from './Panels.tsx';
@@ -330,10 +331,13 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
           </p>
         )}
         {over ? (
-          <p className="result">
-            Game over.{' '}
-            {scenarioById(state.scenario) ? `${names.p1} ${vp.p1} – ${vp.p2} ${names.p2}: ${lead ? `${names[lead]} wins.` : 'a draw.'}` : ''}
-          </p>
+          <>
+            <p className="result">
+              Game over.{' '}
+              {scenarioById(state.scenario) ? `${names.p1} ${vp.p1} – ${vp.p2} ${names.p2}: ${lead ? `${names[lead]} wins.` : 'a draw.'}` : ''}
+            </p>
+            {!state.result && <ResultReport state={state} role={role} dispatch={dispatch} suggest={scenarioById(state.scenario) ? (lead ?? 'draw') : undefined} />}
+          </>
         ) : (
           me &&
           (!check?.rollNeeded || endRoll) && (
@@ -367,6 +371,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
       {!small && (
         <div className="coach-body">
           {flow.started && <FateStep state={state} dispatch={dispatch} role={role} name={name} />}
+          {state.result && <ResultReport state={state} role={role} dispatch={dispatch} />}
           {body}
         </div>
       )}

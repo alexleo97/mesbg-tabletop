@@ -4,10 +4,11 @@ import { createServer } from 'node:http';
 import { extname, join, normalize, resolve } from 'node:path';
 import { WebSocket, WebSocketServer } from 'ws';
 import { initialState, loadState, reduce } from '../src/shared/reducer.ts';
-import type { Action, ClientMessage, GameState, Revert, Role, RoomSummary, Seat, ServerMessage } from '../src/shared/types.ts';
+import type { Account, Action, ClientMessage, GameState, Revert, Role, RoomSummary, Seat, ServerMessage } from '../src/shared/types.ts';
 import { DICE_REQUESTS, resolveRequest } from '../src/shared/resolve.ts';
 import { scenarioById } from '../src/shared/scenarios.ts';
 import { announceGame, discordEnabled } from './discord.ts';
+import { saveResult, verifyToken } from './accounts.ts';
 import { diffForUndo, mergeReverts, UNDOABLE } from '../src/shared/undo.ts';
 
 const PORT = Number(process.env.PORT ?? 8787);
@@ -21,6 +22,8 @@ interface Client {
   ws: WebSocket;
   role: Role;
   tokens: number;
+  /** The signed-in account behind this browser, once checked. */
+  account?: Account;
 }
 
 interface Room {
@@ -85,6 +88,14 @@ const broadcast = (room: Room, msg: ServerMessage) => {
   for (const c of room.clients) if (c.ws.readyState === WebSocket.OPEN) c.ws.send(data);
 };
 
+/** Marks a seat as belonging to the signed-in player sitting in it. */
+function seatAccount(room: Room, client: Client) {
+  if (client.role === 'spectator' || !client.account || room.state.result?.saved) return;
+  const current = room.state.accounts?.[client.role];
+  if (current?.id === client.account.id && current.name === client.account.name) return;
+  apply(room, { type: 'seatAccount', seat: client.role, account: client.account });
+}
+
 /** Turns a client's request into the action everyone applies, or null if it isn't allowed. */
 function authorise(client: Client, action: Action, state: GameState): Action | null {
   if (!action || typeof action !== 'object' || typeof action.type !== 'string') return null;
@@ -96,7 +107,17 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
     case 'undo':
     case 'priorityRolled':
     case 'fateRolled':
-      return null; // only the server produces dice results and undo changes
+    case 'seatAccount':
+    case 'resultSaved':
+      return null; // only the server produces dice results, undo changes and account details
+    case 'proposeResult':
+    case 'answerResult': {
+      // Only the player in that seat, and the signed-in one if the seat has an account.
+      const seat = action.seat;
+      if (seat !== client.role) return null;
+      const owner = state.accounts?.[seat];
+      return !owner || owner.id === client.account?.id ? action : null;
+    }
     case 'declareHeroic':
       return mine(action.model) ? action : null;
     case 'takeWound':
@@ -109,8 +130,8 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
     case 'passHeroic':
       return action.seat === client.role ? action : null;
     case 'loadState':
-      // A loaded save keeps its board, but not its dice history, so rolls can't be forged.
-      return { type: 'loadState', state: { ...loadState(action.state), log: [] } };
+      // A loaded save keeps its board, but not its dice history or a result, so neither can be forged.
+      return { type: 'loadState', state: { ...loadState(action.state), log: [], accounts: state.accounts, result: undefined } };
     default:
       return action;
   }
@@ -266,13 +287,25 @@ wss.on('connection', (ws, req) => {
       if (client.role !== 'spectator') scheduleAnnouncement(room);
       broadcast(room, { type: 'presence', players: players(room) });
       if (client.role !== 'spectator') sendUndoDepth(room, client.role);
+      seatAccount(room, client);
       return;
     }
     if (msg.type === 'restore') {
       // After a restart wipes the server, the first player back brings the game with them.
       if (!room.blank || client.role === 'spectator') return;
       room.undo = { p1: [], p2: [] };
-      apply(room, { type: 'loadState', state: { ...loadState(msg.state), log: [] } });
+      apply(room, { type: 'loadState', state: { ...loadState(msg.state), log: [], accounts: undefined, result: undefined } });
+      return;
+    }
+    if (msg.type === 'identify') {
+      if (!msg.token) {
+        client.account = undefined;
+        return;
+      }
+      void verifyToken(msg.token).then(account => {
+        client.account = account ?? undefined;
+        seatAccount(room, client);
+      });
       return;
     }
     if (msg.type !== 'action') return;
@@ -294,6 +327,9 @@ wss.on('connection', (ws, req) => {
     const action = authorise(client, msg.action, room.state);
     if (!action) return;
     record(room, client.role, action);
+    if (action.type === 'answerResult' && room.state.result?.agreed && !room.state.result.saved) {
+      void saveResult(room.id, room.state).then(ok => ok && apply(room, { type: 'resultSaved' }));
+    }
     if (action.type === 'loadState') room.undo = { p1: [], p2: [] };
   });
 

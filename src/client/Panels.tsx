@@ -1,4 +1,5 @@
 import { armyStatus } from '../shared/status.ts';
+import { ResultReport } from './ResultReport.tsx';
 import { MapsSection } from './Maps.tsx';
 import { isDifficult } from '../shared/sight.ts';
 import { useRef, useState } from 'react';
@@ -372,11 +373,13 @@ const TERRAIN_PRESETS: { label: string; t: Omit<Terrain, 'id' | 'x' | 'y' | 'loc
 export function TablePanel({
   state,
   dispatch,
+  role,
   selectedTerrain,
   setSelectedTerrain,
 }: {
   state: GameState;
   dispatch: Dispatch;
+  role: Role;
   selectedTerrain: string | null;
   setSelectedTerrain: (id: string | null) => void;
 }) {
@@ -511,6 +514,12 @@ export function TablePanel({
         <button onClick={() => fileRef.current?.click()}>Load game</button>
         <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={e => load(e.target.files?.[0])} />
       </div>
+      {state.flow.started && !state.result && role !== 'spectator' && (
+        <details className="finish">
+          <summary>Finish the game early</summary>
+          <ResultReport state={state} role={role} dispatch={dispatch} />
+        </details>
+      )}
       <button
         className="danger"
         onClick={() => {

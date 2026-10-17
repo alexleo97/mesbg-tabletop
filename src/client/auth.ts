@@ -24,11 +24,13 @@ export interface Auth {
   /** Sign-in is set up on this server. */
   enabled: boolean;
   signedIn: boolean;
+  /** The current sign-in token, for telling the game server who you are. */
+  token: string | null;
   profile: Profile | null;
   error?: string;
 }
 
-let state: Auth = { loading: true, enabled: false, signedIn: false, profile: null };
+let state: Auth = { loading: true, enabled: false, signedIn: false, token: null, profile: null };
 const listeners = new Set<() => void>();
 const set = (patch: Partial<Auth>) => {
   state = { ...state, ...patch };
@@ -53,7 +55,8 @@ export function supabase(): Promise<SupabaseClient | null> {
 }
 
 async function loadProfile(sb: SupabaseClient, session: Session | null) {
-  if (!session) return set({ loading: false, signedIn: false, profile: null, error: undefined });
+  if (!session) return set({ loading: false, signedIn: false, token: null, profile: null, error: undefined });
+  set({ token: session.access_token });
   const { data, error } = await sb.from('profiles').select('id, username, avatar_url, created_at').eq('id', session.user.id).maybeSingle();
   if (error || !data) return set({ loading: false, signedIn: true, profile: null, error: "You're signed in, but your profile couldn't be loaded. The database may not be set up yet." });
   set({ loading: false, signedIn: true, profile: data, error: undefined });
@@ -79,6 +82,7 @@ function start() {
     if (url.href !== location.href) history.replaceState(null, '', url);
     sb.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'USER_UPDATED') void loadProfile(sb, session);
+      else if (event === 'TOKEN_REFRESHED') set({ token: session?.access_token ?? null });
     });
   });
 }
@@ -122,4 +126,24 @@ export async function statsFor(id: string): Promise<Stats | null> {
   if (!sb) return null;
   const { data } = await sb.from('player_stats').select('games, wins, draws, losses').eq('id', id).maybeSingle();
   return data ?? { games: 0, wins: 0, draws: 0, losses: 0 };
+}
+
+export interface Standing extends Stats {
+  id: string;
+  username: string;
+  avatar_url: string | null;
+}
+
+/** Everyone with at least one recorded game, most wins first. */
+export async function leaderboard(): Promise<Standing[] | null> {
+  const sb = await supabase();
+  if (!sb) return null;
+  const { data, error } = await sb
+    .from('player_stats')
+    .select('id, username, avatar_url, games, wins, draws, losses')
+    .gt('games', 0)
+    .order('wins', { ascending: false })
+    .order('games', { ascending: true })
+    .limit(100);
+  return error ? null : data;
 }
