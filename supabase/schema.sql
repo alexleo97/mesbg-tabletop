@@ -108,3 +108,12 @@ select
 from public.profiles p
 left join public.results r on r.p1 = p.id or r.p2 = p.id
 group by p.id;
+
+-- Who may reach each table through Supabase's API. Row-level security above still decides which rows.
+-- Spelled out so this works whether or not the project exposes new tables automatically.
+grant usage on schema public to anon, authenticated;
+grant select on public.profiles, public.results, public.player_stats, public.armies, public.maps to anon, authenticated;
+grant insert, update, delete on public.armies, public.maps to authenticated;
+revoke insert, delete on public.profiles from anon, authenticated;
+revoke insert, update, delete on public.results from anon, authenticated;
+revoke insert, update, delete on public.armies, public.maps from anon;
