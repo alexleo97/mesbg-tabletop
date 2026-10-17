@@ -19,3 +19,7 @@ Deployment zones, objective positions, game-end conditions and scoring for the 2
 scenarios of the 2024 edition, recorded as game facts and summarised in our own words. No text,
 maps or images from Games Workshop's Matched Play Guide are included. Where the players choose
 corners or which edge is north, the zones show one example layout.
+
+## special-rules.json
+
+Short summaries of the generic special rules (Terror, Fly, Hatred and so on), written in our own words as table reminders. Rules taking a bracketed value, such as Hatred (Rohan), are stored under the name without the brackets. No text from Games Workshop's books is included; the army books and Rules Manual have the full rules.

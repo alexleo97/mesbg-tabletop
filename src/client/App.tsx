@@ -129,6 +129,7 @@ function Game({ room, settings, updateSettings }: { room: string; settings: Sett
   const conn = useMemo(() => new RoomConnection(room, role ?? 'spectator'), [room]);
   const { state, status, players, undoDepth } = useRoom(conn);
   const [tool, setTool] = useState<Tool>('move');
+  const [sight, setSight] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [selectedTerrain, setSelectedTerrain] = useState<string | null>(null);
   const [tab, setTab] = useState<PanelTab>('army');
@@ -305,6 +306,7 @@ function Game({ room, settings, updateSettings }: { room: string; settings: Sett
               links={aimLinks}
               fights={state.flow.started && state.phase === 'fight' ? fights.map(c => ({ key: c.key, ids: [...c.p1, ...c.p2], done: state.flow.resolved.includes(c.key) })) : undefined}
               onFightTap={setFightKey}
+              sightFrom={sight && single ? single.id : undefined}
             />
 
             <div className="tool-rail" role="toolbar" aria-label="Tools">
@@ -320,6 +322,16 @@ function Game({ room, settings, updateSettings }: { room: string; settings: Sett
                   <small>{label}</small>
                 </button>
               ))}
+              <button
+                className={sight ? 'on' : ''}
+                onClick={() => setSight(v => !v)}
+                title={single ? 'Shade what the selected model can’t see' : 'Select one model, then show what it can see'}
+                aria-label="Line of sight"
+                aria-pressed={sight}
+              >
+                <span>👁</span>
+                <small>Sight</small>
+              </button>
               <button onClick={() => dispatch({ type: 'undo' })} disabled={!canUndo} title="Undo your last change (Ctrl+Z)" aria-label="Undo">
                 <span>↶</span>
                 <small>Undo</small>

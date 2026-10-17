@@ -5,6 +5,7 @@ import { TerrainArt, TerrainDefs } from './TerrainArt.tsx';
 import { ScenarioZones } from './ScenarioZones.tsx';
 import { scenarioById } from '../shared/scenarios.ts';
 import { MATERIALS, textures } from './textures.ts';
+import { inDifficult, isDifficult, moveCost, outline, shadowPath, sightTo } from '../shared/sight.ts';
 
 export type Tool = 'move' | 'select' | 'measure';
 
@@ -28,6 +29,8 @@ interface Props {
   /** Fights on the table, drawn as markers that open the fight when tapped. */
   fights?: { key: string; ids: string[]; done: boolean }[];
   onFightTap?: (key: string) => void;
+  /** Shade what this model can't see and mark which enemies it can. */
+  sightFrom?: string;
 }
 
 interface View {
@@ -68,7 +71,7 @@ function BaseShape({ m, className = 'base' }: { m: Model; className?: string }) 
 
 const clipId = (m: Model) => `clip-${m.base.shape}-${m.base.w}-${m.base.h}`;
 
-export function Board({ state, tool, selected, setSelected, selectedTerrain, setSelectedTerrain, dispatch, showZones, showDeployment, showGrid, photoFor, onModelTap, links, fights, onFightTap }: Props) {
+export function Board({ state, tool, selected, setSelected, selectedTerrain, setSelectedTerrain, dispatch, showZones, showDeployment, showGrid, photoFor, onModelTap, links, fights, onFightTap, sightFrom }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const tex = useMemo(() => textures(), []);
   const [view, setView] = useState<View>({ x: 0, y: 0, s: 10 });
@@ -84,6 +87,13 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
 
   const models = useMemo(() => Object.values(state.models).filter(m => !m.dead), [state.models]);
   const terrain = useMemo(() => Object.values(state.terrain), [state.terrain]);
+  const viewer = sightFrom ? state.models[sightFrom] : undefined;
+  const sight = useMemo(() => {
+    if (!viewer || viewer.dead) return null;
+    const seen = new Map(Object.values(state.models).filter(m => !m.dead && m.owner !== viewer.owner).map(m => [m.id, sightTo(state, viewer, m)]));
+    return { path: shadowPath(state, viewer), seen };
+  }, [viewer, state]);
+  const heroicIds = useMemo(() => new Set(state.flow.heroics.map(h => h.model)), [state.flow.heroics]);
 
   const fit = useCallback(() => {
     const el = svgRef.current;
@@ -359,6 +369,9 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
       >
         <defs>
           <TerrainDefs />
+          <pattern id="difficult-hatch" patternUnits="userSpaceOnUse" width={0.6} height={0.6} patternTransform="rotate(45)">
+            <line x1={0} y1={0} x2={0} y2={0.6} className="hatch-line" />
+          </pattern>
           <clipPath id="board-clip">
             <rect width={state.board.w} height={state.board.h} />
           </clipPath>
@@ -385,6 +398,14 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
               <TerrainArt t={t} mat={state.board.mat} />
             </g>
           ))}
+          {terrain.filter(isDifficult).map(t => (
+            <polygon key={`d-${t.id}`} className="difficult" points={outline(t).map(p => `${p.x},${p.y}`).join(' ')} pointerEvents="none" />
+          ))}
+          {sight && (
+            <g clipPath="url(#board-clip)" pointerEvents="none">
+              <path className="los-shadow" d={sight.path} />
+            </g>
+          )}
           {showDeployment && scenarioById(state.scenario) && <ScenarioZones s={scenarioById(state.scenario)!} w={state.board.w} h={state.board.h} />}
 
           {models.filter(m => selected.has(m.id)).map(m => {
@@ -393,6 +414,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
             return (
               <g key={`z-${m.id}`} transform={`translate(${s.x} ${s.y}) rotate(${s.rot})`} pointerEvents="none">
                 {showZones && <ZoneShape m={m} pad={m.move} className="zone-move" />}
+                {showZones && inDifficult(state, m) && <ZoneShape m={m} pad={m.move / 2} className="zone-move slow" />}
                 {showZones && <ZoneShape m={m} pad={1} className="zone-control" />}
               </g>
             );
@@ -405,7 +427,9 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
               const now = dragPos[id];
               if (!m || !now) return null;
               const d = Math.hypot(now.x - o.x, now.y - o.y);
-              const over = d > m.move + 1e-6;
+              // Difficult terrain costs double, so the move is judged on what it costs.
+              const { cost, difficult } = moveCost(state, o, now);
+              const over = cost > m.move + 1e-6;
               return (
                 <g key={`g-${id}`} pointerEvents="none">
                   <g transform={`translate(${o.x} ${o.y}) rotate(${m.rot})`} className="ghost">
@@ -414,7 +438,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
                   <line className={`trail ${over ? 'over' : ''}`} x1={o.x} y1={o.y} x2={now.x} y2={now.y} />
                   {id === gesture.tapId && (
                     <text className={`trail-label ${over ? 'over' : ''}`} x={now.x} y={now.y - halfExtents(m.base).ry - 0.3} textAnchor="middle">
-                      {formatInches(d)} / {m.move}"
+                      {difficult ? `${formatInches(d)} (${formatInches(cost)} in difficult terrain)` : formatInches(d)} / {m.move}"
                     </text>
                   )}
                 </g>
@@ -429,7 +453,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
               <g
                 key={m.id}
                 transform={`translate(${m.x} ${m.y}) rotate(${m.rot})`}
-                className={`model ${m.owner} ${m.hero ? 'hero' : ''} ${selected.has(m.id) ? 'selected' : ''}`}
+                className={`model ${m.owner} ${m.hero ? 'hero' : ''} ${selected.has(m.id) ? 'selected' : ''} ${sight?.seen.has(m.id) ? `seen-${sight.seen.get(m.id)}` : ''}`}
               >
                 <BaseShape m={m} />
                 {photo && (
@@ -456,6 +480,12 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
                 {!photo && (
                   <text className="label" textAnchor="middle" dominantBaseline="central" transform={`rotate(${-m.rot})`} style={{ fontSize: Math.min(ry * 0.8, 0.32) }}>
                     {initials(m.name)}
+                  </text>
+                )}
+                {sight?.seen.has(m.id) && <ZoneShape m={m} pad={0.12} className="sight-ring" />}
+                {heroicIds.has(m.id) && (
+                  <text className="heroic-mark" textAnchor="middle" transform={`rotate(${-m.rot}) translate(${rx * 0.8} ${-ry * 0.7})`} style={{ fontSize: 0.32 }}>
+                    ⚡
                   </text>
                 )}
                 {m.maxWounds > 1 && (

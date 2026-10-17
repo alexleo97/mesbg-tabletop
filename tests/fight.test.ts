@@ -10,7 +10,7 @@ describe('fight helper', () => {
     const { rolls, outcome } = resolveFight(cleanFight({ sides: [[f('hero', { a: 2, s: 4 })], [f('orc')]], targets: ['orc', 'hero'], trapped: false })!, dice(2, 5, 4, 6, 3), 'p1', 'g');
     expect(outcome).toMatchObject({ winner: 0, how: 'dice', wounds: 1 });
     expect(rolls.map(r => r.dice)).toEqual([[2, 5], [4], [6, 3]]);
-    expect(rolls.at(-1)!.note).toContain('1 wound on orc');
+    expect(rolls.at(-1)!.note).toContain('hero wins the duel');
     expect(rolls.every(r => r.group === 'g')).toBe(true);
   });
 

@@ -10,6 +10,10 @@ export interface Fighter {
   a: number;
   s: number;
   d: number;
+  /** Heroic Strike: adds D3 to Fight, rolled with the duel. */
+  strike?: boolean;
+  /** Heroic Defence: only wounded on natural 6s. */
+  defence?: boolean;
 }
 
 export interface FightRequest {
@@ -56,6 +60,8 @@ export function cleanFight(raw: unknown): FightRequest | null {
       a: clamp(f?.a, 1, 10, 1),
       s: clamp(f?.s, 1, 10, 3),
       d: clamp(f?.d, 1, 10, 4),
+      ...(f?.strike === true ? { strike: true } : {}),
+      ...(f?.defence === true ? { defence: true } : {}),
     }));
   const sides: [Fighter[], Fighter[]] = [side(o.sides[0]), side(o.sides[1])];
   if (!sides[0].length || !sides[1].length) return null;
@@ -73,26 +79,45 @@ export function strikeWounds(rolls: DiceRoll[]): number {
     .reduce((n, r) => n + (r.then && r.follow ? r.follow.filter(d => d >= r.then!).length : r.dice.filter(d => d >= r.target!).length), 0);
 }
 
-/**
- * Resolves a whole fight: the duel roll, any tie-break, then the winner's strikes.
- * Returns the rolls in order, all sharing `group`, for the dice log.
- */
-export function resolveFight(req: FightRequest, d6: D6, by: Role, group: string, now = Date.now()): { rolls: DiceRoll[]; outcome: FightOutcome } {
+/** Rolls the duel: one roll per model so each hero can spend Might on its own dice. Heroic Strike's D3 comes first. */
+export function resolveDuel(req: FightRequest, d6: D6, by: Role, group: string, now = Date.now()): DiceRoll[] {
   const rolls: DiceRoll[] = [];
   const push = (label: string, dice: number[], extra: Partial<DiceRoll> = {}) =>
     rolls.push({ id: `${group}-${rolls.length}`, by, label: label.slice(0, 80), dice, at: now, group, ...extra });
-  const duel = req.sides.map(side => Array.from({ length: Math.min(30, side.reduce((n, f) => n + f.a, 0)) }, d6));
-  req.sides.forEach((side, i) => push(`Duel: ${names(side)}`, duel[i]));
+  req.sides.forEach((side, i) => {
+    for (const f of side) {
+      let fv = f.f;
+      if (f.strike) {
+        const bonus = Math.ceil(d6() / 2);
+        fv = Math.min(10, fv + bonus);
+        push(`Heroic Strike: ${f.name} +${bonus} Fight`, [bonus]);
+      }
+      push(`Duel: ${f.name} (F${fv})`, Array.from({ length: f.a }, d6), { model: f.id, f: fv, side: i as 0 | 1 });
+    }
+  });
+  return rolls;
+}
 
-  const best = duel.map(d => Math.max(...d));
-  const fight = req.sides.map(side => Math.max(...side.map(f => f.f)));
+/** Who is winning a duel from its rolls (after any Might): the highest die, then the highest Fight; null if it needs a roll-off. */
+export function duelLeader(rolls: DiceRoll[]): { winner: 0 | 1; how: 'dice' | 'fight' } | null {
+  const duel = rolls.filter(r => r.side !== undefined && r.f !== undefined);
+  const best = [0, 1].map(s => Math.max(0, ...duel.filter(r => r.side === s).flatMap(r => r.dice)));
+  const fight = [0, 1].map(s => Math.max(0, ...duel.filter(r => r.side === s).map(r => r.f!)));
+  if (best[0] !== best[1]) return { winner: best[0] > best[1] ? 0 : 1, how: 'dice' };
+  if (fight[0] !== fight[1]) return { winner: fight[0] > fight[1] ? 0 : 1, how: 'fight' };
+  return null;
+}
+
+/** Rolls the winner's strikes for a duel already rolled. `duel` is that duel's rolls, as the log now has them. */
+export function resolveStrikes(req: FightRequest, duel: DiceRoll[], d6: D6, by: Role, group: string, now = Date.now()): { rolls: DiceRoll[]; outcome: FightOutcome } {
+  const rolls: DiceRoll[] = [];
+  const push = (label: string, dice: number[], extra: Partial<DiceRoll> = {}) =>
+    rolls.push({ id: `${group}-${duel.length + rolls.length}`, by, label: label.slice(0, 80), dice, at: now, group, ...extra });
+  const lead = duelLeader(duel);
   let winner: 0 | 1;
-  let how: FightOutcome['how'] = 'dice';
-  if (best[0] !== best[1]) winner = best[0] > best[1] ? 0 : 1;
-  else if (fight[0] !== fight[1]) {
-    winner = fight[0] > fight[1] ? 0 : 1;
-    how = 'fight';
-  } else {
+  let how: FightOutcome['how'];
+  if (lead) ({ winner, how } = lead);
+  else {
     how = 'roll-off';
     let r: number[];
     do r = [d6(), d6()];
@@ -104,16 +129,27 @@ export function resolveFight(req: FightRequest, d6: D6, by: Role, group: string,
   const losers = req.sides[1 - winner];
   const target = losers.find(f => f.id === req.targets[winner]) ?? losers[0];
   for (const f of req.sides[winner]) {
-    const need = woundNeed(f.s, target.d);
+    const base = woundNeed(f.s, target.d);
+    // Heroic Defence: only natural 6s wound (both dice for 6/4+ style results).
+    const need = base && target.defence ? { target: 6, ...(base.then ? { then: 6 } : {}) } : base;
     if (!need) continue;
     const dice = Array.from({ length: f.a * (req.trapped ? 2 : 1) }, d6);
     const follow = need.then ? dice.filter(d => d >= need.target).map(d6) : undefined;
-    push(`${f.name} strikes ${target.name} (${formatNeed(need)})`, dice, { target: need.target, against: target.id, ...(need.then ? { then: need.then, follow } : {}) });
+    push(`${f.name} strikes ${target.name} (${formatNeed(need)})`, dice, { target: need.target, against: target.id, model: f.id, ...(need.then ? { then: need.then, follow } : {}) });
   }
   const wounds = strikeWounds(rolls);
   const why = how === 'dice' ? 'higher roll' : how === 'fight' ? 'higher Fight' : 'roll-off';
-  rolls[rolls.length - 1].note = `${names(req.sides[winner])} wins (${why}); ${wounds} wound${wounds === 1 ? '' : 's'} on ${target.name}`;
+  const note = `${names(req.sides[winner])} wins the duel (${why})`;
+  if (rolls.length) rolls[rolls.length - 1].note = note;
+  else push(`${names(req.sides[winner])} can't wound ${target.name}`, [], { note });
   return { rolls, outcome: { winner, how, target, wounds } };
+}
+
+/** Rolls a whole fight in one go: the duel, any roll-off and the strikes. */
+export function resolveFight(req: FightRequest, d6: D6, by: Role, group: string, now = Date.now()): { rolls: DiceRoll[]; outcome: FightOutcome } {
+  const duel = resolveDuel(req, d6, by, group, now);
+  const { rolls, outcome } = resolveStrikes(req, duel, d6, by, group, now);
+  return { rolls: [...duel, ...rolls], outcome };
 }
 
 export function cleanShot(raw: unknown): ShotRequest | null {
@@ -140,21 +176,21 @@ export function resolveShot(req: ShotRequest, d6: D6, by: Role, group: string, n
     rolls.push({ id: `${group}-${rolls.length}`, by, label: label.slice(0, 80), dice, at: now, group, ...extra });
   const { shooter, target } = req;
   const toHit = Array.from({ length: shooter.shots }, d6);
-  push(`${shooter.name} shoots ${target.name} (${shooter.weapon}, ${shooter.shoot}+)`, toHit, { target: shooter.shoot });
+  push(`${shooter.name} shoots ${target.name} (${shooter.weapon}, ${shooter.shoot}+)`, toHit, { target: shooter.shoot, model: shooter.id });
   let hits = toHit.filter(d => d >= shooter.shoot).length;
   for (let i = 0; i < req.obstacles && hits > 0; i++) {
     const past = Array.from({ length: hits }, d6);
-    push(`In the Way ${i + 1} (4+ gets past)`, past, { target: 4 });
+    push(`In the Way ${i + 1} (4+ gets past)`, past, { target: 4, model: shooter.id });
     hits = past.filter(d => d >= 4).length;
   }
   const need = woundNeed(shooter.s, target.d);
   if (hits > 0 && need) {
     const dice = Array.from({ length: hits }, d6);
     const follow = need.then ? dice.filter(d => d >= need.target).map(d6) : undefined;
-    push(`To wound ${target.name}: S${shooter.s} vs D${target.d} (${formatNeed(need)})`, dice, { target: need.target, against: target.id, ...(need.then ? { then: need.then, follow } : {}) });
+    push(`To wound ${target.name}: S${shooter.s} vs D${target.d} (${formatNeed(need)})`, dice, { target: need.target, against: target.id, model: shooter.id, ...(need.then ? { then: need.then, follow } : {}) });
   }
   const wounds = strikeWounds(rolls);
   rolls[rolls.length - 1].note =
-    hits === 0 ? `${shooter.name} misses ${target.name}` : !need ? `${shooter.weapon} can't wound ${target.name}` : `${wounds} wound${wounds === 1 ? '' : 's'} on ${target.name}`;
+    hits === 0 ? `${shooter.name} misses ${target.name}` : !need ? `${shooter.weapon} can't wound ${target.name}` : `${shooter.name} hits ${target.name}`;
   return { rolls, wounds };
 }

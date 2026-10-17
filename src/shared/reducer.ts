@@ -1,3 +1,4 @@
+import { heroicInfo } from './heroics.ts';
 import { MATS, PHASES, TERRAIN_KINDS, type Action, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type Phase, type Seat, type Terrain } from './types.ts';
 
 export const MAX_MODELS = 600;
@@ -22,7 +23,7 @@ export function initialState(): GameState {
   };
 }
 
-const newFlow = (): Flow => ({ started: false, chooser: null, chooserTurn: 0, roll: null, done: [], resolved: [] });
+const newFlow = (): Flow => ({ started: false, chooser: null, chooserTurn: 0, roll: null, done: [], resolved: [], heroics: [], passed: [], lastHeroic: null });
 
 /** Moves to a phase (and turn), clearing who has finished; a new turn also clears fights and priority. */
 function goTo(state: GameState, phase: Phase, turn: number): GameState {
@@ -32,7 +33,14 @@ function goTo(state: GameState, phase: Phase, turn: number): GameState {
     phase,
     turn,
     priority: newTurn && state.flow.started ? null : state.priority,
-    flow: { ...state.flow, done: [], resolved: newTurn ? [] : state.flow.resolved },
+    flow: {
+      ...state.flow,
+      done: [],
+      resolved: newTurn ? [] : state.flow.resolved,
+      heroics: newTurn ? [] : state.flow.heroics,
+      passed: [],
+      lastHeroic: null,
+    },
   };
 }
 
@@ -94,6 +102,10 @@ export function cleanModel(m: Partial<Model>, prev?: Model): Model | null {
   const options = Array.isArray(m.options) ? m.options.slice(0, 12).map(o => str(o, 60)) : base.options;
   if (options?.length) out.options = options;
   out.wounds = int(m.wounds, 0, out.maxWounds, Math.min(base.wounds, out.maxWounds));
+  const pending = 'pending' in m ? int(m.pending, 0, 30, 0) : (base.pending ?? 0);
+  if (pending && out.hero && !out.dead) out.pending = pending;
+  const fateRoll = 'fateRoll' in m ? (m.fateRoll ? id(m.fateRoll) : undefined) : base.fateRoll;
+  if (fateRoll && out.pending) out.fateRoll = fateRoll;
   return out.id ? out : null;
 }
 
@@ -110,6 +122,8 @@ function cleanTerrain(t: Partial<Terrain>, prev?: Terrain): Terrain | null {
     rot: num(t.rot, -360, 720, base.rot) % 360,
     locked: typeof t.locked === 'boolean' ? t.locked : base.locked,
   };
+  const difficult = 'difficult' in t ? t.difficult : base.difficult;
+  if (typeof difficult === 'boolean') out.difficult = difficult;
   return out.id ? out : null;
 }
 
@@ -130,8 +144,33 @@ function cleanRoll(r: unknown): DiceRoll | null {
     ...(o.group ? { group: id(o.group) } : {}),
     ...(o.note ? { note: str(o.note, 140) } : {}),
     ...(o.against ? { against: id(o.against) } : {}),
+    ...(o.model ? { model: id(o.model) } : {}),
+    ...(o.f !== undefined ? { f: int(o.f, 1, 10, 3) } : {}),
+    ...(o.side === 0 || o.side === 1 ? { side: o.side } : {}),
+    ...(o.might ? { might: int(o.might, 0, 60, 0) } : {}),
     at: num(o.at, 0, Number.MAX_SAFE_INTEGER, 0),
   };
+}
+
+/** Takes wounds off a model, removing it as a casualty when none are left. */
+function takeWounds(m: Model, n: number): Model {
+  const wounds = Math.max(0, m.wounds - n);
+  return wounds > 0 ? { ...m, wounds } : { ...m, wounds: 0, dead: true, pending: undefined, fateRoll: undefined };
+}
+
+/**
+ * Once a hero has no Fate left to roll and no failed Fate roll that Might could still save,
+ * its remaining pending wounds are taken.
+ */
+function settle(m: Model): Model {
+  const out = { ...m };
+  if (!out.pending) {
+    delete out.pending;
+    delete out.fateRoll;
+    return out;
+  }
+  if (out.fate > 0 || (out.fateRoll && out.might > 0)) return out;
+  return takeWounds({ ...out, pending: undefined, fateRoll: undefined }, m.pending!);
 }
 
 /**
@@ -223,6 +262,69 @@ export function reduce(state: GameState, action: Action): GameState {
       if (!key || state.flow.resolved.includes(key)) return state;
       return { ...state, flow: { ...state.flow, resolved: [...state.flow.resolved, key].slice(-100) } };
     }
+    case 'declareHeroic': {
+      const m = state.models[action.model];
+      const info = heroicInfo(str(action.action, 40));
+      if (!m || !m.hero || m.dead || m.might < 1 || !info || info.phase !== state.phase) return state;
+      if (state.flow.heroics.some(h => h.model === m.id && h.phase === state.phase)) return state;
+      const other: Seat = m.owner === 'p1' ? 'p2' : 'p1';
+      return {
+        ...state,
+        models: { ...state.models, [m.id]: { ...m, might: m.might - 1 } },
+        flow: {
+          ...state.flow,
+          heroics: [...state.flow.heroics, { model: m.id, action: info.name, phase: state.phase }],
+          // A declaration gives the other player a fresh chance to respond.
+          passed: state.flow.passed.filter(s => s !== other && s !== m.owner),
+          lastHeroic: m.owner,
+        },
+      };
+    }
+    case 'passHeroic':
+      if (!isSeat(action.seat) || state.flow.passed.includes(action.seat)) return state;
+      return { ...state, flow: { ...state.flow, passed: [...state.flow.passed, action.seat], lastHeroic: action.seat } };
+    case 'useMight': {
+      const i = state.log.findIndex(r => r.id === action.roll);
+      const r = state.log[i];
+      const m = r?.model ? state.models[r.model] : undefined;
+      if (!r || !m || !m.hero || m.might < 1) return state;
+      const k = int(action.die, 0, MAX_DICE, -1);
+      // Raising a first die of a 6/4+ roll would need a new follow-up die, so only the follow-ups can be raised there.
+      const follow = r.then !== undefined && r.follow !== undefined;
+      if (follow !== (action.follow === true)) return state;
+      const dice = follow ? [...r.follow!] : [...r.dice];
+      if (k < 0 || k >= dice.length || dice[k] >= 6) return state;
+      dice[k]++;
+      const roll: DiceRoll = { ...r, ...(follow ? { follow: dice } : { dice }), might: (r.might ?? 0) + 1 };
+      const log = [...state.log];
+      log[i] = roll;
+      let hero: Model = { ...m, might: m.might - 1 };
+      // Might that turns a failed Fate roll into a 4+ saves the wound.
+      if (hero.fateRoll === r.id && roll.dice[0] >= 4) hero = { ...hero, pending: (hero.pending ?? 1) - 1, fateRoll: undefined };
+      return { ...state, log, models: { ...state.models, [m.id]: settle(hero) } };
+    }
+    case 'wound': {
+      const m = state.models[action.id];
+      const n = int(action.count, 0, 30, 0);
+      if (!m || m.dead || !n) return state;
+      const hit = m.hero && m.fate > 0 ? { ...m, pending: (m.pending ?? 0) + n } : takeWounds(m, n);
+      return { ...state, models: { ...state.models, [m.id]: hit } };
+    }
+    case 'fateRolled': {
+      const m = state.models[action.id];
+      const r = cleanRoll(action.roll);
+      if (!m || !r || !m.pending || m.fate < 1) return state;
+      const saved = r.dice[0] >= 4;
+      const hero: Model = { ...m, fate: m.fate - 1, pending: saved ? m.pending - 1 : m.pending, fateRoll: saved ? undefined : r.id };
+      return { ...state, log: [...state.log, r].slice(-MAX_LOG), models: { ...state.models, [m.id]: settle(hero) } };
+    }
+    case 'takeWound': {
+      const m = state.models[action.id];
+      if (!m || !m.pending) return state;
+      const n = action.all ? m.pending : 1;
+      const hit = takeWounds({ ...m, pending: m.pending - n, fateRoll: undefined }, n);
+      return { ...state, models: { ...state.models, [m.id]: settle(hit) } };
+    }
     case 'setPriority':
       return { ...state, priority: isSeat(action.seat) ? action.seat : null };
     case 'setScenario': {
@@ -297,6 +399,8 @@ export function reduce(state: GameState, action: Action): GameState {
     }
     case 'undo':
     case 'fight':
+    case 'strikes':
+    case 'rollFate':
     case 'shoot':
     case 'rollPriority':
     case 'roll':
@@ -336,6 +440,14 @@ export function loadState(raw: unknown): GameState {
         roll: Array.isArray(f.roll) && f.roll.length === 2 ? [int(f.roll[0], 1, 6, 1), int(f.roll[1], 1, 6, 1)] : null,
         done: seats(f.done),
         resolved: Array.isArray(f.resolved) ? f.resolved.filter(k => typeof k === 'string').map(k => k.slice(0, 2000)).slice(-100) : [],
+        heroics: Array.isArray(f.heroics)
+          ? f.heroics
+              .filter(h => h && typeof h === 'object' && heroicInfo(h.action) && isPhase(h.phase))
+              .map(h => ({ model: id(h.model), action: heroicInfo(h.action)!.name, phase: h.phase }))
+              .slice(-60)
+          : [],
+        passed: seats(f.passed),
+        lastHeroic: isSeat(f.lastHeroic) ? f.lastHeroic : null,
       },
     };
   }

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { modelStats } from '../shared/catalog.ts';
-import { strikeWounds, type Fighter } from '../shared/fight.ts';
+import { duelLeader, strikeWounds, type Fighter } from '../shared/fight.ts';
+import { declared } from '../shared/heroics.ts';
 import type { Action, GameState, Model, Role, Seat } from '../shared/types.ts';
 import { useCatalog } from './ListBuilder.tsx';
 import { RollRow } from './Panels.tsx';
@@ -10,7 +11,8 @@ type Stat = 'f' | 'a' | 's' | 'd';
 const STATS: [Stat, string][] = [['f', 'F'], ['a', 'A'], ['s', 'S'], ['d', 'D']];
 
 /**
- * Rolls the duel and the winner's strikes in one go, for the given models (from both sides).
+ * Rolls a fight between the given models (from both sides) in two steps: the duel, when heroes can
+ * spend Might on their dice, then the winner's strikes.
  * With `combat`, it resolves that fight on the table and the turn tracker ticks it off.
  */
 export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight' }: { state: GameState; dispatch: Dispatch; role: Role; ids: string[]; combat?: string; title?: string }) {
@@ -26,30 +28,50 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
 
   const fighter = (m: Model): Fighter => {
     const st = modelStats(catalog, m);
-    const base = { f: st?.Fv ?? 3, a: st?.A ?? 1, s: st?.S ?? 3, d: st?.D ?? 4 };
-    return { id: m.id, name: m.name, ...base, ...edits[m.id] };
+    const strength = st?.S ?? 3;
+    const base = {
+      f: st?.Fv ?? 3,
+      a: st?.A ?? 1,
+      s: declared(state, m.id, 'Heroic Strength') ? Math.min(10, strength * 2) : strength,
+      d: st?.D ?? 4,
+    };
+    return {
+      id: m.id,
+      name: m.name,
+      ...base,
+      ...edits[m.id],
+      ...(declared(state, m.id, 'Heroic Strike') ? { strike: true } : {}),
+      ...(declared(state, m.id, 'Heroic Defence') ? { defence: true } : {}),
+    };
   };
 
-  // The latest fight this player rolled, if any.
-  const lastGroup = [...state.log].reverse().find(r => r.group?.startsWith('f-') && r.by === role)?.group;
+  // The latest fight rolled between these models, if any.
+  const idSet = new Set(ids);
+  const lastGroup = [...state.log]
+    .reverse()
+    .find(r => r.group?.startsWith('f-') && r.side !== undefined && r.model && idSet.has(r.model))?.group;
   const lastRolls = lastGroup ? state.log.filter(r => r.group === lastGroup) : [];
-  const wounds = strikeWounds(lastRolls);
+  const struck = lastRolls.some(r => r.side === undefined && !r.label.startsWith('Heroic Strike'));
+  const leader = lastGroup && !struck ? duelLeader(lastRolls) : null;
+  const wounds = struck ? strikeWounds(lastRolls) : 0;
   const victim = lastRolls.find(r => r.against)?.against;
   const victimModel = victim ? state.models[victim] : undefined;
 
   const ready = sides.p1.length > 0 && sides.p2.length > 0 && role !== 'spectator';
-  const fight = () => {
+  const request = () => {
     const target = (s: Seat) => (sides[s].some(m => m.id === targets[s]) ? targets[s] : sides[s][0].id);
-    dispatch({
-      type: 'fight',
-      fight: { sides: [sides.p1.map(fighter), sides.p2.map(fighter)], targets: [target('p2'), target('p1')], trapped, ...(combat ? { combat } : {}) },
-    });
+    return { sides: [sides.p1.map(fighter), sides.p2.map(fighter)] as [Fighter[], Fighter[]], targets: [target('p2'), target('p1')] as [string, string], trapped, ...(combat ? { combat } : {}) };
   };
+  const duel = () => dispatch({ type: 'fight', fight: request() });
+  const strikes = () => lastGroup && dispatch({ type: 'strikes', fight: request(), group: lastGroup });
   const applyWounds = () => {
     if (!victimModel || !lastGroup) return;
-    const left = Math.max(0, victimModel.wounds - wounds);
-    dispatch({ type: 'updateModel', id: victimModel.id, patch: left ? { wounds: left } : { wounds: 0, dead: true } });
+    dispatch({ type: 'wound', id: victimModel.id, count: wounds });
     setApplied(lastGroup);
+  };
+  const sideName = (i: 0 | 1) => {
+    const ms = i === 0 ? sides.p1 : sides.p2;
+    return ms.length === 1 ? ms[0].name : seatName(i === 0 ? 'p1' : 'p2');
   };
 
   return (
@@ -70,7 +92,12 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
                 const f = fighter(m);
                 return (
                   <div key={m.id} className="fighter">
-                    <span className="fighter-name">{m.name}</span>
+                    <span className="fighter-name">
+                      {m.name}
+                      {f.strike && <small className="heroic-tag">Heroic Strike</small>}
+                      {f.defence && <small className="heroic-tag">Heroic Defence</small>}
+                      {declared(state, m.id, 'Heroic Strength') && <small className="heroic-tag">Heroic Strength</small>}
+                    </span>
                     {STATS.map(([k, label]) => (
                       <label key={k} className="mini-stat">
                         {label}
@@ -101,13 +128,13 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
             </div>
           );
         })}
-      {ready && (
+      {ready && (!lastGroup || struck) && (
         <div className="row wrap">
           <label className="check">
             <input type="checkbox" checked={trapped} onChange={e => setTrapped(e.target.checked)} /> Loser is trapped (double strikes)
           </label>
-          <button className="primary" onClick={fight}>
-            Roll the fight
+          <button className="primary" onClick={duel}>
+            {struck ? 'Roll a new duel' : 'Roll the duel'}
           </button>
         </div>
       )}
@@ -115,13 +142,37 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
         <div className="rules-result">
           <ol className="log">
             {lastRolls.map(r => (
-              <RollRow key={r.id} r={r} state={state} />
+              <RollRow key={r.id} r={r} state={state} role={role} dispatch={dispatch} />
             ))}
           </ol>
-          {victimModel && wounds > 0 && !victimModel.dead && applied !== lastGroup && (
+          {lastGroup && !struck && (
+            <>
+              <p className="duel-lead">
+                {leader ? (
+                  <>
+                    <b>{sideName(leader.winner)}</b> {leader.how === 'dice' ? 'is winning with the highest die' : 'is winning on Fight value'}.
+                  </>
+                ) : (
+                  'Tied on dice and Fight: a roll-off will decide.'
+                )}{' '}
+                Heroes can spend Might on their own dice first.
+              </p>
+              {ready && (
+                <div className="row wrap">
+                  <label className="check">
+                    <input type="checkbox" checked={trapped} onChange={e => setTrapped(e.target.checked)} /> Loser is trapped (double strikes)
+                  </label>
+                  <button className="primary" onClick={strikes}>
+                    Roll strikes
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+          {struck && victimModel && wounds > 0 && !victimModel.dead && applied !== lastGroup && role !== 'spectator' && (
             <button onClick={applyWounds}>
-              Take {wounds} wound{wounds === 1 ? '' : 's'} off {victimModel.name}
-              {victimModel.wounds - wounds <= 0 ? ' (slain)' : ''}
+              Wound {victimModel.name} {wounds} time{wounds === 1 ? '' : 's'}
+              {victimModel.hero && victimModel.fate > 0 ? ' (Fate can be rolled)' : victimModel.wounds - wounds <= 0 ? ' (slain)' : ''}
             </button>
           )}
         </div>

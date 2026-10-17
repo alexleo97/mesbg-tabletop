@@ -8,6 +8,7 @@ export const UNDOABLE = new Set<Action['type']>([
   'addTerrain', 'updateTerrain', 'removeTerrain',
   'setPhase', 'nextPhase', 'setPriority', 'setScenario', 'setVP', 'setBoard', 'setScenery',
   'startGame', 'choosePriority', 'endActivation', 'resolveCombat',
+  'declareHeroic', 'passHeroic', 'wound', 'takeWound',
 ]);
 
 /**

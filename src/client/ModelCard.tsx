@@ -1,6 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { modelStats, pictureUrl, statsWithOptions, STAT_NAMES, type Catalog } from '../shared/catalog.ts';
+import { strikeWounds } from '../shared/fight.ts';
 import type { Combat } from '../shared/flow.ts';
+import { heroicInfo } from '../shared/heroics.ts';
+import { inTheWay, sightTo } from '../shared/sight.ts';
+import RULES from '../data/special-rules.json';
+import { RollRow } from './Panels.tsx';
 import { distanceBetween, formatInches } from '../shared/geometry.ts';
 import { formatNeed, missileWeapon, woundNeed } from '../shared/rules.ts';
 import type { Action, GameState, Model, Role } from '../shared/types.ts';
@@ -38,10 +43,29 @@ function Counter({ label, value, max, onChange }: { label: string; value: number
   );
 }
 
+const SUMMARIES = RULES as Record<string, string>;
+
+/** Our summary of a special rule, looked up by its name without the bracketed part ("Hatred (Rohan)" is Hatred). */
+export function ruleSummary(name: string): string | undefined {
+  return SUMMARIES[name] ?? SUMMARIES[name.replace(/\s*\(.*$/, '').replace(/\.$/, '').trim()];
+}
+
+/** The special rules on a model's profile. */
+export function rulesOf(m: Model, catalog: Catalog | null): string[] {
+  const unit = m.profileId ? catalog?.units[m.profileId] : undefined;
+  return unit?.rules ?? [];
+}
+
 /** A selected model's card: its profile at a glance and the actions that make sense in this phase. */
 export function ModelCard({ state, dispatch, role, model: m, catalog, target, clearTarget, combat, openFight, openTab, close }: Props) {
   const [obstacles, setObstacles] = useState(0);
   const [photoFailed, setPhotoFailed] = useState(false);
+  const [openRule, setOpenRule] = useState<string | null>(null);
+  const [appliedShot, setAppliedShot] = useState<string | null>(null);
+  // What's between the shooter and its target, as a starting count of In the Way rolls.
+  const between = target ? inTheWay(state, m, target) : [];
+  const seen = target ? sightTo(state, m, target) : null;
+  useEffect(() => setObstacles(Math.min(5, between.length)), [target?.id, between.length]);
   const unit = m.profileId ? catalog?.units[m.profileId] : undefined;
   const printed = unit && statsWithOptions(unit, unit.options.filter(o => m.options?.includes(o.name)).map(o => o.id));
   const stats = modelStats(catalog, m);
@@ -49,6 +73,22 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
   const weapon = weaponOf(m, catalog);
   const patch = (p: Partial<Model>) => dispatch({ type: 'updateModel', id: m.id, patch: p });
   const photo = unit && pictureUrl(unit);
+
+  // This model's latest shot, so its wounds can be taken off the target in one tap.
+  const lastShotGroup = [...state.log].reverse().find(r => r.group?.startsWith('s-') && r.model === m.id)?.group;
+  const shotRolls = lastShotGroup ? state.log.filter(r => r.group === lastShotGroup) : [];
+  const lastShot = shotRolls.find(r => r.against);
+  const shotWounds = strikeWounds(shotRolls);
+
+  // In the Move phase, charging an enemy with Terror within reach needs a Courage test first.
+  const terrifying =
+    state.phase === 'move' && mine && state.flow.started
+      ? Object.values(state.models).filter(e => e.owner !== m.owner && !e.dead && distanceBetween(m, e) <= m.move + 1 && rulesOf(e, catalog).some(r => /^Terror\b/.test(r)))
+      : [];
+  const heroics = state.flow.heroics.filter(h => h.model === m.id);
+  // This model's own latest roll, while it's still recent, so a hero can spend Might on it here.
+  const recent = state.log.slice(-6).reverse().find(r => r.model === m.id);
+  const rules = rulesOf(m, catalog);
 
   let action: React.ReactNode = null;
   if (state.phase === 'shoot' && mine && weapon && state.flow.started) {
@@ -65,6 +105,8 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
           <p>
             At <b>{target.name}</b>: {formatInches(dist)} of {weapon.range}"{inRange ? '' : ', out of range'}. Hits on {shoot}+, wounds on {formatNeed(need)}.
           </p>
+          {seen === 'hidden' && <p className="warn">Terrain seems to hide {target.name} completely. Check from the model's eye level.</p>}
+          {between.length > 0 && <p className="muted small">In the way: {between.join(', ')}.</p>}
           <div className="row wrap">
             <span className="counter">
               <button onClick={() => setObstacles(o => Math.max(0, o - 1))} aria-label="Fewer things in the way">−</button>
@@ -87,6 +129,17 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
             </button>
             <button onClick={clearTarget}>Change target</button>
           </div>
+          {shotWounds > 0 && lastShot && lastShot.against === target.id && appliedShot !== lastShot.group && !target.dead && (
+            <button
+              onClick={() => {
+                dispatch({ type: 'wound', id: target.id, count: shotWounds });
+                setAppliedShot(lastShot.group ?? null);
+              }}
+            >
+              Wound {target.name} {shotWounds} time{shotWounds === 1 ? '' : 's'}
+              {target.hero && target.fate > 0 ? ' (Fate can be rolled)' : target.wounds - shotWounds <= 0 ? ' (slain)' : ''}
+            </button>
+          )}
         </div>
       );
     }
@@ -134,10 +187,50 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
           </>
         )}
       </div>
+      {heroics.length > 0 && (
+        <div className="row wrap">
+          {heroics.map(h => (
+            <span key={h.action} className="heroic-tag" title={heroicInfo(h.action)?.tip}>
+              ⚡ {h.action}
+            </span>
+          ))}
+        </div>
+      )}
+      {rules.length > 0 && (
+        <div className="rule-chips">
+          {rules.map(r => {
+            const known = ruleSummary(r);
+            return (
+              <button key={r} className={`rule-chip ${openRule === r ? 'on' : ''} ${known ? '' : 'plain'}`} onClick={() => setOpenRule(openRule === r ? null : r)} aria-expanded={openRule === r}>
+                {r}
+              </button>
+            );
+          })}
+          {openRule && <p className="rule-text">{ruleSummary(openRule) ?? 'No summary for this rule yet: check the army book.'}</p>}
+        </div>
+      )}
+      {terrifying.length > 0 && (
+        <div className="terror">
+          {terrifying.map(e => (
+            <button
+              key={e.id}
+              onClick={() => dispatch({ type: 'roll', count: 2, label: `Courage to charge ${e.name} (Terror): ${m.name}`, model: m.id, ...(stats?.C ? { sum: stats.C } : {}) })}
+              title="Terror: the charger tests Courage at the start of its move. If it fails, it can't move this turn."
+            >
+              Charge {e.name}? Courage test (Terror)
+            </button>
+          ))}
+        </div>
+      )}
       {action}
+      {recent && (
+        <ol className="log card-roll">
+          <RollRow r={recent} state={state} role={role} dispatch={dispatch} />
+        </ol>
+      )}
       <div className="row wrap card-actions">
         {mine && (
-          <button onClick={() => dispatch({ type: 'roll', count: 2, label: `Courage test: ${m.name}`, ...(stats?.C ? { sum: stats.C } : {}) })}>Courage</button>
+          <button onClick={() => dispatch({ type: 'roll', count: 2, label: `Courage test: ${m.name}`, model: m.id, ...(stats?.C ? { sum: stats.C } : {}) })}>Courage</button>
         )}
         {mine && m.hero && m.will > 0 && <button onClick={() => openTab('rules')}>Cast a power</button>}
         {mine && (

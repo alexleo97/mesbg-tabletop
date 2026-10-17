@@ -1,4 +1,5 @@
 import { armyStatus } from '../shared/status.ts';
+import { isDifficult } from '../shared/sight.ts';
 import { useRef, useState } from 'react';
 import { objectiveMarkers, STARTER_BOARDS, starterTerrain } from '../shared/boards.ts';
 import { loadCatalog, parseBuilderExport, STAT_NAMES, statsWithOptions } from '../shared/catalog.ts';
@@ -151,33 +152,42 @@ export function SelectionPanel({ state, selected, dispatch, clear }: { state: Ga
 }
 
 /** One roll in the shared log, including follow-up dice for 6+/4+ style wounds. */
-export function RollRow({ r, state }: { r: DiceRoll; state: GameState }) {
+/** One roll in the dice log. With `dispatch`, a hero's player can spend its Might to raise its own dice. */
+export function RollRow({ r, state, role, dispatch }: { r: DiceRoll; state: GameState; role?: Role; dispatch?: Dispatch }) {
   const hits = r.target ? r.dice.filter(d => d >= r.target!).length : null;
   const wounds = r.then && r.follow ? r.follow.filter(d => d >= r.then!).length : null;
+  const hero = r.model ? state.models[r.model] : undefined;
+  const might = !!dispatch && !!hero && hero.hero && !hero.dead && hero.might > 0 && hero.owner === role;
+  const die = (d: number, i: number, target: number | undefined, follow: boolean) => (
+    <span key={i} className="die-wrap">
+      <span className={`die ${target ? (d >= target ? 'hit' : 'miss') : ''}`}>{d}</span>
+      {might && d < 6 && follow === (wounds !== null) && (
+        <button className="might" onClick={() => dispatch!({ type: 'useMight', roll: r.id, die: i, ...(follow ? { follow: true } : {}) })} title={`Spend 1 of ${hero!.name}'s ${hero!.might} Might to make this a ${d + 1}`}>
+          +1
+        </button>
+      )}
+    </span>
+  );
+  const total = r.dice.reduce((a, b) => a + b, 0);
   return (
     <li className={r.by}>
       <div className="log-head">
         <b>{r.by === 'spectator' ? 'Spectator' : state.names[r.by] || (r.by === 'p1' ? 'Player 1' : 'Player 2')}</b>
         <span>{r.label}</span>
+        {r.might ? <span className="might-tag">+{r.might} Might</span> : null}
       </div>
-      <div className="dice">
-        {r.dice.map((d, i) => (
-          <span key={i} className={`die ${r.target ? (d >= r.target ? 'hit' : 'miss') : ''}`}>{d}</span>
-        ))}
-        {wounds === null && hits !== null && <span className="hits">{hits} success{hits === 1 ? '' : 'es'}</span>}
-        {r.dice.length > 1 && hits === null && (
-          <span className="hits">{r.group ? `best ${Math.max(...r.dice)}` : `total ${r.dice.reduce((a, b) => a + b, 0)}`}</span>
-        )}
-        {r.sum !== undefined && (
-          <b className={r.dice.reduce((a, b) => a + b, 0) >= r.sum ? 'pass' : 'fail'}>{r.dice.reduce((a, b) => a + b, 0) >= r.sum ? `passed (${r.sum}+)` : `failed (${r.sum}+)`}</b>
-        )}
-      </div>
+      {r.dice.length > 0 && (
+        <div className="dice">
+          {r.dice.map((d, i) => die(d, i, r.target, false))}
+          {wounds === null && hits !== null && <span className="hits">{hits} success{hits === 1 ? '' : 'es'}</span>}
+          {r.dice.length > 1 && hits === null && <span className="hits">{r.group ? `best ${Math.max(...r.dice)}` : `total ${total}`}</span>}
+          {r.sum !== undefined && <b className={total >= r.sum ? 'pass' : 'fail'}>{total >= r.sum ? `passed (${r.sum}+)` : `failed (${r.sum}+)`}</b>}
+        </div>
+      )}
       {wounds !== null && (
         <div className="dice follow">
           <span className="muted">then {r.then}+:</span>
-          {r.follow!.map((d, i) => (
-            <span key={i} className={`die ${d >= r.then! ? 'hit' : 'miss'}`}>{d}</span>
-          ))}
+          {r.follow!.map((d, i) => die(d, i, r.then, true))}
           <span className="hits">{wounds} success{wounds === 1 ? '' : 'es'}</span>
         </div>
       )}
@@ -215,7 +225,7 @@ export function DicePanel({ state, dispatch, role }: { state: GameState; dispatc
       </div>
       <ol className="log" ref={logRef}>
         {[...state.log].reverse().map(r => (
-          <RollRow key={r.id} r={r} state={state} />
+          <RollRow key={r.id} r={r} state={state} role={role} dispatch={dispatch} />
         ))}
       </ol>
     </div>
@@ -457,6 +467,9 @@ export function TablePanel({
             <button onClick={() => patch({ rot: t.rot + 15 })}>⟳ 15°</button>
             <button onClick={() => patch({ shape: t.shape === 'rect' ? 'circle' : 'rect' })}>{t.shape === 'rect' ? 'Make round' : 'Make square'}</button>
           </div>
+          <label className="check">
+            <input type="checkbox" checked={isDifficult(t)} onChange={e => patch({ difficult: e.target.checked })} /> Difficult terrain (moving through it costs double)
+          </label>
           <div className="row">
             <button onClick={() => patch({ locked: !t.locked })}>{t.locked ? 'Unlock' : 'Lock in place'}</button>
             <button
