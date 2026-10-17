@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { PHASES, type Role, type RoomSummary, type Seat } from '../shared/types.ts';
+import { useEffect, useMemo, useState } from 'react';
+import { PHASES, type Model, type Role, type RoomSummary, type Seat } from '../shared/types.ts';
 import { Board, type Tool } from './Board.tsx';
 import { RoomConnection, useRoom } from './net.ts';
 import { pictureUrl } from '../shared/catalog.ts';
@@ -7,7 +7,12 @@ import { useCatalog } from './ListBuilder.tsx';
 import { ArmyPanel, DicePanel, SelectionPanel, SettingsPanel, TablePanel } from './Panels.tsx';
 import { RulesPanel } from './RulesPanel.tsx';
 import { ScenarioPanel } from './ScenarioPanel.tsx';
-import { BrokenTags, StatusBanner } from './StatusBanner.tsx';
+import { BrokenTags } from './BrokenTags.tsx';
+import { CoachBar } from './CoachBar.tsx';
+import { FightPanel } from './FightPanel.tsx';
+import { ModelCard, weaponOf } from './ModelCard.tsx';
+import { combats } from '../shared/flow.ts';
+import { distanceBetween, formatInches } from '../shared/geometry.ts';
 import { scenarioById, vpTotal } from '../shared/scenarios.ts';
 import { useSettings, type Settings } from './settings.ts';
 
@@ -122,7 +127,9 @@ function Game({ room, settings, updateSettings }: { room: string; settings: Sett
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [selectedTerrain, setSelectedTerrain] = useState<string | null>(null);
   const [tab, setTab] = useState<PanelTab>('army');
-  const [panelOpen, setPanelOpen] = useState(() => window.innerWidth > 800);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [aimAt, setAimAt] = useState<string | null>(null);
+  const [fightKey, setFightKey] = useState<string | null>(null);
   const { catalog } = useCatalog();
   const [copied, setCopied] = useState(false);
 
@@ -141,19 +148,16 @@ function Game({ room, settings, updateSettings }: { room: string; settings: Sett
     if (selectedTerrain && !state.terrain[selectedTerrain]) setSelectedTerrain(null);
   }, [state.models, state.terrain, selected, selectedTerrain]);
 
-  // Show a model's details when you start selecting, but don't pull you away from another tab
-  // when the selection only shrinks (for example after a fight removes a casualty).
-  const prevSize = useRef(0);
-  useEffect(() => {
-    if (selected.size && prevSize.current === 0) setTab('model');
-    prevSize.current = selected.size;
-  }, [selected.size]);
+  // A new shooter, or a new phase, starts without a target.
+  const single = selected.size === 1 ? state.models[[...selected][0]] : undefined;
+  useEffect(() => setAimAt(null), [single?.id, state.phase]);
 
   const dispatch = conn.dispatch.bind(conn);
   const leave = () => {
     location.search = '';
   };
   const canUndo = role !== 'spectator' && role !== null && undoDepth > 0;
+  const fights = useMemo(() => combats(state), [state]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -205,6 +209,29 @@ function Game({ room, settings, updateSettings }: { room: string; settings: Sett
       setPanelOpen(true);
     }
   };
+  const showTab = (t: PanelTab) => {
+    setTab(t);
+    setPanelOpen(true);
+  };
+
+  // In the Shoot phase, tapping an enemy while your archer is selected aims at it instead of selecting it.
+  const shooter = single && single.owner === role && state.phase === 'shoot' && state.flow.started && weaponOf(single, catalog) ? single : undefined;
+  const onModelTap = (m: Model) => {
+    if (!shooter || m.owner === shooter.owner || m.dead) return false;
+    setAimAt(m.id);
+    return true;
+  };
+  const target = aimAt ? state.models[aimAt] : undefined;
+  const aimLinks =
+    shooter && target
+      ? (() => {
+          const w = weaponOf(shooter, catalog)!;
+          const d = distanceBetween(shooter, target);
+          return [{ from: shooter.id, to: target.id, label: `${formatInches(d)} / ${w.range}"`, ok: d <= w.range }];
+        })()
+      : undefined;
+  const fight = fightKey ? fights.find(c => c.key === fightKey) : undefined;
+  const singleCombat = single ? fights.find(c => c.p1.includes(single.id) || c.p2.includes(single.id)) : undefined;
 
   return (
     <div className="game">
@@ -213,36 +240,16 @@ function Game({ room, settings, updateSettings }: { room: string; settings: Sett
           ⟵
         </button>
         <button className="room" onClick={copyLink} title="Copy invite link">
-          {copied ? 'Link copied' : room} <span className={`dot ${status}`} />
+          <span className="room-name">{copied ? 'Link copied' : room}</span> <span className={`dot ${status}`} />
         </button>
-        <div className="phases" role="group" aria-label="Turn phases">
-          <span className="turn">T{state.turn}</span>
-          {PHASES.map(p => (
-            <button key={p} className={state.phase === p ? 'on' : ''} onClick={() => dispatch({ type: 'setPhase', phase: p })} disabled={role === 'spectator'}>
-              {PHASE_LABEL[p]}
-            </button>
-          ))}
-          <button className="next" onClick={() => dispatch({ type: 'nextPhase' })} disabled={role === 'spectator'} aria-label="Next phase">
-            ▶
-          </button>
-        </div>
-        <div className="priority">
-          <span>Priority:</span>
+        <div className="sides">
           {(['p1', 'p2'] as const).map(s => (
-            <button key={s} className={`${s} ${state.priority === s ? 'on' : ''}`} onClick={() => dispatch({ type: 'setPriority', seat: s })} disabled={role === 'spectator'}>
+            <span key={s} className={`side ${s} ${state.priority === s ? 'has-priority' : ''}`} title={state.priority === s ? 'Has priority this turn' : undefined}>
+              {state.priority === s && <span aria-label="Priority">👑</span>}
               {seatName(s)}
-            </button>
+              {s === role && <small> (you)</small>}
+            </span>
           ))}
-          <button
-            onClick={() => {
-              dispatch({ type: 'roll', count: 2, label: `Priority roll: ${seatName('p1')} vs ${seatName('p2')}` });
-              setTab('dice');
-              setPanelOpen(true);
-            }}
-            disabled={role === 'spectator'}
-          >
-            Roll
-          </button>
         </div>
         <BrokenTags state={state} />
         {scenarioById(state.scenario) && (
@@ -250,59 +257,117 @@ function Game({ room, settings, updateSettings }: { room: string; settings: Sett
             VP <b className="p1">{vpTotal(state.vp.p1)}</b>–<b className="p2">{vpTotal(state.vp.p2)}</b>
           </button>
         )}
-        <div className="me desktop-only">
-          {role !== 'spectator' ? (
-            <input
-              className={`name ${role}`}
-              value={state.names[role] ?? ''}
-              placeholder={role === 'p1' ? 'Player 1' : 'Player 2'}
-              onChange={e => dispatch({ type: 'setName', seat: role, name: e.target.value })}
-              aria-label="Your name"
-            />
-          ) : (
-            <span className="muted">Spectating</span>
-          )}
-          <select value={role} onChange={e => setRole(e.target.value as Role)} aria-label="Your seat">
-            <option value="p1">Player 1</option>
-            <option value="p2">Player 2</option>
-            <option value="spectator">Spectator</option>
-          </select>
-        </div>
+        <nav className="panel-buttons" aria-label="Panels">
+          {(
+            [
+              ['army', '⚔', 'Army'],
+              ['table', '⛰', 'Table'],
+              ['rules', '📖', 'Rules'],
+              ['dice', '🎲', 'Log'],
+              ['settings', '⚙', 'Look'],
+            ] as const
+          ).map(([t, icon, label]) => (
+            <button key={t} className={panelOpen && tab === t ? 'on' : ''} onClick={() => openTab(t)} aria-label={label} title={label}>
+              <span>{icon}</span>
+              <small>{label}</small>
+            </button>
+          ))}
+        </nav>
       </header>
 
       <main className={`main ${panelOpen ? 'panel-open' : ''}`}>
-        <StatusBanner state={state} dispatch={dispatch} role={role} />
-        <Board
-          state={state}
-          tool={tool}
-          selected={selected}
-          setSelected={setSelected}
-          selectedTerrain={selectedTerrain}
-          setSelectedTerrain={id => {
-            setSelectedTerrain(id);
-            if (id) {
-              setTab('table');
-            }
-          }}
-          dispatch={role === 'spectator' ? () => {} : dispatch}
-          showZones={settings.zones}
-          showDeployment={settings.deployment}
-          showGrid={settings.grid}
-          photoFor={m => {
-            const unit = settings.photos && m.profileId ? catalog?.units[m.profileId] : undefined;
-            return unit && pictureUrl(unit);
-          }}
-        />
+        <div className="table-area">
+          <div className="stage">
+            <Board
+              state={state}
+              tool={tool}
+              selected={selected}
+              setSelected={setSelected}
+              selectedTerrain={selectedTerrain}
+              setSelectedTerrain={id => {
+                setSelectedTerrain(id);
+                if (id) showTab('table');
+              }}
+              dispatch={role === 'spectator' ? () => {} : dispatch}
+              showZones={settings.zones}
+              showDeployment={settings.deployment}
+              showGrid={settings.grid}
+              photoFor={m => {
+                const unit = settings.photos && m.profileId ? catalog?.units[m.profileId] : undefined;
+                return unit && pictureUrl(unit);
+              }}
+              onModelTap={onModelTap}
+              links={aimLinks}
+              fights={state.flow.started && state.phase === 'fight' ? fights.map(c => ({ key: c.key, ids: [...c.p1, ...c.p2], done: state.flow.resolved.includes(c.key) })) : undefined}
+              onFightTap={setFightKey}
+            />
+
+            <div className="tool-rail" role="toolbar" aria-label="Tools">
+              {(
+                [
+                  ['move', '✋', 'Drag'],
+                  ['select', '⬚', 'Select'],
+                  ['measure', '📏', 'Measure'],
+                ] as const
+              ).map(([t, icon, label]) => (
+                <button key={t} className={tool === t ? 'on' : ''} onClick={() => setTool(t)} title={label} aria-label={label}>
+                  <span>{icon}</span>
+                  <small>{label}</small>
+                </button>
+              ))}
+              <button onClick={() => dispatch({ type: 'undo' })} disabled={!canUndo} title="Undo your last change (Ctrl+Z)" aria-label="Undo">
+                <span>↶</span>
+                <small>Undo</small>
+              </button>
+            </div>
+
+            {single && (
+              <ModelCard
+                key={single.id}
+                state={state}
+                dispatch={dispatch}
+                role={role}
+                model={single}
+                catalog={catalog}
+                target={target}
+                clearTarget={() => setAimAt(null)}
+                combat={state.flow.started ? singleCombat : undefined}
+                openFight={setFightKey}
+                openTab={showTab}
+                close={() => setSelected(new Set())}
+              />
+            )}
+            {selected.size > 1 && (
+              <button className="selection-chip" onClick={() => showTab('model')}>
+                {selected.size} models selected · Details
+              </button>
+            )}
+          </div>
+
+          <CoachBar state={state} dispatch={dispatch} role={role} combats={fights} openTab={showTab} openFight={setFightKey} />
+        </div>
+
+        {fight && (
+          <div className="sheet-backdrop" onClick={() => setFightKey(null)}>
+            <div className="sheet" role="dialog" aria-label="Fight" onClick={e => e.stopPropagation()}>
+              <button className="close" onClick={() => setFightKey(null)} aria-label="Close">
+                ✕
+              </button>
+              <FightPanel state={state} dispatch={dispatch} role={role} ids={[...fight.p1, ...fight.p2]} combat={fight.key} title="Resolve the fight" />
+            </div>
+          </div>
+        )}
+
         {panelOpen && (
           <aside className="panel">
             <nav className="tabs">
               {(
                 [
-                  ['model', selected.size ? `Selected (${selected.size})` : 'Selected'],
-                  ['dice', 'Dice'],
-                  ['rules', 'Rules'],
                   ['army', 'Army'],
                   ['table', 'Table'],
+                  ['rules', 'Rules'],
+                  ['dice', 'Log'],
+                  ['model', selected.size ? `Selected (${selected.size})` : 'Selected'],
                   ['settings', '⚙'],
                 ] as const
               ).map(([t, label]) => (
@@ -321,7 +386,7 @@ function Game({ room, settings, updateSettings }: { room: string; settings: Sett
             {tab === 'army' && <ArmyPanel state={state} dispatch={dispatch} role={role} />}
             {tab === 'table' && (
               <>
-                <div className="panel-body me-panel mobile-only">
+                <div className="panel-body game-panel">
                   <h4>You</h4>
                   <div className="row">
                     {role !== 'spectator' && (
@@ -338,72 +403,40 @@ function Game({ room, settings, updateSettings }: { room: string; settings: Sett
                       <option value="spectator">Spectator</option>
                     </select>
                   </div>
+                  <h4>Game</h4>
+                  <label className="check">
+                    <input type="checkbox" checked={state.listed} disabled={role === 'spectator'} onChange={e => dispatch({ type: 'setListed', listed: e.target.checked })} />
+                    Show this game in the open games list
+                  </label>
+                  {state.flow.started && role !== 'spectator' && (
+                    <label>
+                      Correct the phase
+                      <select value={`${state.turn}:${state.phase}`} onChange={e => {
+                        const [t, p] = e.target.value.split(':');
+                        dispatch({ type: 'setPhase', phase: p as (typeof PHASES)[number], turn: Number(t) });
+                      }}>
+                        {[state.turn - 1, state.turn].filter(t => t >= 1).flatMap(t =>
+                          PHASES.map(p => (
+                            <option key={`${t}:${p}`} value={`${t}:${p}`}>
+                              Turn {t}, {PHASE_LABEL[p]}
+                            </option>
+                          )),
+                        )}
+                      </select>
+                    </label>
+                  )}
+                  <div className="row wrap">
+                    <button onClick={copyLink}>Copy invite link</button>
+                    <button onClick={leave}>Leave game</button>
+                  </div>
                 </div>
-              <div className="panel-body game-panel">
-                <h4>Game</h4>
-                <label className="check">
-                  <input type="checkbox" checked={state.listed} disabled={role === 'spectator'} onChange={e => dispatch({ type: 'setListed', listed: e.target.checked })} />
-                  Show this game in the open games list
-                </label>
-                <button onClick={leave}>Leave game</button>
-              </div>
-              <ScenarioPanel state={state} dispatch={dispatch} role={role} />
-              <TablePanel
-                state={state}
-                dispatch={dispatch}
-                selectedTerrain={selectedTerrain}
-                setSelectedTerrain={setSelectedTerrain}
-              />
+                <ScenarioPanel state={state} dispatch={dispatch} role={role} />
+                <TablePanel state={state} dispatch={dispatch} selectedTerrain={selectedTerrain} setSelectedTerrain={setSelectedTerrain} />
               </>
             )}
           </aside>
         )}
       </main>
-
-      {!panelOpen && selected.size > 0 && (
-        <button className="selection-chip" onClick={() => openTab('model')}>
-          {selected.size === 1 ? state.models[[...selected][0]]?.name : `${selected.size} models`} · Details
-        </button>
-      )}
-      {!panelOpen && selectedTerrain && selected.size === 0 && (
-        <button className="selection-chip" onClick={() => openTab('table')}>
-          Terrain · Edit
-        </button>
-      )}
-
-      <footer className="toolbar">
-        {(
-          [
-            ['move', '✋', 'Drag'],
-            ['select', '⬚', 'Select'],
-            ['measure', '📏', 'Measure'],
-          ] as const
-        ).map(([t, icon, label]) => (
-          <button key={t} className={tool === t ? 'on' : ''} onClick={() => setTool(t)}>
-            <span>{icon}</span>
-            {label}
-          </button>
-        ))}
-        <button onClick={() => dispatch({ type: 'undo' })} disabled={!canUndo} title="Undo your last change (Ctrl+Z)">
-          <span>↶</span>Undo
-        </button>
-        <span className="sep" />
-        <button className={panelOpen && tab === 'dice' ? 'on' : ''} onClick={() => openTab('dice')}>
-          <span>🎲</span>Dice
-        </button>
-        <button className={panelOpen && tab === 'rules' ? 'on' : ''} onClick={() => openTab('rules')}>
-          <span>📖</span>Rules
-        </button>
-        <button className={panelOpen && tab === 'army' ? 'on' : ''} onClick={() => openTab('army')}>
-          <span>⚔</span>Army
-        </button>
-        <button className={panelOpen && tab === 'table' ? 'on' : ''} onClick={() => openTab('table')}>
-          <span>⛰</span>Table
-        </button>
-        <button className={panelOpen && tab === 'settings' ? 'on' : ''} onClick={() => openTab('settings')} aria-label="Settings">
-          <span>⚙</span>Look
-        </button>
-      </footer>
     </div>
   );
 }

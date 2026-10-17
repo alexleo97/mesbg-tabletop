@@ -21,6 +21,13 @@ interface Props {
   showGrid: boolean;
   /** Photo URL for a model's unit, if photos are on and known. */
   photoFor: (m: Model) => string | undefined;
+  /** Called when a model is tapped; return true to use the tap (e.g. to pick a shooting target) instead of selecting. */
+  onModelTap?: (m: Model) => boolean;
+  /** Lines to draw between models, such as a shooter and its target. */
+  links?: { from: string; to: string; label: string; ok: boolean }[];
+  /** Fights on the table, drawn as markers that open the fight when tapped. */
+  fights?: { key: string; ids: string[]; done: boolean }[];
+  onFightTap?: (key: string) => void;
 }
 
 interface View {
@@ -61,7 +68,7 @@ function BaseShape({ m, className = 'base' }: { m: Model; className?: string }) 
 
 const clipId = (m: Model) => `clip-${m.base.shape}-${m.base.w}-${m.base.h}`;
 
-export function Board({ state, tool, selected, setSelected, selectedTerrain, setSelectedTerrain, dispatch, showZones, showDeployment, showGrid, photoFor }: Props) {
+export function Board({ state, tool, selected, setSelected, selectedTerrain, setSelectedTerrain, dispatch, showZones, showDeployment, showGrid, photoFor, onModelTap, links, fights, onFightTap }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const tex = useMemo(() => textures(), []);
   const [view, setView] = useState<View>({ x: 0, y: 0, s: 10 });
@@ -198,6 +205,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
       setGesture({ kind: 'measure', start: p, end: p, from: hit?.id });
       return;
     }
+    if (hit && onModelTap?.(hit)) return;
     if (hit) {
       // In select mode, or with shift/ctrl held, taps build up a group instead of replacing it.
       const multi = additive || tool === 'select';
@@ -455,6 +463,44 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
                     {m.wounds}/{m.maxWounds}W
                   </text>
                 )}
+              </g>
+            );
+          })}
+
+          {links?.map(l => {
+            const a = state.models[l.from];
+            const b = state.models[l.to];
+            if (!a || !b) return null;
+            return (
+              <g key={`l-${l.from}-${l.to}`} className={`aim ${l.ok ? 'ok' : 'bad'}`} pointerEvents="none">
+                <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
+                <text x={(a.x + b.x) / 2} y={(a.y + b.y) / 2 - fontSize * 0.6} textAnchor="middle">
+                  {l.label}
+                </text>
+              </g>
+            );
+          })}
+
+          {fights?.map(f => {
+            const ms = f.ids.map(id => state.models[id]).filter(Boolean);
+            if (!ms.length) return null;
+            const x = ms.reduce((n, m) => n + m.x, 0) / ms.length;
+            const y = Math.min(...ms.map(m => m.y - halfExtents(m.base).ry)) - fontSize * 1.2;
+            const r = fontSize * 0.9;
+            return (
+              <g
+                key={f.key}
+                className={`fight-mark ${f.done ? 'done' : ''}`}
+                transform={`translate(${x} ${y})`}
+                onPointerDown={e => {
+                  e.stopPropagation();
+                  onFightTap?.(f.key);
+                }}
+              >
+                <circle r={r} />
+                <text textAnchor="middle" dominantBaseline="central" style={{ fontSize: r * 1.1 }}>
+                  {f.done ? '✓' : '⚔'}
+                </text>
               </g>
             );
           })}

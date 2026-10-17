@@ -1,12 +1,13 @@
 import type { Action, GameState, Revert } from './types.ts';
 
-const FIELDS = ['board', 'turn', 'phase', 'priority', 'names', 'scenario', 'vp', 'listed'] as const;
+const FIELDS = ['board', 'turn', 'phase', 'priority', 'names', 'scenario', 'vp', 'listed', 'flow'] as const;
 
 /** Actions a player can take back. Dice, saves and undo itself can't be. */
 export const UNDOABLE = new Set<Action['type']>([
   'addModels', 'moveModels', 'updateModel', 'removeModels',
   'addTerrain', 'updateTerrain', 'removeTerrain',
   'setPhase', 'nextPhase', 'setPriority', 'setScenario', 'setVP', 'setBoard', 'setScenery',
+  'startGame', 'choosePriority', 'endActivation', 'resolveCombat',
 ]);
 
 /**

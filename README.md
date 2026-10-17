@@ -8,6 +8,8 @@ Build your army in the [MESBG List Builder](https://v2024.mesbg-list-builder.com
 
 ## What it does
 
+- **Guided turns.** The turn guide at the bottom of the screen runs the game for you. It walks through setup (scenario, board, armies, deployment), then each turn's phases in order. It rolls off for priority (re-rolling first-turn ties and passing later ties to the player who didn't choose last time), says whose go it is in the Move and Shoot phases, finds every fight on the table, and checks Broken armies and the scenario's end at the end of the turn. You press one button to move on.
+- **Tap a model to act.** Selecting a model shows its profile, wounds, Might, Will and Fate, plus the actions that fit the phase. In the Shoot phase, tap an enemy to aim: it shows the range and what you need to hit and wound, then one tap rolls the hit, any In the Way rolls and the wound together. In the Fight phase, models in base contact get a ⚔ marker that opens the fight. Courage tests show whether they passed.
 - **Real-scale board.** The board is 48"×48" by default (or 72"×48" / 24"×24"), with a 1" grid. Bases are real sizes: 25mm infantry, 25×50mm cavalry, and 40mm/60mm monsters.
 - **Two players in real time** over a room link, plus spectators. Moves, dice and phases sync instantly, and you reconnect automatically if the connection drops.
 - **Built-in list builder.** Pick an army (all 106 army lists), add heroes and warriors, choose wargear and mounts, and see points as you go. Lists are saved in your browser. The data comes from the open-source [MESBG List Builder](https://github.com/mhollink/mesbg-list-builder-v2024) (see [src/data/README.md](src/data/README.md)).
@@ -26,7 +28,7 @@ Build your army in the [MESBG List Builder](https://v2024.mesbg-list-builder.com
 - **Fight helper.** Select models from both sides and roll the whole fight at once with their real stats: the duel (ties go to the higher Fight value, then a roll-off), then the winner's strikes against the model you choose, with trapped fighters taking double strikes. One tap takes the wounds off.
 - **Magic.** Cast any of the 35 magical powers with the Will dice you choose, and the target can resist with its own Will. Will is taken off the selected hero automatically, and a short reference covers every power and how casting and resisting work.
 - **Broken and game end checks.** An army is marked Broken once it has lost more than half its starting models. In the End phase the app applies the scenario's end condition: it ends the game at 25%, or asks for the D6 roll in scenarios that end on a 1-2 once an army is Broken, and shows the final score.
-- **Undo.** The ↶ Undo button (or Ctrl+Z) takes back your own last change, such as a misplaced drag, without touching your opponent's moves. Dice rolls can't be undone.
+- **Undo.** The ↶ Undo button on the tool rail (or Ctrl+Z) takes back your own last change, such as a misplaced drag, without touching your opponent's moves. Dice rolls can't be undone.
 - **Open games list.** The home screen lists games that have a player connected, so friends can find yours without a link. Untick "Show this game in the open games list" in the Table tab to keep a game private. The home screen also has the settings, and the ⟵ button in a game goes back to it.
 - **Your look.** The ⚙ Look menu has six colour themes (Classic, The Shire, Gondor, Rohan, Rivendell, Mordor) and Middle-earth style fonts, and lets you toggle photos, zones and the grid. These only change your own screen.
 - **Save and load** a game as a file.

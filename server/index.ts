@@ -5,7 +5,8 @@ import { extname, join, normalize, resolve } from 'node:path';
 import { WebSocket, WebSocketServer } from 'ws';
 import { initialState, loadState, MAX_DICE, reduce } from '../src/shared/reducer.ts';
 import type { Action, ClientMessage, GameState, Revert, Role, RoomSummary, Seat, ServerMessage } from '../src/shared/types.ts';
-import { cleanFight, resolveFight } from '../src/shared/fight.ts';
+import { cleanFight, cleanShot, resolveFight, resolveShot } from '../src/shared/fight.ts';
+import { priorityChooser } from '../src/shared/flow.ts';
 import { diffForUndo, mergeReverts, UNDOABLE } from '../src/shared/undo.ts';
 
 const PORT = Number(process.env.PORT ?? 8787);
@@ -86,6 +87,9 @@ function authorise(client: Client, action: Action): Action | null {
     case 'revert':
     case 'undo':
     case 'fight':
+    case 'shoot':
+    case 'rollPriority':
+    case 'priorityRolled':
       return null; // only the server produces dice results and undo changes
     case 'roll': {
       const count = Math.max(1, Math.min(MAX_DICE, Math.round(Number(action.count) || 1)));
@@ -101,6 +105,7 @@ function authorise(client: Client, action: Action): Action | null {
           dice,
           target,
           ...(then && target ? { then, follow: dice.filter(d => d >= target).map(() => randomInt(1, 7)) } : {}),
+          ...(action.sum !== undefined && target === undefined ? { sum: Math.max(2, Math.min(12, Math.round(Number(action.sum)) || 7)) } : {}),
           at: Date.now(),
         },
       };
@@ -137,6 +142,17 @@ function apply(room: Room, action: Action) {
   room.state = reduce(room.state, action);
   broadcast(room, { type: 'action', action });
   scheduleSave(room);
+}
+
+/** Applies a player's action and remembers how to take it back. */
+function record(room: Room, role: Role, action: Action) {
+  const before = room.state;
+  apply(room, action);
+  if (role === 'spectator' || !UNDOABLE.has(action.type)) return;
+  const revert = diffForUndo(before, room.state);
+  if (!revert) return;
+  remember(room, role, action, revert);
+  sendUndoDepth(room, role);
 }
 
 function remember(room: Room, seat: Seat, action: Action, revert: Revert) {
@@ -237,20 +253,33 @@ wss.on('connection', (ws, req) => {
       if (!req) return;
       const group = `f-${Date.now().toString(36)}-${randomInt(1e9).toString(36)}`;
       for (const roll of resolveFight(req, () => randomInt(1, 7), client.role, group).rolls) apply(room, { type: 'rolled', roll });
+      if (req.combat) record(room, client.role, { type: 'resolveCombat', key: req.combat });
+      return;
+    }
+    if (msg.action?.type === 'shoot') {
+      const req = client.role === 'spectator' ? null : cleanShot(msg.action.shot);
+      if (!req) return;
+      const group = `s-${Date.now().toString(36)}-${randomInt(1e9).toString(36)}`;
+      for (const roll of resolveShot(req, () => randomInt(1, 7), client.role, group).rolls) apply(room, { type: 'rolled', roll });
+      return;
+    }
+    if (msg.action?.type === 'rollPriority') {
+      if (client.role === 'spectator' || room.state.phase !== 'priority') return;
+      // Roll off; a first-turn tie is simply rolled again.
+      let roll: [number, number];
+      let chooser: Seat | null;
+      do {
+        roll = [randomInt(1, 7), randomInt(1, 7)];
+        chooser = priorityChooser(roll, room.state.turn, room.state.flow.chooser);
+        apply(room, { type: 'rolled', roll: { id: `r-${Date.now().toString(36)}-${randomInt(1e9).toString(36)}`, by: client.role, label: `Priority roll, turn ${room.state.turn}`, dice: roll, at: Date.now() } });
+      } while (!chooser);
+      apply(room, { type: 'priorityRolled', roll, chooser });
       return;
     }
     const action = authorise(client, msg.action);
     if (!action) return;
-    const before = room.state;
-    apply(room, action);
+    record(room, client.role, action);
     if (action.type === 'loadState') room.undo = { p1: [], p2: [] };
-    if (client.role !== 'spectator' && UNDOABLE.has(action.type)) {
-      const revert = diffForUndo(before, room.state);
-      if (revert) {
-        remember(room, client.role, action, revert);
-        sendUndoDepth(room, client.role);
-      }
-    }
   });
 
   ws.on('close', () => {

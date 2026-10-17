@@ -168,6 +168,9 @@ export function RollRow({ r, state }: { r: DiceRoll; state: GameState }) {
         {r.dice.length > 1 && hits === null && (
           <span className="hits">{r.group ? `best ${Math.max(...r.dice)}` : `total ${r.dice.reduce((a, b) => a + b, 0)}`}</span>
         )}
+        {r.sum !== undefined && (
+          <b className={r.dice.reduce((a, b) => a + b, 0) >= r.sum ? 'pass' : 'fail'}>{r.dice.reduce((a, b) => a + b, 0) >= r.sum ? `passed (${r.sum}+)` : `failed (${r.sum}+)`}</b>
+        )}
       </div>
       {wounds !== null && (
         <div className="dice follow">
