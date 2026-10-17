@@ -1,15 +1,14 @@
 import { useMemo } from 'react';
-import { STARTER_BOARDS, starterTerrain } from '../shared/boards.ts';
+import { starterTerrain } from '../shared/boards.ts';
 import { pictureUrl } from '../shared/catalog.ts';
 import { mmToIn } from '../shared/geometry.ts';
-import { EVIL, GOOD, type Token } from './heroBattle.ts';
+import { BOARD, EVIL, GOOD, type Token } from './heroBattle.ts';
 import { TerrainArt, TerrainDefs } from './TerrainArt.tsx';
 import { MATERIALS, textures } from './textures.ts';
 
 // The home page banner: the River Crossing table drawn with the game's own textures, Gondor and Mordor facing each
 // other across the river as photo tokens on their book-sized bases, the way they look in a game.
 
-const BOARD = STARTER_BOARDS.find(b => b.id === 'river-crossing')!;
 const LAYER = (k: string) => (k === 'road' ? 0 : k === 'water' ? 1 : k === 'bridge' ? 3 : 2);
 
 const initials = (name: string) =>
@@ -45,7 +44,7 @@ export function HeroArt() {
     return starterTerrain(BOARD, () => `hero-${n++}`).sort((a, b) => LAYER(a.kind) - LAYER(b.kind));
   }, []);
   return (
-    <svg className="hero-art" viewBox="8.9 20.9 27.4 10.2" preserveAspectRatio="xMaxYMid slice" aria-hidden>
+    <svg className="hero-art" viewBox="0.2 19.5 36 13" preserveAspectRatio="xMaxYMid slice" aria-hidden>
       <defs>
         <TerrainDefs />
         {MATERIALS.map(m => (
