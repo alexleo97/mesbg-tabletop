@@ -6,6 +6,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/ws': { target: 'ws://localhost:8787', ws: true },
+      '/api': 'http://localhost:8787',
     },
   },
   // The unit data is its own lazily loaded chunk of about 600 kB.

@@ -3,7 +3,17 @@ services:
   - type: web
     name: mesbg-tabletop
     runtime: node
-    plan: free
+    plan: starter
     buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /healthz
+    # Set these in the Render dashboard (Environment); never commit their values.
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: DISCORD_WEBHOOK_URL
+        sync: false

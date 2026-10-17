@@ -521,3 +521,23 @@ table.vp tr.total td:first-child { text-align: left; }
 }
 .discord-link { display: block; padding: 12px; border-radius: 8px; background: #5865f2; color: #fff; text-decoration: none; font-weight: 600; }
 .discord-link:hover { background: #4752c4; }
+
+/* Accounts */
+.account { display: flex; justify-content: flex-end; min-height: 36px; margin: -32px 0 0; }
+.account button { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; }
+.discord-signin { background: #5865f2; border-color: #5865f2; color: #fff; font-weight: 600; }
+.discord-signin:hover { background: #4752c4; }
+.discord-signin.big { padding: 12px 18px; font-size: 1.05rem; }
+.avatar { border-radius: 50%; object-fit: cover; flex: 0 0 auto; }
+.avatar.blank { display: inline-grid; place-items: center; background: var(--panel-2); color: var(--gold); font-weight: 700; }
+.profile-head { display: flex; align-items: center; gap: 14px; text-align: left; }
+.profile-head h2 { margin: 0; }
+.profile-head p { margin: 2px 0 0; }
+.profile-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.profile-stats div { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 4px; display: flex; flex-direction: column; }
+.profile-stats b { font-size: 1.6rem; color: var(--gold); font-family: var(--font-head); }
+.profile-name { display: flex; flex-direction: column; gap: 6px; text-align: left; }
+.profile-name .row button { flex: 0 0 auto; }
+.row.center { justify-content: center; }
+.row.center > * { flex: 0 0 auto; }
+p.warn { color: #e8a84a; }
