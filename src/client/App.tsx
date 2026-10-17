@@ -11,6 +11,7 @@ import { BrokenTags } from './BrokenTags.tsx';
 import { CoachBar } from './CoachBar.tsx';
 import { FightPanel } from './FightPanel.tsx';
 import { ModelCard, weaponOf } from './ModelCard.tsx';
+import { SightHint } from './SightHint.tsx';
 import { combats } from '../shared/flow.ts';
 import { distanceBetween, formatInches } from '../shared/geometry.ts';
 import { scenarioById, vpTotal } from '../shared/scenarios.ts';
@@ -340,6 +341,7 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
               fights={state.flow.started && state.phase === 'fight' ? fights.map(c => ({ key: c.key, ids: [...c.p1, ...c.p2], done: state.flow.resolved.includes(c.key) })) : undefined}
               onFightTap={setFightKey}
               sightFrom={sight && single ? single.id : undefined}
+              sightRange={sight && single ? weaponOf(single, catalog)?.range : undefined}
             />
 
             <div className="tool-rail" role="toolbar" aria-label="Tools">
@@ -358,7 +360,7 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
               <button
                 className={sight ? 'on' : ''}
                 onClick={() => setSight(v => !v)}
-                title={single ? 'Shade what the selected model can’t see' : 'Select one model, then show what it can see'}
+                title="Show what a model can see"
                 aria-label="Line of sight"
                 aria-pressed={sight}
               >
@@ -371,6 +373,7 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
               </button>
             </div>
 
+            {sight && <SightHint state={state} viewer={single} range={single ? weaponOf(single, catalog)?.range : undefined} />}
             {single && (
               <ModelCard
                 key={single.id}
