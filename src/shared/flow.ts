@@ -52,6 +52,16 @@ export function combats(state: GameState): Combat[] {
   });
 }
 
+/** A fight rebuilt from its key, for when its models are no longer touching (the losers backed away). */
+export function combatFromKey(state: GameState, key: string): Combat | undefined {
+  const parts = key.split(',');
+  const bar = parts.indexOf('|');
+  if (bar < 0) return undefined;
+  const ids = (list: string[]) => list.filter(id => state.models[id]);
+  const c = { key, p1: ids(parts.slice(0, bar)), p2: ids(parts.slice(bar + 1)) };
+  return c.p1.length && c.p2.length ? c : undefined;
+}
+
 /**
  * Who chooses priority from a roll-off. On turn 1 a tie is re-rolled (null); later a tie goes to
  * the player who didn't choose last turn.

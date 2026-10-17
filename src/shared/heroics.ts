@@ -1,3 +1,4 @@
+import { activeSeat } from './flow.ts';
 import type { GameState, Model, Phase, Seat } from './types.ts';
 
 export interface HeroicInfo {
@@ -65,3 +66,37 @@ export function orderRollNeeded(state: GameState): boolean {
 }
 
 export const orderRollLabel = (state: GameState) => `Heroic order, turn ${state.turn} ${state.phase} (1-3 Evil first, 4+ Good first)`;
+
+/**
+ * Whether a player can activate models now. In the Move and Shoot phases that waits until heroic actions are
+ * declared, and then it is the side whose turn it is to activate, or a side whose hero called a heroic action that
+ * goes out of turn (such as a Heroic Move). Other phases don't take turns.
+ */
+export function canActivate(state: GameState, seat: Seat): boolean {
+  if (!state.flow.started || (state.phase !== 'move' && state.phase !== 'shoot')) return true;
+  if (!heroicsSettled(state)) return false;
+  return activeSeat(state) === seat || phaseHeroics(state).some(h => heroicInfo(h.action)?.order && state.models[h.model]?.owner === seat);
+}
+
+/**
+ * Whether the rules let a player do this now, once the battle is under way: shooting only in the Shoot phase,
+ * fights only in the Fight phase, and objectives only handled as models move. Moving models is held to the phase
+ * by their move allowance (see movement.ts).
+ */
+export function phaseAllows(state: GameState, seat: Seat, action: { type: string; model?: string; shot?: { shooter?: { id?: string } } }): boolean {
+  if (!state.flow.started) return true;
+  switch (action.type) {
+    case 'shoot':
+      return state.phase === 'shoot' && canActivate(state, seat) && state.models[String(action.shot?.shooter?.id)]?.owner === seat;
+    case 'fight':
+    case 'strikes':
+      return state.phase === 'fight' && heroicsSettled(state);
+    case 'pickUp':
+    case 'flip':
+    case 'uncover':
+    case 'escape':
+      return state.phase === 'move' && canActivate(state, seat);
+    default:
+      return true;
+  }
+}

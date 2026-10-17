@@ -6,6 +6,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import { initialState, loadState, reduce } from '../src/shared/reducer.ts';
 import type { Account, Action, ClientMessage, GameState, Revert, Role, RoomSummary, Seat, ServerMessage } from '../src/shared/types.ts';
 import { DICE_REQUESTS, resolveRequest } from '../src/shared/resolve.ts';
+import { phaseAllows } from '../src/shared/heroics.ts';
 import { cleanMark } from '../src/shared/marks.ts';
 import { scenarioById } from '../src/shared/scenarios.ts';
 import { announceGame, closeVoiceRoom, discordEnabled, discordMember, openVoiceRoom, sweepVoiceRooms, voiceEnabled } from './discord.ts';
@@ -132,6 +133,7 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
   const mine = (id: unknown) => typeof id === 'string' && state.models[id]?.owner === client.role;
   switch (action.type) {
     case 'rolled':
+    case 'backAway':
     case 'revert':
     case 'undo':
     case 'priorityRolled':
@@ -572,7 +574,7 @@ wss.on('connection', (ws, req) => {
       return;
     }
     if (DICE_REQUESTS.has(msg.action?.type)) {
-      if (client.role === 'spectator') return;
+      if (client.role === 'spectator' || !phaseAllows(room.state, client.role, msg.action)) return;
       const out = resolveRequest(room.state, client.role, msg.action, () => randomInt(1, 7), () => `${Date.now().toString(36)}-${randomInt(1e9).toString(36)}`);
       if (!out) return;
       for (const a of out.apply) apply(room, a);
@@ -580,7 +582,7 @@ wss.on('connection', (ws, req) => {
       return;
     }
     const action = authorise(client, msg.action, room.state);
-    if (!action) return;
+    if (!action || (client.role !== 'spectator' && !phaseAllows(room.state, client.role, action))) return;
     // The computer can't take a seat someone is sitting in.
     if (action.type === 'setBot' && action.seat && [...room.clients].some(c => c.role === action.seat)) return;
     record(room, client.role, action);
