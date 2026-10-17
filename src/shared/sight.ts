@@ -10,7 +10,38 @@ const IN_THE_WAY: ReadonlySet<TerrainKind> = new Set(['wood', 'ruin', 'wall', 'f
 /** Terrain that halves movement unless set otherwise on the piece. */
 const DIFFICULT: ReadonlySet<TerrainKind> = new Set(['wood', 'water', 'ruin']);
 
-export const blocksSight = (t: Terrain) => BLOCKS.has(t.kind);
+export const blocksSight = (t: Terrain) => BLOCKS.has(t.kind) || t.kind === 'hill';
+
+/** How tall each kind of terrain usually is, in inches, unless set on the piece. Woods count their trees. */
+export const DEFAULT_HEIGHT: Partial<Record<TerrainKind, number>> = { hill: 2, rock: 2, building: 4, cliff: 6, wall: 1, ruin: 1.5, wood: 4, field: 1 };
+export const heightOf = (t: Terrain) => t.height ?? DEFAULT_HEIGHT[t.kind] ?? 0;
+/** Terrain a model can stand on top of: hills, and rocks, buildings and cliffs it has climbed. */
+const STANDABLE: ReadonlySet<TerrainKind> = new Set(['hill', 'rock', 'building', 'cliff']);
+/** Rocks, buildings and cliffs are climbed, so going up or down them costs the height; hills are gentle slopes. */
+const CLIMBED: ReadonlySet<TerrainKind> = new Set(['rock', 'building', 'cliff']);
+
+/** How high the ground is at a point: the top of the tallest piece it stands on. */
+export function groundAt(state: GameState, p: Point, kinds: ReadonlySet<TerrainKind> = STANDABLE): number {
+  let h = 0;
+  for (const t of Object.values(state.terrain)) if (kinds.has(t.kind) && heightOf(t) > h && insidePolygon(outline(t), p)) h = heightOf(t);
+  return h;
+}
+/** A model's eye level: the ground it stands on plus its own height (taller on a horse). */
+export const eyeOf = (state: GameState, m: Model) => groundAt(state, m) + (m.base.h > m.base.w ? 1.6 : 1);
+
+/**
+ * Whether a sight line from `a` (at height ha) to `b` (at height hb) clears a piece of terrain: it is blocked if the
+ * terrain is taller than the line anywhere the line passes over it.
+ */
+function clears(poly: Point[], top: number, a: Point, ha: number, b: Point, hb: number, margin = 0): boolean {
+  if (!lineCrosses(poly, a, b)) return true;
+  const steps = Math.max(8, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) * 4));
+  for (let i = 0; i <= steps; i++) {
+    const f = i / steps;
+    if (top + margin > ha + (hb - ha) * f && insidePolygon(poly, { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f })) return false;
+  }
+  return true;
+}
 export const isDifficult = (t: Terrain) => t.difficult ?? DIFFICULT.has(t.kind);
 export const slowsShots = (t: Terrain) => IN_THE_WAY.has(t.kind);
 
@@ -75,7 +106,8 @@ function segmentsCross(a: Point, b: Point, c: Point, d: Point): boolean {
 export function lineCrosses(poly: Point[], a: Point, b: Point): boolean {
   if (insidePolygon(poly, a) || insidePolygon(poly, b)) return true;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) if (segmentsCross(a, b, poly[j], poly[i])) return true;
-  return false;
+  // A line running exactly through corners of the outline crosses no edge cleanly, so check corners on the line too.
+  return poly.some(p => distanceToSegment(p, a, b) < 1e-9);
 }
 
 function distanceToSegment(p: Point, a: Point, b: Point): number {
@@ -92,28 +124,36 @@ export type Sight = 'clear' | 'partial' | 'hidden';
 export function sightTo(state: GameState, from: Model, to: Model): Sight {
   const blockers = Object.values(state.terrain)
     .filter(blocksSight)
-    .map(t => outline(t))
+    .map(t => ({ poly: outline(t), top: heightOf(t) }))
     // A model standing on or in a piece isn't hidden by it, nor is its target.
-    .filter(poly => !insidePolygon(poly, from) && !insidePolygon(poly, to));
+    .filter(({ poly }) => !insidePolygon(poly, from) && !insidePolygon(poly, to));
+  // Height matters: a model up high sees over lower terrain, and a hill hides what's behind it from below.
+  const [ha, hb] = [eyeOf(state, from), eyeOf(state, to)];
   const points = [{ x: to.x, y: to.y }, ...basePerimeter(to, 8)];
-  const seen = points.filter(p => !blockers.some(poly => lineCrosses(poly, from, p))).length;
+  const seen = points.filter(p => blockers.every(({ poly, top }) => clears(poly, top, from, ha, p, hb))).length;
   return seen === points.length ? 'clear' : seen === 0 ? 'hidden' : 'partial';
 }
 
 /** Terrain and models between a shooter and its target, each needing an In the Way roll. */
 export function inTheWay(state: GameState, from: Model, to: Model): string[] {
   const out: string[] = [];
+  const [ha, hb] = [eyeOf(state, from), eyeOf(state, to)];
   for (const t of Object.values(state.terrain)) {
     if (!IN_THE_WAY.has(t.kind)) continue;
     const poly = outline(t);
-    // Cover the shooter stands in doesn't get in its own way.
+    // Cover the shooter stands in doesn't get in its own way, and a shot from well above low cover passes over it.
     if (insidePolygon(poly, from)) continue;
-    if (lineCrosses(poly, from, to)) out.push(t.kind === 'field' ? 'crops' : t.kind);
+    if (lineCrosses(poly, from, to) && !(insidePolygon(poly, to) ? false : clears(poly, heightOf(t), from, ha, to, hb, 0.5))) out.push(t.kind === 'field' ? 'crops' : t.kind);
   }
+  const len = Math.hypot(to.x - from.x, to.y - from.y) || 1;
   for (const m of Object.values(state.models)) {
-    if (m.dead || m.id === from.id || m.id === to.id) continue;
+    if (m.dead || m.escaped || m.id === from.id || m.id === to.id) continue;
     const r = Math.max(halfExtents(m.base).rx, halfExtents(m.base).ry);
-    if (distanceToSegment(m, from, to) < r) out.push(m.name);
+    if (distanceToSegment(m, from, to) >= r) continue;
+    // A shot passing well over a model's head isn't blocked by it.
+    const f = Math.max(0, Math.min(1, ((m.x - from.x) * (to.x - from.x) + (m.y - from.y) * (to.y - from.y)) / (len * len)));
+    if (ha + (hb - ha) * f > eyeOf(state, m) + 0.5) continue;
+    out.push(m.name);
   }
   return out;
 }
@@ -121,8 +161,9 @@ export function inTheWay(state: GameState, from: Model, to: Model): string[] {
 /** How far a move from a to b really costs, counting the part through difficult terrain double. */
 export function moveCost(state: GameState, a: Point, b: Point): { cost: number; difficult: boolean } {
   const d = Math.hypot(b.x - a.x, b.y - a.y);
+  const climb = climbCost(state, a, b);
   const slow = Object.values(state.terrain).filter(isDifficult).map(t => outline(t));
-  if (!slow.length || d === 0) return { cost: d, difficult: false };
+  if (!slow.length || d === 0) return { cost: d + climb, difficult: false };
   // Bridges carry models over rivers at full speed.
   const bridges = Object.values(state.terrain).filter(t => t.kind === 'bridge').map(t => outline(t));
   const steps = Math.max(8, Math.ceil(d * 8));
@@ -132,7 +173,27 @@ export function moveCost(state: GameState, a: Point, b: Point): { cost: number; 
     const p = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
     if (slow.some(poly => insidePolygon(poly, p)) && !bridges.some(poly => insidePolygon(poly, p))) inside++;
   }
-  return { cost: d + (d * inside) / steps, difficult: inside > 0 };
+  return { cost: d + (d * inside) / steps + climb, difficult: inside > 0 };
+}
+
+/** Inches spent climbing up and down rocks, buildings and cliffs along a straight move. */
+function climbCost(state: GameState, a: Point, b: Point): number {
+  const pieces = Object.values(state.terrain).filter(t => CLIMBED.has(t.kind) && heightOf(t) > 0);
+  const d = Math.hypot(b.x - a.x, b.y - a.y);
+  if (!pieces.length || d === 0) return 0;
+  const polys = pieces.map(t => ({ poly: outline(t), top: heightOf(t) }));
+  if (polys.every(({ poly }) => !lineCrosses(poly, a, b))) return 0;
+  const level = (p: Point) => polys.reduce((h, { poly, top }) => (top > h && insidePolygon(poly, p) ? top : h), 0);
+  const steps = Math.max(8, Math.ceil(d * 4));
+  let total = 0;
+  let prev = level(a);
+  for (let i = 1; i <= steps; i++) {
+    const f = i / steps;
+    const h = level({ x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f });
+    total += Math.abs(h - prev);
+    prev = h;
+  }
+  return total;
 }
 
 /** Whether a point is in difficult terrain. */
@@ -147,8 +208,10 @@ export const inDifficult = (state: GameState, p: Point) => {
  */
 export function shadowPath(state: GameState, from: Point, far = 200): string {
   let d = '';
+  // From up high you look over anything well below your eyes.
+  const eye = groundAt(state, from) + 1;
   for (const t of Object.values(state.terrain)) {
-    if (!blocksSight(t)) continue;
+    if (!blocksSight(t) || heightOf(t) < eye - 0.5) continue;
     const poly = outline(t, 24);
     if (insidePolygon(poly, from)) continue;
     for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {

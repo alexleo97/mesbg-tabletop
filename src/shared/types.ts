@@ -77,6 +77,8 @@ export interface Terrain {
    * (in inches from the piece's centre, before rotation) and the half-width of the water there.
    */
   path?: [number, number, number][];
+  /** How tall it is in inches, when not the usual for its kind. */
+  height?: number;
   /** A scenario marker that means something: an artefact to dig up, a relic, a supply to guard, a wounded ally. */
   object?: MarkerObject;
   /** The side a relic, supply or wounded ally belongs to. */

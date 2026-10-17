@@ -176,6 +176,8 @@ function cleanTerrain(t: Partial<Terrain>, prev?: Terrain): Terrain | null {
     rot: num(t.rot, -360, 720, base.rot) % 360,
     locked: typeof t.locked === 'boolean' ? t.locked : base.locked,
   };
+  const height = 'height' in t ? (t.height === undefined || t.height === null ? undefined : num(t.height, 0, 12, 0)) : base.height;
+  if (height !== undefined) out.height = height;
   const difficult = 'difficult' in t ? t.difficult : base.difficult;
   if (typeof difficult === 'boolean') out.difficult = difficult;
   const path = cleanPath(t.path) ?? (base.path && prev && (out.w !== prev.w || out.h !== prev.h)
