@@ -241,7 +241,14 @@ export function reduce(state: GameState, action: Action): GameState {
       return i === PHASES.length - 1 ? goTo(state, PHASES[0], Math.min(99, state.turn + 1)) : goTo(state, PHASES[i + 1], state.turn);
     }
     case 'startGame':
-      return { ...goTo(state, 'priority', 1), turn: 1, priority: null, flow: { ...newFlow(), started: true } };
+      // A new game in the same room starts with no result.
+      return {
+        ...goTo(state, 'priority', 1),
+        turn: 1,
+        priority: null,
+        result: undefined,
+        flow: { ...newFlow(), started: true, ...(Number.isFinite(action.at) ? { startedAt: Number(action.at) } : {}) },
+      };
     case 'priorityRolled': {
       if (!isSeat(action.chooser) || !Array.isArray(action.roll)) return state;
       const roll: [number, number] = [int(action.roll[0], 1, 6, 1), int(action.roll[1], 1, 6, 1)];
@@ -376,14 +383,30 @@ export function reduce(state: GameState, action: Action): GameState {
       return { ...state, accounts };
     }
     case 'proposeResult': {
-      if (!isSeat(action.seat) || !(isSeat(action.winner) || action.winner === 'draw') || state.result?.saved) return state;
+      // Wins come from the game itself or a concession; players can only offer each other a draw.
+      if (!isSeat(action.seat) || action.winner !== 'draw' || state.result) return state;
       return { ...state, result: { winner: action.winner, by: action.seat, agreed: false } };
     }
     case 'answerResult': {
       const r = state.result;
-      if (!r || r.saved || !isSeat(action.seat)) return state;
+      if (!r || r.saved || r.agreed || !isSeat(action.seat)) return state;
+      if (r.by === 'game') {
+        if (!action.agree) return state;
+        const confirmed = [...new Set([...(r.confirmed ?? []), action.seat])];
+        return { ...state, result: { ...r, confirmed, agreed: confirmed.length === 2 } };
+      }
       if (!action.agree) return { ...state, result: undefined };
       return action.seat === r.by ? state : { ...state, result: { ...r, agreed: true } };
+    }
+    case 'concede': {
+      if (!isSeat(action.seat) || state.result?.agreed) return state;
+      return { ...state, result: { winner: action.seat === 'p1' ? 'p2' : 'p1', by: action.seat, agreed: true } };
+    }
+    case 'gameOver': {
+      const w = action.winner;
+      if (!(isSeat(w) || w === 'draw') || state.result?.agreed || (state.result && state.result.by !== 'game')) return state;
+      if (state.result?.winner === w) return state;
+      return { ...state, result: { winner: w, by: 'game', confirmed: [], agreed: false } };
     }
     case 'resultSaved':
       return state.result?.agreed ? { ...state, result: { ...state.result, saved: true } } : state;
@@ -468,6 +491,7 @@ export function loadState(raw: unknown): GameState {
           : [],
         passed: seats(f.passed),
         lastHeroic: isSeat(f.lastHeroic) ? f.lastHeroic : null,
+        ...(Number.isFinite(f.startedAt) ? { startedAt: Number(f.startedAt) } : {}),
       },
     };
   }
@@ -477,7 +501,16 @@ export function loadState(raw: unknown): GameState {
     if (a) out = reduce(out, { type: 'seatAccount', seat, account: a });
   }
   const r = o.result;
-  if (r && isSeat(r.by) && (isSeat(r.winner) || r.winner === 'draw'))
-    out = { ...out, result: { winner: r.winner, by: r.by, agreed: r.agreed === true, ...(r.saved === true ? { saved: true } : {}) } };
+  if (r && (isSeat(r.by) || r.by === 'game') && (isSeat(r.winner) || r.winner === 'draw'))
+    out = {
+      ...out,
+      result: {
+        winner: r.winner,
+        by: r.by,
+        agreed: r.agreed === true,
+        ...(r.by === 'game' ? { confirmed: Array.isArray(r.confirmed) ? [...new Set(r.confirmed.filter(isSeat))] : [] } : {}),
+        ...(r.saved === true ? { saved: true } : {}),
+      },
+    };
   return out;
 }

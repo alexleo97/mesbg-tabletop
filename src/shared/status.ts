@@ -1,4 +1,4 @@
-import { scenarioById } from './scenarios.ts';
+import { scenarioById, vpTotal } from './scenarios.ts';
 import type { GameState, Seat } from './types.ts';
 
 export interface ArmyStatus {
@@ -57,4 +57,32 @@ export function endCheck(state: GameState, names: Record<Seat, string>): EndChec
   return quartered.length
     ? { over: true, rollNeeded: false, reason: `${quartered.map(x => names[x]).join(' and ')} ${quartered.length > 1 ? 'are' : 'is'} down to 25% or fewer, so the game ends this turn.` }
     : null;
+}
+
+export const endRollLabel = (turn: number) => `Game end roll, turn ${turn} (1-2 ends)`;
+
+/** Whether the game has ended this turn: the scenario's end condition is met, or its end roll came up 1-2. */
+export function gameEnded(state: GameState): boolean {
+  if (state.phase !== 'end' || !state.flow.started) return false;
+  const check = endCheck(state, { p1: '', p2: '' });
+  if (check?.over) return true;
+  const roll = [...state.log].reverse().find(r => r.label === endRollLabel(state.turn));
+  return !!check?.rollNeeded && !!roll && roll.dice[0] <= 2;
+}
+
+/**
+ * Who won, once the game is over: an army wiped out loses, otherwise the scenario's victory points decide.
+ * Null while the game is still going.
+ */
+export function gameWinner(state: GameState): Seat | 'draw' | null {
+  if (!state.flow.started) return null;
+  const left = { p1: armyStatus(state, 'p1'), p2: armyStatus(state, 'p2') };
+  if (left.p1.start && left.p2.start) {
+    const gone = (['p1', 'p2'] as const).filter(s => left[s].left === 0);
+    if (gone.length === 2) return 'draw';
+    if (gone.length === 1) return gone[0] === 'p1' ? 'p2' : 'p1';
+  }
+  if (!scenarioById(state.scenario) || !gameEnded(state)) return null;
+  const vp = { p1: vpTotal(state.vp.p1), p2: vpTotal(state.vp.p2) };
+  return vp.p1 === vp.p2 ? 'draw' : vp.p1 > vp.p2 ? 'p1' : 'p2';
 }

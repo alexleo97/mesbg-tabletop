@@ -517,7 +517,7 @@ export function TablePanel({
       {state.flow.started && !state.result && role !== 'spectator' && (
         <details className="finish">
           <summary>Finish the game early</summary>
-          <ResultReport state={state} role={role} dispatch={dispatch} />
+          <ResultReport state={state} role={role} dispatch={dispatch} early />
         </details>
       )}
       <button

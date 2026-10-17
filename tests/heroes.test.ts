@@ -3,6 +3,7 @@ import { cleanFight, duelLeader, resolveDuel, resolveStrikes, type Fighter } fro
 import { heroicsSettled, heroicTurn, orderRollNeeded } from '../src/shared/heroics.ts';
 import { initialState, loadState, reduce } from '../src/shared/reducer.ts';
 import { inTheWay, moveCost, sightTo } from '../src/shared/sight.ts';
+import { gameWinner } from '../src/shared/status.ts';
 import type { Action, DiceRoll, GameState, Model, Terrain } from '../src/shared/types.ts';
 
 const m = (id: string, owner: 'p1' | 'p2', x: number, y: number, extra: Partial<Model> = {}): Model => ({
@@ -148,28 +149,40 @@ describe('line of sight and terrain', () => {
   });
 });
 
-describe('reporting a result', () => {
-  it('needs the other player to agree, and either can withdraw it', () => {
-    let s = game(m('a', 'p1', 5, 5));
-    s = reduce(s, { type: 'proposeResult', seat: 'p1', winner: 'p1' });
-    expect(s.result).toEqual({ winner: 'p1', by: 'p1', agreed: false });
-    // The reporter can't agree with themselves.
-    expect(reduce(s, { type: 'answerResult', seat: 'p1', agree: true })).toBe(s);
-    expect(reduce(s, { type: 'answerResult', seat: 'p2', agree: false }).result).toBeUndefined();
+describe('the end of a game', () => {
+  it('declares the winner itself, and both players confirm it', () => {
+    let s = game(m('a', 'p1', 5, 5), m('b', 'p2', 9, 9));
+    expect(gameWinner(s)).toBeNull();
+    s = reduce(s, { type: 'wound', id: 'b', count: 1 });
+    expect(gameWinner(s)).toBe('p1');
+    s = reduce(s, { type: 'gameOver', winner: 'p1' });
+    expect(s.result).toEqual({ winner: 'p1', by: 'game', confirmed: [], agreed: false });
     s = reduce(s, { type: 'answerResult', seat: 'p2', agree: true });
-    expect(s.result?.agreed).toBe(true);
-    s = reduce(s, { type: 'resultSaved' });
-    // Once recorded it can't be changed or reported again.
+    expect(s.result?.agreed).toBe(false);
+    // Turning it down does nothing: players fix the score instead.
     expect(reduce(s, { type: 'answerResult', seat: 'p1', agree: false })).toBe(s);
-    expect(reduce(s, { type: 'proposeResult', seat: 'p2', winner: 'p2' })).toBe(s);
+    s = reduce(s, { type: 'answerResult', seat: 'p1', agree: true });
+    expect(s.result).toMatchObject({ agreed: true, confirmed: ['p2', 'p1'] });
+    s = reduce(s, { type: 'resultSaved' });
+    expect(reduce(s, { type: 'gameOver', winner: 'p2' })).toBe(s);
+  });
+
+  it('lets a player concede, or offer a draw the other must accept, but never claim a win', () => {
+    const s = game(m('a', 'p1', 5, 5));
+    expect(reduce(s, { type: 'concede', seat: 'p1' }).result).toEqual({ winner: 'p2', by: 'p1', agreed: true });
+    expect(reduce(s, { type: 'proposeResult', seat: 'p1', winner: 'p1' })).toBe(s);
+    const offer = reduce(s, { type: 'proposeResult', seat: 'p1', winner: 'draw' });
+    expect(reduce(offer, { type: 'answerResult', seat: 'p1', agree: true })).toBe(offer);
+    expect(reduce(offer, { type: 'answerResult', seat: 'p2', agree: false }).result).toBeUndefined();
+    expect(reduce(offer, { type: 'answerResult', seat: 'p2', agree: true }).result?.agreed).toBe(true);
   });
 
   it('keeps accounts and the result through a save and load', () => {
     let s = game(m('a', 'p1', 5, 5));
-    s = run(s, { type: 'seatAccount', seat: 'p1', account: { id: 'u1', name: 'Alex' } }, { type: 'proposeResult', seat: 'p2', winner: 'draw' });
+    s = run(s, { type: 'seatAccount', seat: 'p1', account: { id: 'u1', name: 'Alex' } }, { type: 'gameOver', winner: 'draw' }, { type: 'answerResult', seat: 'p2', agree: true });
     const back = loadState(JSON.parse(JSON.stringify(s)));
     expect(back.accounts).toEqual({ p1: { id: 'u1', name: 'Alex' } });
-    expect(back.result).toEqual({ winner: 'draw', by: 'p2', agreed: false });
+    expect(back.result).toEqual({ winner: 'draw', by: 'game', confirmed: ['p2'], agreed: false });
     expect(reduce(back, { type: 'seatAccount', seat: 'p1', account: null }).accounts).toEqual({});
   });
 });

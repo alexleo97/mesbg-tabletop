@@ -123,7 +123,10 @@ export interface Account {
 
 export interface GameResult {
   winner: Seat | 'draw';
-  by: Seat;
+  /** Worked out by the game, a player conceding, or a player offering a draw. */
+  by: Seat | 'game';
+  /** Players who have confirmed a result the game worked out. */
+  confirmed?: Seat[];
   agreed: boolean;
   /** Recorded for the leaderboard. */
   saved?: boolean;
@@ -149,6 +152,8 @@ export interface Flow {
   passed: Seat[];
   /** Who last declared or passed this phase, so the other player goes next. */
   lastHeroic: Seat | null;
+  /** When this game started (server time), so each game's result is recorded once. */
+  startedAt?: number;
 }
 
 export interface Heroic {
@@ -173,7 +178,8 @@ export type Action =
   | { type: 'setScenario'; id: string | null }
   | { type: 'setVP'; seat: Seat; key: string; value: number }
   | { type: 'setListed'; listed: boolean }
-  | { type: 'startGame' }
+  /** `at`: when the server started it, which tells one game in a room from the next. */
+  | { type: 'startGame'; at?: number }
   /** Request from a client; the server rolls off and sends `priorityRolled`. */
   | { type: 'rollPriority' }
   | { type: 'priorityRolled'; roll: [number, number]; chooser: Seat }
@@ -203,9 +209,14 @@ export type Action =
   | { type: 'setScenery'; w: number; h: number; mat: Mat; terrain: Terrain[] }
   /** Server only: who is signed in at a seat. */
   | { type: 'seatAccount'; seat: Seat; account: Account | null }
+  /** A player offers a draw. */
   | { type: 'proposeResult'; seat: Seat; winner: Seat | 'draw' }
-  /** The other player agrees, or either player withdraws it. */
+  /** A player confirms the game's result or accepts a draw offer; `agree: false` turns down or withdraws an offer. */
   | { type: 'answerResult'; seat: Seat; agree: boolean }
+  /** A player gives the game to their opponent. */
+  | { type: 'concede'; seat: Seat }
+  /** Server only: the game has ended with this winner. */
+  | { type: 'gameOver'; winner: Seat | 'draw' }
   /** Server only: the agreed result is on the leaderboard. */
   | { type: 'resultSaved' }
   /** Request from a client; the server turns it into a `rolled` action with real dice. */

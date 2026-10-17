@@ -9,6 +9,7 @@ import { DICE_REQUESTS, resolveRequest } from '../src/shared/resolve.ts';
 import { scenarioById } from '../src/shared/scenarios.ts';
 import { announceGame, discordEnabled } from './discord.ts';
 import { saveResult, verifyToken } from './accounts.ts';
+import { gameWinner } from '../src/shared/status.ts';
 import { diffForUndo, mergeReverts, UNDOABLE } from '../src/shared/undo.ts';
 
 const PORT = Number(process.env.PORT ?? 8787);
@@ -36,6 +37,9 @@ interface Room {
   undo: Record<Seat, UndoEntry[]>;
   /** Already posted to Discord as an open game (or decided not to). */
   announced?: boolean;
+  /** A result is being written to the leaderboard right now. */
+  saving?: boolean;
+  saveTries?: number;
   /** Nothing has happened here since the server started and there was no save, so a player's browser may restore its copy. */
   blank: boolean;
 }
@@ -110,7 +114,12 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
     case 'seatAccount':
     case 'resultSaved':
       return null; // only the server produces dice results, undo changes and account details
+    case 'gameOver':
+      return null;
+    case 'startGame':
+      return { type: 'startGame', at: Date.now() };
     case 'proposeResult':
+    case 'concede':
     case 'answerResult': {
       // Only the player in that seat, and the signed-in one if the seat has an account.
       const seat = action.seat;
@@ -177,6 +186,25 @@ function apply(room: Room, action: Action) {
   room.state = reduce(room.state, action);
   broadcast(room, { type: 'action', action });
   scheduleSave(room);
+  // The game declares its own winner as soon as it's over (and corrects it if the score changes before both confirm).
+  if (action.type !== 'gameOver') {
+    const winner = gameWinner(room.state);
+    if (winner) {
+      const before = room.state;
+      room.state = reduce(room.state, { type: 'gameOver', winner });
+      if (room.state !== before) broadcast(room, { type: 'action', action: { type: 'gameOver', winner } });
+    }
+  }
+  const r = room.state.result;
+  const a = room.state.accounts;
+  if (r?.agreed && !r.saved && a?.p1 && a.p2 && !room.saving && (room.saveTries ?? 0) < 3) {
+    room.saving = true;
+    room.saveTries = (room.saveTries ?? 0) + 1;
+    void saveResult(room.id, room.state).then(ok => {
+      room.saving = false;
+      if (ok) apply(room, { type: 'resultSaved' });
+    });
+  }
 }
 
 /** Applies a player's action and remembers how to take it back. */
@@ -327,10 +355,8 @@ wss.on('connection', (ws, req) => {
     const action = authorise(client, msg.action, room.state);
     if (!action) return;
     record(room, client.role, action);
-    if (action.type === 'answerResult' && room.state.result?.agreed && !room.state.result.saved) {
-      void saveResult(room.id, room.state).then(ok => ok && apply(room, { type: 'resultSaved' }));
-    }
     if (action.type === 'loadState') room.undo = { p1: [], p2: [] };
+    if (action.type === 'startGame') room.saveTries = 0;
   });
 
   ws.on('close', () => {

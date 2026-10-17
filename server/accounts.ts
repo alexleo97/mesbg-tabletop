@@ -34,15 +34,15 @@ export async function saveResult(room: string, state: GameState): Promise<boolea
   const r = state.result;
   if (!accountsEnabled() || !r?.agreed || !a?.p1 || !a.p2 || a.p1.id === a.p2.id) return false;
   try {
-    // One result per game: a game restored after a restart can't be counted twice.
-    const since = new Date(Date.now() - 1000 * 60 * 60 * 12).toISOString();
-    const dup = await fetch(`${URL_}/rest/v1/results?room=eq.${encodeURIComponent(room)}&played_at=gt.${since}&select=id`, { headers: headers() });
+    // One result per game: a game restored after a restart can't be counted twice. Rematches in the same room start later, so they still count.
+    const game = `${room}@${state.flow.startedAt ?? 0}`;
+    const dup = await fetch(`${URL_}/rest/v1/results?room=eq.${encodeURIComponent(game)}&select=id`, { headers: headers() });
     if (dup.ok && ((await dup.json()) as unknown[]).length) return true;
     const vp = (s: Seat) => (state.scenario ? vpTotal(state.vp[s]) : null);
     const res = await fetch(`${URL_}/rest/v1/results`, {
       method: 'POST',
       headers: headers({ prefer: 'return=minimal' }),
-      body: JSON.stringify({ room, scenario: state.scenario, p1: a.p1.id, p2: a.p2.id, winner: r.winner, p1_vp: vp('p1'), p2_vp: vp('p2'), turns: state.turn }),
+      body: JSON.stringify({ room: game, scenario: state.scenario, p1: a.p1.id, p2: a.p2.id, winner: r.winner, p1_vp: vp('p1'), p2_vp: vp('p2'), turns: state.turn }),
     });
     if (!res.ok) console.warn(`Saving a result failed: ${res.status} ${await res.text()}`);
     return res.ok;
