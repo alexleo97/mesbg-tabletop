@@ -76,3 +76,17 @@ describe('one fight a turn', () => {
     expect(resolveRequest(s, 'p1', { type: 'fight', fight: { ...req, sides: [[req.sides[0][0]], req.sides[1]] } } as Action, () => 4, uid)).toBeNull();
   });
 });
+
+describe('shooting after moving', () => {
+  it("doesn't let a model shoot after going more than half its Move", () => {
+    let s = run(initialState(), { type: 'addModels', models: [mk('a', 'p1', 10, 40), mk('b', 'p1', 20, 40), mk('o', 'p2', 15, 20)] }, { type: 'startGame' }, { type: 'setPhase', phase: 'move' });
+    // "a" moves 4" (more than half of 6"), "b" 3".
+    s = run(s, { type: 'moveModels', moves: [{ id: 'a', x: 10, y: 36 }, { id: 'b', x: 20, y: 37 }] }, { type: 'setPhase', phase: 'shoot' });
+    expect(s.flow.farMoved).toEqual(['a']);
+    expect(shoot(s, 'a', 'o', [6, 6])).toBeNull();
+    expect(shoot(s, 'b', 'o', [6, 6])).not.toBeNull();
+    // Next turn it can shoot again.
+    s = run(s, { type: 'setPhase', phase: 'priority', turn: 2 });
+    expect(s.flow.farMoved).toEqual([]);
+  });
+});

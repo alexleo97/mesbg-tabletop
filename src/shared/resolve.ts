@@ -102,7 +102,7 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
     }
     case 'shoot': {
       const req = cleanShot(action.shot);
-      if (!req || state.flow.shot?.includes(req.shooter.id)) return null;
+      if (!req || state.flow.shot?.includes(req.shooter.id) || state.flow.farMoved?.includes(req.shooter.id)) return null;
       // The game counts what's in the way itself, from the table.
       const shooter = state.models[req.shooter.id];
       const target = state.models[req.target.id];

@@ -107,7 +107,9 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
   let action: React.ReactNode = null;
   if (state.phase === 'shoot' && mine && weapon && state.flow.started) {
     const hasShot = !!state.flow.shot?.includes(m.id);
-    if (!target)
+    const tooFar = !!state.flow.farMoved?.includes(m.id);
+    if (tooFar) action = <p className="hint">{m.name} moved more than half its Move this turn, so it can't shoot.</p>;
+    else if (!target)
       action = hasShot ? <p className="hint">{m.name} has shot this turn. Each model shoots once a turn.</p> : <p className="hint">Tap an enemy model to aim the {weapon.name.toLowerCase()} ({weapon.range}", S{weapon.s}).</p>;
     else {
       const dist = distanceBetween(m, target);

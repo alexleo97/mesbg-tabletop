@@ -54,6 +54,16 @@ export function foughtThisTurn(state: GameState): Set<string> {
 /** Whether a model's moves are held to an allowance this phase (see moveAllowance). */
 export const movesLimited = (state: GameState, m: Model) => moveAllowance(state, m) !== null;
 
+/** Models that have gone more than half their Move this Move phase (difficult terrain counting double), which can't shoot this turn. */
+export function movedTooFar(state: GameState): string[] {
+  return Object.entries(state.flow.starts ?? {})
+    .filter(([id, [x, y]]) => {
+      const m = state.models[id];
+      return m && !m.dead && moveCost(state, { x, y }, m).cost > m.move / 2 + 0.05;
+    })
+    .map(([id]) => id);
+}
+
 /** Where a model stood when this Move phase began (where it is now, if it hasn't moved yet). */
 export function moveStart(state: GameState, m: Model): Point {
   const s = state.flow.starts?.[m.id];

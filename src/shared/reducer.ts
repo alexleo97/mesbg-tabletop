@@ -1,7 +1,7 @@
 import { bookBase, round } from './bases.ts';
 import { holdInZones } from './deployment.ts';
 import { heroicInfo } from './heroics.ts';
-import { limitMove, moveAllowance, moveStart } from './movement.ts';
+import { limitMove, moveAllowance, movedTooFar, moveStart } from './movement.ts';
 import { canPickUp, markerUpkeep, syncCarried, touching, canEscape } from './objects.ts';
 import { endPhaseUpkeep } from './scoring.ts';
 import { BOT_NAME, BOT_SPEEDS, MARKER_OBJECTS, MATS, PHASES, PICK_KEYS, TERRAIN_KINDS, type Action, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type Phase, type Picks, type Seat, type Terrain } from './types.ts';
@@ -36,6 +36,8 @@ function goTo(state: GameState, phase: Phase, turn: number): GameState {
   // Scenario bookkeeping happens as the End phase begins.
   const ending = phase === 'end' && state.phase !== 'end' && state.flow.started;
   const upkeep = ending ? endPhaseUpkeep(state) : {};
+  // Leaving the Move phase, note who went too far to shoot.
+  const farMoved = state.phase === 'move' && phase !== 'move' && !newTurn && state.flow.started ? { farMoved: movedTooFar(state) } : {};
   return {
     ...state,
     ...(ending ? { terrain: markerUpkeep(state) } : {}),
@@ -47,10 +49,11 @@ function goTo(state: GameState, phase: Phase, turn: number): GameState {
       done: [],
       resolved: newTurn ? [] : state.flow.resolved,
       heroics: newTurn ? [] : state.flow.heroics,
-      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [] } : {}),
+      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [] } : {}),
       passed: [],
       lastHeroic: null,
       starts: {},
+      ...farMoved,
       ...upkeep,
     },
   };
@@ -731,6 +734,7 @@ export function loadState(raw: unknown): GameState {
         ...(f.braved ? { braved: seats(f.braved) } : {}),
         ...(f.arrived ? { arrived: seats(f.arrived) } : {}),
         ...(Array.isArray(f.shot) ? { shot: f.shot.slice(0, 400).map(x => String(x).slice(0, 80)) } : {}),
+        ...(Array.isArray(f.farMoved) ? { farMoved: f.farMoved.slice(0, 400).map(x => String(x).slice(0, 80)) } : {}),
         ...(Array.isArray(f.duels) ? { duels: f.duels.slice(0, 200).map(x => String(x).slice(0, 80)) } : {}),
         ...(f.startFate && typeof f.startFate === 'object' ? { startFate: cleanCounts(f.startFate, 9) } : {}),
         ...(f.control && typeof f.control === 'object'
