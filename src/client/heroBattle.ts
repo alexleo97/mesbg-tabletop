@@ -9,37 +9,48 @@ export interface Token {
   hero?: boolean;
 }
 
-// A spot on the bridge: `t` inches along the deck (negative is the north end) and `s` across it.
-const DECK = { x: 24, y: 24.5, a: (81 * Math.PI) / 180 };
-const deck = (t: number, s: number) => ({ x: DECK.x + t * Math.cos(DECK.a) - s * Math.sin(DECK.a), y: DECK.y + t * Math.sin(DECK.a) + s * Math.cos(DECK.a) });
+// The river's course on the River Crossing table, and a spot `off` inches north (negative) or south of its middle.
+const COURSE: [number, number][] = [[17, 21], [24, 24.5], [31, 27], [40, 24]];
+const riverY = (x: number) => {
+  const i = Math.max(0, COURSE.findIndex(([cx], k) => k > 0 && x <= cx) - 1);
+  const [[x0, y0], [x1, y1]] = [COURSE[i], COURSE[i + 1]];
+  return y0 + ((x - x0) / (x1 - x0)) * (y1 - y0);
+};
+const bank = (x: number, off: number) => ({ x, y: riverY(x) + off });
 
 const gondor = (name: string, at: { x: number; y: number }, mm = 25, hero = false): Token => ({ origin: 'Gondor', name, mm, hero, ...at });
 const mordor = (name: string, at: { x: number; y: number }, mm = 25, hero = false): Token => ({ origin: 'Mordor', name, mm, hero, ...at });
 
-// Mordor storms the bridge from the north bank; Gondor holds the south end. The front ranks meet in base contact
-// mid-span, the way a fight looks on the table.
+// Gondor and Mordor drawn up on either bank, facing each other across the river with their heroes in the front rank.
+const FRONT = 2.75;
+const BACK = 3.85;
 export const GOOD: Token[] = [
-  gondor('Aragorn, King Elessar', deck(0.5, -0.65), 25, true),
-  gondor('Citadel Guard', deck(0.5, 0.65)),
-  gondor('Boromir, Captain of the White Tower', deck(1.6, -0.65), 25, true),
-  gondor('Warrior of Minas Tirith', deck(1.6, 0.65)),
-  gondor('Warrior of Minas Tirith', deck(2.7, -0.65)),
-  gondor('Warrior of Minas Tirith', deck(2.7, 0.65)),
-  gondor('Knight of Minas Tirith', { x: 22.0, y: 27.7 }, 40),
-  gondor('Ranger of Gondor', { x: 25.6, y: 28.6 }),
-  gondor('Ranger of Gondor', { x: 26.8, y: 28.6 }),
-  gondor('Ranger of Gondor', { x: 28.0, y: 28.7 }),
+  gondor('Knight of Minas Tirith', bank(26.2, FRONT + 0.3), 40),
+  gondor('Warrior of Minas Tirith', bank(27.8, FRONT)),
+  gondor('Warrior of Minas Tirith', bank(28.9, FRONT)),
+  gondor('Aragorn, King Elessar', bank(30.0, FRONT), 25, true),
+  gondor('Boromir, Captain of the White Tower', bank(31.1, FRONT), 25, true),
+  gondor('Citadel Guard', bank(32.2, FRONT)),
+  gondor('Citadel Guard', bank(33.3, FRONT)),
+  gondor('Knight of Minas Tirith', bank(34.9, FRONT + 0.3), 40),
+  gondor('Warrior of Minas Tirith', bank(28.3, BACK)),
+  gondor('Warrior of Minas Tirith', bank(29.4, BACK)),
+  gondor('Ranger of Gondor', bank(30.5, BACK)),
+  gondor('Ranger of Gondor', bank(31.6, BACK)),
+  gondor('Warrior of Minas Tirith', bank(32.7, BACK)),
 ];
 export const EVIL: Token[] = [
-  mordor('Mordor Orc Captain', deck(-0.5, -0.65), 25, true),
-  mordor('Mordor Uruk-Hai', deck(-0.5, 0.65)),
-  mordor('Mordor Orc Warrior', deck(-1.6, -0.65)),
-  mordor('Mordor Orc Warrior', deck(-1.6, 0.65)),
-  mordor('Mordor Troll', deck(-3.3, 0), 60),
-  mordor('Gothmog', { x: 26.0, y: 20.9 }, 25, true),
-  mordor('Mordor Orc Warrior', { x: 27.3, y: 21.5 }),
-  mordor('Mordor Orc Warrior', { x: 26.6, y: 22.4 }),
-  mordor('Mordor Uruk-Hai', { x: 25.4, y: 21.9 }),
-  mordor('Mordor Warg Rider', { x: 29.2, y: 22.5 }, 40),
-  mordor('Mordor Warg Rider', { x: 30.9, y: 22.9 }, 40),
+  mordor('Mordor Troll', bank(26.4, -FRONT - 0.7), 60),
+  mordor('Mordor Orc Warrior', bank(28.3, -FRONT)),
+  mordor('Mordor Uruk-Hai', bank(29.4, -FRONT)),
+  mordor('Gothmog', bank(30.5, -FRONT), 25, true),
+  mordor('Mordor Orc Captain', bank(31.6, -FRONT), 25, true),
+  mordor('Mordor Uruk-Hai', bank(32.7, -FRONT)),
+  mordor('Mordor Orc Warrior', bank(33.8, -FRONT)),
+  mordor('Mordor Warg Rider', bank(35.4, -FRONT - 0.3), 40),
+  mordor('Mordor Orc Warrior', bank(28.8, -BACK)),
+  mordor('Mordor Orc Warrior', bank(29.9, -BACK)),
+  mordor('Mordor Orc Warrior', bank(31.0, -BACK)),
+  mordor('Mordor Orc Warrior', bank(32.1, -BACK)),
+  mordor('Mordor Orc Warrior', bank(33.2, -BACK)),
 ];

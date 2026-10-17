@@ -45,7 +45,7 @@ export function HeroArt() {
     return starterTerrain(BOARD, () => `hero-${n++}`).sort((a, b) => LAYER(a.kind) - LAYER(b.kind));
   }, []);
   return (
-    <svg className="hero-art" viewBox="6 19.8 26.5 9.6" preserveAspectRatio="xMaxYMid slice" aria-hidden>
+    <svg className="hero-art" viewBox="8.9 20.9 27.4 10.2" preserveAspectRatio="xMaxYMid slice" aria-hidden>
       <defs>
         <TerrainDefs />
         {MATERIALS.map(m => (
