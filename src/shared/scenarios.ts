@@ -6,7 +6,7 @@ import type { Seat, Terrain } from './types.ts';
 
 export type Zone =
   | { seat: Seat | 'either'; shape: 'rect'; x: number; y: number; w: number; h: number; label?: string }
-  | { seat: Seat | 'either'; shape: 'circle' | 'semicircle' | 'quarter-circle'; cx: number; cy: number; r: number; label?: string }
+  | { seat: Seat | 'either'; shape: 'circle' | 'semicircle' | 'quarter-circle'; cx: number; cy: number; r: number; /** Up and down, on a table that isn't square. */ ry?: number; label?: string }
   | { seat: Seat | 'either'; shape: 'polygon'; points: [number, number][]; label?: string }
   | { seat: Seat | 'either'; shape: 'edge'; edges?: string[]; edge?: string; minFromCorner?: number; label?: string; note?: string };
 

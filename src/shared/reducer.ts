@@ -1,4 +1,5 @@
 import { bookBase, round } from './bases.ts';
+import { holdInZones } from './deployment.ts';
 import { heroicInfo } from './heroics.ts';
 import { limitMove, moveAllowance, moveStart } from './movement.ts';
 import { canPickUp, markerUpkeep, syncCarried, touching, canEscape } from './objects.ts';
@@ -117,6 +118,8 @@ export function cleanModel(m: Partial<Model>, prev?: Model): Model | null {
   const options = Array.isArray(m.options) ? m.options.slice(0, 12).map(o => str(o, 60)) : base.options;
   if (options?.length) out.options = options;
   if (typeof m.general === 'boolean' ? m.general : base.general) out.general = true;
+  const warband = m.warband !== undefined ? str(m.warband, 60) : base.warband;
+  if (warband) out.warband = warband;
   const points = m.points !== undefined ? int(m.points, 0, 9999, 0) : base.points;
   if (points) out.points = points;
   const tier = m.tier !== undefined ? int(m.tier, 0, 9, 0) : base.tier;
@@ -305,7 +308,9 @@ function step(state: GameState, action: Action): GameState {
       if (!Array.isArray(action.moves)) return state;
       const models = { ...state.models };
       let starts = state.flow.starts;
-      for (const mv of action.moves) {
+      // Before the battle, models stay in their deployment zones (and a warband switching zones comes along whole).
+      const moves = state.flow.started ? action.moves : holdInZones(state, action.moves.filter(mv => mv && models[mv.id]).map(mv => ({ id: String(mv.id), x: num(mv.x, -24, 200, models[mv.id].x), y: num(mv.y, -24, 200, models[mv.id].y), rot: mv.rot })));
+      for (const mv of moves) {
         const prev = mv && models[mv.id];
         if (!prev || prev.escaped) continue;
         let to = { x: num(mv.x, -24, 200, prev.x), y: num(mv.y, -24, 200, prev.y) };

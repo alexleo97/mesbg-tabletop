@@ -40,6 +40,8 @@ export interface Model {
   options?: string[];
   /** The army's General, marked when the list was deployed. */
   general?: boolean;
+  /** The warband it was deployed in, so the warband can keep together in setup. */
+  warband?: string;
   /** What the model cost in the list, and its heroic tier (5 for a Hero of Legend), for scenarios that score them. */
   points?: number;
   tier?: number;

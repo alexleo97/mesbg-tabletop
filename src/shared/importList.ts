@@ -217,6 +217,7 @@ export function deployList(entries: ListEntry[], owner: Seat, state: Pick<GameSt
   // Scenarios with corner, semicircle or wedge zones get their armies packed into those zones instead.
   const zones = shapedZones(scenario, owner, boardW, boardH);
   if (zones.length) return packIntoZones([...groups.values()], zones, owner, state, boxes);
+  const clearOf = boxes.slice();
 
   // Each warband as a block: heroes in the front rank, then followers (foot before riders) in ranks about twice as
   // wide as they are deep. Spots are relative to the block's back-left corner, with depth measured towards the enemy.
@@ -292,7 +293,27 @@ export function deployList(entries: ListEntry[], owner: Seat, state: Pick<GameSt
       boxes.push({ x0: model.x - r, x1: model.x + r, y0: model.y - r, y1: model.y + r });
     }
   }
+  // An army too big for its strip of the table is packed into the strip instead, from the back edge forward.
+  const strips = stripZones(scenario, owner, boardW, boardH);
+  const inStrip = (m: Model) => {
+    const { w, h } = { w: mmToIn(m.base.w) / 2, h: mmToIn(m.base.h) / 2 };
+    return strips.some(z => [[-w, -h], [w, -h], [-w, h], [w, h]].every(([dx, dy]) => z.inside(m.x + dx, m.y + dy)));
+  };
+  if (strips.length && !placed.every(inStrip)) return packIntoZones([...groups.values()], strips, owner, state, clearOf);
   return placed;
+}
+
+/** The player's deployment strips along the long edges, packed from the middle of their back edge. */
+function stripZones(scenario: Scenario | undefined, owner: Seat, w: number, h: number): Area[] {
+  const sx = w / 48;
+  const sy = h / 48;
+  return (scenario?.deployment.zones ?? [])
+    .filter((z: Zone) => z.seat === owner && z.shape === 'rect' && !/sub-zone/i.test(z.label ?? ''))
+    .map(z => {
+      const r = z as Extract<Zone, { shape: 'rect' }>;
+      const x0 = r.x * sx, x1 = (r.x + r.w) * sx, y0 = r.y * sy, y1 = (r.y + r.h) * sy;
+      return { inside: (x: number, y: number) => x >= x0 && x <= x1 && y >= y0 && y <= y1, anchor: { x: (x0 + x1) / 2, y: owner === 'p1' ? y1 : y0 } };
+    });
 }
 
 /** A model for a list entry, standing at (x, y) facing the enemy. */
@@ -317,6 +338,7 @@ function makeModel(m: Pending, owner: Seat, x: number, y: number): Model {
     ...(m.e.profileId ? { profileId: m.e.profileId } : {}),
     ...(m.e.options?.length ? { options: m.e.options } : {}),
     ...(m.e.general ? { general: true } : {}),
+    ...(m.e.group && m.e.group !== 'loose' ? { warband: m.e.group } : {}),
     ...(m.e.points ? { points: m.e.points } : {}),
     ...(m.e.tier ? { tier: m.e.tier } : {}),
   };
