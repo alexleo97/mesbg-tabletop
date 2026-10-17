@@ -721,6 +721,15 @@ details.finish summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
   .heroic-pick select { flex-basis: 100%; }
 }
 
+/* Floating cards can be dragged by their header and locked in place (computer screens only). */
+.card-grip { display: inline-flex; gap: 4px; flex: 0 0 auto; }
+.card-lock { min-height: 28px; width: 30px; padding: 0; font-size: 0.85rem; background: transparent; border-color: transparent; opacity: 0.7; }
+.card-lock:hover, .card-lock.on { opacity: 1; border-color: var(--line); }
+.grab { cursor: grab; user-select: none; }
+.grab:active { cursor: grabbing; }
+.model-card-grip { position: absolute; top: 6px; right: 42px; }
+.model-card:has(.model-card-grip) .card-head { padding-right: 104px; }
+
 /* Map editor: the table on the left, tools on the right. */
 .editor-page { height: 100%; }
 .editor { flex: 1; display: flex; min-height: 0; }

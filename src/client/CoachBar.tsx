@@ -3,6 +3,7 @@ import { ResultReport } from './ResultReport.tsx';
 import { activeSeat, other, type Combat } from '../shared/flow.ts';
 import { canDeclare, heroicInfo, heroicsSettled, heroicTurn, HEROICS, orderRollLabel, orderRollNeeded, phaseHeroics } from '../shared/heroics.ts';
 import { RollRow } from './Panels.tsx';
+import { useDraggable } from './useDraggable.tsx';
 import { scenarioById, vpTotal } from '../shared/scenarios.ts';
 import { armyStatus, endCheck, endRollLabel } from '../shared/status.ts';
 import { PHASES, type Action, type GameState, type Model, type Role, type Seat } from '../shared/types.ts';
@@ -147,6 +148,7 @@ function FateStep({ state, dispatch, role, name }: { state: GameState; dispatch:
 export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, openFight }: Props) {
   let combats = allCombats;
   const [small, setSmall] = useState(false);
+  const drag = useDraggable('coach');
   const name = (s: Seat) => state.names[s] || (s === 'p1' ? 'Player 1' : 'Player 2');
   const Who = ({ s, mid }: { s: Seat; mid?: boolean }) => <b className={s}>{s === role ? (mid ? 'you' : 'You') : name(s)}</b>;
   const me = role === 'spectator' ? null : role;
@@ -350,8 +352,8 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
   }
 
   return (
-    <section className={`coach ${small ? 'small' : ''}`} aria-label="Turn guide">
-      <div className="coach-head">
+    <section ref={drag.ref} style={drag.style} className={`coach ${small ? 'small' : ''}`} aria-label="Turn guide">
+      <div className={`coach-head ${drag.draggable ? 'grab' : ''}`} onPointerDown={drag.onPointerDown}>
         {flow.started && (
           <ol className="phase-dots" aria-label="Turn phases">
             <li className="turn">T{state.turn}</li>
@@ -363,6 +365,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
           </ol>
         )}
         <h3>{title}</h3>
+        {drag.controls}
         <button className="coach-toggle" onClick={() => setSmall(v => !v)} aria-label={small ? 'Show turn guide' : 'Hide turn guide'}>
           {small ? '▴' : '▾'}
         </button>

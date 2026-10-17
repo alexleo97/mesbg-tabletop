@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type Ref } from 'react';
 import { modelStats, pictureUrl, statsWithOptions, STAT_NAMES, type Catalog } from '../shared/catalog.ts';
 import { strikeWounds } from '../shared/fight.ts';
 import type { Combat } from '../shared/flow.ts';
@@ -6,6 +6,7 @@ import { heroicInfo } from '../shared/heroics.ts';
 import { inTheWay, sightTo } from '../shared/sight.ts';
 import RULES from '../data/special-rules.json';
 import { RollRow } from './Panels.tsx';
+import { useDraggable } from './useDraggable.tsx';
 import { distanceBetween, formatInches } from '../shared/geometry.ts';
 import { formatNeed, missileWeapon, woundNeed } from '../shared/rules.ts';
 import type { Action, GameState, Model, Role } from '../shared/types.ts';
@@ -59,6 +60,7 @@ export function rulesOf(m: Model, catalog: Catalog | null): string[] {
 /** A selected model's card: its profile at a glance and the actions that make sense in this phase. */
 export function ModelCard({ state, dispatch, role, model: m, catalog, target, clearTarget, combat, openFight, openTab, close }: Props) {
   const [obstacles, setObstacles] = useState(0);
+  const drag = useDraggable('model-card');
   const [photoFailed, setPhotoFailed] = useState(false);
   const [openRule, setOpenRule] = useState<string | null>(null);
   const [appliedShot, setAppliedShot] = useState<string | null>(null);
@@ -153,9 +155,10 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
   }
 
   return (
-    <div className={`model-card ${m.owner}`}>
+    <div ref={drag.ref as Ref<HTMLDivElement>} style={drag.style} className={`model-card ${m.owner}`}>
       <button className="close" onClick={close} aria-label="Deselect">✕</button>
-      <div className="card-head">
+      {drag.controls && <span className="model-card-grip">{drag.controls}</span>}
+      <div className={`card-head ${drag.draggable ? 'grab' : ''}`} onPointerDown={drag.onPointerDown}>
         {photo && !photoFailed ? <img src={photo} alt="" onError={() => setPhotoFailed(true)} /> : <span className="avatar">{m.name.slice(0, 1)}</span>}
         <div>
           <b>{m.name}</b>
