@@ -13,7 +13,8 @@ import { cleanMark } from '../src/shared/marks.ts';
 import { scenarioById } from '../src/shared/scenarios.ts';
 import { announceGame, closeVoiceRoom, discordEnabled, discordMember, openVoiceRoom, sweepVoiceRooms, voiceEnabled } from './discord.ts';
 import { saveResult, verifyToken } from './accounts.ts';
-import { gameWinner } from '../src/shared/status.ts';
+import { endRollDue, phaseFinished } from '../src/shared/autoPhase.ts';
+import { endRollLabel, gameWinner } from '../src/shared/status.ts';
 import { diffForUndo, mergeReverts, UNDOABLE } from '../src/shared/undo.ts';
 import { botStep, newMemo, type BotMemo } from '../src/shared/bot.ts';
 import type { Catalog } from '../src/shared/catalog.ts';
@@ -58,6 +59,8 @@ interface Room {
   invite?: string;
   /** The computer player's memory and its next step, in a game against it. */
   bot?: { memo: BotMemo; timer?: NodeJS.Timeout; busy?: boolean };
+  /** The Fight or End phase is over and play moves on shortly, if nothing changes first. */
+  advance?: NodeJS.Timeout;
   /** The Discord voice channel opened for this game, and when it is due to come down. */
   voice?: { id?: string; opening?: boolean; closeAt?: number };
   /** When a player was last connected, so an abandoned game's voice channel can be taken down. */
@@ -252,6 +255,8 @@ function apply(room: Room, action: Action) {
   }
   rollBrokenTests(room);
   rollReinforcements(room);
+  rollGameEnd(room);
+  scheduleAdvance(room);
   scheduleBot(room);
   updateVoice(room);
   const r = room.state.result;
@@ -327,6 +332,28 @@ function rollReinforcements(room: Room) {
   } finally {
     rollingArrivals = false;
   }
+}
+
+/** In a scenario where a Broken army can end the game, rolls the D6 for it as the End phase begins. */
+function rollGameEnd(room: Room) {
+  if (!endRollDue(room.state)) return;
+  const out = resolveRequest(room.state, room.state.priority ?? 'p1', { type: 'roll', count: 1, label: endRollLabel(room.state.turn) }, serverDice, serverId);
+  for (const a of out?.apply ?? []) apply(room, a);
+}
+
+/** How long a finished Fight or End phase stays up before play moves on, so the last result can be seen. */
+const ADVANCE_PAUSE = 1500;
+
+/** Moves on from a Fight or End phase with nothing left to do in it, after a short pause. */
+function scheduleAdvance(room: Room) {
+  if (room.advance || !phaseFinished(room.state)) return;
+  const at = `${room.state.turn}:${room.state.phase}`;
+  room.advance = setTimeout(() => {
+    room.advance = undefined;
+    // Only if it's still the same phase and still over (someone may have moved on, or backed a model into a fight).
+    if (`${room.state.turn}:${room.state.phase}` === at && phaseFinished(room.state)) apply(room, { type: 'nextPhase' });
+    else scheduleAdvance(room);
+  }, ADVANCE_PAUSE);
 }
 
 /**
