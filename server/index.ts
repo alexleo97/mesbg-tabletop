@@ -182,6 +182,11 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
     }
     case 'passHeroic':
       return action.seat === client.role ? action : null;
+    case 'moveModels':
+      // Once the battle is under way, each player moves only their own models (and the Palantír's, in a solo game,
+      // so they can back its models away after a fight).
+      if (!state.flow.started || !Array.isArray(action.moves)) return action;
+      return { ...action, moves: action.moves.filter(mv => mine(mv?.id) || (!!state.bot && state.models[mv?.id]?.owner === state.bot)) };
     case 'loadState':
       // A loaded save keeps its board, but not its dice history or a result, so neither can be forged.
       return { type: 'loadState', state: { ...loadState(action.state), log: [], accounts: state.accounts, result: undefined, private: state.private, listed: state.private ? false : loadState(action.state).listed } };

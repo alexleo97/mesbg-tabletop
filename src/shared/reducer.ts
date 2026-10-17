@@ -1,6 +1,6 @@
 import { bookBase, round } from './bases.ts';
 import { heroicInfo } from './heroics.ts';
-import { limitMove, moveStart, movesLimited } from './movement.ts';
+import { limitMove, moveAllowance, moveStart } from './movement.ts';
 import { canPickUp, markerUpkeep, syncCarried, touching, canEscape } from './objects.ts';
 import { endPhaseUpkeep } from './scoring.ts';
 import { BOT_NAME, BOT_SPEEDS, MARKER_OBJECTS, MATS, PHASES, PICK_KEYS, TERRAIN_KINDS, type Action, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type Phase, type Picks, type Seat, type Terrain } from './types.ts';
@@ -307,10 +307,12 @@ function step(state: GameState, action: Action): GameState {
         const prev = mv && models[mv.id];
         if (!prev || prev.escaped) continue;
         let to = { x: num(mv.x, -24, 200, prev.x), y: num(mv.y, -24, 200, prev.y) };
-        // In the Move phase a model goes no further than its Move from where it began the phase.
-        if (movesLimited(state, prev) && (to.x !== prev.x || to.y !== prev.y)) {
+        // Once the battle is under way a model goes no further than its allowance from where it began the phase:
+        // its Move in the Move phase, 1" in the Fight phase, and nowhere in the others.
+        const allowance = moveAllowance(state, prev);
+        if (allowance !== null && (to.x !== prev.x || to.y !== prev.y)) {
           const from = moveStart(state, prev);
-          to = limitMove(state, from, to, prev.move);
+          to = limitMove(state, from, to, allowance);
           if (!starts?.[prev.id]) starts = { ...starts, [prev.id]: [from.x, from.y] };
         }
         models[prev.id] = { ...prev, ...to, rot: mv.rot === undefined ? prev.rot : num(mv.rot, -360, 720, prev.rot) % 360 };
@@ -320,7 +322,9 @@ function step(state: GameState, action: Action): GameState {
     case 'updateModel': {
       const prev = state.models[action.id];
       if (!prev || !action.patch || typeof action.patch !== 'object') return state;
-      const m = cleanModel(action.patch, prev);
+      // Models only change place through moveModels, which holds them to their allowance.
+      const { x: _x, y: _y, ...patch } = action.patch;
+      const m = cleanModel(patch, prev);
       return m ? { ...state, models: { ...state.models, [m.id]: m } } : state;
     }
     case 'removeModels': {
