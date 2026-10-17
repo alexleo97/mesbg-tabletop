@@ -147,7 +147,7 @@ export function inTheWay(state: GameState, from: Model, to: Model): string[] {
   }
   const len = Math.hypot(to.x - from.x, to.y - from.y) || 1;
   for (const m of Object.values(state.models)) {
-    if (m.dead || m.escaped || m.id === from.id || m.id === to.id) continue;
+    if (m.dead || m.escaped || m.waiting || m.id === from.id || m.id === to.id) continue;
     const r = Math.max(halfExtents(m.base).rx, halfExtents(m.base).ry);
     if (distanceToSegment(m, from, to) >= r) continue;
     // A shot passing well over a model's head isn't blocked by it.

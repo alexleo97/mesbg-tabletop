@@ -19,7 +19,7 @@ export interface Combat {
 
 /** Groups models in base contact with enemies into fights (models touching several enemies join one fight). */
 export function combats(state: GameState): Combat[] {
-  const alive = Object.values(state.models).filter(m => !m.dead);
+  const alive = Object.values(state.models).filter(m => !m.dead && !m.waiting);
   const p1 = alive.filter(m => m.owner === 'p1');
   const p2 = alive.filter(m => m.owner === 'p2');
   const parent = new Map<string, string>();

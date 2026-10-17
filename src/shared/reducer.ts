@@ -47,7 +47,7 @@ function goTo(state: GameState, phase: Phase, turn: number): GameState {
       done: [],
       resolved: newTurn ? [] : state.flow.resolved,
       heroics: newTurn ? [] : state.flow.heroics,
-      ...(newTurn ? { courage: {}, braved: [], shot: [] } : {}),
+      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [] } : {}),
       passed: [],
       lastHeroic: null,
       starts: {},
@@ -126,6 +126,7 @@ export function cleanModel(m: Partial<Model>, prev?: Model): Model | null {
   if (tier) out.tier = tier;
   out.wounds = int(m.wounds, 0, out.maxWounds, Math.min(base.wounds, out.maxWounds));
   if ('escaped' in m ? m.escaped === true : base.escaped) out.escaped = true;
+  if ('waiting' in m ? m.waiting === true : base.waiting) out.waiting = true;
   const hurtBy = 'hurtBy' in m ? (Array.isArray(m.hurtBy) ? [...new Set(m.hurtBy.slice(0, 40).map(id))] : undefined) : base.hurtBy;
   if (hurtBy?.length) out.hurtBy = hurtBy;
   const killedBy = 'killedBy' in m ? cleanHit(m.killedBy) : base.killedBy;
@@ -312,7 +313,7 @@ function step(state: GameState, action: Action): GameState {
       const moves = state.flow.started ? action.moves : holdInZones(state, action.moves.filter(mv => mv && models[mv.id]).map(mv => ({ id: String(mv.id), x: num(mv.x, -24, 200, models[mv.id].x), y: num(mv.y, -24, 200, models[mv.id].y), rot: mv.rot })));
       for (const mv of moves) {
         const prev = mv && models[mv.id];
-        if (!prev || prev.escaped) continue;
+        if (!prev || prev.escaped || prev.waiting) continue;
         let to = { x: num(mv.x, -24, 200, prev.x), y: num(mv.y, -24, 200, prev.y) };
         // Once the battle is under way a model goes no further than its allowance from where it began the phase:
         // its Move in the Move phase, 1" in the Fight phase, and nowhere in the others.
@@ -325,6 +326,19 @@ function step(state: GameState, action: Action): GameState {
         models[prev.id] = { ...prev, ...to, rot: mv.rot === undefined ? prev.rot : num(mv.rot, -360, 720, prev.rot) % 360 };
       }
       return { ...state, models, ...(starts !== state.flow.starts ? { flow: { ...state.flow, starts } } : {}) };
+    }
+    case 'arrive': {
+      // Waiting models come onto the table; the side has rolled for its arrivals this turn either way.
+      if (!isSeat(action.seat) || !Array.isArray(action.moves)) return state;
+      const models = { ...state.models };
+      for (const mv of action.moves) {
+        const m = mv && models[mv.id];
+        if (m?.waiting && m.owner === action.seat) {
+          const { waiting: _, ...rest } = m;
+          models[m.id] = { ...rest, x: num(mv.x, 0, state.board.w, m.x), y: num(mv.y, 0, state.board.h, m.y), rot: num(mv.rot, -360, 720, 0) % 360 };
+        }
+      }
+      return { ...state, models, flow: { ...state.flow, arrived: [...new Set([...(state.flow.arrived ?? []), action.seat])] } };
     }
     case 'backAway': {
       if (!Array.isArray(action.moves)) return state;
@@ -713,6 +727,7 @@ export function loadState(raw: unknown): GameState {
         ...(f.starts ? { starts: cleanStarts(f.starts) } : {}),
         ...(f.courage && typeof f.courage === 'object' ? { courage: Object.fromEntries(Object.entries(f.courage).slice(0, 400).map(([k, v]) => [k.slice(0, 80), v === true])) } : {}),
         ...(f.braved ? { braved: seats(f.braved) } : {}),
+        ...(f.arrived ? { arrived: seats(f.arrived) } : {}),
         ...(Array.isArray(f.shot) ? { shot: f.shot.slice(0, 400).map(x => String(x).slice(0, 80)) } : {}),
         ...(f.startFate && typeof f.startFate === 'object' ? { startFate: cleanCounts(f.startFate, 9) } : {}),
         ...(f.control && typeof f.control === 'object'

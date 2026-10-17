@@ -36,7 +36,7 @@ export function brokenSideToTest(state: GameState): Seat | null {
  */
 export function brokenTests(state: GameState, seat: Seat, catalog: Catalog | null, d6: () => number, uid: () => string, now = Date.now()): Action[] {
   const r: Roller = { d6, uid, now, by: seat };
-  const models = Object.values(state.models).filter(m => m.owner === seat && !m.dead && !m.escaped);
+  const models = Object.values(state.models).filter(m => m.owner === seat && !m.dead && !m.escaped && !m.waiting);
   const resolute = new Set(phaseHeroics(state).filter(h => h.action === 'Heroic Resolve').map(h => h.model));
   const rolls: DiceRoll[] = [];
   const results: Record<string, boolean> = {};

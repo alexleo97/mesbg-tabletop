@@ -33,10 +33,10 @@ function edgeOfZone(state: GameState, zone: Zone, m: Model, to: Point): Point {
 }
 
 /**
- * Where a warband's other models go when one of them is dragged into another zone: as near as they fit to where it
- * was dropped, wholly inside the zone, clear of other models and off buildings and cliffs.
+ * Places models as near as they fit to a point: wholly inside the zone and on the table, clear of other models (by
+ * `gap`, a hair by default) and off buildings and cliffs. Used for a warband following one of its models into another zone, and for reinforcements.
  */
-function gather(state: GameState, mates: Model[], zone: Zone, near: Point, taken: Model[]): Move[] {
+export function placeNear(state: GameState, mates: Model[], zone: Zone, near: Point, taken: Model[], gap: (o: Model) => number = () => 0.1): Move[] {
   const { w, h } = state.board;
   const solid = Object.values(state.terrain).filter(t => t.kind === 'building' || t.kind === 'cliff').map(t => outline(t));
   const step = 0.25;
@@ -52,7 +52,7 @@ function gather(state: GameState, mates: Model[], zone: Zone, near: Point, taken
       p =>
         within(state, zone, { ...m, x: p.x, y: p.y }) &&
         !solid.some(poly => insidePolygon(poly, p)) &&
-        others.every(o => Math.hypot(o.x - p.x, o.y - p.y) >= r + radius(o) + 0.1),
+        others.every(o => Math.hypot(o.x - p.x, o.y - p.y) >= r + radius(o) + gap(o)),
     );
     // No room left: it stays where it is.
     if (!at) continue;
@@ -94,7 +94,7 @@ export function holdInZones(state: GameState, moves: Move[]): Move[] {
     done.add(`${m.owner}:${m.warband}`);
     const placed = Object.values(state.models).filter(o => !o.dead && !behind.includes(o) && !moving.has(o.id));
     const movedHere = [...out.values()].map(o => ({ ...state.models[o.id], x: o.x, y: o.y }));
-    for (const g of gather(state, behind, zones[there], mv, [...placed, ...movedHere])) out.set(g.id, g);
+    for (const g of placeNear(state, behind, zones[there], mv, [...placed, ...movedHere])) out.set(g.id, g);
   }
   return [...out.values()];
 }

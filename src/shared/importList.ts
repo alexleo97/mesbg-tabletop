@@ -1,5 +1,6 @@
 import { bookBase, round } from './bases.ts';
 import { mmToIn } from './geometry.ts';
+import { offTable } from './maelstrom.ts';
 import { insidePolygon, outline } from './sight.ts';
 import type { Scenario, Zone } from './scenarios.ts';
 import type { Base, GameState, Model, Seat } from './types.ts';
@@ -214,6 +215,11 @@ export function deployList(entries: ListEntry[], owner: Seat, state: Pick<GameSt
     groups.set(e.group ?? '', list);
   }
 
+  // Maelstrom of Battle: the army waits off the table and arrives warband by warband during the game.
+  if (scenario?.deployment.type === 'maelstrom') {
+    const at = offTable(owner, state.board);
+    return [...groups.values()].flat().map(m => ({ ...makeModel(m, owner, at.x, at.y), waiting: true }));
+  }
   // Scenarios with corner, semicircle or wedge zones get their armies packed into those zones instead.
   const zones = shapedZones(scenario, owner, boardW, boardH);
   if (zones.length) return packIntoZones([...groups.values()], zones, owner, state, boxes);
