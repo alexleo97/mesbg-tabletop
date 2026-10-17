@@ -1,9 +1,9 @@
 import { useRef, useState } from 'react';
-import { STARTER_BOARDS, starterTerrain } from '../shared/boards.ts';
+import { objectiveMarkers, STARTER_BOARDS, starterTerrain } from '../shared/boards.ts';
 import { loadCatalog, parseBuilderExport, STAT_NAMES, statsWithOptions } from '../shared/catalog.ts';
 import { deployList, guessBase, newId, parseList, type ListEntry } from '../shared/importList.ts';
 import { ListBuilder, Portrait, useCatalog } from './ListBuilder.tsx';
-import { MATS, type Action, type Base, type GameState, type Mat, type Model, type Role, type Seat, type Terrain } from '../shared/types.ts';
+import { MATS, type Action, type Base, type DiceRoll, type GameState, type Mat, type Model, type Role, type Seat, type Terrain } from '../shared/types.ts';
 import { BODY_FONTS, HEADING_FONTS, THEMES, type Settings } from './settings.ts';
 
 type Dispatch = (a: Action) => void;
@@ -149,6 +149,36 @@ export function SelectionPanel({ state, selected, dispatch, clear }: { state: Ga
   );
 }
 
+/** One roll in the shared log, including follow-up dice for 6+/4+ style wounds. */
+export function RollRow({ r, state }: { r: DiceRoll; state: GameState }) {
+  const hits = r.target ? r.dice.filter(d => d >= r.target!).length : null;
+  const wounds = r.then && r.follow ? r.follow.filter(d => d >= r.then!).length : null;
+  return (
+    <li className={r.by}>
+      <div className="log-head">
+        <b>{r.by === 'spectator' ? 'Spectator' : state.names[r.by] || (r.by === 'p1' ? 'Player 1' : 'Player 2')}</b>
+        <span>{r.label}</span>
+      </div>
+      <div className="dice">
+        {r.dice.map((d, i) => (
+          <span key={i} className={`die ${r.target ? (d >= r.target ? 'hit' : 'miss') : ''}`}>{d}</span>
+        ))}
+        {wounds === null && hits !== null && <span className="hits">{hits} success{hits === 1 ? '' : 'es'}</span>}
+        {r.dice.length > 1 && hits === null && <span className="hits">total {r.dice.reduce((a, b) => a + b, 0)}</span>}
+      </div>
+      {wounds !== null && (
+        <div className="dice follow">
+          <span className="muted">then {r.then}+:</span>
+          {r.follow!.map((d, i) => (
+            <span key={i} className={`die ${d >= r.then! ? 'hit' : 'miss'}`}>{d}</span>
+          ))}
+          <span className="hits">{wounds} success{wounds === 1 ? '' : 'es'}</span>
+        </div>
+      )}
+    </li>
+  );
+}
+
 export function DicePanel({ state, dispatch, role }: { state: GameState; dispatch: Dispatch; role: Role }) {
   const [count, setCount] = useState(1);
   const [target, setTarget] = useState<number | ''>('');
@@ -177,24 +207,9 @@ export function DicePanel({ state, dispatch, role }: { state: GameState; dispatc
         <button disabled={role === 'spectator'} onClick={() => roll(2, '', 'Courage test')}>Courage (2D6)</button>
       </div>
       <ol className="log" ref={logRef}>
-        {[...state.log].reverse().map(r => {
-          const hits = r.target ? r.dice.filter(d => d >= r.target!).length : null;
-          return (
-            <li key={r.id} className={r.by}>
-              <div className="log-head">
-                <b>{r.by === 'spectator' ? 'Spectator' : state.names[r.by] || (r.by === 'p1' ? 'Player 1' : 'Player 2')}</b>
-                <span>{r.label}</span>
-              </div>
-              <div className="dice">
-                {r.dice.map((d, i) => (
-                  <span key={i} className={`die ${r.target ? (d >= r.target ? 'hit' : 'miss') : ''}`}>{d}</span>
-                ))}
-                {hits !== null && <span className="hits">{hits} success{hits === 1 ? '' : 'es'}</span>}
-                {r.dice.length > 1 && hits === null && <span className="hits">total {r.dice.reduce((a, b) => a + b, 0)}</span>}
-              </div>
-            </li>
-          );
-        })}
+        {[...state.log].reverse().map(r => (
+          <RollRow key={r.id} r={r} state={state} />
+        ))}
       </ol>
     </div>
   );
@@ -332,6 +347,7 @@ const TERRAIN_PRESETS: { label: string; t: Omit<Terrain, 'id' | 'x' | 'y' | 'loc
   { label: 'Ruin', t: { kind: 'ruin', shape: 'rect', w: 4, h: 3, rot: 0 } },
   { label: 'Cliff', t: { kind: 'cliff', shape: 'circle', w: 6, h: 8, rot: 0 } },
   { label: 'Field', t: { kind: 'field', shape: 'rect', w: 8, h: 5, rot: 0 } },
+  { label: 'Objective', t: { kind: 'objective', shape: 'circle', w: 1.6, h: 1.6, rot: 0 } },
 ];
 
 export function TablePanel({
@@ -367,6 +383,8 @@ export function TablePanel({
     if (fileRef.current) fileRef.current.value = '';
   };
 
+  const objectives = Object.values(state.terrain).filter(o => o.kind === 'objective');
+
   return (
     <div className="panel-body">
       <h4>Starter boards</h4>
@@ -395,6 +413,15 @@ export function TablePanel({
           ))}
         </select>
       </label>
+      <div className="row">
+        {objectives.length ? (
+          <button onClick={() => objectives.forEach(o => dispatch({ type: 'removeTerrain', id: o.id }))}>Remove objective markers</button>
+        ) : (
+          <button onClick={() => objectiveMarkers(state.board.w, state.board.h, newId).forEach(o => dispatch({ type: 'addTerrain', terrain: o }))}>
+            Place 5 objectives
+          </button>
+        )}
+      </div>
 
       <h4>Add terrain</h4>
       <div className="row wrap">

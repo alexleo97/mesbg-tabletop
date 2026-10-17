@@ -5,6 +5,7 @@ import { RoomConnection, useRoom } from './net.ts';
 import { pictureUrl } from '../shared/catalog.ts';
 import { useCatalog } from './ListBuilder.tsx';
 import { ArmyPanel, DicePanel, SelectionPanel, SettingsPanel, TablePanel } from './Panels.tsx';
+import { RulesPanel } from './RulesPanel.tsx';
 import { useSettings, type Settings } from './settings.ts';
 
 const PLACES = ['osgiliath', 'helms-deep', 'weathertop', 'amon-hen', 'pelennor', 'fornost', 'dale', 'erebor', 'moria', 'isengard', 'edoras', 'lothlorien'];
@@ -54,7 +55,7 @@ function Lobby() {
   );
 }
 
-type PanelTab = 'model' | 'dice' | 'army' | 'table' | 'settings';
+type PanelTab = 'model' | 'dice' | 'rules' | 'army' | 'table' | 'settings';
 
 function Game({ room, settings, updateSettings }: { room: string; settings: Settings; updateSettings: (p: Partial<Settings>) => void }) {
   const roleKey = `role:${room}`;
@@ -212,6 +213,7 @@ function Game({ room, settings, updateSettings }: { room: string; settings: Sett
                 [
                   ['model', selected.size ? `Selected (${selected.size})` : 'Selected'],
                   ['dice', 'Dice'],
+                  ['rules', 'Rules'],
                   ['army', 'Army'],
                   ['table', 'Table'],
                   ['settings', '⚙'],
@@ -228,6 +230,7 @@ function Game({ room, settings, updateSettings }: { room: string; settings: Sett
             {tab === 'model' && <SelectionPanel state={state} selected={selected} dispatch={dispatch} clear={() => setSelected(new Set())} />}
             {tab === 'settings' && <SettingsPanel settings={settings} update={updateSettings} />}
             {tab === 'dice' && <DicePanel state={state} dispatch={dispatch} role={role} />}
+            {tab === 'rules' && <RulesPanel state={state} dispatch={dispatch} role={role} selected={selected} />}
             {tab === 'army' && <ArmyPanel state={state} dispatch={dispatch} role={role} />}
             {tab === 'table' && (
               <>
@@ -288,6 +291,9 @@ function Game({ room, settings, updateSettings }: { room: string; settings: Sett
         <span className="sep" />
         <button className={panelOpen && tab === 'dice' ? 'on' : ''} onClick={() => openTab('dice')}>
           <span>🎲</span>Dice
+        </button>
+        <button className={panelOpen && tab === 'rules' ? 'on' : ''} onClick={() => openTab('rules')}>
+          <span>📖</span>Rules
         </button>
         <button className={panelOpen && tab === 'army' ? 'on' : ''} onClick={() => openTab('army')}>
           <span>⚔</span>Army

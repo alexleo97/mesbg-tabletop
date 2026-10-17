@@ -105,6 +105,9 @@ function cleanRoll(r: unknown): DiceRoll | null {
     label: str(o.label, 80),
     dice: o.dice.slice(0, MAX_DICE).map(d => int(d, 1, 6, 1)),
     target: o.target === undefined ? undefined : int(o.target, 1, 7, 4),
+    ...(o.then !== undefined && Array.isArray(o.follow)
+      ? { then: int(o.then, 1, 6, 4), follow: o.follow.slice(0, MAX_DICE).map(d => int(d, 1, 6, 1)) }
+      : {}),
     at: num(o.at, 0, Number.MAX_SAFE_INTEGER, 0),
   };
 }

@@ -89,18 +89,28 @@ h1, h3, h4, .topbar .room, .phases .turn, .roster-summary b, .name-input, .tabs 
 .board.tool-select { cursor: default; }
 .grid { stroke: var(--grid); stroke-width: 0.02; }
 .grid.major { stroke: var(--grid-major); stroke-width: 0.04; }
-.terrain .ground { stroke: #0007; stroke-width: 0.08; }
-.terrain.water .ground { stroke: #1a3b52; stroke-width: 0.12; opacity: 0.92; }
-.terrain.hill .ground { stroke: #2c3a1a; }
+.terrain .ground { stroke: #0005; stroke-width: 0.06; }
 .terrain .tint { stroke: none; pointer-events: none; }
-.terrain.cliff .ground { stroke: #1d1b19; stroke-width: 0.25; }
-.terrain.ruin .ground { stroke: #2b2722; stroke-width: 0.18; stroke-dasharray: 0.9 0.35 0.3 0.4; }
-.terrain.wall .ground { stroke: #2b2722; stroke-width: 0.06; }
-.terrain.building .ground { stroke: #2b2722; stroke-width: 0.14; }
-.terrain .ridge { stroke: #0006; stroke-width: 0.1; }
-.terrain .contour { fill: none; stroke: #2c3a1a88; stroke-width: 0.06; }
-.terrain .furrow { stroke: #5d5130aa; stroke-width: 0.08; }
-.terrain .tree { fill: #1f3d1c; stroke: #10230f; stroke-width: 0.05; opacity: 0.92; }
+.terrain.water .ground { stroke: none; opacity: 0.95; }
+.terrain .bank { fill: #5b4a30; stroke: #3d3120; stroke-width: 0.5; stroke-linejoin: round; opacity: 0.85; }
+.terrain.hill .ground { stroke: #33421f88; stroke-width: 0.05; }
+.terrain.rock .ground, .terrain.cliff .ground { stroke: #1d1b19; stroke-width: 0.1; }
+.terrain .crack { fill: none; stroke: #0005; stroke-width: 0.06; pointer-events: none; }
+.terrain.ruin .ground { stroke: #2b272255; stroke-width: 0.05; }
+.terrain .ruin-wall { stroke: #8f877a; stroke-width: 0.38; stroke-linecap: square; }
+.terrain .rubble { fill: #7d7468; stroke: #3b362f; stroke-width: 0.03; }
+.terrain.wall .ground { stroke: #2b2722; stroke-width: 0.05; }
+.terrain .wall-joint { stroke: #0004; stroke-width: 0.04; pointer-events: none; }
+.terrain.building .ground { stroke: #2b2722; stroke-width: 0.1; }
+.terrain .roof-tile { stroke: #0003; stroke-width: 0.04; pointer-events: none; }
+.terrain .ridge { stroke: #2a1a0f; stroke-width: 0.14; pointer-events: none; }
+.terrain .furrow { stroke: #5d5130aa; stroke-width: 0.08; pointer-events: none; }
+.terrain .hedge { fill: none; stroke: #2f4a1f; stroke-width: 0.35; pointer-events: none; }
+.terrain .tree { stroke: #0f210c; stroke-width: 0.04; }
+.terrain .tree-shadow { fill: #0006; }
+.terrain .objective { fill: #3a342c; stroke: #c9a227; stroke-width: 0.1; }
+.terrain .objective-ring { fill: none; stroke: #c9a22788; stroke-width: 0.05; stroke-dasharray: 0.2 0.12; pointer-events: none; }
+.terrain .objective-star { fill: #e0c25a; pointer-events: none; }
 .terrain.selected .ground { stroke: var(--gold); stroke-width: 0.16; }
 .terrain.locked.selected .ground { stroke-dasharray: 0.3 0.2; }
 .model .base { stroke: #111; stroke-width: 0.05; }
@@ -237,3 +247,23 @@ label.check input { width: auto; min-height: 0; }
 .model.p2 .ring { stroke: var(--p2); }
 .model.hero .ring { stroke: var(--gold); }
 .model.selected .ring { stroke: #fff; stroke-width: 0.12; }
+
+/* Rules quick reference */
+.rules .stepper { flex: 1 1 140px; }
+.rules .need { margin: 0; font-size: 1.05rem; }
+.rules .need b { color: var(--gold); font-size: 1.3rem; }
+.rules .dice.follow { margin-top: 6px; }
+.rules-result .log { margin: 0; }
+.rules-result .table-result { margin: 6px 0 0; padding: 8px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--gold); }
+.rules details { border-top: 1px solid var(--line); padding-top: 8px; }
+.rules summary { cursor: pointer; font-family: var(--font-head); color: var(--gold); padding: 4px 0; }
+.rules ul { margin: 4px 0 10px; padding-left: 18px; }
+.rules li { margin: 3px 0; }
+.rules table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+.rules th, .rules td { border: 1px solid var(--line); padding: 4px 6px; text-align: left; vertical-align: top; }
+.d6-table { margin: 8px 0; }
+.d6-table th { width: 36px; text-align: center; }
+.chart-scroll { overflow-x: auto; }
+.wound-chart th, .wound-chart td { text-align: center; padding: 4px 2px; white-space: nowrap; }
+.wound-chart td { cursor: pointer; }
+.wound-chart td.on { background: var(--gold); color: var(--ink); font-weight: 700; }

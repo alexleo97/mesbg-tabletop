@@ -73,14 +73,17 @@ function authorise(client: Client, action: Action): Action | null {
     case 'roll': {
       const count = Math.max(1, Math.min(MAX_DICE, Math.round(Number(action.count) || 1)));
       const target = action.target === undefined ? undefined : Math.max(1, Math.min(7, Math.round(Number(action.target) || 4)));
+      const then = target === undefined || action.then === undefined ? undefined : Math.max(1, Math.min(6, Math.round(Number(action.then) || 4)));
+      const dice = Array.from({ length: count }, () => randomInt(1, 7));
       return {
         type: 'rolled',
         roll: {
           id: `r-${Date.now().toString(36)}-${randomInt(1e9).toString(36)}`,
           by: client.role,
           label: String(action.label ?? '').slice(0, 80),
-          dice: Array.from({ length: count }, () => randomInt(1, 7)),
+          dice,
           target,
+          ...(then && target ? { then, follow: dice.filter(d => d >= target).map(() => randomInt(1, 7)) } : {}),
           at: Date.now(),
         },
       };

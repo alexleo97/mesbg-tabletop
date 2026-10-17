@@ -15,7 +15,21 @@ export interface StarterBoard {
 const circle = (kind: Terrain['kind'], x: number, y: number, w: number, h: number, rot = 0): Piece => ({ kind, shape: 'circle', x, y, w, h, rot });
 const rect = (kind: Terrain['kind'], x: number, y: number, w: number, h: number, rot = 0): Piece => ({ kind, shape: 'rect', x, y, w, h, rot });
 
-/** Original layouts for a 48"×48" table. Player 1 deploys from the bottom edge, player 2 from the top. */
+/**
+ * Each player's half mirrored through the centre (a half turn), the way tournament tables are set
+ * up so neither side gets the better deployment. Centre pieces are listed once.
+ */
+function balanced(half: Piece[], centre: Piece[] = []): Piece[] {
+  const turned = half.map(p => ({ ...p, x: 48 - p.x, y: 48 - p.y, rot: ((p.rot ?? 0) + 180) % 360 }));
+  return [...centre, ...half, ...turned];
+}
+
+/**
+ * Original layouts for a 48"×48" table, built on the usual tournament guidance: roughly a quarter to
+ * a third of the table covered, something in the middle that blocks line of sight, clear lanes to
+ * move through, and the same terrain in front of both deployment zones. Player 1 deploys from the
+ * bottom edge, player 2 from the top.
+ */
 export const STARTER_BOARDS: StarterBoard[] = [
   {
     id: 'river-crossing',
@@ -24,61 +38,58 @@ export const STARTER_BOARDS: StarterBoard[] = [
     mat: 'grass',
     w: 48,
     h: 48,
-    pieces: [
-      rect('water', 10.5, 24, 21, 3.5),
-      rect('water', 37.5, 24, 21, 3.5),
-      rect('ruin', 27.5, 19.5, 3.5, 2.5, 10),
-      rect('ruin', 20, 28.5, 3, 2, -8),
-      circle('wood', 8, 12, 10, 7),
-      circle('wood', 40, 36, 10, 7),
-      circle('hill', 40, 11, 11, 7, 15),
-      circle('rock', 31, 13, 3, 2.5),
-      circle('rock', 16, 35, 3.5, 2.5, 30),
-      rect('field', 8, 38, 9, 6),
-      rect('wall', 8, 34.5, 9, 0.5),
-    ],
+    pieces: balanced([
+      rect('water', 10, 24, 19, 3.5),
+      circle('wood', 8, 10, 11, 8),
+      circle('wood', 26, 6, 7, 4.5, 10),
+      circle('hill', 38, 11, 12, 8, 15),
+      rect('ruin', 20, 18.5, 4, 3, 10),
+      circle('rock', 30, 15, 3.5, 2.5),
+      rect('field', 42, 19, 8, 4.5),
+    ]),
   },
   {
     id: 'ruined-city',
     name: 'Ruined City',
-    blurb: 'Broken streets and roofless halls. Lots of cover, narrow lanes, and an open square at the heart.',
+    blurb: 'Broken streets and roofless halls around a fallen tower. Lots of cover and narrow lanes.',
     mat: 'stone',
     w: 48,
     h: 48,
-    pieces: [
-      rect('ruin', 11, 11, 7, 5.5),
-      rect('ruin', 37, 12, 6, 7, 5),
-      rect('building', 11, 37, 7, 5),
-      rect('ruin', 36.5, 36.5, 7, 6, -4),
-      rect('ruin', 19, 18, 3.5, 2.5, 20),
-      rect('ruin', 29, 30, 3.5, 2.5, -15),
-      rect('wall', 24, 9, 7, 0.6),
-      rect('wall', 24, 39, 7, 0.6),
-      rect('wall', 6, 24, 7, 0.6, 90),
-      rect('wall', 42, 24, 7, 0.6, 90),
-      circle('rock', 28, 18.5, 2, 1.5),
-      circle('rock', 20, 30, 2, 1.5, 40),
-      circle('water', 24, 24, 3, 3),
-    ],
+    pieces: balanced(
+      [
+        rect('ruin', 10, 10, 9, 7),
+        rect('building', 36, 9, 8, 6, 5),
+        rect('ruin', 28, 11, 5, 4),
+        rect('ruin', 17.5, 19, 4, 3, 20),
+        rect('building', 17, 30, 5, 4, -5),
+        rect('ruin', 4.5, 38, 5, 4),
+        rect('ruin', 40, 30, 5, 4, 10),
+        rect('wall', 24, 6, 7, 0.6),
+        rect('wall', 3, 22, 7, 0.6, 90),
+        circle('rock', 24, 15, 2, 1.5),
+        rect('ruin', 40, 21, 4, 5),
+      ],
+      [rect('ruin', 24, 24, 6, 6, 45)],
+    ),
   },
   {
     id: 'woodland-edge',
     name: 'Woodland Edge',
-    blurb: 'Dense forest along one flank, a hill to hold on the other, and a stream between.',
+    blurb: 'Thick woods on the flanks and a low hill in the middle that blocks the view across.',
     mat: 'grass',
     w: 48,
     h: 48,
-    pieces: [
-      circle('wood', 6, 13, 11, 13),
-      circle('wood', 8, 31, 13, 12),
-      circle('wood', 17, 22, 8, 8),
-      circle('hill', 35, 24, 13, 9, -10),
-      circle('rock', 30, 9, 3, 3),
-      circle('rock', 41, 39, 4, 3, 20),
-      rect('field', 39, 7, 9, 5),
-      rect('water', 26, 37, 2, 15, 35),
-      rect('building', 38, 31.5, 3.5, 3),
-    ],
+    pieces: balanced(
+      [
+        circle('wood', 7, 14, 12, 14),
+        circle('wood', 19, 6, 8, 5.5, -10),
+        circle('rock', 36, 12, 3.5, 3),
+        rect('field', 41, 5.5, 9, 5),
+        rect('building', 31, 18, 3.5, 3, 10),
+        rect('water', 14, 27, 2, 9, 30),
+      ],
+      [circle('hill', 24, 24, 12, 9, -20)],
+    ),
   },
   {
     id: 'mountain-pass',
@@ -87,21 +98,38 @@ export const STARTER_BOARDS: StarterBoard[] = [
     mat: 'snow',
     w: 48,
     h: 48,
-    pieces: [
-      rect('cliff', 4.5, 24, 9, 28),
-      rect('cliff', 43.5, 24, 9, 28),
-      circle('cliff', 14, 24, 7, 11),
-      circle('cliff', 34, 24, 7, 11),
-      rect('ruin', 24, 24, 3.5, 3.5, 45),
-      circle('rock', 24, 13, 3, 2),
-      circle('rock', 22, 35, 3.5, 2.5, 25),
-      circle('water', 31, 32, 4, 3),
-      circle('wood', 7, 43, 8, 4),
-      circle('wood', 41, 5, 8, 4),
-    ],
+    pieces: balanced(
+      [
+        circle('cliff', 9, 14, 16, 22),
+        circle('cliff', 12, 36, 12, 13, 15),
+        circle('rock', 21, 9, 3, 2.5),
+        circle('wood', 24, 4, 7, 3.5),
+        circle('rock', 2.5, 28, 3, 4),
+      ],
+      [rect('ruin', 24, 24, 5, 5, 45)],
+    ),
   },
 ];
 
+/** Five markers in the Domination pattern: one in the centre, four more at least 12" from it and each other, kept in the open lanes. */
+export const OBJECTIVE_SPOTS: [number, number][] = [
+  [0, 0],
+  [-6, -11],
+  [6, -11],
+  [-6, 11],
+  [6, 11],
+];
+
+export function objectiveMarkers(w: number, h: number, newId: (p: string) => string): Terrain[] {
+  return OBJECTIVE_SPOTS.map(([dx, dy]) => ({ id: newId('t'), kind: 'objective', shape: 'circle', x: w / 2 + dx, y: h / 2 + dy, w: 1.6, h: 1.6, rot: 0, locked: true }));
+}
+
 export function starterTerrain(b: StarterBoard, newId: (p: string) => string): Terrain[] {
   return b.pieces.map(p => ({ rot: 0, ...p, id: newId('t'), locked: true }));
+}
+
+/** Share of the table a layout covers, using each piece's footprint. */
+export function coverage(b: StarterBoard) {
+  const area = b.pieces.reduce((sum, p) => sum + (p.shape === 'circle' ? (Math.PI * p.w * p.h) / 4 : p.w * p.h), 0);
+  return area / (b.w * b.h);
 }

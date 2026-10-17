@@ -21,13 +21,13 @@ interface Recipe {
 }
 
 const RECIPES: Record<Material, Recipe> = {
-  grass: { ramp: [[46, 66, 30], [66, 92, 40], [92, 118, 52], [120, 138, 66]], scale: 6, octaves: 5, speckle: 0.35 },
-  plains: { ramp: [[96, 98, 52], [128, 124, 68], [158, 148, 88], [182, 168, 110]], scale: 5, octaves: 5, speckle: 0.3 },
-  forest: { ramp: [[30, 34, 20], [48, 52, 28], [70, 64, 36], [94, 80, 46]], scale: 7, octaves: 5, speckle: 0.45 },
+  grass: { ramp: [[58, 80, 36], [72, 98, 44], [90, 114, 52], [108, 128, 62]], scale: 5, octaves: 6, speckle: 0.18 },
+  plains: { ramp: [[112, 110, 60], [132, 126, 72], [152, 142, 86], [170, 158, 102]], scale: 5, octaves: 6, speckle: 0.18 },
+  forest: { ramp: [[38, 40, 22], [52, 54, 30], [68, 64, 36], [84, 74, 42]], scale: 7, octaves: 5, speckle: 0.3 },
   mud: { ramp: [[56, 42, 30], [80, 62, 44], [104, 84, 60], [128, 106, 80]], scale: 5, octaves: 5, speckle: 0.2 },
   rock: { ramp: [[64, 62, 60], [96, 94, 90], [128, 124, 118], [158, 154, 146]], scale: 4, octaves: 6, speckle: 0.25 },
   stone: { ramp: [[78, 74, 68], [106, 100, 92], [134, 128, 118], [160, 154, 142]], scale: 5, octaves: 4, speckle: 0.15, cobbles: 6 },
-  snow: { ramp: [[176, 186, 196], [204, 212, 220], [226, 232, 238], [244, 247, 250]], scale: 4, octaves: 5, speckle: 0.1 },
+  snow: { ramp: [[196, 204, 214], [212, 219, 226], [228, 233, 238], [242, 245, 248]], scale: 4, octaves: 5, speckle: 0.06 },
   sand: { ramp: [[150, 124, 82], [176, 150, 104], [198, 174, 128], [218, 198, 152]], scale: 6, octaves: 4, speckle: 0.25, stretch: 2.5 },
   water: { ramp: [[24, 52, 74], [34, 72, 98], [48, 96, 124], [84, 132, 156]], scale: 4, octaves: 4, speckle: 0, stretch: 3 },
 };

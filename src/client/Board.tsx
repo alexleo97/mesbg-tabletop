@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { distanceBetween, distanceToBase, formatInches, halfExtents, type Point } from '../shared/geometry.ts';
-import type { Action, GameState, Model, Terrain } from '../shared/types.ts';
-import { MATERIALS, textures, TILE_INCHES, type Material } from './textures.ts';
+import type { Action, GameState, Model } from '../shared/types.ts';
+import { TerrainArt, TerrainDefs } from './TerrainArt.tsx';
+import { MATERIALS, textures, TILE_INCHES } from './textures.ts';
 
 export type Tool = 'move' | 'select' | 'measure';
 
@@ -32,85 +33,6 @@ type Gesture =
   | { kind: 'box'; start: Point; end: Point; additive: boolean }
   | { kind: 'measure'; start: Point; end: Point; from?: string }
   | { kind: 'pinch'; dist: number; mid: Point; view: View };
-
-const TERRAIN_MATERIAL: Record<Terrain['kind'], Material> = {
-  wood: 'forest',
-  rock: 'rock',
-  building: 'stone',
-  water: 'water',
-  hill: 'grass',
-  wall: 'stone',
-  ruin: 'stone',
-  cliff: 'rock',
-  field: 'plains',
-};
-
-// Small deterministic random numbers per terrain piece, so decorations match for every player.
-function rand(seed: string, i: number) {
-  let h = 2166136261;
-  for (const c of seed + i) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
-  return ((h >>> 0) % 10000) / 10000;
-}
-
-/** Tree canopies for a wood, scattered inside its outline. */
-function Trees({ t }: { t: Terrain }) {
-  const count = Math.max(3, Math.round((t.w * t.h) / 6));
-  const trees: React.ReactElement[] = [];
-  for (let i = 0; i < count; i++) {
-    let x = (rand(t.id, i) - 0.5) * t.w * 0.85;
-    let y = (rand(t.id, i + 99) - 0.5) * t.h * 0.85;
-    if (t.shape === 'circle') {
-      const k = Math.hypot(x / (t.w / 2), y / (t.h / 2));
-      if (k > 0.8) {
-        x *= 0.8 / k;
-        y *= 0.8 / k;
-      }
-    }
-    const r = 0.5 + rand(t.id, i + 7) * 0.6;
-    trees.push(<circle key={i} cx={x} cy={y} r={r} className="tree" />);
-  }
-  return <g pointerEvents="none">{trees}</g>;
-}
-
-// A wash over the texture so pieces stand out from a mat of the same material.
-// (Overlays rather than CSS filters, which Safari ignores on SVG shapes.)
-const TINT: Partial<Record<Terrain['kind'], string>> = {
-  building: '#5a3b1f66',
-  ruin: '#2a201855',
-  wall: '#1a161266',
-  cliff: '#0e0d0c80',
-  hill: '#e8f0b026',
-};
-
-function TerrainPiece({ t }: { t: Terrain }) {
-  const outline = (className: string, fill: string) =>
-    t.shape === 'rect' ? (
-      <rect className={className} x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} rx={t.kind === 'wall' || t.kind === 'building' ? 0.05 : 0.3} fill={fill} />
-    ) : (
-      <ellipse className={className} rx={t.w / 2} ry={t.h / 2} fill={fill} />
-    );
-  const tint = TINT[t.kind];
-  return (
-    <>
-      {outline('ground', `url(#tex-${TERRAIN_MATERIAL[t.kind]})`)}
-      {tint && outline('tint', tint)}
-      {t.kind === 'hill' &&
-        [0.72, 0.44].map(k =>
-          t.shape === 'rect' ? (
-            <rect key={k} className="contour" x={(-t.w / 2) * k} y={(-t.h / 2) * k} width={t.w * k} height={t.h * k} rx={0.6} />
-          ) : (
-            <ellipse key={k} className="contour" rx={(t.w / 2) * k} ry={(t.h / 2) * k} />
-          ),
-        )}
-      {t.kind === 'wood' && <Trees t={t} />}
-      {t.kind === 'field' &&
-        Array.from({ length: Math.floor(t.h / 0.6) }, (_, i) => (
-          <line key={i} className="furrow" x1={-t.w / 2 + 0.2} x2={t.w / 2 - 0.2} y1={-t.h / 2 + 0.3 + i * 0.6} y2={-t.h / 2 + 0.3 + i * 0.6} />
-        ))}
-      {t.kind === 'building' && t.shape === 'rect' && <line className="ridge" x1={-t.w / 2} x2={t.w / 2} y1={0} y2={0} />}
-    </>
-  );
-}
 
 const SEND_EVERY_MS = 60;
 const TAP_SLOP_PX = 6;
@@ -420,6 +342,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
         onContextMenu={e => e.preventDefault()}
       >
         <defs>
+          <TerrainDefs />
           {MATERIALS.map(m => (
             <pattern key={m} id={`tex-${m}`} patternUnits="userSpaceOnUse" width={TILE_INCHES} height={TILE_INCHES}>
               <image href={tex[m]} width={TILE_INCHES} height={TILE_INCHES} />
@@ -440,7 +363,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
               transform={`translate(${t.x} ${t.y}) rotate(${t.rot})`}
               className={`terrain ${t.kind} ${t.locked ? 'locked' : ''} ${selectedTerrain === t.id ? 'selected' : ''}`}
             >
-              <TerrainPiece t={t} />
+              <TerrainArt t={t} />
             </g>
           ))}
 

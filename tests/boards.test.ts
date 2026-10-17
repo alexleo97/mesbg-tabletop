@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { STARTER_BOARDS, starterTerrain } from '../src/shared/boards.ts';
+import { coverage, objectiveMarkers, OBJECTIVE_SPOTS, STARTER_BOARDS, starterTerrain } from '../src/shared/boards.ts';
 import { initialState, reduce } from '../src/shared/reducer.ts';
 
 describe('starter boards', () => {
@@ -18,5 +18,18 @@ describe('starter boards', () => {
         expect(t.y).toBeLessThanOrEqual(b.h);
       }
     }
+  });
+
+  it('cover a fair share of the table', () => {
+    for (const b of STARTER_BOARDS) {
+      expect(coverage(b)).toBeGreaterThan(0.2);
+      expect(coverage(b)).toBeLessThan(0.4);
+    }
+  });
+
+  it('places objectives at least 12 inches apart', () => {
+    const marks = objectiveMarkers(48, 48, p => p + Math.random());
+    expect(marks).toHaveLength(OBJECTIVE_SPOTS.length);
+    for (const a of marks) for (const b of marks) if (a !== b) expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThanOrEqual(12);
   });
 });

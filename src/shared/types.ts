@@ -35,7 +35,7 @@ export interface Model {
   options?: string[];
 }
 
-export const TERRAIN_KINDS = ['wood', 'rock', 'building', 'water', 'hill', 'wall', 'ruin', 'cliff', 'field'] as const;
+export const TERRAIN_KINDS = ['wood', 'rock', 'building', 'water', 'hill', 'wall', 'ruin', 'cliff', 'field', 'objective'] as const;
 export type TerrainKind = (typeof TERRAIN_KINDS)[number];
 
 /** Battle mat surfaces. */
@@ -61,6 +61,10 @@ export interface DiceRoll {
   dice: number[];
   /** Score needed for a success, e.g. 4 for "4+". */
   target?: number;
+  /** For "6+/4+" style results: score needed on the follow-up die rolled for each first success. */
+  then?: number;
+  /** Follow-up dice, one per first die that met `target`, in order. */
+  follow?: number[];
   at: number;
 }
 
@@ -94,7 +98,7 @@ export type Action =
   /** Replaces the mat and all terrain at once, e.g. when loading a starter board. Models stay. */
   | { type: 'setScenery'; w: number; h: number; mat: Mat; terrain: Terrain[] }
   /** Request from a client; the server turns it into a `rolled` action with real dice. */
-  | { type: 'roll'; count: number; target?: number; label: string }
+  | { type: 'roll'; count: number; target?: number; then?: number; label: string }
   | { type: 'rolled'; roll: DiceRoll }
   | { type: 'loadState'; state: GameState };
 
