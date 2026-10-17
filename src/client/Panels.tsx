@@ -2,12 +2,13 @@ import { armyStatus } from '../shared/status.ts';
 import { ResultReport } from './ResultReport.tsx';
 import { MapsSection } from './Maps.tsx';
 import { isDifficult } from '../shared/sight.ts';
+import { TERRAIN_GROUPS, TERRAIN_INFO, terrainRules } from '../shared/terrain.ts';
 import { useRef, useState } from 'react';
 import { objectiveMarkers, STARTER_BOARDS, starterTerrain } from '../shared/boards.ts';
 import { loadCatalog, parseBuilderExport, STAT_NAMES, statsWithOptions } from '../shared/catalog.ts';
 import { deployList, guessBase, newId, parseList, type ListEntry } from '../shared/importList.ts';
 import { ListBuilder, SavedLists, Portrait, useCatalog } from './ListBuilder.tsx';
-import { MATS, type Action, type Base, type DiceRoll, type GameState, type Mat, type Model, type Role, type Seat, type Terrain } from '../shared/types.ts';
+import { MATS, TERRAIN_KINDS, type Action, type Base, type DiceRoll, type GameState, type Mat, type Model, type Role, type Seat, type Terrain, type TerrainKind } from '../shared/types.ts';
 import { BODY_FONTS, HEADING_FONTS, THEMES, type Settings } from './settings.ts';
 
 type Dispatch = (a: Action) => void;
@@ -379,12 +380,15 @@ export function TablePanel({
   role,
   selectedTerrain,
   setSelectedTerrain,
+  editor,
 }: {
   state: GameState;
   dispatch: Dispatch;
   role: Role;
   selectedTerrain: string | null;
   setSelectedTerrain: (id: string | null) => void;
+  /** In the map editor: just the terrain tools, without the game's save, load and finish options. */
+  editor?: boolean;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const t = selectedTerrain ? state.terrain[selectedTerrain] : undefined;
@@ -428,7 +432,7 @@ export function TablePanel({
           </button>
         ))}
       </div>
-      <MapsSection state={state} dispatch={dispatch} onLoaded={() => setSelectedTerrain(null)} />
+      {!editor && <MapsSection state={state} dispatch={dispatch} onLoaded={() => setSelectedTerrain(null)} />}
       <label>
         Ground
         <select value={state.board.mat} onChange={e => dispatch({ type: 'setBoard', w: state.board.w, h: state.board.h, mat: e.target.value as Mat })}>
@@ -450,24 +454,53 @@ export function TablePanel({
       </div>
 
       <h4>Add terrain</h4>
-      <div className="row wrap">
-        {TERRAIN_PRESETS.map(p => (
-          <button
-            key={p.label}
-            onClick={() => {
-              const id = newId('t');
-              dispatch({ type: 'addTerrain', terrain: { ...p.t, id, x: state.board.w / 2, y: state.board.h / 2, locked: false } });
-              setSelectedTerrain(id);
-            }}
-          >
-            {p.label}
-          </button>
-        ))}
-      </div>
+      {TERRAIN_GROUPS.map(g => {
+        const presets = TERRAIN_PRESETS.filter(p => TERRAIN_INFO[p.t.kind].type === g);
+        if (!presets.length) return null;
+        return (
+          <div key={g} className="terrain-group">
+            <small>{g}</small>
+            <div className="row wrap">
+              {presets.map(p => (
+                <button
+                  key={p.label}
+                  title={TERRAIN_INFO[p.t.kind].note}
+                  onClick={() => {
+                    const id = newId('t');
+                    dispatch({ type: 'addTerrain', terrain: { ...p.t, id, x: state.board.w / 2, y: state.board.h / 2, locked: false } });
+                    setSelectedTerrain(id);
+                  }}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })}
 
       {t && (
         <>
           <h4>Selected terrain</h4>
+          <label>
+            Type
+            <select value={t.kind} onChange={e => patch({ kind: e.target.value as TerrainKind, difficult: undefined })}>
+              {TERRAIN_GROUPS.map(g => (
+                <optgroup key={g} label={g}>
+                  {TERRAIN_KINDS.filter(k => TERRAIN_INFO[k].type === g).map(k => (
+                    <option key={k} value={k}>
+                      {TERRAIN_INFO[k].name}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </label>
+          <ul className="terrain-rules">
+            {terrainRules(t).map(r => (
+              <li key={r}>{r}</li>
+            ))}
+          </ul>
           <Stepper label="Width" value={Math.round(t.w)} min={1} max={48} onChange={v => patch({ w: v })} />
           <Stepper label="Depth" value={Math.round(t.h)} min={1} max={48} onChange={v => patch({ h: v })} />
           <div className="row">
@@ -511,26 +544,35 @@ export function TablePanel({
         ))}
       </div>
 
-      <h4>Game</h4>
-      <div className="row">
-        <button onClick={save}>Save game</button>
-        <button onClick={() => fileRef.current?.click()}>Load game</button>
-        <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={e => load(e.target.files?.[0])} />
-      </div>
-      {state.flow.started && !state.result && role !== 'spectator' && (
-        <details className="finish">
-          <summary>Finish the game early</summary>
-          <ResultReport state={state} role={role} dispatch={dispatch} early />
-        </details>
+      {!editor && (
+        <>
+          <h4>Game</h4>
+          <div className="row">
+            <button onClick={save}>Save game</button>
+            <button onClick={() => fileRef.current?.click()}>Load game</button>
+            <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={e => load(e.target.files?.[0])} />
+          </div>
+          {state.flow.started && !state.result && role !== 'spectator' && (
+            <details className="finish">
+              <summary>Finish the game early</summary>
+              <ResultReport state={state} role={role} dispatch={dispatch} early />
+            </details>
+          )}
+          <button
+            className="danger"
+            onClick={() => {
+              if (confirm('Clear the whole table for both players?')) dispatch({ type: 'loadState', state: { ...state, models: {}, terrain: {}, turn: 1, phase: 'priority', priority: null } });
+            }}
+          >
+            Clear table
+          </button>
+        </>
       )}
-      <button
-        className="danger"
-        onClick={() => {
-          if (confirm('Clear the whole table for both players?')) dispatch({ type: 'loadState', state: { ...state, models: {}, terrain: {}, turn: 1, phase: 'priority', priority: null } });
-        }}
-      >
-        Clear table
-      </button>
+      {editor && Object.keys(state.terrain).length > 0 && (
+        <button className="danger" onClick={() => confirm('Remove all the terrain?') && dispatch({ type: 'setScenery', w: state.board.w, h: state.board.h, mat: state.board.mat, terrain: [] })}>
+          Clear all terrain
+        </button>
+      )}
     </div>
   );
 }

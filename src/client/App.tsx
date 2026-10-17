@@ -20,6 +20,7 @@ import { Tutorial } from './Tutorial.tsx';
 import { ProfilePage } from './Account.tsx';
 import { ArmiesCard, ArmiesPage, MapsCard, MapsPage, randomRoom, SitePage, TopPlayersCard } from './Home.tsx';
 import { getMap } from './cloud.ts';
+import { MapEditor } from './MapEditor.tsx';
 import { LeaderboardPage } from './Leaderboard.tsx';
 import { useAuth } from './auth.ts';
 
@@ -161,7 +162,14 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
   const [role, setRole] = useState<Role | null>(() => (practice ? 'p1' : ((storage.get(roleKey) as Role | null) ?? null)));
   // One connection per room; role changes are sent over it rather than reconnecting.
   const conn = useMemo<Connection>(() => practice ?? new RoomConnection(room, role ?? 'spectator'), [room, practice]);
-  const { state, status, players, undoDepth } = useRoom(conn);
+  const { state, status, players, undoDepth, invite, refused } = useRoom(conn);
+  const [refusedNote, setRefusedNote] = useState<string | null>(null);
+  // Asked for a seat in a private game without the invite: watch instead, and say why.
+  useEffect(() => {
+    if (!refused) return;
+    setRefusedNote(refused);
+    setRole('spectator');
+  }, [refused]);
   const [tool, setTool] = useState<Tool>('move');
   const [sight, setSight] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -239,10 +247,14 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
     return (
       <div className="lobby">
         <h1>Join {room}</h1>
-        <p>Pick your side. Anyone with this link can join.</p>
+        {state.private && !invite ? (
+          <p>🔒 This game is private. You can watch it now; ask one of the players for the invite link to take a seat.</p>
+        ) : (
+          <p>Pick your side.{state.private ? ' You have an invite to this private game.' : ' Anyone with this link can join.'}</p>
+        )}
         <div className="seats">
           {(['p1', 'p2'] as const).map(s => (
-            <button key={s} className={`seat ${s}`} onClick={() => setRole(s)}>
+            <button key={s} className={`seat ${s}`} disabled={!!state.private && !invite} onClick={() => setRole(s)}>
               {state.names[s] || (s === 'p1' ? 'Player 1' : 'Player 2')}
               <small>{taken(s) ? 'connected now' : s === 'p1' ? 'deploys from the bottom' : 'deploys from the top'}</small>
             </button>
@@ -254,13 +266,17 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
     );
   }
 
-  const copyLink = async () => {
+  /** The game's link. In a private game, players can hand out one that lets the holder take a seat. */
+  const copyLink = async (withInvite = true) => {
+    const url = new URL(location.origin + location.pathname);
+    url.searchParams.set('room', room);
+    if (withInvite && state.private && seat && invite) url.searchParams.set('invite', invite);
     try {
-      await navigator.clipboard.writeText(location.href);
+      await navigator.clipboard.writeText(url.href);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
-      prompt('Copy this link:', location.href);
+      prompt('Copy this link:', url.href);
     }
   };
 
@@ -302,7 +318,8 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
         <button className="leave" onClick={leave} title="Leave this game and go back to the home screen" aria-label="Leave game">
           ⟵
         </button>
-        <button className="room" onClick={copyLink} title="Copy invite link">
+        <button className="room" onClick={() => void copyLink()} title={state.private && !seat ? 'Copy the link to watch this game' : 'Copy invite link'}>
+          {state.private && <span title="Private game: only invited players can take a seat">🔒</span>}
           <span className="room-name">{copied ? 'Link copied' : room}</span> <span className={`dot ${status}`} />
         </button>
         <div className="sides">
@@ -408,6 +425,11 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
               </button>
             </div>
 
+            {refusedNote && (
+              <button className="sight-hint" onClick={() => setRefusedNote(null)}>
+                🔒 {refusedNote}
+              </button>
+            )}
             {mapNote && (
               <button className="sight-hint" onClick={() => setMapNote(null)}>
                 {mapNote}
@@ -485,8 +507,12 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
                   </div>
                   <h4>Game</h4>
                   <label className="check">
-                    <input type="checkbox" checked={state.listed} disabled={role === 'spectator'} onChange={e => dispatch({ type: 'setListed', listed: e.target.checked })} />
+                    <input type="checkbox" checked={state.listed} disabled={role === 'spectator' || state.private} onChange={e => dispatch({ type: 'setListed', listed: e.target.checked })} />
                     Show this game in the open games list
+                  </label>
+                  <label className="check">
+                    <input type="checkbox" checked={!!state.private} disabled={!seat || !conn.setPrivate} onChange={e => conn.setPrivate?.(e.target.checked)} />
+                    Private game: only people you send the invite link to can take a seat. Anyone can still watch.
                   </label>
                   {state.flow.started && role !== 'spectator' && (
                     <label>
@@ -506,7 +532,8 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
                     </label>
                   )}
                   <div className="row wrap">
-                    <button onClick={copyLink}>Copy invite link</button>
+                    <button onClick={() => void copyLink()}>{state.private ? 'Copy invite link (to play)' : 'Copy invite link'}</button>
+                    {state.private && seat && <button onClick={() => void copyLink(false)}>Copy link to watch</button>}
                     <button onClick={leave}>Leave game</button>
                   </div>
                 </div>
@@ -527,6 +554,7 @@ export function App() {
   const [settings, updateSettings] = useSettings();
   if (params.has('armies')) return <ArmiesPage />;
   if (params.has('maps')) return <MapsPage />;
+  if (params.has('mapeditor')) return <MapEditor settings={settings} />;
   if (params.has('leaderboard'))
     return (
       <SitePage page="leaderboard">

@@ -1,0 +1,29 @@
+import { blocksSight, isDifficult, slowsShots } from './sight.ts';
+import type { Terrain, TerrainKind } from './types.ts';
+
+/** What each kind of terrain is called, the group it belongs to and a note on how it plays, in this site's own words. */
+export const TERRAIN_INFO: Record<TerrainKind, { name: string; type: string; note: string }> = {
+  wood: { name: 'Woods', type: 'Area terrain', note: 'Trees and undergrowth: models can stand inside, but it is slow going and hard to shoot through.' },
+  field: { name: 'Crop field', type: 'Area terrain', note: 'Tall crops partly hide models but are easy to walk through.' },
+  ruin: { name: 'Ruins', type: 'Area terrain', note: 'Broken walls and rubble: slow to cross and good cover. Low walls can be climbed or jumped.' },
+  rock: { name: 'Rocks', type: 'Obstacle', note: 'Solid enough to hide behind. Models can climb it, and jump smaller rocks.' },
+  wall: { name: 'Wall', type: 'Barrier', note: 'A low wall or fence. Models can jump or climb over it, and one standing behind it can defend it in a fight.' },
+  building: { name: 'Building', type: 'Impassable', note: 'Models go round it, or climb it to fight from the roof.' },
+  cliff: { name: 'Cliff', type: 'Impassable', note: 'Sheer rock: models go round it unless they climb.' },
+  water: { name: 'Water', type: 'Water', note: 'Shallow water and streams slow models down. Deep water, if you agree it is deep, means swimming.' },
+  hill: { name: 'Hill', type: 'Elevation', note: 'Open ground that gives height: models up here can see over low terrain. It does not slow movement.' },
+  objective: { name: 'Objective', type: 'Marker', note: 'A scenario objective. It does not block movement or sight.' },
+};
+
+/** The groups used to sort terrain in the Table panel, in the order shown. */
+export const TERRAIN_GROUPS = ['Area terrain', 'Obstacle', 'Barrier', 'Impassable', 'Water', 'Elevation', 'Marker'] as const;
+
+/** How this piece plays here: what the board and turn guide use, plus the kind's note. */
+export function terrainRules(t: Terrain): string[] {
+  const out: string[] = [];
+  if (isDifficult(t)) out.push('Difficult terrain: moving through it costs double.');
+  if (blocksSight(t)) out.push('Blocks line of sight: models fully behind it are hidden.');
+  if (slowsShots(t)) out.push('In the Way: shots through it need an In the Way roll.');
+  out.push(TERRAIN_INFO[t.kind].note);
+  return out;
+}

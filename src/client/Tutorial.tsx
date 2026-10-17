@@ -6,6 +6,7 @@ import type { GameState, Model, Phase, Seat, Terrain } from '../shared/types.ts'
 import { Game } from './App.tsx';
 import { PracticeGame } from './practice.ts';
 import { useRoom } from './net.ts';
+import { useDraggable } from './useDraggable.tsx';
 import type { Settings } from './settings.ts';
 
 const WARRIOR = '[minas-tirith] warrior-of-minas-tirith';
@@ -180,6 +181,7 @@ const LESSONS: Lesson[] = [
 
 /** The training: a guided practice game against a quiet opponent, one lesson at a time. */
 export function Tutorial({ settings, updateSettings, onExit, onPlay }: { settings: Settings; updateSettings: (p: Partial<Settings>) => void; onExit: () => void; onPlay: () => void }) {
+  const drag = useDraggable('lesson');
   const game = useMemo(() => new PracticeGame(LESSONS[0].setup()), []);
   const { state } = useRoom(game);
   const [step, setStep] = useState(0);
@@ -202,12 +204,13 @@ export function Tutorial({ settings, updateSettings, onExit, onPlay }: { setting
   const last = step === LESSONS.length - 1;
 
   const card = (
-    <section className={`lesson ${small ? 'small' : ''}`} aria-label="Lesson">
-      <div className="lesson-head">
+    <section ref={drag.ref} style={drag.style} className={`lesson ${small ? 'small' : ''}`} aria-label="Lesson">
+      <div className={`lesson-head ${drag.draggable ? 'grab' : ''}`} onPointerDown={drag.onPointerDown}>
         <small>
           {step + 1} of {LESSONS.length}
         </small>
         <h3>{lesson.title}</h3>
+        {drag.controls}
         <button className="lesson-toggle" onClick={() => setSmall(v => !v)} aria-label={small ? 'Show lesson' : 'Hide lesson'}>
           {small ? '▾' : '▴'}
         </button>

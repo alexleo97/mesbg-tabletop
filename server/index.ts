@@ -1,4 +1,4 @@
-import { randomInt } from 'node:crypto';
+import { randomBytes, randomInt } from 'node:crypto';
 import { createReadStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join, normalize, resolve, sep } from 'node:path';
@@ -20,6 +20,7 @@ const CANONICAL = (process.env.PUBLIC_URL ?? '').replace(/\/$/, '');
 /** Games held in memory at once, so nobody can exhaust the server by opening endless rooms. */
 const MAX_ROOMS = 2000;
 const ROOM_ID = /^[a-z0-9-]{3,40}$/;
+const INVITE = /^[A-Za-z0-9_-]{8,40}$/;
 
 interface Client {
   ws: WebSocket;
@@ -44,6 +45,8 @@ interface Room {
   saveTries?: number;
   /** Nothing has happened here since the server started and there was no save, so a player's browser may restore its copy. */
   blank: boolean;
+  /** A private game's invite code. Kept on the server and handed only to seated players. */
+  invite?: string;
 }
 
 interface UndoEntry {
@@ -64,15 +67,20 @@ function getRoom(id: string): Room {
   if (!room) {
     const file = join(DATA, `${id}.json`);
     let state = initialState();
+    let invite: string | undefined;
     const blank = !existsSync(file);
     if (!blank) {
       try {
-        state = loadState(JSON.parse(readFileSync(file, 'utf8')));
+        const saved = JSON.parse(readFileSync(file, 'utf8'));
+        state = loadState(saved);
+        if (typeof saved?._invite === 'string') invite = saved._invite;
       } catch (err) {
         console.warn(`Could not read saved room ${id}:`, err);
       }
     }
-    room = { id, state, clients: new Set(), touched: Date.now(), undo: { p1: [], p2: [] }, blank };
+    // A private game whose code was lost can't be joined by anyone, so it opens up again.
+    if (state.private && !invite) state = reduce(state, { type: 'setPrivate', private: false });
+    room = { id, state, clients: new Set(), touched: Date.now(), undo: { p1: [], p2: [] }, blank, invite };
     rooms.set(id, room);
   }
   return room;
@@ -83,7 +91,7 @@ function scheduleSave(room: Room) {
   if (room.saveTimer) return;
   room.saveTimer = setTimeout(() => {
     room.saveTimer = undefined;
-    writeFileSync(join(DATA, `${room.id}.json`), JSON.stringify(room.state));
+    writeFileSync(join(DATA, `${room.id}.json`), JSON.stringify(room.invite ? { ...room.state, _invite: room.invite } : room.state));
   }, 2000);
 }
 
@@ -114,6 +122,7 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
     case 'priorityRolled':
     case 'fateRolled':
     case 'seatAccount':
+    case 'setPrivate':
     case 'resultSaved':
       return null; // only the server produces dice results, undo changes and account details
     case 'gameOver':
@@ -142,7 +151,7 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
       return action.seat === client.role ? action : null;
     case 'loadState':
       // A loaded save keeps its board, but not its dice history or a result, so neither can be forged.
-      return { type: 'loadState', state: { ...loadState(action.state), log: [], accounts: state.accounts, result: undefined } };
+      return { type: 'loadState', state: { ...loadState(action.state), log: [], accounts: state.accounts, result: undefined, private: state.private, listed: state.private ? false : loadState(action.state).listed } };
     default:
       return action;
   }
@@ -151,7 +160,7 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
 /** Listed games with at least one player connected, most recently active first. */
 function openRooms(): RoomSummary[] {
   return [...rooms.values()]
-    .filter(r => r.state.listed && [...r.clients].some(c => c.role !== 'spectator'))
+    .filter(r => r.state.listed && !r.state.private && [...r.clients].some(c => c.role !== 'spectator'))
     .sort((a, b) => b.touched - a.touched)
     .slice(0, 50)
     .map(r => {
@@ -362,6 +371,12 @@ wss.on('connection', (ws, req) => {
     }
     if (msg.type === 'hello') {
       client.role = msg.role === 'p1' || msg.role === 'p2' ? msg.role : 'spectator';
+      if (client.role !== 'spectator' && room.state.private && msg.invite !== room.invite) {
+        // Invite-only: without the code you can still watch.
+        client.role = 'spectator';
+        send(ws, { type: 'seatRefused', message: 'This game is private. Ask a player for the invite link to take a seat; until then you can watch.' });
+      }
+      if (client.role !== 'spectator' && room.invite) send(ws, { type: 'invite', code: room.invite });
       if (client.role !== 'spectator') scheduleAnnouncement(room);
       broadcast(room, { type: 'presence', players: players(room) });
       if (client.role !== 'spectator') sendUndoDepth(room, client.role);
@@ -372,7 +387,17 @@ wss.on('connection', (ws, req) => {
       // After a restart wipes the server, the first player back brings the game with them.
       if (!room.blank || client.role === 'spectator') return;
       room.undo = { p1: [], p2: [] };
-      apply(room, { type: 'loadState', state: { ...loadState(msg.state), log: [], accounts: undefined, result: undefined } });
+      const restored = loadState(msg.state);
+      const invite = restored.private && typeof msg.invite === 'string' && INVITE.test(msg.invite) ? msg.invite : undefined;
+      room.invite = invite;
+      apply(room, { type: 'loadState', state: { ...restored, log: [], accounts: undefined, result: undefined, private: invite ? true : undefined } });
+      return;
+    }
+    if (msg.type === 'privacy') {
+      if (client.role === 'spectator') return;
+      room.invite = msg.private ? (room.invite ?? randomBytes(9).toString('base64url')) : undefined;
+      apply(room, { type: 'setPrivate', private: !!msg.private });
+      for (const c of room.clients) if (c.role !== 'spectator') send(c.ws, { type: 'invite', code: room.invite ?? null });
       return;
     }
     if (msg.type === 'identify') {

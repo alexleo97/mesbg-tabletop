@@ -36,6 +36,24 @@ function writeSave(room: string, state: GameState) {
   }
 }
 
+const INVITE_PREFIX = 'mesbg-invite:';
+/** The invite code this browser holds for a private game, from an invite link or from being seated when it was made private. */
+function readInvite(room: string): string | null {
+  try {
+    return localStorage.getItem(INVITE_PREFIX + room);
+  } catch {
+    return null;
+  }
+}
+function writeInvite(room: string, code: string | null) {
+  try {
+    if (code) localStorage.setItem(INVITE_PREFIX + room, code);
+    else localStorage.removeItem(INVITE_PREFIX + room);
+  } catch {
+    // Storage blocked: the code only lasts for this visit.
+  }
+}
+
 /** Whether a game has anything worth bringing back. */
 const worthKeeping = (s: GameState) => s.flow.started || Object.keys(s.models).length > 0 || Object.keys(s.terrain).length > 0;
 
@@ -47,6 +65,10 @@ export interface Snapshot {
   players: Role[];
   /** How many of this player's changes can be undone. */
   undoDepth: number;
+  /** This browser's invite code for the room, if it has one. */
+  invite?: string | null;
+  /** Why the seat you asked for was refused (a private game without its invite). */
+  refused?: string;
 }
 
 /** What the game screen needs from a game: the live server room, or a practice game in the browser. */
@@ -58,6 +80,8 @@ export interface Connection {
   setRole(role: Role): void;
   /** The player's sign-in token, so the server can tell who is in each seat. */
   setToken?(token: string | null): void;
+  /** Makes the game invite-only, or open to anyone again. */
+  setPrivate?(on: boolean): void;
   close(): void;
 }
 
@@ -75,6 +99,15 @@ export class RoomConnection implements Connection {
     readonly room: string,
     private role: Role,
   ) {
+    // Arriving by invite link: keep the code, and take it out of the address bar so it isn't passed on by accident.
+    const url = new URL(location.href);
+    const code = url.searchParams.get('invite');
+    if (code) {
+      writeInvite(room, code);
+      url.searchParams.delete('invite');
+      history.replaceState(null, '', url);
+    }
+    this.snap.invite = readInvite(room);
     this.connect();
   }
 
@@ -86,7 +119,7 @@ export class RoomConnection implements Connection {
     this.set({ status: 'connecting' });
     ws.onopen = () => {
       this.retry = 0;
-      ws.send(JSON.stringify({ type: 'hello', role: this.role }));
+      this.hello();
       if (this.token) ws.send(JSON.stringify({ type: 'identify', token: this.token }));
     };
     ws.onmessage = ev => {
@@ -94,12 +127,16 @@ export class RoomConnection implements Connection {
       if (msg.type === 'snapshot') {
         this.set({ state: loadState(msg.state), players: msg.players, status: 'online' });
         const saved = msg.blank && this.role !== 'spectator' ? readSave(this.room) : null;
-        if (saved && worthKeeping(saved)) ws.send(JSON.stringify({ type: 'restore', state: saved }));
+        if (saved && worthKeeping(saved)) ws.send(JSON.stringify({ type: 'restore', state: saved, invite: this.snap.invite ?? undefined }));
       } else if (msg.type === 'action') {
         this.set({ state: reduce(this.snap.state, msg.action) });
         this.scheduleSave();
       } else if (msg.type === 'presence') this.set({ players: msg.players });
       else if (msg.type === 'undo') this.set({ undoDepth: msg.count });
+      else if (msg.type === 'invite') {
+        writeInvite(this.room, msg.code);
+        this.set({ invite: msg.code });
+      } else if (msg.type === 'seatRefused') this.set({ refused: msg.message });
       else if (msg.type === 'error') console.warn(msg.message);
     };
     ws.onclose = () => {
@@ -123,10 +160,18 @@ export class RoomConnection implements Connection {
     for (const l of this.listeners) l();
   }
 
+  private hello() {
+    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: 'hello', role: this.role, invite: this.snap.invite ?? undefined }));
+  }
+
   setRole(role: Role) {
     this.role = role;
-    this.set({ undoDepth: 0 });
-    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: 'hello', role }));
+    this.set({ undoDepth: 0, refused: undefined });
+    this.hello();
+  }
+
+  setPrivate(on: boolean) {
+    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: 'privacy', private: on }));
   }
 
   setToken(token: string | null) {

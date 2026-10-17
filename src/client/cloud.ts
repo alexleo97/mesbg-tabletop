@@ -103,7 +103,15 @@ export async function saveMap(name: string, map: MapData, shared: boolean): Prom
   return error ? "Couldn't save the map. Try again in a moment." : null;
 }
 
-export async function updateMap(id: string, patch: { name?: string; public?: boolean }) {
+/** Saves a new map and returns its id, so later saves update it. */
+export async function createMap(name: string, map: MapData, shared: boolean): Promise<string | null> {
+  const who = await me();
+  if (!who) return null;
+  const { data, error } = await who.sb.from('maps').insert({ owner: who.id, name: name.trim().slice(0, 80) || 'Untitled map', data: map, public: shared }).select('id').single();
+  return error || !data ? null : (data as { id: string }).id;
+}
+
+export async function updateMap(id: string, patch: { name?: string; public?: boolean; data?: MapData }) {
   const who = await me();
   if (who) await who.sb.from('maps').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id).eq('owner', who.id);
 }
