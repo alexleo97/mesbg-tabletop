@@ -12,6 +12,7 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/server ./server
 COPY --from=build /app/src/shared ./src/shared
+COPY --from=build /app/src/data ./src/data
 COPY package.json ./
 EXPOSE 8787
 CMD ["npx", "tsx", "server/index.ts"]

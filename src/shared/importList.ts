@@ -1,3 +1,4 @@
+import { bookBase, round } from './bases.ts';
 import { mmToIn } from './geometry.ts';
 import type { Base, GameState, Model, Seat } from './types.ts';
 
@@ -143,23 +144,26 @@ export function parseList(input: string): ListEntry[] {
 
 /** Guesses the base for a profile from its name. Players can change it on the board. */
 export function guessBase(name: string): Base {
+  const known = bookBase(name);
+  if (known) return known;
   const n = name.toLowerCase();
-  if (/m[uû]mak|oliphaunt/.test(n)) return { shape: 'rect', w: 105, h: 165 };
-  if (/dragon|balrog|fell beast|great beast|war beast|smaug|watcher/.test(n)) return { shape: 'round', w: 60, h: 60 };
-  if (/\btroll|\bent\b|treebeard|eagle|gwaihir|cave troll|ogre|bear\b|beorn.*bear|giant|spider queen|shelob/.test(n))
-    return { shape: 'round', w: 40, h: 40 };
-  if (/chariot|war ?wagon|catapult|trebuchet|ballista|bolt thrower|siege/.test(n)) return { shape: 'rect', w: 50, h: 100 };
-  // Whole words only: "Aragorn, Strider" is on foot.
+  if (/m[uû]mak|oliphaunt/.test(n)) return { shape: 'oval', w: 140, h: 180 };
+  if (/dragon|balrog|fell beast|great beast|war beast|smaug|watcher|\bent\b|treebeard|eagle|gwaihir|mordor troll|isengard troll/.test(n)) return round(60);
+  if (/cave troll|hill troll|snow troll|\btroll|ogre|giant|werewolf/.test(n)) return round(50);
+  if (/chariot|war ?wagon/.test(n)) return round(60);
+  if (/catapult|trebuchet/.test(n)) return { shape: 'oval', w: 92, h: 120 };
+  if (/ballista|bolt thrower|siege|bear\b|spider queen|shelob/.test(n)) return round(40);
+  // Whole words only: "Aragorn, Strider" is on foot. Riders use their mount's base.
   if (/\bcavalry\b|\bknights?\b|\briders?\b|\bon (horse|horseback|warg|pony|elk|goat|boar|fell)|\bmounted\b|\bhorse(man|men)\b|\boutriders?\b/.test(n))
-    return { shape: 'rect', w: 25, h: 50 };
-  return { shape: 'round', w: 25, h: 25 };
+    return round(40);
+  return round(25);
 }
 
 function defaultMove(name: string, base: Base): number {
   const n = name.toLowerCase();
   if (/hobbit|dwar|gollum|goblin(?! rider)|halfling/.test(n)) return 5;
   if (/eagle|fell beast|bat/.test(n)) return 12;
-  if (base.shape === 'rect' && base.h === 50) return 10;
+  if (base.w === 40 && /\bcavalry\b|\bknights?\b|\briders?\b|\bmounted\b|\bhorse(man|men)\b|\boutriders?\b/.test(n)) return 10;
   return 6;
 }
 

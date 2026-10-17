@@ -42,9 +42,14 @@ Total points: 300`);
 });
 
 describe('guessBase', () => {
-  it('picks cavalry, monster and infantry bases', () => {
-    expect(guessBase('Knight of Minas Tirith')).toEqual({ shape: 'rect', w: 25, h: 50 });
-    expect(guessBase('Cave Troll')).toEqual({ shape: 'round', w: 40, h: 40 });
+  it('uses the books\' round bases for cavalry, monsters and infantry', () => {
+    expect(guessBase('Knight of Minas Tirith')).toEqual({ shape: 'round', w: 40, h: 40 });
+    expect(guessBase('Cave Troll')).toEqual({ shape: 'round', w: 50, h: 50 });
+    expect(guessBase('The Watcher in the Water')).toEqual({ shape: 'round', w: 130, h: 130 });
+    expect(guessBase('War Mumak of Harad')).toEqual({ shape: 'oval', w: 140, h: 180 });
+    // Names the books don't have still get a round base.
+    expect(guessBase('Some Troll')).toEqual({ shape: 'round', w: 50, h: 50 });
+    expect(guessBase('Mounted Captain')).toEqual({ shape: 'round', w: 40, h: 40 });
     expect(guessBase('Mordor Orc Warrior')).toEqual({ shape: 'round', w: 25, h: 25 });
     // "Strider" contains "rider" but Aragorn is on foot.
     expect(guessBase('Aragorn, Strider')).toEqual({ shape: 'round', w: 25, h: 25 });

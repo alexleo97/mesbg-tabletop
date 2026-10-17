@@ -54,3 +54,10 @@ describe('reduce', () => {
     expect(loadState(JSON.parse(JSON.stringify(s)))).toEqual(s);
   });
 });
+
+describe('old saves', () => {
+  it('moves square cavalry bases onto round 40mm bases', () => {
+    const s = reduce(initialState(), { type: 'addModels', models: [{ id: 'k', owner: 'p1', name: 'Knight of Minas Tirith', x: 5, y: 5, base: { shape: 'rect', w: 25, h: 50 } } as Model] });
+    expect(s.models.k.base).toEqual({ shape: 'round', w: 40, h: 40 });
+  });
+});
