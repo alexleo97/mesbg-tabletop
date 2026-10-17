@@ -45,7 +45,8 @@ describe('warbands', () => {
     expect(checks.map(c => [c.ok, c.text])).toEqual([
       [false, 'Add a hero to lead your first warband.'],
       [false, "2 units aren't in a warband yet."],
-      [false, '5 of 10 warriors carry bows (usual limit 4, a third rounded up)'],
+      [false, '5 of 10 warriors carry bows (this army allows 4, a third rounded up)'],
     ]);
+    expect(checkList(entries, catalog, undefined, 0.5).at(-1)).toEqual({ ok: true, text: '5 of 10 warriors carry bows (this army allows 5, half rounded up)' });
   });
 });

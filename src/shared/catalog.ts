@@ -27,11 +27,30 @@ export interface CatalogUnit {
   unique?: boolean;
   warbandSize?: number;
   pickOne?: boolean;
+  /** Each rule, heroic action and magical power by name, pointing at its explanation in rules-text.json. */
+  ruleRefs?: Record<string, string>;
+  heroics?: string[];
+  powers?: { name: string; range: string; cast: string }[];
+  /** For a hero: the warriors allowed in their warband, when the army limits it. */
+  followers?: string[];
+}
+
+export interface CatalogArmy {
+  side: string;
+  units: string[];
+  rules: string[];
+  /** The army's bonuses, each with its explanation id. */
+  bonuses?: { name: string; id: string }[];
+  /** Explanation ids for the army's own limits on what can be taken. */
+  restrictions?: string[];
+  /** Fraction of warriors that may carry bows (0.33 is a third), and the same for throwing weapons. */
+  bowLimit?: number;
+  throwLimit?: number;
 }
 
 export interface Catalog {
   source: string;
-  armies: Record<string, { side: string; units: string[]; rules: string[] }>;
+  armies: Record<string, CatalogArmy>;
   units: Record<string, CatalogUnit>;
 }
 
@@ -42,6 +61,13 @@ let catalogPromise: Promise<Catalog> | null = null;
 export function loadCatalog(): Promise<Catalog> {
   catalogPromise ??= import('../data/mesbg-data.json').then(m => (m.default ?? m) as unknown as Catalog);
   return catalogPromise;
+}
+
+let rulesPromise: Promise<Record<string, string>> | null = null;
+/** Loads the plain-words explanation of every rule, keyed by the ids in `ruleRefs`. */
+export function loadRulesText(): Promise<Record<string, string>> {
+  rulesPromise ??= import('../data/rules-text.json').then(m => (m.default ?? m) as unknown as Record<string, string>);
+  return rulesPromise;
 }
 
 const IMAGE_HOST = 'https://resources.mesbg-list-builder.com/v2024/images/profiles';

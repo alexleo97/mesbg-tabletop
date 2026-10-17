@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { entriesFor, entryPoints, isHeroType, loadCatalog, pictureUrl, STAT_NAMES, statsWithOptions, type Catalog, type CatalogUnit } from '../shared/catalog.ts';
+import { entriesFor, entryPoints, isHeroType, loadCatalog, loadRulesText, pictureUrl, STAT_NAMES, statsWithOptions, type Catalog, type CatalogArmy, type CatalogUnit } from '../shared/catalog.ts';
 import { armyLeader, checkList, isWarrior, leadsWarband, modelCount, organise, tierOf, type WarbandEntry } from '../shared/warbands.ts';
 import RULES from '../data/special-rules.json';
 import type { ListEntry } from '../shared/importList.ts';
@@ -51,6 +51,15 @@ export function useCatalog() {
     loadCatalog().then(setCatalog, () => setError(true));
   }, []);
   return { catalog, error };
+}
+
+/** The plain-words explanation of every rule, once it has loaded. */
+export function useRulesText() {
+  const [text, setText] = useState<Record<string, string>>({});
+  useEffect(() => {
+    loadRulesText().then(setText, () => {});
+  }, []);
+  return text;
 }
 
 export function Portrait({ unit, size = 40 }: { unit: Pick<CatalogUnit, 'origin' | 'name'>; size?: number }) {
@@ -203,7 +212,8 @@ export function ListBuilder({ onDeploy, deployLabel, wide: page }: { onDeploy?: 
   const models = roster.entries.reduce((a, e) => a + modelCount(catalog.units[e.unitId], e.count), 0);
   const { warbands, independents, loose } = organise(roster.entries, catalog);
   const leader = armyLeader(roster.entries, catalog, roster.leader);
-  const checks = checkList(roster.entries, catalog, roster.points);
+  const army = catalog.armies[roster.army] as CatalogArmy | undefined;
+  const checks = checkList(roster.entries, catalog, roster.points, army?.bowLimit);
 
   const toggleOption = (e: RosterEntry, unit: CatalogUnit, optId: string) => {
     const on = e.optionIds.includes(optId);
@@ -215,7 +225,9 @@ export function ListBuilder({ onDeploy, deployLabel, wide: page }: { onDeploy?: 
     const lead = picking?.lead;
     const w = warbands.find(x => x.leader.key === lead);
     const room = w ? w.max - w.size : 5;
-    const count = isHeroType(u.type) || u.unique || u.type === 'Siege Engine' ? 1 : Math.max(1, Math.min(5, room));
+    // Big models like trolls start at one; rank-and-file start at five, or what the warband has room for.
+    const big = Number(u.stats?.[6] ?? 1) > 1;
+    const count = isHeroType(u.type) || u.unique || u.type === 'Siege Engine' || big ? 1 : Math.max(1, Math.min(5, room));
     const key = uid();
     setRoster(r => ({ ...r, entries: [...r.entries, { key, unitId: id, count, optionIds: [], lead }] }));
     // A new hero is usually followed by their warriors, so go straight to picking those.
@@ -313,14 +325,14 @@ export function ListBuilder({ onDeploy, deployLabel, wide: page }: { onDeploy?: 
     );
   };
 
+  const pickFor = picking?.lead ? warbands.find(w => w.leader.key === picking.lead) : undefined;
   const pickList = picking
     ? catalog.armies[roster.army].units
         .map(id => [id, catalog.units[id]] as const)
-        .filter(([, u]) => (picking.lead ? isWarrior(u) : !isWarrior(u)))
+        .filter(([id, u]) => (picking.lead ? isWarrior(u) && (!pickFor?.unit.followers?.length || pickFor.unit.followers.includes(id)) : !isWarrior(u)))
         .filter(([, u]) => u.name.toLowerCase().includes(filter.toLowerCase()))
         .sort(([, a], [, b]) => tierOf(b) - tierOf(a) || b.points - a.points)
     : [];
-  const pickFor = picking?.lead ? warbands.find(w => w.leader.key === picking.lead) : undefined;
 
   const picker = picking && (
     <div className="unit-picker">
@@ -440,14 +452,25 @@ export function ListBuilder({ onDeploy, deployLabel, wide: page }: { onDeploy?: 
             </optgroup>
           ))}
         </select>
-        <select aria-label="Points limit" value={roster.points ?? ''} onChange={e => setRoster(r => ({ ...r, points: Number(e.target.value) || undefined }))}>
-          <option value="">No points limit</option>
+        <label className="points-input" title="Type any size, like 750. Leave it empty for no limit.">
+          <input
+            type="number"
+            inputMode="numeric"
+            min={0}
+            step={50}
+            list="points-sizes"
+            placeholder="Points limit"
+            aria-label="Points limit"
+            value={roster.points ?? ''}
+            onChange={e => setRoster(r => ({ ...r, points: Math.max(0, Math.round(Number(e.target.value))) || undefined }))}
+          />
+          <span>pts</span>
+        </label>
+        <datalist id="points-sizes">
           {POINTS.map(p => (
-            <option key={p} value={p}>
-              {p} pts game
-            </option>
+            <option key={p} value={p} />
           ))}
-        </select>
+        </datalist>
       </div>
       {next && <p className="next-step">👉 {next}</p>}
 
@@ -525,22 +548,35 @@ export function ListBuilder({ onDeploy, deployLabel, wide: page }: { onDeploy?: 
                 {deployLabel}
               </button>
             )}
-            <p className="fine">Points, profiles and options come from the MESBG List Builder's data. Check army-specific rules (like a different bow limit) in your army's book.</p>
+            {!wide && army && <ArmyInfo name={roster.army} army={army} />}
+            <p className="fine">Points, profiles and options come from the MESBG List Builder's data. Rule explanations are in our own words.</p>
           </div>
-          {wide && <div className="builder-pick">{picker || <ArmyGuide />}</div>}
+          {wide && <div className="builder-pick">{picker || (army && <ArmyInfo name={roster.army} army={army} />)}</div>}
         </div>
       )}
-      {wide && !roster.army && !showGuide && <ArmyGuide />}
     </div>
   );
 }
 
-const POINTS = [200, 300, 400, 500, 600, 700, 800, 1000];
+const POINTS = [200, 300, 400, 500, 600, 700, 750, 800, 1000];
 const SUMMARIES = RULES as Record<string, string>;
 
 /** A unit's full profile: characteristics, Might/Will/Fate, wargear, options and special rules. */
 export function UnitCard({ unit, optionIds = [], showOptions }: { unit: CatalogUnit; optionIds?: string[]; showOptions?: boolean }) {
   const [rule, setRule] = useState<string | null>(null);
+  const text = useRulesText();
+  const explain = (name: string) => text[unit.ruleRefs?.[name] ?? ''] ?? SUMMARIES[name] ?? SUMMARIES[name.replace(/\s*\(.*$/, '').trim()];
+  const chips = (names: string[], label = (n: string) => n) => (
+    <div className="row wrap">
+      {names.map(n => (
+        <button key={n} className={`rule-chip ${rule === n ? 'on' : ''}`} aria-expanded={rule === n} onClick={() => setRule(rule === n ? null : n)}>
+          {label(n)}
+        </button>
+      ))}
+    </div>
+  );
+  const shown = (names: string[]) => rule && names.includes(rule) && <p className="uc-rule">{explain(rule) ?? (Object.keys(text).length ? 'We have no explanation for this rule yet.' : 'Loading…')}</p>;
+  const powers = unit.powers ?? [];
   const stats = statsWithOptions(unit, optionIds) ?? unit.stats;
   const hero = isHeroType(unit.type);
   return (
@@ -595,14 +631,28 @@ export function UnitCard({ unit, optionIds = [], showOptions }: { unit: CatalogU
       {unit.rules.length > 0 && (
         <div className="uc-rules">
           <small>Special rules</small>
-          <div className="row wrap">
-            {unit.rules.map(r => (
-              <button key={r} className={`rule-chip ${rule === r ? 'on' : ''}`} onClick={() => setRule(rule === r ? null : r)}>
-                {r}
-              </button>
-            ))}
-          </div>
-          {rule && <p className="uc-rule">{SUMMARIES[rule] ?? `Look up "${rule}" in this unit's army book for its full wording.`}</p>}
+          {chips(unit.rules)}
+          {shown(unit.rules)}
+        </div>
+      )}
+      {!!unit.heroics?.length && (
+        <div className="uc-rules">
+          <small>Heroic actions</small>
+          {chips(unit.heroics)}
+          {shown(unit.heroics)}
+        </div>
+      )}
+      {powers.length > 0 && (
+        <div className="uc-rules">
+          <small>Magical powers</small>
+          {chips(
+            powers.map(p => p.name),
+            n => {
+              const p = powers.find(x => x.name === n)!;
+              return `${n} · ${p.range} · ${p.cast}`;
+            },
+          )}
+          {shown(powers.map(p => p.name))}
         </div>
       )}
     </div>
@@ -621,12 +671,12 @@ const STAT_TITLES: Record<string, string> = {
   I: 'Intelligence: the roll needed to resist some magic and tests',
 };
 
-/** A short, step-by-step walk through building an army, in this site's own words. */
+/** Six short steps for building an army, shown only when asked for. */
 export function ArmyGuide({ close }: { close?: () => void }) {
   return (
     <section className="army-guide">
       <header>
-        <h3>How to build an army</h3>
+        <h3>Building an army</h3>
         {close && (
           <button className="shrink icon-btn" onClick={close} aria-label="Close guide">
             ✕
@@ -634,32 +684,50 @@ export function ArmyGuide({ close }: { close?: () => void }) {
         )}
       </header>
       <ol>
-        <li>
-          <b>Agree a size.</b> You and your opponent pick a points limit. 200 to 300 points is a quick first game; 500 to 800 is a full evening.
-        </li>
-        <li>
-          <b>Choose an army.</b> Each army list has its own heroes and warriors, plus a few bonuses for its army. Sticking to one list keeps those bonuses.
-        </li>
-        <li>
-          <b>Add a hero.</b> Your army is made of warbands, and every warband needs a hero in charge. The hero's tier sets how many models can follow them: Legend 18, Valour 15, Fortitude 12, Minor 6. Independent heroes fight on their own with no followers.
-        </li>
-        <li>
-          <b>Fill the warband.</b> Add warriors up to the hero's limit. Give them options like shields, spears or banners if you have the points.
-        </li>
-        <li>
-          <b>Watch your bows.</b> In most armies no more than a third of your warriors (rounded up) may carry bows or crossbows. Some armies change this; their book says so.
-        </li>
-        <li>
-          <b>More warbands.</b> Got points left? Add another hero and give them a warband too. Big armies usually have two or three.
-        </li>
-        <li>
-          <b>Pick a leader.</b> One hero leads the whole army, usually the highest tier. Tap ☆ next to a hero to choose. Keep them alive: losing your leader hurts your army's nerve.
-        </li>
-        <li>
-          <b>Play.</b> Your list saves itself. In a game, open the ⚔ Army tab, pick the list and deploy it in one tap.
-        </li>
+        <li>Agree a points limit with your opponent and type it in.</li>
+        <li>Pick an army.</li>
+        <li>Add a hero. Each hero leads a warband.</li>
+        <li>Fill the warband with warriors, up to the number shown.</li>
+        <li>Add more heroes and warbands until you hit your points.</li>
+        <li>Tap ☆ to pick your leader. Fix anything marked ⚠.</li>
       </ol>
-      <p className="fine">Tap ⓘ on any unit to see its full card: stats, wargear and special rules. The checks above your list flag anything that breaks the usual rules.</p>
+    </section>
+  );
+}
+
+/** The army's own bonuses and limits, each opened with a tap. */
+function ArmyInfo({ name, army }: { name: string; army: CatalogArmy }) {
+  const text = useRulesText();
+  const [open, setOpen] = useState<string | null>(null);
+  const bonuses = army.bonuses ?? [];
+  const limits = (army.restrictions ?? []).map(id => text[id]).filter(Boolean);
+  const share = (f = 1 / 3) => (Math.abs(f - 1 / 3) < 0.01 ? 'a third' : f === 0.5 ? 'half' : `${Math.round(f * 100)}%`);
+  return (
+    <section className="army-info">
+      <h3>{name}</h3>
+      {bonuses.length > 0 && (
+        <>
+          <small>Army bonuses</small>
+          <ul>
+            {bonuses.map(b => (
+              <li key={b.id}>
+                <button className={`army-rule ${open === b.id ? 'on' : ''}`} aria-expanded={open === b.id} onClick={() => setOpen(open === b.id ? null : b.id)}>
+                  {b.name.replace(/^"|"$/g, '')}
+                </button>
+                {open === b.id && <p>{text[b.id] ?? 'Loading…'}</p>}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      <small>Limits</small>
+      <ul className="army-limits">
+        <li>Up to {share(army.bowLimit)} of your warriors (rounded up) may carry bows.</li>
+        <li>Up to {share(army.throwLimit)} may carry throwing weapons.</li>
+        {limits.map((t, i) => (
+          <li key={i}>{t}</li>
+        ))}
+      </ul>
     </section>
   );
 }
