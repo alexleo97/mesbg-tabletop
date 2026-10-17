@@ -876,3 +876,5 @@ details.finish summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
 .fix-points { margin-top: 8px; }
 .fix-points summary, .other-rolls summary { color: var(--muted); font-size: 0.85rem; cursor: pointer; }
 .fix-points .stepper { margin-top: 6px; }
+table.vp tr.auto .vp-cell { text-align: center; }
+table.vp tr.auto .vp-cell b { color: var(--gold); }

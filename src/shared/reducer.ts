@@ -1,5 +1,6 @@
 import { heroicInfo } from './heroics.ts';
 import { limitMove, moveStart, movesLimited } from './movement.ts';
+import { endPhaseUpkeep } from './scoring.ts';
 import { MATS, PHASES, TERRAIN_KINDS, type Action, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type Phase, type Seat, type Terrain } from './types.ts';
 
 export const MAX_MODELS = 600;
@@ -29,6 +30,8 @@ const newFlow = (): Flow => ({ started: false, chooser: null, chooserTurn: 0, ro
 /** Moves to a phase (and turn), clearing who has finished; a new turn also clears fights and priority. */
 function goTo(state: GameState, phase: Phase, turn: number): GameState {
   const newTurn = turn !== state.turn;
+  // Scenario bookkeeping happens as the End phase begins.
+  const upkeep = phase === 'end' && state.phase !== 'end' && state.flow.started ? endPhaseUpkeep(state) : {};
   return {
     ...state,
     phase,
@@ -42,6 +45,7 @@ function goTo(state: GameState, phase: Phase, turn: number): GameState {
       passed: [],
       lastHeroic: null,
       starts: {},
+      ...upkeep,
     },
   };
 }
@@ -103,6 +107,11 @@ export function cleanModel(m: Partial<Model>, prev?: Model): Model | null {
   if (profileId) out.profileId = profileId;
   const options = Array.isArray(m.options) ? m.options.slice(0, 12).map(o => str(o, 60)) : base.options;
   if (options?.length) out.options = options;
+  if (typeof m.general === 'boolean' ? m.general : base.general) out.general = true;
+  const points = m.points !== undefined ? int(m.points, 0, 9999, 0) : base.points;
+  if (points) out.points = points;
+  const tier = m.tier !== undefined ? int(m.tier, 0, 9, 0) : base.tier;
+  if (tier) out.tier = tier;
   out.wounds = int(m.wounds, 0, out.maxWounds, Math.min(base.wounds, out.maxWounds));
   const pending = 'pending' in m ? int(m.pending, 0, 30, 0) : (base.pending ?? 0);
   if (pending && out.hero && !out.dead) out.pending = pending;
@@ -139,6 +148,11 @@ function cleanPath(p: unknown): [number, number, number][] | undefined {
   const out = p.slice(0, 120).filter(v => Array.isArray(v) && v.length === 3 && v.every(n => typeof n === 'number' && Number.isFinite(n)));
   if (out.length < 2) return undefined;
   return out.map(([x, y, hw]) => [num(x, -60, 60, 0), num(y, -60, 60, 0), num(hw, 0.2, 8, 1)]);
+}
+
+/** Numbers by id from untrusted JSON. */
+function cleanCounts(v: object, max: number): Record<string, number> {
+  return Object.fromEntries(Object.entries(v).slice(0, 500).map(([k, n]) => [k.slice(0, 80), int(n, 0, max, 0)]));
 }
 
 /** Move phase starting points from untrusted JSON. */
@@ -274,7 +288,12 @@ export function reduce(state: GameState, action: Action): GameState {
         turn: 1,
         priority: null,
         result: undefined,
-        flow: { ...newFlow(), started: true, ...(Number.isFinite(action.at) ? { startedAt: Number(action.at) } : {}) },
+        flow: {
+          ...newFlow(),
+          started: true,
+          ...(Number.isFinite(action.at) ? { startedAt: Number(action.at) } : {}),
+          startFate: Object.fromEntries(Object.values(state.models).filter(m => m.hero).map(m => [m.id, m.fate])),
+        },
       };
     case 'priorityRolled': {
       if (!isSeat(action.chooser) || !Array.isArray(action.roll)) return state;
@@ -523,6 +542,11 @@ export function loadState(raw: unknown): GameState {
         lastHeroic: isSeat(f.lastHeroic) ? f.lastHeroic : null,
         ...(Number.isFinite(f.startedAt) ? { startedAt: Number(f.startedAt) } : {}),
         ...(f.starts ? { starts: cleanStarts(f.starts) } : {}),
+        ...(f.startFate && typeof f.startFate === 'object' ? { startFate: cleanCounts(f.startFate, 9) } : {}),
+        ...(f.control && typeof f.control === 'object'
+          ? { control: Object.fromEntries(Object.entries(f.control).slice(0, 50).map(([k, v]) => [k.slice(0, 80), isSeat(v) ? v : null])) }
+          : {}),
+        ...(f.fort && typeof f.fort === 'object' ? { fort: { p1: int(f.fort.p1, 0, 999, 0), p2: int(f.fort.p2, 0, 999, 0) } } : {}),
       },
     };
   }

@@ -35,6 +35,11 @@ export interface Model {
   /** Unit id in the bundled MESBG data, used for the stat card and photo. */
   profileId?: string;
   options?: string[];
+  /** The army's General, marked when the list was deployed. */
+  general?: boolean;
+  /** What the model cost in the list, and its heroic tier (5 for a Hero of Legend), for scenarios that score them. */
+  points?: number;
+  tier?: number;
   /** Wounds this hero has suffered but not yet taken, while they decide on Fate rolls. */
   pending?: number;
   /** The hero's last failed Fate roll for the current wound, which Might could still turn into a save. */
@@ -163,6 +168,12 @@ export interface Flow {
   startedAt?: number;
   /** Where each model that has moved this Move phase started from, so its Move is counted across drags. */
   starts?: Record<string, [number, number]>;
+  /** Each hero's Fate at the start of the game, so Fate spent can be counted. */
+  startFate?: Record<string, number>;
+  /** Who holds each objective, for scenarios where control lasts until someone else takes it. */
+  control?: Record<string, Seat | null>;
+  /** Fortification Points earned so far, for scenarios that keep a running total. */
+  fort?: Record<Seat, number>;
 }
 
 export interface Heroic {

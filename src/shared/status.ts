@@ -1,4 +1,5 @@
-import { scenarioById, vpTotal } from './scenarios.ts';
+import { scenarioById } from './scenarios.ts';
+import { vpTotals } from './scoring.ts';
 import type { GameState, Seat } from './types.ts';
 
 export interface ArmyStatus {
@@ -83,6 +84,6 @@ export function gameWinner(state: GameState): Seat | 'draw' | null {
     if (gone.length === 1) return gone[0] === 'p1' ? 'p2' : 'p1';
   }
   if (!scenarioById(state.scenario) || !gameEnded(state)) return null;
-  const vp = { p1: vpTotal(state.vp.p1), p2: vpTotal(state.vp.p2) };
+  const vp = vpTotals(state);
   return vp.p1 === vp.p2 ? 'draw' : vp.p1 > vp.p2 ? 'p1' : 'p2';
 }

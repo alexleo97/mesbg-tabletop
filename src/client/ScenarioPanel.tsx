@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { newId } from '../shared/importList.ts';
 import { COMMON_RULES, POOLS, SCENARIOS, scenarioById, scenarioFromDice, scenarioMarkers, SELECTION_RULE, vpTotal } from '../shared/scenarios.ts';
+import { scoreLines, vpTotals } from '../shared/scoring.ts';
 import type { Action, GameState, Role, Seat } from '../shared/types.ts';
 
 type Dispatch = (a: Action) => void;
@@ -76,6 +77,7 @@ export function ScenarioPanel({ state, dispatch, role }: { state: GameState; dis
           </p>
 
           <h4>Victory points</h4>
+          <p className="fine">The game scores what it can see as if the game ended now. Lines marked ✎ are yours to enter.</p>
           <table className="vp">
             <thead>
               <tr>
@@ -88,16 +90,21 @@ export function ScenarioPanel({ state, dispatch, role }: { state: GameState; dis
               </tr>
             </thead>
             <tbody>
-              {s.scoring.map((line, i) => (
-                <tr key={i}>
+              {scoreLines(state).map((line, i) => (
+                <tr key={i} className={line.auto ? 'auto' : 'manual'}>
                   <td>
+                    {!line.auto && <span title="Enter this one yourself">✎ </span>}
                     {line.label}
                     <small>{line.points} VP</small>
                   </td>
                   {(['p1', 'p2'] as const).map(seat => {
                     const key = String(i);
-                    const v = state.vp[seat][key] ?? 0;
-                    return (
+                    const v = line.vp[seat];
+                    return line.auto ? (
+                      <td key={seat} className="vp-cell">
+                        <b>{v}</b>
+                      </td>
+                    ) : (
                       <td key={seat} className="vp-cell">
                         <button disabled={spectator || v === 0} onClick={() => dispatch({ type: 'setVP', seat, key, value: v - 1 })} aria-label={`Less ${seatName(seat)} VP`}>
                           −
@@ -113,8 +120,8 @@ export function ScenarioPanel({ state, dispatch, role }: { state: GameState; dis
               ))}
               <tr className="total">
                 <td>Total</td>
-                <td>{vpTotal(state.vp.p1)}</td>
-                <td>{vpTotal(state.vp.p2)}</td>
+                <td>{vpTotals(state).p1}</td>
+                <td>{vpTotals(state).p2}</td>
               </tr>
             </tbody>
           </table>

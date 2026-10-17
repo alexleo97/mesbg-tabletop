@@ -14,7 +14,8 @@ import { ModelCard, weaponOf } from './ModelCard.tsx';
 import { SightHint } from './SightHint.tsx';
 import { combats } from '../shared/flow.ts';
 import { distanceBetween, formatInches } from '../shared/geometry.ts';
-import { scenarioById, vpTotal } from '../shared/scenarios.ts';
+import { scenarioById } from '../shared/scenarios.ts';
+import { vpTotals } from '../shared/scoring.ts';
 import { useSettings, type Settings } from './settings.ts';
 import { Tutorial } from './Tutorial.tsx';
 import { HeroArt } from './HeroArt.tsx';
@@ -383,7 +384,7 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
         <BrokenTags state={state} />
         {scenarioById(state.scenario) && (
           <button className="vp-chip" onClick={() => openTab('table')} title={scenarioById(state.scenario)!.name}>
-            VP <b className="p1">{vpTotal(state.vp.p1)}</b>–<b className="p2">{vpTotal(state.vp.p2)}</b>
+            VP <b className="p1">{vpTotals(state).p1}</b>–<b className="p2">{vpTotals(state).p2}</b>
           </button>
         )}
         <nav className="panel-buttons" aria-label="Panels">
