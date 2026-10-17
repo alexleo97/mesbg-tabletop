@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BOT_NAME, PHASES, type Terrain, type Model, type Role, type RoomSummary, type Seat } from '../shared/types.ts';
+import { BOT_NAME, BOT_SPEEDS, PHASES, type Terrain, type Model, type Role, type RoomSummary, type Seat } from '../shared/types.ts';
 import { Board, type Tool } from './Board.tsx';
 import { RoomConnection, useRoom, type Connection } from './net.ts';
 import { pictureUrl } from '../shared/catalog.ts';
@@ -402,6 +402,15 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
             </span>
           ))}
         </div>
+        {state.bot && seat && (
+          <button
+            className="bot-speed"
+            onClick={() => dispatch({ type: 'setBotSpeed', speed: BOT_SPEEDS[(BOT_SPEEDS.indexOf(state.botSpeed ?? 'normal') + 1) % BOT_SPEEDS.length] })}
+            title={`How fast ${BOT_NAME.replace(/^The /, 'the ')} plays its turn. Click to change.`}
+          >
+            {{ normal: '▶ Normal', fast: '⏩ Fast', instant: '⏭ Instant' }[state.botSpeed ?? 'normal']}
+          </button>
+        )}
         <BrokenTags state={state} />
         {scenarioById(state.scenario) && (
           <button className="vp-chip" onClick={() => openTab('table')} title={scenarioById(state.scenario)!.name}>

@@ -168,6 +168,8 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
     }
     case 'setPick':
       return action.seat === client.role ? action : null;
+    case 'setBotSpeed':
+      return action;
     case 'setBot':
       // A player can hand the other seat to the computer (if nobody's sitting in it), or take it back.
       if (action.seat === null) return action;
@@ -286,6 +288,8 @@ function closeVoice(room: Room) {
 }
 
 const BOT_PAUSE = 500;
+/** The Palantír speed setting shortens every pause between the computer's steps. */
+const BOT_PACE = { normal: 1, fast: 0.35, instant: 0.05 };
 
 /** Lines up the computer's next step, if it plays in this game and someone is here to see it. */
 function scheduleBot(room: Room, delay = BOT_PAUSE) {
@@ -300,7 +304,7 @@ function scheduleBot(room: Room, delay = BOT_PAUSE) {
   bot.timer = setTimeout(() => {
     bot.timer = undefined;
     runBot(room);
-  }, delay);
+  }, Math.max(30, delay * BOT_PACE[room.state.botSpeed ?? 'normal']));
 }
 
 /** Plays the computer's next step: one move, roll or choice, then a pause before the next. */

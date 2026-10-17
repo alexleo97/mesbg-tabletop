@@ -77,6 +77,44 @@ function ZoneShape({ m, pad, className }: { m: Model; pad: number; className: st
   return <ellipse className={className} rx={rx + pad} ry={ry + pad} />;
 }
 
+/**
+ * Move zones and 1" control zones of the selected models. With a group selected the zones are merged into one
+ * outline with a single faint fill, so twenty overlapping circles don't fog the table.
+ */
+function MoveZones({ state, models }: { state: GameState; models: Model[] }) {
+  if (!models.length) return null;
+  // In the Move phase the move zone stays where the model began the phase, so you can see how far it can still go.
+  const starts = models.map(m => ({ m, s: movesLimited(state, m) ? { ...m, ...moveStart(state, m) } : m }));
+  const zones = (className: string) =>
+    starts.map(({ m, s }) => (
+      <g key={m.id} transform={`translate(${s.x} ${s.y}) rotate(${s.rot})`}>
+        <ZoneShape m={m} pad={m.move} className={className} />
+      </g>
+    ));
+  return (
+    <g pointerEvents="none">
+      <mask id="move-zones-inside" maskUnits="userSpaceOnUse" x={-50} y={-50} width={state.board.w + 100} height={state.board.h + 100}>
+        <rect x={-50} y={-50} width={state.board.w + 100} height={state.board.h + 100} fill="#fff" />
+        {zones('zone-mask')}
+      </mask>
+      <g className="zone-fill">{zones('zone-solid')}</g>
+      <g mask="url(#move-zones-inside)">{zones('zone-move')}</g>
+      {starts.map(({ m, s }) => (
+        <g key={`z-${m.id}`}>
+          {inDifficult(state, s) && (
+            <g transform={`translate(${s.x} ${s.y}) rotate(${s.rot})`}>
+              <ZoneShape m={m} pad={m.move / 2} className="zone-move slow" />
+            </g>
+          )}
+          <g transform={`translate(${m.x} ${m.y}) rotate(${m.rot})`}>
+            <ZoneShape m={m} pad={1} className="zone-control" />
+          </g>
+        </g>
+      ))}
+    </g>
+  );
+}
+
 function BaseShape({ m, className = 'base' }: { m: Model; className?: string }) {
   const { rx, ry } = halfExtents(m.base);
   if (m.base.shape === 'rect') return <rect className={className} x={-rx} y={-ry} width={2 * rx} height={2 * ry} rx={0.04} />;
@@ -497,23 +535,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
           )}
           {showDeployment && scenarioById(state.scenario) && <ScenarioZones s={scenarioById(state.scenario)!} w={state.board.w} h={state.board.h} />}
 
-          {models.filter(m => selected.has(m.id)).map(m => {
-            // In the Move phase the move zone stays where the model began the phase, so you can see how far it can still go.
-            const s = movesLimited(state, m) ? { ...m, ...moveStart(state, m) } : m;
-            return (
-              <g key={`z-${m.id}`} pointerEvents="none">
-                <g transform={`translate(${s.x} ${s.y}) rotate(${s.rot})`}>
-                  {showZones && <ZoneShape m={m} pad={m.move} className="zone-move" />}
-                  {showZones && inDifficult(state, s) && <ZoneShape m={m} pad={m.move / 2} className="zone-move slow" />}
-                </g>
-                {showZones && (
-                  <g transform={`translate(${m.x} ${m.y}) rotate(${m.rot})`}>
-                    <ZoneShape m={m} pad={1} className="zone-control" />
-                  </g>
-                )}
-              </g>
-            );
-          })}
+          {showZones && <MoveZones state={state} models={models.filter(m => selected.has(m.id))} />}
 
           {dragPos &&
             gesture?.kind === 'drag' &&

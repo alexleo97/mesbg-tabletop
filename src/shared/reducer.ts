@@ -3,7 +3,7 @@ import { heroicInfo } from './heroics.ts';
 import { limitMove, moveStart, movesLimited } from './movement.ts';
 import { canPickUp, markerUpkeep, syncCarried, touching, canEscape } from './objects.ts';
 import { endPhaseUpkeep } from './scoring.ts';
-import { BOT_NAME, MARKER_OBJECTS, MATS, PHASES, PICK_KEYS, TERRAIN_KINDS, type Action, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type Phase, type Picks, type Seat, type Terrain } from './types.ts';
+import { BOT_NAME, BOT_SPEEDS, MARKER_OBJECTS, MATS, PHASES, PICK_KEYS, TERRAIN_KINDS, type Action, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type Phase, type Picks, type Seat, type Terrain } from './types.ts';
 
 export const MAX_MODELS = 600;
 export const MAX_TERRAIN = 200;
@@ -507,6 +507,8 @@ function step(state: GameState, action: Action): GameState {
       // Nobody else can join a solo game, so it leaves the open games list.
       return { ...state, bot: action.seat, listed: false, names: { ...state.names, [action.seat]: state.names[action.seat] || BOT_NAME } };
     }
+    case 'setBotSpeed':
+      return BOT_SPEEDS.includes(action.speed) ? { ...state, botSpeed: action.speed === 'normal' ? undefined : action.speed } : state;
     case 'setPriority':
       return { ...state, priority: isSeat(action.seat) ? action.seat : null };
     case 'setScenario': {
@@ -650,6 +652,7 @@ export function loadState(raw: unknown): GameState {
   if (o.listed === false) out = { ...out, listed: false };
   if (o.private === true) out = { ...out, private: true, listed: false };
   if (isSeat(o.bot)) out = { ...out, bot: o.bot };
+  if (o.botSpeed) out = reduce(out, { type: 'setBotSpeed', speed: o.botSpeed });
   if (o.flow && typeof o.flow === 'object') {
     const f = o.flow as Partial<Flow>;
     const seats = (v: unknown) => (Array.isArray(v) ? [...new Set(v.filter(isSeat))] : []);
