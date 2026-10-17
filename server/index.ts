@@ -121,6 +121,7 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
     case 'undo':
     case 'priorityRolled':
     case 'fateRolled':
+    case 'uncovered':
     case 'seatAccount':
     case 'setPrivate':
     case 'resultSaved':
@@ -142,6 +143,16 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
       return mine(action.model) ? action : null;
     case 'takeWound':
       return mine(action.id) ? action : null;
+    case 'pickUp':
+    case 'flip':
+    case 'escape':
+      return mine(action.model) ? action : null;
+    case 'drop': {
+      const carrier = state.terrain[action.marker]?.carrier;
+      return mine(carrier) ? action : null;
+    }
+    case 'setPick':
+      return action.seat === client.role ? action : null;
     case 'useMight': {
       // Only on your own hero's roll (in a fight, either player may have rolled it).
       const r = state.log.find(x => x.id === action.roll);

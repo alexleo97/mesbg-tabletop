@@ -66,7 +66,9 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
   const strikes = () => lastGroup && dispatch({ type: 'strikes', fight: request(), group: lastGroup });
   const applyWounds = () => {
     if (!victimModel || !lastGroup) return;
-    dispatch({ type: 'wound', id: victimModel.id, count: wounds });
+    // Whoever struck the blows gets the credit, for scenarios that count kills.
+    const by = [...new Set(lastRolls.filter(r => r.against === victimModel.id && r.model).map(r => r.model!))];
+    dispatch({ type: 'wound', id: victimModel.id, count: wounds, by, how: 'fight' });
     setApplied(lastGroup);
   };
   const sideName = (i: 0 | 1) => {

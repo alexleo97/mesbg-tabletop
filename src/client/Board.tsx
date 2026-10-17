@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { distanceBetween, distanceToBase, formatInches, halfExtents, type Point } from '../shared/geometry.ts';
-import type { Action, GameState, Model } from '../shared/types.ts';
+import type { Action, GameState, Model, Terrain } from '../shared/types.ts';
+import { markerName, markerNotes } from '../shared/objects.ts';
 import { TerrainArt, TerrainDefs } from './TerrainArt.tsx';
 import { ScenarioZones } from './ScenarioZones.tsx';
 import { scenarioById } from '../shared/scenarios.ts';
@@ -93,11 +94,16 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
   const lastSend = useRef(0);
   const fitted = useRef(false);
 
-  const models = useMemo(() => Object.values(state.models).filter(m => !m.dead), [state.models]);
+  // Models that left the table over an edge are off it.
+  const models = useMemo(() => Object.values(state.models).filter(m => !m.dead && !m.escaped), [state.models]);
   // Roads and water lie on the ground, under everything else; bridges sit on top of the water.
   const terrain = useMemo(() => {
     const layer = (k: string) => (k === 'road' ? 0 : k === 'water' ? 1 : k === 'bridge' ? 3 : 2);
-    return Object.values(state.terrain).sort((a, b) => layer(a.kind) - layer(b.kind));
+    // Markers carried off, destroyed, rescued or turned over as decoys are gone; carried ones are drawn last.
+    const layerOf = (t: Terrain) => (t.carrier ? 4 : layer(t.kind));
+    return Object.values(state.terrain)
+      .filter(t => !t.gone)
+      .sort((a, b) => layerOf(a) - layerOf(b));
   }, [state.terrain]);
   const viewer = sightFrom ? state.models[sightFrom] : undefined;
   const sight = useMemo(() => {
@@ -186,7 +192,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
   const terrainAt = (p: Point, any = false) => {
     for (let i = terrain.length - 1; i >= 0; i--) {
       const t = terrain[i];
-      if (t.locked && !any) continue;
+      if ((t.locked || t.carrier) && !any) continue;
       const a = (-t.rot * Math.PI) / 180;
       const dx = p.x - t.x;
       const dy = p.y - t.y;
@@ -648,12 +654,13 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
         const t = at && state.terrain[at.id];
         if (!at || !t) return null;
         const info = TERRAIN_INFO[t.kind];
+        const marker = t.object && markerName(state, t);
         return (
           <div className={`terrain-tip ${pinned ? 'pinned' : ''}`} style={{ left: at.x, top: at.y }} role="status">
-            <b>{info.name}</b> <small>{info.type}</small>
+            <b>{marker || info.name}</b> <small>{info.type}</small>
             {pinned ? (
               <ul>
-                {terrainRules(t).map(r => (
+                {(t.object ? markerNotes(t) : terrainRules(t)).map(r => (
                   <li key={r}>{r}</li>
                 ))}
               </ul>

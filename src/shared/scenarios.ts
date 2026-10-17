@@ -39,20 +39,46 @@ export function scenarioFromDice(dice: number[]): Scenario | undefined {
   return SCENARIOS.filter(s => s.pool === pool)[pick - 1];
 }
 
-/** Objective markers for the scenario's fixed positions, scaled to the board size. */
-export function scenarioMarkers(s: Scenario, w: number, h: number, newId: (p: string) => string): Terrain[] {
-  return (s.objectives.fixedPositions ?? []).map(([x, y]) => ({
+/** Objective markers for the scenario's fixed positions, scaled to the board size, set up as what they stand for. */
+export function scenarioMarkers(s: Scenario, w: number, h: number, newId: (p: string) => string, rand: () => number = Math.random): Terrain[] {
+  const spots = (s.objectives.fixedPositions ?? []).map(([x, y]) => [(x / 48) * w, (y / 48) * h] as [number, number]);
+  const setup = markerSetup(s.id, s.objectives.markerKind, spots, h / 2, rand);
+  return spots.map(([x, y], i) => ({
     id: newId('t'),
     kind: 'objective',
     shape: 'circle',
-    x: (x / 48) * w,
-    y: (y / 48) * h,
+    x,
+    y,
     w: 1.6,
     h: 1.6,
     rot: 0,
     // Players place and nudge markers themselves, so they can be dragged.
     locked: false,
+    ...setup[i],
   }));
+}
+
+/** What each fixed marker of a scenario is, when it is more than a plain objective (positions already scaled). */
+function markerSetup(scenarioId: string, kind: string, positions: [number, number][], half: number, rand: () => number): Partial<Terrain>[] {
+  switch (kind) {
+    case 'relic':
+      // The first is player 1's.
+      return positions.map((p, i) => ({ object: 'relic', side: i === 0 ? 'p1' : 'p2', home: p }));
+    case 'artefact':
+      return positions.map(() => ({ object: 'artefact', hidden: true }));
+    case 'heirloom': {
+      if (scenarioId !== 'heirloom-of-ages-past') return positions.map(() => ({ object: 'heirloom' }));
+      // One real Heirloom among face-down decoys.
+      const real = Math.floor(rand() * positions.length);
+      return positions.map((_, i) => ({ object: i === real ? 'heirloom' : 'decoy', hidden: true }));
+    }
+    case 'supply':
+      return positions.map(([, y]) => ({ object: 'supply', side: y > half ? 'p1' : 'p2' }));
+    case 'wounded-ally':
+      return positions.map(([, y]) => ({ object: 'ally', side: y > half ? 'p1' : 'p2' }));
+    default:
+      return positions.map(() => ({}));
+  }
 }
 
 /** Sum of a player's victory points. */
