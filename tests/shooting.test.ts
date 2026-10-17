@@ -62,3 +62,17 @@ describe('fights', () => {
     expect(fightDone(s, { key: 'b,|,c', p1: ['b'], p2: ['c'] })).toBe(false);
   });
 });
+
+describe('one fight a turn', () => {
+  it('leaves a model that already fought out of a second fight', () => {
+    let s = run(initialState(), { type: 'addModels', models: [mk('a', 'p1', 10, 20), mk('b', 'p1', 12, 20), mk('x', 'p2', 30, 30), mk('y', 'p2', 12, 19)] }, { type: 'startGame' }, { type: 'setPhase', phase: 'fight' });
+    // "a" fought "x" and backed away into the fight between "b" and "y".
+    s = run(s, { type: 'resolveCombat', key: 'a,|,x' });
+    const req = { sides: [[{ id: 'a', name: 'A', f: 3, a: 1, s: 3, d: 4 }, { id: 'b', name: 'B', f: 3, a: 1, s: 3, d: 4 }], [{ id: 'y', name: 'Y', f: 3, a: 1, s: 3, d: 4 }]], targets: ['y', 'a'], trapped: false };
+    const out = resolveRequest(s, 'p1', { type: 'fight', fight: req } as Action, () => 4, uid)!;
+    const rolled = run(s, ...out.apply).log.filter(r => r.label.startsWith('Duel')).map(r => r.model);
+    expect(rolled).toEqual(['b', 'y']);
+    // With only models that have fought on one side, there's no fight.
+    expect(resolveRequest(s, 'p1', { type: 'fight', fight: { ...req, sides: [[req.sides[0][0]], req.sides[1]] } } as Action, () => 4, uid)).toBeNull();
+  });
+});

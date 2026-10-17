@@ -1,8 +1,8 @@
 import { backAway } from './backAway.ts';
 import { inTheWay } from './sight.ts';
-import { cleanFight, cleanShot, resolveDuel, resolveShot, resolveStrikes } from './fight.ts';
+import { cleanFight, cleanShot, resolveDuel, resolveShot, resolveStrikes, type Fighter, type FightRequest } from './fight.ts';
 import { combatFromKey, priorityChooser } from './flow.ts';
-import { fightDone } from './movement.ts';
+import { fightDone, foughtThisTurn } from './movement.ts';
 import { touching } from './objects.ts';
 import { MAX_DICE } from './reducer.ts';
 import type { Action, DiceRoll, GameState, Seat } from './types.ts';
@@ -25,6 +25,19 @@ function duelOpen(state: GameState, ids: string[]) {
   const set = new Set(ids);
   const r = [...state.log].reverse().find(x => x.group?.startsWith('f-') && x.side !== undefined && x.model && set.has(x.model));
   return !!r && !!state.flow.duels?.includes(r.group!) && !state.log.some(x => x.group === r.group && (x.against || x.note || x.label.startsWith('Roll-off')));
+}
+
+/**
+ * Leaves out of a fight any model that has already fought this turn, such as one that backed away from its own
+ * fight into another. Null if that leaves a side with no one.
+ */
+function freshFighters(state: GameState, req: FightRequest | null): FightRequest | null {
+  if (!req || !state.flow.started || state.phase !== 'fight') return req;
+  const fought = foughtThisTurn(state);
+  const sides = req.sides.map(side => side.filter(f => !fought.has(f.id))) as [Fighter[], Fighter[]];
+  if (!sides[0].length || !sides[1].length) return null;
+  const target = (id: string, side: Fighter[]) => (side.some(f => f.id === id) ? id : side[0].id);
+  return { ...req, sides, targets: [target(req.targets[0], sides[1]), target(req.targets[1], sides[0])] };
 }
 
 /**
@@ -59,12 +72,12 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       };
     }
     case 'fight': {
-      const req = cleanFight(action.fight);
+      const req = freshFighters(state, cleanFight(action.fight));
       if (!req || (state.flow.started && req.combat && fightDone(state, combatFromKey(state, req.combat) ?? { key: req.combat, p1: [], p2: [] })) || duelOpen(state, req.sides.flat().map(f => f.id))) return null;
       return { apply: resolveDuel(req, d6, seat, `f-${uid()}`, now).map(roll => ({ type: 'rolled', roll })) };
     }
     case 'strikes': {
-      const req = cleanFight(action.fight);
+      const req = freshFighters(state, cleanFight(action.fight));
       const group = String(action.group ?? '');
       const rolls = state.log.filter(r => r.group === group);
       // Strikes follow a duel that's still in the log, once.
