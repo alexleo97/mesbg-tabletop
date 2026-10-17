@@ -1,5 +1,5 @@
 import { useEffect, useState, type Ref } from 'react';
-import { modelStats, pictureUrl, statsWithOptions, STAT_NAMES, type Catalog } from '../shared/catalog.ts';
+import { loadRulesText, modelStats, pictureUrl, statsWithOptions, STAT_NAMES, type Catalog } from '../shared/catalog.ts';
 import { strikeWounds } from '../shared/fight.ts';
 import type { Combat } from '../shared/flow.ts';
 import { heroicInfo } from '../shared/heroics.ts';
@@ -71,6 +71,11 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
   const unit = m.profileId ? catalog?.units[m.profileId] : undefined;
   const printed = unit && statsWithOptions(unit, unit.options.filter(o => m.options?.includes(o.name)).map(o => o.id));
   const stats = modelStats(catalog, m);
+  const [rulesText, setRulesText] = useState<Record<string, string>>({});
+  useEffect(() => {
+    loadRulesText().then(setRulesText, () => {});
+  }, []);
+  const explain = (r: string) => rulesText[unit?.ruleRefs?.[r] ?? ''] ?? ruleSummary(r);
   const mine = role === m.owner;
   const weapon = weaponOf(m, catalog);
   const patch = (p: Partial<Model>) => dispatch({ type: 'updateModel', id: m.id, patch: p });
@@ -202,14 +207,14 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
       {rules.length > 0 && (
         <div className="rule-chips">
           {rules.map(r => {
-            const known = ruleSummary(r);
+            const known = explain(r);
             return (
               <button key={r} className={`rule-chip ${openRule === r ? 'on' : ''} ${known ? '' : 'plain'}`} onClick={() => setOpenRule(openRule === r ? null : r)} aria-expanded={openRule === r}>
                 {r}
               </button>
             );
           })}
-          {openRule && <p className="rule-text">{ruleSummary(openRule) ?? 'No summary for this rule yet: check the army book.'}</p>}
+          {openRule && <p className="rule-text">{explain(openRule) ?? (Object.keys(rulesText).length ? 'We have no explanation for this rule yet.' : 'Loading…')}</p>}
         </div>
       )}
       {terrifying.length > 0 && (

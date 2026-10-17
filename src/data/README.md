@@ -7,7 +7,11 @@ git clone --depth 1 https://github.com/mhollink/mesbg-list-builder-v2024 ../mesb
 node scripts/import-mlb-data.mjs ../mesbg-list-builder-v2024
 ```
 
-What's copied: army lists, unit names and types, points, options, profile characteristics, Might/Will/Fate/Wounds, wargear, and the *names* of special rules. Rule descriptions are not copied.
+What's copied: army lists, unit names and types, points, options, profile characteristics, Might/Will/Fate/Wounds, wargear, the *names* of special rules, heroic actions and magical powers (with range and casting value), which warriors each hero may lead, and each army's bow and throwing limits. Rule descriptions are not copied.
+
+## rules-text.json
+
+A plain-words explanation of every special rule, heroic action, magical power, army bonus and army restriction, keyed by a short id the importer gives each one (`ruleRefs` on units, `bonuses` and `restrictions` on armies). These were written in our own words, using the list builder's descriptions only as a reference for the mechanics; no Games Workshop wording is reproduced. When the importer finds a rule with no explanation yet, it lists it so one can be written.
 
 Unit photos are not stored in this repository. The app shows them by linking to the list builder's own image host (`resources.mesbg-list-builder.com`), and you can turn them off in the Table panel.
 

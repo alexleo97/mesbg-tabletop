@@ -88,7 +88,7 @@ export interface ListCheck {
 }
 
 /** Plain-language checks for a list: a hero to lead it, warband sizes, the bow limit and the points limit. */
-export function checkList(entries: WarbandEntry[], catalog: Catalog, pointsLimit?: number): ListCheck[] {
+export function checkList(entries: WarbandEntry[], catalog: Catalog, pointsLimit?: number, bowLimit = 1 / 3): ListCheck[] {
   const out: ListCheck[] = [];
   const { warbands, loose } = organise(entries, catalog);
   const points = entries.reduce((a, e) => a + entryPoints(catalog.units[e.unitId], e.optionIds, e.count), 0);
@@ -102,8 +102,11 @@ export function checkList(entries: WarbandEntry[], catalog: Catalog, pointsLimit
   const warriors = entries.filter(e => isWarrior(catalog.units[e.unitId]));
   const total = warriors.reduce((a, e) => a + e.count, 0);
   const bows = warriors.filter(e => hasBow(catalog.units[e.unitId], e.optionIds)).reduce((a, e) => a + e.count, 0);
-  const limit = Math.ceil(total / 3);
-  if (bows) out.push({ ok: bows <= limit, text: `${bows} of ${total} warriors carry bows (usual limit ${limit}, a third rounded up)` });
+  // The data writes a third as 0.33.
+  const share = Math.abs(bowLimit - 1 / 3) < 0.01 ? 1 / 3 : bowLimit;
+  const limit = Math.ceil(total * share - 1e-9);
+  const words = share === 1 / 3 ? 'a third' : share === 0.5 ? 'half' : `${Math.round(share * 100)}%`;
+  if (bows) out.push({ ok: bows <= limit, text: `${bows} of ${total} warriors carry bows (this army allows ${limit}, ${words} rounded up)` });
 
   if (pointsLimit) {
     out.push(

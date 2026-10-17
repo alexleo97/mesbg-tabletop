@@ -675,7 +675,20 @@ details.finish summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
 .uc-mwf b { color: var(--gold); }
 .uc-line small, .uc-rules > small { color: var(--muted); margin-right: 4px; }
 .uc-rules { display: flex; flex-direction: column; gap: 4px; }
-.uc-rule { background: var(--panel-2); border-radius: 8px; padding: 6px 8px; }
+.uc-rule { background: var(--panel-2); border-radius: 8px; padding: 6px 8px; white-space: pre-line; line-height: 1.45; }
+.points-input { display: flex; flex-direction: row; align-items: center; gap: 6px; }
+.points-input input { flex: 1; min-width: 0; }
+.points-input span { color: var(--muted); font-size: 0.85rem; }
+.army-info { background: var(--panel-2); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+.builder-pick .army-info { margin-top: 0; }
+.army-info h3 { margin: 0; color: var(--gold); }
+.army-info small { color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.7rem; margin-top: 4px; }
+.army-info ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.army-info p { margin: 4px 0 6px; line-height: 1.45; white-space: pre-line; }
+.army-rule { width: 100%; text-align: left; min-height: 32px; }
+.army-rule.on { background: transparent; border-color: var(--gold); color: var(--gold); }
+.army-limits li { line-height: 1.45; white-space: pre-line; }
+.army-limits li + li { border-top: 1px solid var(--line); padding-top: 4px; }
 .army-guide { background: var(--panel-2); border-radius: 12px; padding: 12px 14px; }
 .army-guide header { display: flex; align-items: center; justify-content: space-between; }
 .army-guide h3 { margin: 0; color: var(--gold); }
