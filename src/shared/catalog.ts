@@ -110,6 +110,20 @@ export function modelStats(catalog: Catalog | null | undefined, m: { profileId?:
   return out;
 }
 
+/** Mounts that come with the profile (a Knight's horse), with how far they carry the rider. */
+const MOUNTS: [RegExp, number][] = [
+  [/\b(armoured )?horse\b|\bsteed\b|\bcamel\b/i, 10],
+  [/\bwarg\b/i, 10],
+  [/\bpony\b|\bgoat\b/i, 8],
+];
+function wargearMount(unit: CatalogUnit): { name: string; mv: number } | undefined {
+  for (const w of unit.wargear) {
+    const hit = MOUNTS.find(([re]) => re.test(w));
+    if (hit) return { name: w, mv: hit[1] };
+  }
+  return undefined;
+}
+
 function mountBase(name: string): Base {
   const b = guessBase(name);
   if (b.shape === 'round' && b.w === 25) return { shape: 'rect', w: 25, h: 50 };
@@ -122,12 +136,13 @@ function mountBase(name: string): Base {
  */
 export function entriesFor(id: string, unit: CatalogUnit, optionIds: string[], count: number): ListEntry[] {
   const chosen = unit.options.filter(o => optionIds.includes(o.id) || o.included);
-  const mount = chosen.find(o => o.mount);
+  const chosenMount = chosen.find(o => o.mount);
+  const mount = chosenMount ? { name: chosenMount.name, mv: chosenMount.mountMv } : wargearMount(unit);
   const stats = statsWithOptions(unit, optionIds);
   const mv = stats ? parseFloat(stats[0]) : NaN;
   const statW = stats ? parseInt(stats[6], 10) : NaN;
   const base = mount ? mountBase(mount.name) : guessBase(unit.name);
-  const move = mount?.mountMv ?? (Number.isFinite(mv) ? mv : undefined);
+  const move = mount?.mv ?? (Number.isFinite(mv) ? mv : undefined);
   const hero = isHeroType(unit.type);
   const parts = unit.mwfw?.length ? unit.mwfw : [['', '']];
 
@@ -147,6 +162,15 @@ export function entriesFor(id: string, unit: CatalogUnit, optionIds: string[], c
       options: chosen.map(o => o.name),
     };
   });
+}
+
+/** A hero's starting Might, Will and Fate from its profile, the most it can ever have; null for a model without one. */
+export function startingPoints(catalog: Catalog | null | undefined, m: { profileId?: string; name: string }): { might: number; will: number; fate: number } | null {
+  const unit = m.profileId ? catalog?.units[m.profileId] : undefined;
+  if (!unit?.mwfw?.length) return null;
+  const row = unit.mwfw.find(([n]) => n && n === m.name) ?? unit.mwfw[0];
+  const [might, will, fate] = (row[1] || '').split(':').map(v => parseInt(v, 10) || 0);
+  return { might, will, fate };
 }
 
 export function entryPoints(unit: CatalogUnit | undefined, optionIds: string[], count: number): number {

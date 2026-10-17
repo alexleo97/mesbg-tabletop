@@ -46,6 +46,8 @@ describe('guessBase', () => {
     expect(guessBase('Knight of Minas Tirith')).toEqual({ shape: 'rect', w: 25, h: 50 });
     expect(guessBase('Cave Troll')).toEqual({ shape: 'round', w: 40, h: 40 });
     expect(guessBase('Mordor Orc Warrior')).toEqual({ shape: 'round', w: 25, h: 25 });
+    // "Strider" contains "rider" but Aragorn is on foot.
+    expect(guessBase('Aragorn, Strider')).toEqual({ shape: 'round', w: 25, h: 25 });
   });
 });
 
@@ -63,6 +65,35 @@ describe('deployList', () => {
       expect(m.x).toBeLessThan(48);
       expect(m.y).toBeGreaterThan(36);
     }
+  });
+
+  it('deploys each warband as its own block, hero in front', () => {
+    const entries = [
+      { name: 'Captain', count: 1, hero: true, group: 'a' },
+      { name: 'Warrior', count: 8, hero: false, group: 'a' },
+      { name: 'Lieutenant', count: 1, hero: true, group: 'b' },
+      { name: 'Archer', count: 6, hero: false, group: 'b' },
+    ];
+    const ms = deployList(entries, 'p1', initialState());
+    const a = ms.filter(m => ['Captain', 'Warrior'].includes(m.name));
+    const b = ms.filter(m => ['Lieutenant', 'Archer'].includes(m.name));
+    // The two warbands don't interleave: one sits wholly to the left of the other, with a gap.
+    expect(Math.min(...b.map(m => m.x)) - Math.max(...a.map(m => m.x))).toBeGreaterThan(1.5);
+    // Each hero stands nearer the enemy (smaller y for player 1) than all of their followers.
+    const captain = a.find(m => m.hero)!;
+    for (const m of a.filter(m => !m.hero)) expect(captain.y).toBeLessThan(m.y);
+  });
+
+  it('puts a warband deployed later beside the first, not behind it', () => {
+    let s = initialState();
+    const first = deployList([{ name: 'Captain', count: 1, hero: true }, { name: 'Warrior', count: 10, hero: false }], 'p1', s);
+    s = reduce(s, { type: 'addModels', models: first });
+    const second = deployList([{ name: 'Lieutenant', count: 1, hero: true }, { name: 'Archer', count: 6, hero: false }], 'p1', s);
+    const all = [...first, ...second];
+    for (let i = 0; i < all.length; i++)
+      for (let j = i + 1; j < all.length; j++) expect(distanceBetween(all[i], all[j])).toBeGreaterThan(0.05);
+    // Both sit against the deployment edge.
+    expect(Math.max(...second.map(m => m.y))).toBeGreaterThan(Math.max(...first.map(m => m.y)) - 0.5);
   });
 
   it('puts player 2 at the top of the board facing down', () => {

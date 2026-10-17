@@ -5,7 +5,7 @@ import { isDifficult } from '../shared/sight.ts';
 import { TERRAIN_GROUPS, TERRAIN_INFO, terrainRules } from '../shared/terrain.ts';
 import { useRef, useState } from 'react';
 import { objectiveMarkers, river, STARTER_BOARDS, starterTerrain } from '../shared/boards.ts';
-import { loadCatalog, parseBuilderExport, STAT_NAMES, statsWithOptions } from '../shared/catalog.ts';
+import { loadCatalog, parseBuilderExport, STAT_NAMES, startingPoints, statsWithOptions } from '../shared/catalog.ts';
 import { deployList, guessBase, newId, parseList, type ListEntry } from '../shared/importList.ts';
 import { ListBuilder, SavedLists, Portrait, useCatalog } from './ListBuilder.tsx';
 import { MATS, TERRAIN_KINDS, type Action, type Base, type DiceRoll, type GameState, type Mat, type Model, type Role, type Seat, type Terrain, type TerrainKind } from '../shared/types.ts';
@@ -69,6 +69,7 @@ function StatCard({ m }: { m: Model }) {
 }
 
 export function SelectionPanel({ state, selected, dispatch, clear }: { state: GameState; selected: Set<string>; dispatch: Dispatch; clear: () => void }) {
+  const { catalog } = useCatalog();
   const ms = [...selected].map(id => state.models[id]).filter((m): m is Model => Boolean(m));
   if (ms.length === 0) return <p className="hint">Tap a model to select it. In Select mode, drag a box to pick a group.</p>;
 
@@ -113,24 +114,41 @@ export function SelectionPanel({ state, selected, dispatch, clear }: { state: Ga
 
   const m = ms[0];
   const patch = (p: Partial<Model>) => dispatch({ type: 'updateModel', id: m.id, patch: p });
+  const fromList = !!(m.profileId && catalog?.units[m.profileId]);
+  const start = startingPoints(catalog, m);
   return (
     <div className="panel-body">
-      <input className="name-input" value={m.name} onChange={e => patch({ name: e.target.value })} aria-label="Model name" />
+      {fromList ? <h3>{m.name}</h3> : <input className="name-input" value={m.name} onChange={e => patch({ name: e.target.value })} aria-label="Model name" />}
       <StatCard m={m} />
-      <div className="row muted">
-        <span>{m.owner === 'p1' ? 'Player 1' : 'Player 2'}</span>
-        <label className="check">
-          <input type="checkbox" checked={m.hero} onChange={e => patch({ hero: e.target.checked })} /> Hero
-        </label>
-      </div>
-      <Stepper label="Move" value={m.move} min={0} max={24} onChange={v => patch({ move: v })} />
-      <Stepper label="Wounds" value={m.wounds} min={0} max={m.maxWounds} onChange={v => patch({ wounds: v })} />
-      <Stepper label="Max wounds" value={m.maxWounds} min={1} max={30} onChange={v => patch({ maxWounds: v, wounds: m.wounds === m.maxWounds ? v : Math.min(m.wounds, v) })} />
-      {m.hero && (
+      {fromList ? (
+        // Models from an army list play by their profile; the game spends Might, Will and Fate and tracks wounds.
+        start && (
+          <details className="fix-points">
+            <summary>Correct a mistake</summary>
+            <Stepper label="Wounds" value={m.wounds} min={0} max={m.maxWounds} onChange={v => patch({ wounds: v })} />
+            <Stepper label="Might" value={m.might} min={0} max={start.might} onChange={v => patch({ might: v })} />
+            <Stepper label="Will" value={m.will} min={0} max={start.will} onChange={v => patch({ will: v })} />
+            <Stepper label="Fate" value={m.fate} min={0} max={start.fate} onChange={v => patch({ fate: v })} />
+          </details>
+        )
+      ) : (
         <>
-          <Stepper label="Might" value={m.might} min={0} max={9} onChange={v => patch({ might: v })} />
-          <Stepper label="Will" value={m.will} min={0} max={9} onChange={v => patch({ will: v })} />
-          <Stepper label="Fate" value={m.fate} min={0} max={9} onChange={v => patch({ fate: v })} />
+          <div className="row muted">
+            <span>{m.owner === 'p1' ? 'Player 1' : 'Player 2'}</span>
+            <label className="check">
+              <input type="checkbox" checked={m.hero} onChange={e => patch({ hero: e.target.checked })} /> Hero
+            </label>
+          </div>
+          <Stepper label="Move" value={m.move} min={0} max={24} onChange={v => patch({ move: v })} />
+          <Stepper label="Wounds" value={m.wounds} min={0} max={m.maxWounds} onChange={v => patch({ wounds: v })} />
+          <Stepper label="Max wounds" value={m.maxWounds} min={1} max={30} onChange={v => patch({ maxWounds: v, wounds: m.wounds === m.maxWounds ? v : Math.min(m.wounds, v) })} />
+          {m.hero && (
+            <>
+              <Stepper label="Might" value={m.might} min={0} max={9} onChange={v => patch({ might: v })} />
+              <Stepper label="Will" value={m.will} min={0} max={9} onChange={v => patch({ will: v })} />
+              <Stepper label="Fate" value={m.fate} min={0} max={9} onChange={v => patch({ fate: v })} />
+            </>
+          )}
         </>
       )}
       <label>
@@ -246,7 +264,7 @@ export function ArmyPanel({ state, dispatch, role }: { state: GameState; dispatc
   const deploy = (entries: ListEntry[], note = '') => {
     const count = entries.reduce((a, e) => a + e.count, 0);
     dispatch({ type: 'addModels', models: deployList(entries, owner, state) });
-    setMessage(`Deployed ${count} models for ${state.names[owner] || (owner === 'p1' ? 'Player 1' : 'Player 2')}.${note}`);
+    setMessage(`Deployed ${count === 1 ? '1 model' : `${count} models`} for ${state.names[owner] || (owner === 'p1' ? 'Player 1' : 'Player 2')}.${note}`);
   };
 
   const importText = async (input: string) => {

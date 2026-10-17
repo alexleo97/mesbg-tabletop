@@ -255,10 +255,10 @@ export const CHAPTERS: Chapter[] = [
         body: (
           <>
             <p>A hit has to wound before it hurts. Compare the weapon's Strength with the target's Defence on the wound chart: the stronger the hit and the weaker the armour, the lower the roll you need.</p>
-            <p>Some results read like 6/4: roll a 6, then a 4+ on a second die. The 📖 Rules tab works out the roll for any Strength and Defence.</p>
+            <p>Some results read like 6/4: roll a 6, then a 4+ on a second die. When you shoot or fight from the model card, the game works this out for you.</p>
           </>
         ),
-        task: 'In 📖 Rules, set a Strength and Defence and roll to wound.',
+        task: 'In 📖 Rules, open Other rolls, set a Strength and Defence and roll to wound.',
         setup: () => inPhase('shoot'),
         done: rolled('To wound'),
       },
@@ -481,8 +481,8 @@ export const CHAPTERS: Chapter[] = [
             <p>A hero who rolls a 6 when resisting gets that Will point back.</p>
           </>
         ),
-        task: 'In 📖 Rules, cast for the Shaman until the power works, then select your Captain and press Resist.',
-        setup: () => inPhase('move', { add: [model('shaman', 'Orc Shaman', 'p2', 10, 12, SHAMAN, { hero: true, might: 1, will: 3, fate: 1, wounds: 2, maxWounds: 2 })] }),
+        task: 'Select the Shaman and cast in 📖 Rules until a power works, then select your Captain and press Resist.',
+        setup: () => inPhase('move', { add: [model('shaman', 'Orc Shaman', 'p2', 10, 12, SHAMAN, { hero: true, might: 1, will: 6, fate: 1, wounds: 2, maxWounds: 2 })] }),
         done: rolled('Resist '),
       },
       {
