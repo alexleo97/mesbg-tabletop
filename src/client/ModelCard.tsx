@@ -221,18 +221,15 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
           {openRule && <p className="rule-text">{explain(openRule) ?? (Object.keys(rulesText).length ? 'We have no explanation for this rule yet.' : 'Loading…')}</p>}
         </div>
       )}
-      {terrifying.length > 0 && (
-        <div className="terror">
-          {terrifying.map(e => (
-            <button
-              key={e.id}
-              onClick={() => dispatch({ type: 'roll', count: 2, label: `Courage to charge ${e.name} (Terror): ${m.name}`, model: m.id, ...(stats?.C ? { sum: stats.C } : {}) })}
-              title="Terror: the charger tests Courage at the start of its move. If it fails, it can't move this turn."
-            >
-              Charge {e.name}? Courage test (Terror)
-            </button>
-          ))}
-        </div>
+      {state.flow.courage?.[m.id] === false && state.phase === 'move' ? (
+        <p className="warn">{m.name} failed its Courage test, so it can't move this turn.</p>
+      ) : (
+        terrifying.length > 0 &&
+        state.flow.courage?.[m.id] === undefined && (
+          <p className="muted terror">
+            {terrifying.map(e => e.name).join(' and ')} {terrifying.length === 1 ? 'causes' : 'cause'} Terror. Move into contact to charge, and {m.name} tests its Courage first. If it fails, it stays put this turn.
+          </p>
+        )
       )}
       {action}
       {carried.length > 0 && <p className="muted carrying">Carrying {carried.map(t => `the ${OBJECT_NAMES[t.object!]}`).join(' and ')}.</p>}

@@ -262,8 +262,7 @@ small.muted, p.small { font-size: 0.8rem; }
 .rule-chip.plain { border-color: var(--line); color: var(--muted); }
 .rule-chip.on { background: var(--gold); color: var(--ink); }
 .rule-text { flex: 1 1 100%; margin: 2px 0 0; font-size: 0.85rem; background: var(--panel-2); border-radius: 8px; padding: 6px 8px; }
-.terror { display: flex; flex-wrap: wrap; gap: 6px; }
-.terror button { border-color: #ffb08a; color: #ffb08a; }
+.terror { color: #ffb08a; }
 
 /* Line of sight and difficult terrain */
 .los-shadow { fill: #000000; fill-opacity: 0.45; }

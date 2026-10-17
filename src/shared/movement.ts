@@ -1,6 +1,7 @@
 import { distanceBetween, type Point } from './geometry.ts';
 import { moveCost } from './sight.ts';
-import { canActivate } from './heroics.ts';
+import { combatFromKey } from './flow.ts';
+import { canActivate, phaseHeroics } from './heroics.ts';
 import type { GameState, Model } from './types.ts';
 
 /**
@@ -11,8 +12,26 @@ import type { GameState, Model } from './types.ts';
  */
 export function moveAllowance(state: GameState, m: Model): number | null {
   if (!state.flow.started || m.dead) return null;
-  if (state.phase === 'move') return canActivate(state, m.owner) ? m.move : 0;
-  return state.phase === 'fight' ? 1 : 0;
+  if (state.phase === 'move') return canActivate(state, m.owner) && state.flow.courage?.[m.id] !== false ? m.move : 0;
+  if (state.phase === 'fight') return heroicCombatWon(state, m) ? m.move : 1;
+  return 0;
+}
+
+/**
+ * Whether a model is free to move again in the Fight phase: its side's hero called a Heroic Combat, and the fight
+ * they were both in is over with every enemy in it slain. The model can then move (and charge) as in the Move phase.
+ */
+export function heroicCombatWon(state: GameState, m: Model): boolean {
+  if (state.phase !== 'fight' || m.dead) return false;
+  const heroes = phaseHeroics(state).filter(h => h.action === 'Heroic Combat' && state.models[h.model]?.owner === m.owner).map(h => h.model);
+  if (!heroes.length) return false;
+  return state.flow.resolved.some(key => {
+    const c = combatFromKey(state, key);
+    if (!c) return false;
+    const ours = m.owner === 'p1' ? c.p1 : c.p2;
+    const theirs = m.owner === 'p1' ? c.p2 : c.p1;
+    return ours.includes(m.id) && ours.some(id => heroes.includes(id)) && theirs.every(id => state.models[id].dead);
+  });
 }
 
 /** Whether a model's moves are held to an allowance this phase (see moveAllowance). */
@@ -46,7 +65,7 @@ export function limitMove(state: GameState, from: Point, to: Point, move: number
  * rest of the way into base contact, as long as its Move still reaches. Returns where it should end up.
  */
 export function settleMove(state: GameState, m: Model, at: Point): Point {
-  if (!movesLimited(state, m) || state.phase !== 'move') return at;
+  if (!movesLimited(state, m) || !(state.phase === 'move' || heroicCombatWon(state, m))) return at;
   const here = { ...m, ...at };
   let best: { e: Model; d: number } | null = null;
   for (const e of Object.values(state.models)) {

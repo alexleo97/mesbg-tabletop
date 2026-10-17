@@ -219,6 +219,10 @@ export interface Flow {
   /** When this game started (server time), so each game's result is recorded once. */
   startedAt?: number;
   /** Where each model that has moved this Move phase started from, so its Move is counted across drags. */
+  /** Courage tests taken this turn, by model: true if it passed. A model that fails can't move this turn. */
+  courage?: Record<string, boolean>;
+  /** Broken sides whose models have taken their Courage tests this turn. */
+  braved?: Seat[];
   starts?: Record<string, [number, number]>;
   /** Each hero's Fate at the start of the game, so Fate spent can be counted. */
   startFate?: Record<string, number>;
@@ -244,6 +248,8 @@ export type Action =
   | { type: 'moveModels'; moves: { id: string; x: number; y: number; rot?: number }[] }
   /** Losers of a fight backing away, worked out with the strikes (never sent by a player). */
   | { type: 'backAway'; moves: { id: string; x: number; y: number }[] }
+  /** Courage test results, worked out with the dice (never sent by a player). Models of a Broken side that fail flee. */
+  | { type: 'courageTaken'; results: Record<string, boolean>; broken?: Seat }
   | { type: 'updateModel'; id: string; patch: Partial<Omit<Model, 'id'>> }
   | { type: 'removeModels'; ids: string[] }
   | { type: 'addTerrain'; terrain: Terrain }

@@ -309,11 +309,11 @@ function moveStep(ctx: Ctx): BotStep {
       memo.acted.push(m.id);
       continue;
     }
-    const p = profile(ctx, m);
-    if (broken && memo.courage[m.id] === undefined) return courageTest(ctx, m, `Courage test: ${m.name}`);
-    if (memo.courage[m.id] === undefined && enemies.some(e => profile(ctx, e).terror && distanceBetween(m, e) <= p.mv + 1)) {
-      return courageTest(ctx, m, `Courage to charge (Terror): ${m.name}`);
-    }
+    // On the server the game rolls these tests itself (see courage.ts): a Broken army's as its turn to move starts,
+    // and a charge at a terrifying enemy as the charger makes contact.
+    const tested = state.flow.courage?.[m.id];
+    if (tested !== undefined) memo.courage[m.id] ??= tested;
+    if (broken && memo.courage[m.id] === undefined && !state.flow.braved?.includes(seat)) return courageTest(ctx, m, `Courage test: ${m.name}`);
     memo.acted.push(m.id);
     const to = planMove(ctx, m, goals.get(m.id));
     if (!to) {
