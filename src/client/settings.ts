@@ -46,6 +46,51 @@ export const THEMES: { id: string; name: string; vars: Vars }[] = [
     name: 'Mordor',
     vars: { bg: '#0f0b0a', panel: '#1a1311', 'panel-2': '#241a17', line: '#4a2f27', text: '#f0e2d8', muted: '#a88d80', gold: '#e0532a', ink: '#ffffff', field: '#0a0706', p1: '#4a86d8', p2: '#c23a2e' },
   },
+  {
+    id: 'isengard',
+    name: 'Isengard',
+    vars: { bg: '#121314', panel: '#1b1d1f', 'panel-2': '#25282b', line: '#43474c', text: '#e6e8ea', muted: '#9a9fa6', gold: '#d8dcdf', ink: '#121314', field: '#0d0e0f', p1: '#4a86d8', p2: '#cf3f34' },
+  },
+  {
+    id: 'moria',
+    name: 'Moria',
+    vars: { bg: '#0d0e12', panel: '#15171d', 'panel-2': '#1d2029', line: '#363b4a', text: '#e2e4ec', muted: '#959aab', gold: '#8fa6ff', ink: '#0d0e12', field: '#090a0d', p1: '#4f8fe6', p2: '#d24a3e' },
+  },
+  {
+    id: 'erebor',
+    name: 'Erebor',
+    vars: { bg: '#17130e', panel: '#211b14', 'panel-2': '#2c241a', line: '#4f4230', text: '#f2e7d3', muted: '#b19f80', gold: '#e8b53c', ink: '#17130e', field: '#100d09', p1: '#3f7fd4', p2: '#c8433a' },
+  },
+  {
+    id: 'lothlorien',
+    name: 'Lothlórien',
+    vars: { bg: '#1b1a10', panel: '#252317', 'panel-2': '#302d1e', line: '#545037', text: '#f4efd8', muted: '#b6ad87', gold: '#e7cf6a', ink: '#1b1a10', field: '#13120b', p1: '#4d8ade', p2: '#cc4a3d' },
+  },
+  {
+    id: 'fangorn',
+    name: 'Fangorn',
+    vars: { bg: '#121a12', panel: '#19231a', 'panel-2': '#212e22', line: '#3a4f3b', text: '#e3ecdf', muted: '#97ab94', gold: '#8fc46a', ink: '#121a12', field: '#0d130d', p1: '#4d8cdc', p2: '#c94a3c' },
+  },
+  {
+    id: 'harad',
+    name: 'Harad',
+    vars: { bg: '#1c120c', panel: '#271910', 'panel-2': '#332116', line: '#5a3b26', text: '#f6e6d2', muted: '#bf9d7e', gold: '#e8a33a', ink: '#1c120c', field: '#140c08', p1: '#3f80d6', p2: '#b9322a' },
+  },
+  {
+    id: 'rhun',
+    name: 'Rhûn',
+    vars: { bg: '#1a0f12', panel: '#24151a', 'panel-2': '#2f1c22', line: '#56323d', text: '#f3e3e6', muted: '#b9939b', gold: '#d9a441', ink: '#1a0f12', field: '#12090c', p1: '#4985da', p2: '#c73a3a' },
+  },
+  {
+    id: 'angmar',
+    name: 'Angmar',
+    vars: { bg: '#0e1216', panel: '#151b21', 'panel-2': '#1d252d', line: '#36434f', text: '#e4ebf1', muted: '#93a3b2', gold: '#9fc3e0', ink: '#0e1216', field: '#0a0d10', p1: '#4f8fe4', p2: '#cf4a40' },
+  },
+  {
+    id: 'dol-guldur',
+    name: 'Dol Guldur',
+    vars: { bg: '#100e14', panel: '#18151e', 'panel-2': '#211d29', line: '#3d354b', text: '#ebe5f2', muted: '#a397b3', gold: '#7fd17a', ink: '#100e14', field: '#0b0a0e', p1: '#4d8ce2', p2: '#cd463d' },
+  },
 ];
 
 const SYSTEM = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";

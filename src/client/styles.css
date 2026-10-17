@@ -773,9 +773,11 @@ details.finish summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
 .hero-art .hero-pan { animation: hero-pan 40s ease-in-out infinite alternate; transform-origin: 36px 25px; }
 @keyframes hero-pan { from { transform: scale(1.04) translate(-0.6px, 0); } to { transform: scale(1.1) translate(1.2px, -0.6px); } }
 @media (prefers-reduced-motion: reduce) { .hero-art .hero-pan { animation: none; } }
-.hero-base { stroke: #fff; stroke-width: 0.12; filter: drop-shadow(0 0.15px 0.2px #000a); }
-.hero-base.p1 { fill: var(--p1); }
-.hero-base.p2 { fill: var(--p2); }
+.hero-base { fill: var(--panel-2); filter: drop-shadow(0 0.12px 0.18px #000c); }
+.hero-ring { fill: none; stroke-width: 0.09; }
+.hero-token.p1 .hero-ring { stroke: var(--p1); }
+.hero-token.p2 .hero-ring { stroke: var(--p2); }
+.hero-token.hero .hero-ring { stroke: var(--gold); }
 .home-banner::before { content: ''; position: absolute; inset: 0; z-index: -1; background: linear-gradient(90deg, var(--bg) 0%, color-mix(in srgb, var(--bg) 88%, transparent) 38%, color-mix(in srgb, var(--bg) 30%, transparent) 70%, transparent 100%); }
 .home-hero { display: flex; flex-direction: column; gap: 18px; padding: 40px 44px; max-width: 620px; }
 .home-hero h1 { font-size: 2.8rem; line-height: 1.1; margin: 0; text-align: left; text-shadow: 0 2px 12px #000a; }

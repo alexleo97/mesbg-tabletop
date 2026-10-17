@@ -106,7 +106,7 @@ function Lobby({ settings, updateSettings }: { settings: Settings; updateSetting
         <HeroArt />
         <div className="home-hero">
           <h1>Play Middle-earth battles online</h1>
-          <p className="lead">Bring your army, pick a table and play a friend. The game keeps track of turns, rolls and rules for you, on a computer or a phone.</p>
+          <p className="lead">Bring your army, pick a table and play a friend. The game keeps track of turns, rolls and rules for you.</p>
           <div className="hero-actions">
             <button className="primary big" onClick={() => go(randomRoom())}>
               Start a new game
