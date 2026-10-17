@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { rename, signIn, signOut, statsFor, useAuth, type Profile, type Stats } from './auth.ts';
+import { armySummaries, listMaps, updateMap, type ArmySummary, type SavedMap } from './cloud.ts';
 
 function Avatar({ profile, size = 28 }: { profile: Profile; size?: number }) {
   return profile.avatar_url ? (
@@ -43,13 +44,23 @@ export function ProfilePage({ onHome }: { onHome: () => void }) {
   const [name, setName] = useState('');
   const [saved, setSaved] = useState<string | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
+  const [armies, setArmies] = useState<ArmySummary[] | null>(null);
+  const [maps, setMaps] = useState<SavedMap[] | null>(null);
 
   useEffect(() => {
     if (profile) setName(profile.username);
   }, [profile?.username]);
   useEffect(() => {
-    if (profile) void statsFor(profile.id).then(setStats);
+    if (!profile) return;
+    void statsFor(profile.id).then(setStats);
+    void armySummaries().then(setArmies);
+    void listMaps('mine').then(setMaps);
   }, [profile?.id]);
+
+  const share = async (m: SavedMap) => {
+    await updateMap(m.id, { public: !m.public });
+    setMaps(ms => ms?.map(x => (x.id === m.id ? { ...x, public: !x.public } : x)) ?? null);
+  };
 
   const save = async () => {
     const problem = await rename(name);
@@ -98,6 +109,46 @@ export function ProfilePage({ onHome }: { onHome: () => void }) {
             </div>
           </label>
           {saved && <p className="muted small">{saved}</p>}
+          <section className="profile-lists" aria-label="Your armies">
+            <h3>Your armies</h3>
+            {armies === null ? (
+              <p className="muted small">Loading…</p>
+            ) : armies.length === 0 ? (
+              <p className="muted small">Build a list in a game's ⚔ Army tab and it's saved here.</p>
+            ) : (
+              <ul>
+                {armies.map(a => (
+                  <li key={a.id}>
+                    <span>
+                      <b>{a.name}</b> <span className="muted">{a.faction}</span>
+                    </span>
+                    {a.points != null && <span className="muted">{a.points} pts</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+          <section className="profile-lists" aria-label="Your maps">
+            <h3>Your maps</h3>
+            {maps === null ? (
+              <p className="muted small">Loading…</p>
+            ) : maps.length === 0 ? (
+              <p className="muted small">Lay out terrain in a game, then save it from the ⛰ Table tab.</p>
+            ) : (
+              <ul>
+                {maps.map(m => (
+                  <li key={m.id}>
+                    <span>
+                      <b>{m.name}</b> <span className="muted">{m.data.terrain?.length ?? 0} pieces</span>
+                    </span>
+                    <label className="check">
+                      <input type="checkbox" checked={m.public} onChange={() => void share(m)} /> Shared
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
         </>
       )}
       <div className="row wrap center">
