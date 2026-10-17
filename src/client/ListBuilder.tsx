@@ -71,10 +71,15 @@ export function Portrait({ unit, size = 40 }: { unit: Pick<CatalogUnit, 'origin'
 /** A saved list as deployable entries, warband by warband, each tagged with its warband. */
 function listEntries(r: Roster, catalog: Catalog): { label: string; entries: ListEntry[] }[] {
   const { warbands, independents, loose } = organise(r.entries, catalog);
+  const general = armyLeader(r.entries, catalog, r.leader);
   const toEntries = (es: RosterEntry[], group: string) =>
     es.flatMap(e => {
       const unit = catalog.units[e.unitId];
-      return unit ? entriesFor(e.unitId, unit, e.optionIds, e.count).map(x => ({ ...x, group })) : [];
+      if (!unit) return [];
+      const points = entryPoints(unit, e.optionIds, 1);
+      const tier = tierOf(unit);
+      // A profile with a companion lists the hero first; only the hero is the General.
+      return entriesFor(e.unitId, unit, e.optionIds, e.count).map((x, i) => ({ ...x, group, points, tier, ...(e === general && i === 0 ? { general: true } : {}) }));
     });
   return [
     ...warbands.map(w => ({ label: w.members.length ? `${w.unit.name}'s warband` : w.unit.name, entries: toEntries([w.leader, ...w.members], w.leader.key) })),

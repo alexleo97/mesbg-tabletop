@@ -19,6 +19,10 @@ export interface ListEntry {
   options?: string[];
   /** The warband this belongs to (the same for a hero and their followers), so it deploys as one group. */
   group?: string;
+  /** The army's General; what one model cost; its heroic tier. Scenarios score these. */
+  general?: boolean;
+  points?: number;
+  tier?: number;
 }
 
 const NAME_KEYS = ['name', 'profile_origin', 'model_name', 'unit_name', 'title'];
@@ -291,6 +295,9 @@ export function deployList(entries: ListEntry[], owner: Seat, state: Pick<GameSt
         dead: false,
         ...(m.e.profileId ? { profileId: m.e.profileId } : {}),
         ...(m.e.options?.length ? { options: m.e.options } : {}),
+        ...(m.e.general ? { general: true } : {}),
+        ...(m.e.points ? { points: m.e.points } : {}),
+        ...(m.e.tier ? { tier: m.e.tier } : {}),
       };
       placed.push(model);
       const r = Math.max(m.w, m.h) / 2;

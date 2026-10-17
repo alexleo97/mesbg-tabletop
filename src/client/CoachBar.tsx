@@ -4,7 +4,8 @@ import { activeSeat, other, type Combat } from '../shared/flow.ts';
 import { canDeclare, heroicInfo, heroicsSettled, heroicTurn, HEROICS, orderRollLabel, orderRollNeeded, phaseHeroics } from '../shared/heroics.ts';
 import { RollRow } from './Panels.tsx';
 import { useDraggable } from './useDraggable.tsx';
-import { scenarioById, vpTotal } from '../shared/scenarios.ts';
+import { scenarioById } from '../shared/scenarios.ts';
+import { scoreLines, vpTotals } from '../shared/scoring.ts';
 import { armyStatus, endCheck, endRollLabel } from '../shared/status.ts';
 import { PHASES, type Action, type GameState, type Model, type Role, type Seat } from '../shared/types.ts';
 
@@ -318,11 +319,12 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
     const rollLabel = endRollLabel(state.turn);
     const endRoll = [...state.log].reverse().find(r => r.label === rollLabel);
     const over = check?.over || (endRoll !== undefined && endRoll.dice[0] <= 2);
-    const vp = { p1: vpTotal(state.vp.p1), p2: vpTotal(state.vp.p2) };
+    const vp = vpTotals(state);
+    const manual = scoreLines(state).some(l => !l.auto);
     const lead: Seat | null = vp.p1 === vp.p2 ? null : vp.p1 > vp.p2 ? 'p1' : 'p2';
     body = (
       <>
-        {scenarioById(state.scenario) && !over && <p>Score any victory points the scenario gives at the end of a turn in the Table tab.</p>}
+        {scenarioById(state.scenario) && manual && <p>The game keeps the score. Enter the lines it can't see, like secret picks or carried objects, in the Table tab.</p>}
         {check && <p className="warn">{check.reason}</p>}
         {check?.rollNeeded && !endRoll && me && (
           <button className="primary go" onClick={() => dispatch({ type: 'roll', count: 1, label: rollLabel })}>
