@@ -49,7 +49,15 @@ export function ScenarioPanel({ state, dispatch, role }: { state: GameState; dis
       <h4>Scenario</h4>
       <div className="row">
         <select value={state.scenario ?? ''} onChange={e => choose(e.target.value || null)} disabled={spectator} aria-label="Scenario">
-          <option value="">Open play (no scenario)</option>
+          {state.bot ? (
+            !state.scenario && (
+              <option value="" disabled>
+                Pick a scenario…
+              </option>
+            )
+          ) : (
+            <option value="">Open play (no scenario)</option>
+          )}
           {POOLS.slice(1).map((pool, i) => (
             <optgroup key={pool} label={`${i + 1}. ${pool}`}>
               {SCENARIOS.filter(x => x.pool === i + 1).map(x => (
