@@ -15,6 +15,8 @@ export function initialState(): GameState {
     priority: null,
     log: [],
     names: {},
+    scenario: null,
+    vp: { p1: {}, p2: {} },
   };
 }
 
@@ -183,6 +185,21 @@ export function reduce(state: GameState, action: Action): GameState {
     }
     case 'setPriority':
       return { ...state, priority: isSeat(action.seat) ? action.seat : null };
+    case 'setScenario': {
+      const id = action.id === null ? null : str(action.id, 40) || null;
+      return { ...state, scenario: id, vp: { p1: {}, p2: {} } };
+    }
+    case 'setVP': {
+      if (!isSeat(action.seat)) return state;
+      const key = str(action.key, 40);
+      if (!key) return state;
+      const tally = { ...state.vp[action.seat] };
+      const value = int(action.value, 0, 99, 0);
+      if (value) tally[key] = value;
+      else delete tally[key];
+      if (Object.keys(tally).length > 40) return state;
+      return { ...state, vp: { ...state.vp, [action.seat]: tally } };
+    }
     case 'setName':
       if (!isSeat(action.seat)) return state;
       return { ...state, names: { ...state.names, [action.seat]: str(action.name, 40) } };
@@ -225,6 +242,10 @@ export function loadState(raw: unknown): GameState {
   for (const seat of ['p1', 'p2'] as const) {
     const n = o.names?.[seat];
     if (n) out = reduce(out, { type: 'setName', seat, name: n });
+  }
+  if (typeof o.scenario === 'string') out = reduce(out, { type: 'setScenario', id: o.scenario });
+  for (const seat of ['p1', 'p2'] as const) {
+    for (const [key, value] of Object.entries(o.vp?.[seat] ?? {}).slice(0, 40)) out = reduce(out, { type: 'setVP', seat, key, value: value as number });
   }
   if (Array.isArray(o.log)) out = { ...out, log: o.log.map(cleanRoll).filter(r => r !== null).slice(-MAX_LOG) };
   return out;

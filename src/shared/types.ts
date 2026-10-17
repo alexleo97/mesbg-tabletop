@@ -80,6 +80,10 @@ export interface GameState {
   priority: Seat | null;
   log: DiceRoll[];
   names: Partial<Record<Seat, string>>;
+  /** The matched play scenario being played, if any (an id from scenarios.ts). */
+  scenario: string | null;
+  /** Victory points per player, keyed by scoring line, so both players see the same tally. */
+  vp: Record<Seat, Record<string, number>>;
 }
 
 export type Action =
@@ -94,6 +98,8 @@ export type Action =
   | { type: 'nextPhase' }
   | { type: 'setPriority'; seat: Seat | null }
   | { type: 'setName'; seat: Seat; name: string }
+  | { type: 'setScenario'; id: string | null }
+  | { type: 'setVP'; seat: Seat; key: string; value: number }
   | { type: 'setBoard'; w: number; h: number; mat?: Mat }
   /** Replaces the mat and all terrain at once, e.g. when loading a starter board. Models stay. */
   | { type: 'setScenery'; w: number; h: number; mat: Mat; terrain: Terrain[] }
