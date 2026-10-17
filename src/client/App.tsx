@@ -6,6 +6,8 @@ import { pictureUrl } from '../shared/catalog.ts';
 import { useCatalog } from './ListBuilder.tsx';
 import { ArmyPanel, DicePanel, SelectionPanel, SettingsPanel, TablePanel } from './Panels.tsx';
 import { RulesPanel } from './RulesPanel.tsx';
+import { ScenarioPanel } from './ScenarioPanel.tsx';
+import { scenarioById, vpTotal } from '../shared/scenarios.ts';
 import { useSettings, type Settings } from './settings.ts';
 
 const PLACES = ['osgiliath', 'helms-deep', 'weathertop', 'amon-hen', 'pelennor', 'fornost', 'dale', 'erebor', 'moria', 'isengard', 'edoras', 'lothlorien'];
@@ -165,6 +167,11 @@ function Game({ room, settings, updateSettings }: { room: string; settings: Sett
             Roll
           </button>
         </div>
+        {scenarioById(state.scenario) && (
+          <button className="vp-chip" onClick={() => openTab('table')} title={scenarioById(state.scenario)!.name}>
+            VP <b className="p1">{vpTotal(state.vp.p1)}</b>–<b className="p2">{vpTotal(state.vp.p2)}</b>
+          </button>
+        )}
         <div className="me desktop-only">
           {role !== 'spectator' ? (
             <input
@@ -200,6 +207,7 @@ function Game({ room, settings, updateSettings }: { room: string; settings: Sett
           }}
           dispatch={role === 'spectator' ? () => {} : dispatch}
           showZones={settings.zones}
+          showDeployment={settings.deployment}
           showGrid={settings.grid}
           photoFor={m => {
             const unit = settings.photos && m.profileId ? catalog?.units[m.profileId] : undefined;
@@ -252,6 +260,7 @@ function Game({ room, settings, updateSettings }: { room: string; settings: Sett
                     </select>
                   </div>
                 </div>
+              <ScenarioPanel state={state} dispatch={dispatch} role={role} />
               <TablePanel
                 state={state}
                 dispatch={dispatch}

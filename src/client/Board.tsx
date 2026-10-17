@@ -2,6 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { distanceBetween, distanceToBase, formatInches, halfExtents, type Point } from '../shared/geometry.ts';
 import type { Action, GameState, Model } from '../shared/types.ts';
 import { TerrainArt, TerrainDefs } from './TerrainArt.tsx';
+import { ScenarioZones } from './ScenarioZones.tsx';
+import { scenarioById } from '../shared/scenarios.ts';
 import { MATERIALS, textures } from './textures.ts';
 
 export type Tool = 'move' | 'select' | 'measure';
@@ -15,6 +17,7 @@ interface Props {
   setSelectedTerrain: (id: string | null) => void;
   dispatch: (a: Action) => void;
   showZones: boolean;
+  showDeployment: boolean;
   showGrid: boolean;
   /** Photo URL for a model's unit, if photos are on and known. */
   photoFor: (m: Model) => string | undefined;
@@ -58,7 +61,7 @@ function BaseShape({ m, className = 'base' }: { m: Model; className?: string }) 
 
 const clipId = (m: Model) => `clip-${m.base.shape}-${m.base.w}-${m.base.h}`;
 
-export function Board({ state, tool, selected, setSelected, selectedTerrain, setSelectedTerrain, dispatch, showZones, showGrid, photoFor }: Props) {
+export function Board({ state, tool, selected, setSelected, selectedTerrain, setSelectedTerrain, dispatch, showZones, showDeployment, showGrid, photoFor }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const tex = useMemo(() => textures(), []);
   const [view, setView] = useState<View>({ x: 0, y: 0, s: 10 });
@@ -343,6 +346,9 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
       >
         <defs>
           <TerrainDefs />
+          <clipPath id="board-clip">
+            <rect width={state.board.w} height={state.board.h} />
+          </clipPath>
           {MATERIALS.map(m => (
             <pattern key={m} id={`tex-${m}`} patternUnits="userSpaceOnUse" width={tex[m].inches} height={tex[m].tall}>
               <image href={tex[m].href} width={tex[m].inches} height={tex[m].tall} preserveAspectRatio="none" />
@@ -366,6 +372,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
               <TerrainArt t={t} mat={state.board.mat} />
             </g>
           ))}
+          {showDeployment && scenarioById(state.scenario) && <ScenarioZones s={scenarioById(state.scenario)!} w={state.board.w} h={state.board.h} />}
 
           {models.filter(m => selected.has(m.id)).map(m => {
             // While dragging, zones stay where the move started so you can see the limit.

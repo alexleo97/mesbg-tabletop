@@ -551,6 +551,9 @@ export function SettingsPanel({ settings, update }: { settings: Settings; update
         <input type="checkbox" checked={settings.zones} onChange={e => update({ zones: e.target.checked })} /> Move and 1" control zones
       </label>
       <label className="check">
+        <input type="checkbox" checked={settings.deployment} onChange={e => update({ deployment: e.target.checked })} /> Scenario deployment zones
+      </label>
+      <label className="check">
         <input type="checkbox" checked={settings.grid} onChange={e => update({ grid: e.target.checked })} /> 1" grid
       </label>
       <p className="fine">Fonts are open-licence (SIL OFL). Ground textures are from the open-source game <a href="https://play0ad.com/" target="_blank" rel="noreferrer">0 A.D.</a> by Wildfire Games (<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noreferrer">CC BY-SA 3.0</a>).</p>

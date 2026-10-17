@@ -1,0 +1,1883 @@
+{
+  "selection": "Roll a D6 to pick one of the six pools, then a D6 re-rolling 5s and 6s to pick one of its four scenarios (numbered 1-4 in pool order); a pool already used in the event cannot come up again until every pool has been used, and no scenario repeats.",
+  "commonRules": [
+    {
+      "id": "maelstrom-of-battle",
+      "name": "Maelstrom of Battle",
+      "summary": "Nobody deploys; agree which edge is north. At the end of your Move Phase roll a D6 per off-board Warband (Captain may use Might), one at a time: 1 not yet; 2 opponent picks a north/south edge point; 3 opponent picks an east/west point; 4 you pick north/south; 5 you pick east/west; 6 you pick any edge. Points must be at least 6\" from a corner; entry uses Reinforcements. Off-board Warbands count as on the board for Broken."
+    },
+    {
+      "id": "dark-of-night",
+      "name": "Dark of Night",
+      "summary": "The game is played under the Fighting at Night rules from the core rules manual (p.137)."
+    },
+    {
+      "id": "a-time-of-heroes",
+      "name": "A Time of Heroes",
+      "summary": "Whenever your side kills an enemy Hero in a Fight, one of your Heroes in that Fight regains 1 spent Might (not above its starting value)."
+    },
+    {
+      "id": "heirloom-of-power",
+      "name": "Heirloom of Power",
+      "summary": "An Heirloom is a Light Object that cannot be dropped or handed over; before Priority each turn roll a D6 per carried Heirloom and its holder is Transfixed on a 1. Warriors may carry only one Heirloom, Heroes any number."
+    },
+    {
+      "id": "uncovering-artefacts",
+      "name": "Uncovering Artefacts",
+      "summary": "An Infantry model touching an objective at the end of its move may take an Intelligence test (no Might) to free the Artefact and pick it up as a Light Object; one attempt per side per Artefact per turn; models may carry several Artefacts."
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "domination",
+      "name": "Domination",
+      "pool": 1,
+      "board": "48x48",
+      "deployment": {
+        "type": "long-edges",
+        "description": "Roll off; winner picks a side. Players alternate placing one Warband at a time wholly within 24\" of their own board edge, every model within 6\" of its Captain.",
+        "zones": [
+          {
+            "seat": "p1",
+            "shape": "rect",
+            "x": 0,
+            "y": 24,
+            "w": 48,
+            "h": 24
+          },
+          {
+            "seat": "p2",
+            "shape": "rect",
+            "x": 0,
+            "y": 0,
+            "w": 48,
+            "h": 24
+          }
+        ]
+      },
+      "objectives": {
+        "count": 5,
+        "placement": "One goes in the exact centre. Roll off; the winner places the 2nd, then players alternate the rest. Each must be at least 12\" from every other objective and at least 6\" from every board edge.",
+        "fixedPositions": [
+          [
+            24,
+            24
+          ]
+        ],
+        "markerKind": "objective",
+        "note": "only the centre marker is fixed; the other four are player-placed"
+      },
+      "specialRules": [],
+      "gameEnd": "Ends at the end of any turn in which an army is down to 25% or fewer of its starting models; most VP wins, equal VP is a draw.",
+      "scoring": [
+        {
+          "label": "Per objective: more models within 3\" / at least double / only you within 3\"",
+          "points": "1 / 2 / 3",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy General wounded / slain",
+          "points": "1 / 2 if slain",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy army Broken / Broken while yours is not",
+          "points": "1 / 3",
+          "when": "end of game"
+        }
+      ]
+    },
+    {
+      "id": "capture-and-control",
+      "name": "Capture & Control",
+      "pool": 1,
+      "board": "48x48",
+      "deployment": {
+        "type": "long-edges",
+        "description": "Roll off; winner picks a half. Deployment zones are each player's half of the board. For each Warband placed, roll a D6: on 1-3 it must be wholly within 12\" of the centre line; on 4-6 it may go anywhere wholly in its own half. Never within 1\" of an enemy model; every model within 6\" of its Captain. Players alternate Warbands.",
+        "zones": [
+          {
+            "seat": "p1",
+            "shape": "rect",
+            "x": 0,
+            "y": 24,
+            "w": 48,
+            "h": 24
+          },
+          {
+            "seat": "p2",
+            "shape": "rect",
+            "x": 0,
+            "y": 0,
+            "w": 48,
+            "h": 24
+          },
+          {
+            "seat": "p1",
+            "shape": "rect",
+            "x": 0,
+            "y": 24,
+            "w": 48,
+            "h": 12,
+            "label": "D6 1-3 sub-zone"
+          },
+          {
+            "seat": "p2",
+            "shape": "rect",
+            "x": 0,
+            "y": 12,
+            "w": 48,
+            "h": 12,
+            "label": "D6 1-3 sub-zone"
+          }
+        ]
+      },
+      "objectives": {
+        "count": 5,
+        "placement": "One in the centre and one halfway between the centre and the middle of each board edge (12\" from the centre, 12\" from that edge).",
+        "fixedPositions": [
+          [
+            24,
+            24
+          ],
+          [
+            24,
+            12
+          ],
+          [
+            36,
+            24
+          ],
+          [
+            24,
+            36
+          ],
+          [
+            12,
+            24
+          ]
+        ],
+        "markerKind": "objective"
+      },
+      "specialRules": [
+        "Controlling Objectives: all start neutral. In each End Phase, an objective touched (base contact) only by your models becomes yours; if both sides touch it, it goes back to neutral. Control persists otherwise."
+      ],
+      "gameEnd": "Once either army is Broken, roll a D6 at the end of every turn: on 1-2 the game ends, otherwise play another turn. Most VP wins, equal VP is a draw.",
+      "scoring": [
+        {
+          "label": "Each objective you control",
+          "points": "3 each",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy General wounded / slain",
+          "points": "1 / 3 if slain",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy army Broken / Broken while yours is not",
+          "points": "1 / 2",
+          "when": "end of game"
+        }
+      ]
+    },
+    {
+      "id": "breakthrough",
+      "name": "Breakthrough",
+      "pool": 1,
+      "board": "48x48",
+      "deployment": {
+        "type": "long-edges",
+        "description": "Roll off; winner picks a side. Players alternate placing one Warband at a time wholly within 24\" of their own board edge, every model within 6\" of its Captain.",
+        "zones": [
+          {
+            "seat": "p1",
+            "shape": "rect",
+            "x": 0,
+            "y": 24,
+            "w": 48,
+            "h": 24
+          },
+          {
+            "seat": "p2",
+            "shape": "rect",
+            "x": 0,
+            "y": 0,
+            "w": 48,
+            "h": 24
+          }
+        ]
+      },
+      "objectives": {
+        "count": 4,
+        "placement": "One 12\" in from the centre of each player's board edge (inside their deployment zone); two on the centre line, each 12\" from the board centre on opposite sides.",
+        "fixedPositions": [
+          [
+            24,
+            36
+          ],
+          [
+            24,
+            12
+          ],
+          [
+            12,
+            24
+          ],
+          [
+            36,
+            24
+          ]
+        ],
+        "markerKind": "objective",
+        "note": "[24,36] is p1's own objective, [24,12] is p2's own"
+      },
+      "specialRules": [],
+      "gameEnd": "Ends at the end of any turn in which an army is down to 25% or fewer of its starting models; most VP wins, equal VP is a draw.",
+      "scoring": [
+        {
+          "label": "Objective in your own zone: more models within 3\"",
+          "points": "1",
+          "when": "end of game"
+        },
+        {
+          "label": "Each centre-line objective: more models within 3\" / only you within 3\"",
+          "points": "1 / 3",
+          "when": "end of game"
+        },
+        {
+          "label": "Objective in enemy zone: more models within 3\" / only you within 3\"",
+          "points": "3 / 5",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy General wounded / slain",
+          "points": "1 / 2 if slain",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy army Broken / Broken while yours is not",
+          "points": "1 / 2",
+          "when": "end of game"
+        },
+        {
+          "label": "Opponent has no banners left (auto if they never had one)",
+          "points": "2",
+          "when": "end of game"
+        },
+        {
+          "label": "Opponent's most expensive non-General model wounded / slain",
+          "points": "1 / 2 if slain",
+          "when": "end of game"
+        }
+      ]
+    },
+    {
+      "id": "stake-a-claim",
+      "name": "Stake a Claim",
+      "pool": 1,
+      "board": "48x48",
+      "deployment": {
+        "type": "long-edges",
+        "description": "Roll off; winner picks a side. Players alternate placing one Warband at a time wholly within 12\" of their own board edge, every model within 6\" of its Captain.",
+        "zones": [
+          {
+            "seat": "p1",
+            "shape": "rect",
+            "x": 0,
+            "y": 36,
+            "w": 48,
+            "h": 12
+          },
+          {
+            "seat": "p2",
+            "shape": "rect",
+            "x": 0,
+            "y": 0,
+            "w": 48,
+            "h": 12
+          }
+        ]
+      },
+      "objectives": {
+        "count": 5,
+        "placement": "One in the centre and one halfway between the centre and the middle of each board edge.",
+        "fixedPositions": [
+          [
+            24,
+            24
+          ],
+          [
+            24,
+            12
+          ],
+          [
+            36,
+            24
+          ],
+          [
+            24,
+            36
+          ],
+          [
+            12,
+            24
+          ]
+        ],
+        "markerKind": "objective"
+      },
+      "specialRules": [
+        "Establish Defences: at the start of every End Phase each player earns Fortification Points per objective: 1 if they have more models within 3\" than the enemy (both present), 2 if only they have models within 3\". Keep a running total."
+      ],
+      "gameEnd": "Ends at the end of any turn in which an army is down to 25% or fewer of its starting models; most VP wins, equal VP is a draw.",
+      "scoring": [
+        {
+          "label": "More total Fortification Points / at least double / at least triple",
+          "points": "4 / 8 / 12",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy General wounded / slain",
+          "points": "1 / 3 if slain",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy army Broken / Broken while yours is not",
+          "points": "1 / 3",
+          "when": "end of game"
+        },
+        {
+          "label": "Control the most objectives (more models within 3\" counts as control)",
+          "points": "2",
+          "when": "end of game"
+        }
+      ]
+    },
+    {
+      "id": "to-the-death",
+      "name": "To the Death!",
+      "pool": 2,
+      "board": "48x48",
+      "deployment": {
+        "type": "long-edges",
+        "description": "Roll off; winner picks a side. Players alternate placing one Warband at a time wholly within 12\" of their own board edge, every model within 6\" of its Captain.",
+        "zones": [
+          {
+            "seat": "p1",
+            "shape": "rect",
+            "x": 0,
+            "y": 36,
+            "w": 48,
+            "h": 12
+          },
+          {
+            "seat": "p2",
+            "shape": "rect",
+            "x": 0,
+            "y": 0,
+            "w": 48,
+            "h": 12
+          }
+        ]
+      },
+      "objectives": {
+        "count": 0,
+        "placement": "None.",
+        "markerKind": "none"
+      },
+      "specialRules": [],
+      "gameEnd": "Ends at the end of any turn in which an army is down to 25% or fewer of its starting models; most VP wins, equal VP is a draw.",
+      "scoring": [
+        {
+          "label": "Enemy General wounded / on its last Wound / slain",
+          "points": "1 / 3 / 5",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy army Broken / Broken while yours is not",
+          "points": "3 / 5",
+          "when": "end of game"
+        },
+        {
+          "label": "Opponent has no banners left (auto if they never had one)",
+          "points": "2",
+          "when": "end of game"
+        },
+        {
+          "label": "You still have a banner / more banners than opponent",
+          "points": "1 / 2",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy army reduced to 25% of starting models",
+          "points": "3",
+          "when": "end of game"
+        },
+        {
+          "label": "Each enemy Hero slain (max 3)",
+          "points": "1 each, max 3",
+          "when": "end of game"
+        }
+      ]
+    },
+    {
+      "id": "lords-of-battle",
+      "name": "Lords of Battle",
+      "pool": 2,
+      "board": "48x48",
+      "deployment": {
+        "type": "long-edges",
+        "description": "Roll off; winner picks a side. Players alternate placing one Warband at a time wholly within 24\" of their own board edge, every model within 6\" of its Captain. Models must also be at least 1\" from enemy models.",
+        "zones": [
+          {
+            "seat": "p1",
+            "shape": "rect",
+            "x": 0,
+            "y": 24,
+            "w": 48,
+            "h": 24
+          },
+          {
+            "seat": "p2",
+            "shape": "rect",
+            "x": 0,
+            "y": 0,
+            "w": 48,
+            "h": 24
+          }
+        ]
+      },
+      "objectives": {
+        "count": 0,
+        "placement": "None.",
+        "markerKind": "none"
+      },
+      "specialRules": [
+        "A Time of Heroes",
+        "Wound Tally: count every Wound the enemy army suffers (any source, disabled Siege Engines included) plus every Fate point they spend. Wounds stopped by non-Fate means (e.g. Fury, Will used as Fate) do not count. A Hero removed with unspent Fate adds 1 per unspent point. Models fleeing a Broken army count; fleeing Mounts do not."
+      ],
+      "gameEnd": "Once either army is Broken, roll a D6 at the end of every turn: on 1-2 the game ends, otherwise play another turn. Most VP wins, equal VP is a draw.",
+      "scoring": [
+        {
+          "label": "Higher Wound Tally / at least double / at least triple or enemy has no models left",
+          "points": "4 / 8 / 12",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy General wounded / slain",
+          "points": "1 / 3 if slain",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy army Broken / Broken while yours is not",
+          "points": "1 / 3",
+          "when": "end of game"
+        },
+        {
+          "label": "Each enemy Hero slain (max 2)",
+          "points": "1 each, max 2",
+          "when": "end of game"
+        }
+      ]
+    },
+    {
+      "id": "assassination",
+      "name": "Assassination",
+      "pool": 2,
+      "board": "48x48",
+      "deployment": {
+        "type": "long-edges",
+        "description": "Roll off; winner picks a side. Players alternate placing one Warband at a time wholly within 24\" of their own board edge, every model within 6\" of its Captain.",
+        "zones": [
+          {
+            "seat": "p1",
+            "shape": "rect",
+            "x": 0,
+            "y": 24,
+            "w": 48,
+            "h": 24
+          },
+          {
+            "seat": "p2",
+            "shape": "rect",
+            "x": 0,
+            "y": 0,
+            "w": 48,
+            "h": 24
+          }
+        ]
+      },
+      "objectives": {
+        "count": 0,
+        "placement": "None.",
+        "markerKind": "none"
+      },
+      "specialRules": [
+        "Dark of Night",
+        "The Target: secretly pick one enemy Hero (not their General unless they have only one Hero).",
+        "The Assassin: secretly pick one of your own Heroes (not your General unless you have only one Hero)."
+      ],
+      "gameEnd": "Once either army is Broken, roll a D6 at the end of every turn: on 1-2 the game ends, otherwise play another turn. Most VP wins, equal VP is a draw.",
+      "scoring": [
+        {
+          "label": "Your Target wounded / wounded by your Assassin / slain / slain by your Assassin's blow",
+          "points": "3 / 6 / 9 / 12",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy General wounded / slain",
+          "points": "1 / 3 if slain",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy army Broken / Broken while yours is not",
+          "points": "1 / 3",
+          "when": "end of game"
+        },
+        {
+          "label": "Your Assassin still alive",
+          "points": "1",
+          "when": "end of game"
+        },
+        {
+          "label": "The Hero your opponent chose as their Target still alive",
+          "points": "1",
+          "when": "end of game"
+        }
+      ]
+    },
+    {
+      "id": "contest-of-champions",
+      "name": "Contest of Champions",
+      "pool": 2,
+      "board": "48x48",
+      "deployment": {
+        "type": "long-edges",
+        "description": "Each player first names one Hero as Champion. Roll off; winner picks a half. Each Champion is placed in its own half within 3\" of the board centre, then its Warband wholly in that half within 6\" of the Champion; the other player does the same. Remaining Warbands alternate: roll a D6 for each, 1-3 = wholly within 12\" of own edge, 4-6 = anywhere in own half. Never within 1\" of an enemy; every model within 6\" of its Captain.",
+        "zones": [
+          {
+            "seat": "p1",
+            "shape": "rect",
+            "x": 0,
+            "y": 24,
+            "w": 48,
+            "h": 24
+          },
+          {
+            "seat": "p2",
+            "shape": "rect",
+            "x": 0,
+            "y": 0,
+            "w": 48,
+            "h": 24
+          },
+          {
+            "seat": "p1",
+            "shape": "rect",
+            "x": 0,
+            "y": 36,
+            "w": 48,
+            "h": 12,
+            "label": "D6 1-3 sub-zone"
+          },
+          {
+            "seat": "p2",
+            "shape": "rect",
+            "x": 0,
+            "y": 0,
+            "w": 48,
+            "h": 12,
+            "label": "D6 1-3 sub-zone"
+          },
+          {
+            "seat": "either",
+            "shape": "circle",
+            "cx": 24,
+            "cy": 24,
+            "r": 3,
+            "label": "Champion placement (own half only)"
+          }
+        ]
+      },
+      "objectives": {
+        "count": 0,
+        "placement": "None.",
+        "markerKind": "none"
+      },
+      "specialRules": [
+        "A Time of Heroes",
+        "Stand and Fight: at the start of each Move Phase the Champion with fewer kills so far may make a free Heroic Move, but must then Charge an enemy.",
+        "Only Champion kills in Combat count (not shooting, Magical Powers or Hurl Brutal Power Attack)."
+      ],
+      "gameEnd": "Ends at the end of any turn in which an army is down to 25% or fewer of its starting models; most VP wins, equal VP is a draw.",
+      "scoring": [
+        {
+          "label": "Your Champion has more combat kills / at least 2 and double / at least 3 and triple",
+          "points": "4 / 8 / 12",
+          "when": "end of game"
+        },
+        {
+          "label": "Your Champion kills the enemy Champion",
+          "points": "2",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy army Broken / Broken while yours is not",
+          "points": "1 / 3",
+          "when": "end of game"
+        },
+        {
+          "label": "Your General alive / alive and unwounded",
+          "points": "1 / 3",
+          "when": "end of game"
+        }
+      ]
+    },
+    {
+      "id": "hold-ground",
+      "name": "Hold Ground",
+      "pool": 3,
+      "board": "48x48",
+      "deployment": {
+        "type": "maelstrom",
+        "description": "No one deploys at the start. Warbands arrive during the game via the Maelstrom of Battle table (entry points on a board edge at least 6\" from a corner).",
+        "zones": [
+          {
+            "seat": "either",
+            "shape": "edge",
+            "edges": [
+              "north",
+              "south",
+              "east",
+              "west"
+            ],
+            "minFromCorner": 6,
+            "note": "entry points only; D6 2/4 = north or south edge, 3/5 = east or west edge, 6 = any edge, 1 = no arrival that turn"
+          }
+        ]
+      },
+      "objectives": {
+        "count": 1,
+        "placement": "Single objective in the centre.",
+        "fixedPositions": [
+          [
+            24,
+            24
+          ]
+        ],
+        "markerKind": "objective"
+      },
+      "specialRules": [
+        "Maelstrom of Battle"
+      ],
+      "gameEnd": "Once either army is Broken, roll a D6 at the end of every turn: on 1-2 the game ends, otherwise play another turn. Most VP wins, equal VP is a draw.",
+      "scoring": [
+        {
+          "label": "More models within 6\" of the objective / double / triple or only you",
+          "points": "4 / 8 / 12",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy General wounded / slain",
+          "points": "1 / 3 if slain",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy army Broken / Broken while yours is not",
+          "points": "1 / 3",
+          "when": "end of game"
+        },
+        {
+          "label": "Opponent has no banners left (auto if they never had one)",
+          "points": "2",
+          "when": "end of game"
+        }
+      ]
+    },
+    {
+      "id": "heirloom-of-ages-past",
+      "name": "Heirloom of Ages Past",
+      "pool": 3,
+      "board": "48x48",
+      "deployment": {
+        "type": "maelstrom",
+        "description": "No one deploys at the start. Warbands arrive during the game via the Maelstrom of Battle table (entry points on a board edge at least 6\" from a corner).",
+        "zones": [
+          {
+            "seat": "either",
+            "shape": "edge",
+            "edges": [
+              "north",
+              "south",
+              "east",
+              "west"
+            ],
+            "minFromCorner": 6,
+            "note": "entry points only; D6 2/4 = north or south edge, 3/5 = east or west edge, 6 = any edge, 1 = no arrival that turn"
+          }
+        ]
+      },
+      "objectives": {
+        "count": 6,
+        "placement": "Six identical face-down markers, one secretly marked as the Heirloom and five decoys. One 12\" in from the centre of the north edge, one 12\" in from the centre of the south edge, and four more so all six form a hexagon with 12\" sides around the centre. Ideally each player's markers are set out by someone else so the Heirloom stays hidden.",
+        "fixedPositions": [
+          [
+            24,
+            12
+          ],
+          [
+            34.39,
+            18
+          ],
+          [
+            34.39,
+            30
+          ],
+          [
+            24,
+            36
+          ],
+          [
+            13.61,
+            30
+          ],
+          [
+            13.61,
+            18
+          ]
+        ],
+        "markerKind": "heirloom",
+        "note": "assumes north is the top edge; positions are a regular hexagon of side 12\" around the centre"
+      },
+      "specialRules": [
+        "Maelstrom of Battle",
+        "Heirloom of Power",
+        "Uncovering the Heirloom: once per turn per marker, an unengaged Infantry model ending its move touching it may flip it. Decoys are removed; the Heirloom is picked up by that model at once. If never found, reveal it before scoring."
+      ],
+      "gameEnd": "Ends at the end of any turn in which an army is down to 25% or fewer of its starting models; most VP wins, equal VP is a draw.",
+      "scoring": [
+        {
+          "label": "Your army holds the Heirloom / nobody holds it but you have more models within 3\"",
+          "points": "8 / 4",
+          "when": "end of game"
+        },
+        {
+          "label": "Each decoy your army revealed",
+          "points": "1 each",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy army Broken / Broken while yours is not",
+          "points": "1 / 3",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy General wounded / slain",
+          "points": "1 / 2 if slain",
+          "when": "end of game"
+        },
+        {
+          "label": "You still have a banner / more banners than opponent",
+          "points": "1 / 2",
+          "when": "end of game"
+        }
+      ]
+    },
+    {
+      "id": "sites-of-power",
+      "name": "Sites of Power",
+      "pool": 3,
+      "board": "48x48",
+      "deployment": {
+        "type": "maelstrom",
+        "description": "No one deploys at the start. Warbands arrive during the game via the Maelstrom of Battle table (entry points on a board edge at least 6\" from a corner).",
+        "zones": [
+          {
+            "seat": "either",
+            "shape": "edge",
+            "edges": [
+              "north",
+              "south",
+              "east",
+              "west"
+            ],
+            "minFromCorner": 6,
+            "note": "entry points only; D6 2/4 = north or south edge, 3/5 = east or west edge, 6 = any edge, 1 = no arrival that turn"
+          }
+        ]
+      },
+      "objectives": {
+        "count": 4,
+        "placement": "Each halfway between the board centre and one corner.",
+        "fixedPositions": [
+          [
+            12,
+            12
+          ],
+          [
+            36,
+            12
+          ],
+          [
+            12,
+            36
+          ],
+          [
+            36,
+            36
+          ]
+        ],
+        "markerKind": "objective"
+      },
+      "specialRules": [
+        "Dark of Night",
+        "Maelstrom of Battle",
+        "Strange Aura: at the start of each Priority Phase roll a D6; until end of turn, models within 3\" of any objective get: 1-2 ignore each Wound on a natural 6 (rolled before Fate, no Might); 3-4 auto-pass Courage tests; 4-6 re-roll To Wound rolls of 1 when Striking.",
+        "The printed bands overlap (3-4 and 4-6); a result of 4 is ambiguous, 5-6 was probably meant for the last band. (the printed table overlaps here; check the book)"
+      ],
+      "gameEnd": "Ends at the end of any turn in which an army is down to 25% or fewer of its starting models; most VP wins, equal VP is a draw.",
+      "scoring": [
+        {
+          "label": "Per objective: more models within 3\" / at least double / only you",
+          "points": "1 / 2 / 3",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy army Broken / Broken while yours is not",
+          "points": "1 / 3",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy General wounded / slain",
+          "points": "1 / 3 if slain",
+          "when": "end of game"
+        },
+        {
+          "label": "Opponent's most expensive non-General model wounded / slain",
+          "points": "1 / 2 if slain",
+          "when": "end of game"
+        }
+      ]
+    },
+    {
+      "id": "command-the-battlefield",
+      "name": "Command the Battlefield",
+      "pool": 3,
+      "board": "48x48",
+      "deployment": {
+        "type": "maelstrom",
+        "description": "No one deploys at the start. Warbands arrive during the game via the Maelstrom of Battle table (entry points on a board edge at least 6\" from a corner).",
+        "zones": [
+          {
+            "seat": "either",
+            "shape": "edge",
+            "edges": [
+              "north",
+              "south",
+              "east",
+              "west"
+            ],
+            "minFromCorner": 6,
+            "note": "entry points only; D6 2/4 = north or south edge, 3/5 = east or west edge, 6 = any edge, 1 = no arrival that turn"
+          }
+        ]
+      },
+      "objectives": {
+        "count": 0,
+        "placement": "No markers; the board is scored by quarters.",
+        "markerKind": "none"
+      },
+      "specialRules": [
+        "Maelstrom of Battle",
+        "Worthless Land: models wholly within 12\" of the board centre count as being in no quarter."
+      ],
+      "gameEnd": "Ends at the end of any turn in which an army is down to 25% or fewer of its starting models; most VP wins, equal VP is a draw.",
+      "scoring": [
+        {
+          "label": "Per board quarter: more of your models wholly inside / at least double / only yours",
+          "points": "1 / 2 / 3",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy army Broken / Broken while yours is not",
+          "points": "1 / 3",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy General wounded / slain",
+          "points": "1 / 3 if slain",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy army reduced to 25% of starting models",
+          "points": "2",
+          "when": "end of game"
+        }
+      ]
+    },
+    {
+      "id": "destroy-the-supplies",
+      "name": "Destroy the Supplies",
+      "pool": 4,
+      "board": "48x48",
+      "deployment": {
+        "type": "long-edges",
+        "description": "Roll off; winner picks a side. Players alternate placing one Warband at a time wholly within 12\" of their own board edge, every model within 6\" of its Captain.",
+        "zones": [
+          {
+            "seat": "p1",
+            "shape": "rect",
+            "x": 0,
+            "y": 36,
+            "w": 48,
+            "h": 12
+          },
+          {
+            "seat": "p2",
+            "shape": "rect",
+            "x": 0,
+            "y": 0,
+            "w": 48,
+            "h": 12
+          }
+        ]
+      },
+      "objectives": {
+        "count": 6,
+        "placement": "Three Supply markers per player along the inner edge of their own deployment zone (12\" from their board edge): one opposite the centre of the edge, the others halfway between it and each side edge.",
+        "fixedPositions": [
+          [
+            12,
+            36
+          ],
+          [
+            24,
+            36
+          ],
+          [
+            36,
+            36
+          ],
+          [
+            12,
+            12
+          ],
+          [
+            24,
+            12
+          ],
+          [
+            36,
+            12
+          ]
+        ],
+        "markerKind": "supply",
+        "note": "y=36 row belongs to p1, y=12 row to p2"
+      },
+      "specialRules": [
+        "Supply Markers: a standing model in base contact with an enemy Supply in the End Phase destroys it (remove it), provided that turn it did not cast a Magical Power, shoot, fight or support a fight, was not stopped from moving by a rule or test (e.g. Thrown Rider), and was not affected by an enemy Magical Power."
+      ],
+      "gameEnd": "Ends at the end of any turn in which an army is down to 25% or fewer of its starting models; most VP wins, equal VP is a draw.",
+      "scoring": [
+        {
+          "label": "Each enemy Supply destroyed",
+          "points": "3 each",
+          "when": "end of game"
+        },
+        {
+          "label": "Each surviving enemy Supply where you have more models within 3\"",
+          "points": "1 each",
+          "when": "end of game"
+        },
+        {
+          "label": "Destroyed more Supplies than opponent",
+          "points": "1",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy General wounded / slain",
+          "points": "1 / 3 if slain",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy army Broken / Broken while yours is not",
+          "points": "1 / 3",
+          "when": "end of game"
+        },
+        {
+          "label": "Opponent has no banners left (auto if they never had one)",
+          "points": "2",
+          "when": "end of game"
+        },
+        {
+          "label": "You still have a banner / more banners than opponent",
+          "points": "1 / 2",
+          "when": "end of game"
+        }
+      ]
+    },
+    {
+      "id": "retrieval",
+      "name": "Retrieval",
+      "pool": 4,
+      "board": "48x48",
+      "deployment": {
+        "type": "corners",
+        "description": "Roll off; winner picks a corner, opponent takes the opposite one. The board is split into two triangular halves along the diagonal joining the two unchosen corners; each player's half contains their corner. Warbands alternate, wholly in own half, not within 3\" of the dividing diagonal, every model within 6\" of its Captain.",
+        "zones": [
+          {
+            "seat": "p1",
+            "shape": "polygon",
+            "points": [
+              [
+                0,
+                0
+              ],
+              [
+                48,
+                48
+              ],
+              [
+                0,
+                48
+              ]
+            ],
+            "exclusion": "not within 3\" of the line (0,0)-(48,48)",
+            "label": "example: p1 corner bottom-left"
+          },
+          {
+            "seat": "p2",
+            "shape": "polygon",
+            "points": [
+              [
+                0,
+                0
+              ],
+              [
+                48,
+                0
+              ],
+              [
+                48,
+                48
+              ]
+            ],
+            "exclusion": "not within 3\" of the line (0,0)-(48,48)",
+            "label": "example: p2 corner top-right"
+          }
+        ]
+      },
+      "objectives": {
+        "count": 2,
+        "placement": "Each player places their own Relic 20\" from their chosen corner along the line to the opposite corner.",
+        "fixedPositions": [
+          [
+            14.14,
+            33.86
+          ],
+          [
+            33.86,
+            14.14
+          ]
+        ],
+        "markerKind": "relic",
+        "note": "positions assume p1 bottom-left / p2 top-right corners; first is p1's Relic"
+      },
+      "specialRules": [
+        "The Relic: a Light Object. It counts as retrieved if a friendly model carries it at game end. Nobody may carry both Relics. A carrier of the enemy Relic may ignore its own. You cannot pick up your own Relic until an enemy has picked it up; if you get it back, try to return it to its start spot."
+      ],
+      "gameEnd": "Once either army is Broken, roll a D6 at the end of every turn: on 1-2 the game ends, otherwise play another turn. Most VP wins, equal VP is a draw.",
+      "scoring": [
+        {
+          "label": "Enemy Relic moved from start / carried by you / carried by you in your zone / carried off board via an edge of your zone",
+          "points": "3 / 6 / 9 / 12",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy army Broken / Broken while yours is not",
+          "points": "1 / 3",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy General wounded / slain",
+          "points": "1 / 2 if slain",
+          "when": "end of game"
+        },
+        {
+          "label": "Each enemy Hero slain (max 3)",
+          "points": "1 each, max 3",
+          "when": "end of game"
+        }
+      ]
+    },
+    {
+      "id": "seize-the-prizes",
+      "name": "Seize the Prizes",
+      "pool": 4,
+      "board": "48x48",
+      "deployment": {
+        "type": "long-edges",
+        "description": "Roll off; winner picks a side. Players alternate placing one Warband at a time wholly within 12\" of their own board edge, every model within 6\" of its Captain.",
+        "zones": [
+          {
+            "seat": "p1",
+            "shape": "rect",
+            "x": 0,
+            "y": 36,
+            "w": 48,
+            "h": 12
+          },
+          {
+            "seat": "p2",
+            "shape": "rect",
+            "x": 0,
+            "y": 0,
+            "w": 48,
+            "h": 12
+          }
+        ]
+      },
+      "objectives": {
+        "count": 3,
+        "placement": "Three Artefacts: one in the centre, the others halfway between the centre and the middle of the east and west edges.",
+        "fixedPositions": [
+          [
+            12,
+            24
+          ],
+          [
+            24,
+            24
+          ],
+          [
+            36,
+            24
+          ]
+        ],
+        "markerKind": "artefact"
+      },
+      "specialRules": [
+        "Uncovering Artefacts",
+        "Artefacts can be carried off the board via the opponent's board edge."
+      ],
+      "gameEnd": "Ends when all three Artefacts have left the board, or when both armies are down to 25% or fewer of their starting models. Most VP wins, equal VP is a draw.",
+      "scoring": [
+        {
+          "label": "Each Artefact carried by you in your own half / in enemy half / carried off via enemy board edge",
+          "points": "2 / 3 / 4",
+          "when": "end of game"
+        },
+        {
+          "label": "Each loose Artefact on the board: most models within 3\"",
+          "points": "1 each",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy army Broken / Broken while yours is not",
+          "points": "1 / 3",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy General wounded / slain",
+          "points": "1 / 3 if slain",
+          "when": "end of game"
+        },
+        {
+          "label": "You still have a banner / more banners than opponent",
+          "points": "1 / 2",
+          "when": "end of game"
+        }
+      ]
+    },
+    {
+      "id": "treasure-hoard",
+      "name": "Treasure Hoard",
+      "pool": 4,
+      "board": "48x48",
+      "deployment": {
+        "type": "centre-edge-semicircle",
+        "description": "Roll off; winner picks a side. Warbands alternate, wholly within 12\" of the centre point of their own board edge (a half-circle), every model within 6\" of its Captain.",
+        "zones": [
+          {
+            "seat": "p1",
+            "shape": "semicircle",
+            "cx": 24,
+            "cy": 48,
+            "r": 12
+          },
+          {
+            "seat": "p2",
+            "shape": "semicircle",
+            "cx": 24,
+            "cy": 0,
+            "r": 12
+          }
+        ]
+      },
+      "objectives": {
+        "count": 6,
+        "placement": "Three Artefacts in each half on a line 18\" from that half's board edge: one opposite the edge centre, the others halfway between it and each side edge (6\" beyond each deployment zone).",
+        "fixedPositions": [
+          [
+            12,
+            30
+          ],
+          [
+            24,
+            30
+          ],
+          [
+            36,
+            30
+          ],
+          [
+            12,
+            18
+          ],
+          [
+            24,
+            18
+          ],
+          [
+            36,
+            18
+          ]
+        ],
+        "markerKind": "artefact"
+      },
+      "specialRules": [
+        "Uncovering Artefacts"
+      ],
+      "gameEnd": "Ends at the end of any turn in which an army is down to 25% or fewer of its starting models; most VP wins, equal VP is a draw.",
+      "scoring": [
+        {
+          "label": "Each Artefact held by a friendly model",
+          "points": "2 each",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy army Broken / Broken while yours is not",
+          "points": "1 / 3",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy General wounded / slain",
+          "points": "1 / 3 if slain",
+          "when": "end of game"
+        },
+        {
+          "label": "At least 1 / at least 3 of your models wholly within 12\" of the enemy board edge",
+          "points": "1 / 2",
+          "when": "end of game"
+        }
+      ]
+    },
+    {
+      "id": "reconnoitre",
+      "name": "Reconnoitre",
+      "pool": 5,
+      "board": "48x48",
+      "deployment": {
+        "type": "long-edges",
+        "description": "No one deploys at the start. Roll off; winner picks their board edge, opponent gets the opposite. At the end of each own Activation Phase roll a D6 per off-board Warband (Captain may use Might): 1-3 it waits and gets a cumulative +1 next turn (arrives on 3+ turn 2, 2+ turn 3, automatically turn 4); 4-6 it enters via Reinforcements from a point on own edge at least 6\" from a corner. Rules letting models arrive from any edge must use own edge.",
+        "zones": [
+          {
+            "seat": "p1",
+            "shape": "edge",
+            "edge": "bottom",
+            "minFromCorner": 6
+          },
+          {
+            "seat": "p2",
+            "shape": "edge",
+            "edge": "top",
+            "minFromCorner": 6
+          }
+        ]
+      },
+      "objectives": {
+        "count": 0,
+        "placement": "None; models try to leave via the enemy board edge.",
+        "markerKind": "none"
+      },
+      "specialRules": [
+        "Reinforcements (own table, see deployment)",
+        "Off-board Warbands count as on the board for Broken checks.",
+        "Models that escaped via the enemy edge count as on the board for Broken and 25% checks."
+      ],
+      "gameEnd": "Ends at the end of any turn in which an army is down to 25% or fewer of its starting models; most VP wins, equal VP is a draw.",
+      "scoring": [
+        {
+          "label": "More models escaped via enemy edge / at least 2 and double / at least 3 and triple",
+          "points": "4 / 8 / 12",
+          "when": "end of game"
+        },
+        {
+          "label": "Each of your Heroes that escapes (max 3)",
+          "points": "1 each, max 3",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy General wounded / slain",
+          "points": "1 / 2 if slain",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy army Broken / Broken while yours is not",
+          "points": "1 / 3",
+          "when": "end of game"
+        }
+      ]
+    },
+    {
+      "id": "storm-the-camp",
+      "name": "Storm the Camp",
+      "pool": 5,
+      "board": "48x48",
+      "deployment": {
+        "type": "corners",
+        "description": "Roll off; winner picks a corner as their camp and sets up the whole army (Siege Engines included) wholly within 18\" of it; models that don't fit enter from that corner at the end of their first Move Phase. Opponent then does the same in the diagonally opposite corner.",
+        "zones": [
+          {
+            "seat": "p1",
+            "shape": "quarter-circle",
+            "cx": 0,
+            "cy": 48,
+            "r": 18,
+            "label": "example: p1 camp bottom-left"
+          },
+          {
+            "seat": "p2",
+            "shape": "quarter-circle",
+            "cx": 48,
+            "cy": 0,
+            "r": 18,
+            "label": "example: p2 camp top-right"
+          }
+        ]
+      },
+      "objectives": {
+        "count": 0,
+        "placement": "None; the camps (deployment areas) are the objectives.",
+        "markerKind": "camp"
+      },
+      "specialRules": [
+        "The Campsite: a camp is captured if at game end you have more models wholly inside the enemy camp than they do. Models inside their own camp at the start of a turn auto-pass Courage tests that turn."
+      ],
+      "gameEnd": "Ends at the end of any turn in which an army is down to 25% or fewer of its starting models; most VP wins, equal VP is a draw.",
+      "scoring": [
+        {
+          "label": "Capture enemy camp / plus a Hero inside / plus a banner-bearer inside",
+          "points": "5 / 7 / 10",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy army Broken / Broken while yours is not",
+          "points": "1 / 2",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy General wounded / slain",
+          "points": "1 / 3 if slain",
+          "when": "end of game"
+        },
+        {
+          "label": "Each of your models in the enemy camp (max 5)",
+          "points": "1 each, max 5",
+          "when": "end of game"
+        }
+      ]
+    },
+    {
+      "id": "divide-and-conquer",
+      "name": "Divide & Conquer",
+      "pool": 5,
+      "board": "48x48",
+      "deployment": {
+        "type": "corners",
+        "description": "Roll off; winner takes two opposite corners labelled A and B, opponent the other two. Alternate: winner puts a Warband wholly within 12\" of their corner A, opponent likewise, then winner within 12\" of corner B, opponent likewise; repeat until all are down.",
+        "zones": [
+          {
+            "seat": "p1",
+            "shape": "quarter-circle",
+            "cx": 0,
+            "cy": 0,
+            "r": 12,
+            "label": "A"
+          },
+          {
+            "seat": "p1",
+            "shape": "quarter-circle",
+            "cx": 48,
+            "cy": 48,
+            "r": 12,
+            "label": "B"
+          },
+          {
+            "seat": "p2",
+            "shape": "quarter-circle",
+            "cx": 48,
+            "cy": 0,
+            "r": 12,
+            "label": "A"
+          },
+          {
+            "seat": "p2",
+            "shape": "quarter-circle",
+            "cx": 0,
+            "cy": 48,
+            "r": 12,
+            "label": "B"
+          }
+        ]
+      },
+      "objectives": {
+        "count": 3,
+        "placement": "One in the centre, the others halfway between it and the middle of the east and west edges.",
+        "fixedPositions": [
+          [
+            12,
+            24
+          ],
+          [
+            24,
+            24
+          ],
+          [
+            36,
+            24
+          ]
+        ],
+        "markerKind": "objective"
+      },
+      "specialRules": [],
+      "gameEnd": "Once either army is Broken, roll a D6 at the end of every turn: on 1-2 the game ends, otherwise play another turn. Most VP wins, equal VP is a draw.",
+      "scoring": [
+        {
+          "label": "Centre objective: more models within 3\" / only you",
+          "points": "3 / 6",
+          "when": "end of game"
+        },
+        {
+          "label": "Each side objective: more models within 3\" / only you",
+          "points": "1 / 3",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy army Broken / Broken while yours is not",
+          "points": "1 / 3",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy General wounded / slain",
+          "points": "1 / 3 if slain",
+          "when": "end of game"
+        },
+        {
+          "label": "Your General within 3\" of the centre objective",
+          "points": "2",
+          "when": "end of game"
+        }
+      ]
+    },
+    {
+      "id": "escort-the-wounded",
+      "name": "Escort the Wounded",
+      "pool": 5,
+      "board": "48x48",
+      "deployment": {
+        "type": "long-edges",
+        "description": "Roll off; winner picks a side. Players alternate placing one Warband at a time wholly within 12\" of their own board edge, every model within 6\" of its Captain.",
+        "zones": [
+          {
+            "seat": "p1",
+            "shape": "rect",
+            "x": 0,
+            "y": 36,
+            "w": 48,
+            "h": 12
+          },
+          {
+            "seat": "p2",
+            "shape": "rect",
+            "x": 0,
+            "y": 0,
+            "w": 48,
+            "h": 12
+          }
+        ]
+      },
+      "objectives": {
+        "count": 6,
+        "placement": "Three Wounded Allies per player along the inner edge of their own deployment zone (12\" from their edge): one opposite the edge centre, the others halfway between it and the side edges.",
+        "fixedPositions": [
+          [
+            12,
+            36
+          ],
+          [
+            24,
+            36
+          ],
+          [
+            36,
+            36
+          ],
+          [
+            12,
+            12
+          ],
+          [
+            24,
+            12
+          ],
+          [
+            36,
+            12
+          ]
+        ],
+        "markerKind": "wounded-ally",
+        "note": "y=36 row belongs to p1, y=12 row to p2"
+      },
+      "specialRules": [
+        "Wounded Allies: Heavy Objects; you can only carry your own. If a carrier is wholly inside a friendly Sanctuary in the End Phase, the ally is rescued and removed.",
+        "The Sanctuary: your Sanctuaries are the areas within 12\" of the two corners on the opponent's board edge (the corners not in your deployment zone).",
+        "sanctuaries: p1 = quarter-circles r12 at (0,0) and (48,0); p2 = quarter-circles r12 at (0,48) and (48,48)"
+      ],
+      "gameEnd": "Ends at the end of any turn in which an army is down to 25% or fewer of its starting models; most VP wins, equal VP is a draw.",
+      "scoring": [
+        {
+          "label": "Each own Wounded Ally carried by you in the enemy half / rescued",
+          "points": "2 / 4",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy army Broken / Broken while yours is not",
+          "points": "1 / 3",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy General wounded / slain",
+          "points": "1 / 3 if slain",
+          "when": "end of game"
+        },
+        {
+          "label": "Opponent has no banners left (auto if they never had one)",
+          "points": "2",
+          "when": "end of game"
+        }
+      ]
+    },
+    {
+      "id": "fog-of-war",
+      "name": "Fog of War",
+      "pool": 6,
+      "board": "48x48",
+      "deployment": {
+        "type": "long-edges",
+        "description": "Roll off; winner picks a side. Players alternate placing one Warband at a time wholly within 12\" of their own board edge, every model within 6\" of its Captain.",
+        "zones": [
+          {
+            "seat": "p1",
+            "shape": "rect",
+            "x": 0,
+            "y": 36,
+            "w": 48,
+            "h": 12
+          },
+          {
+            "seat": "p2",
+            "shape": "rect",
+            "x": 0,
+            "y": 0,
+            "w": 48,
+            "h": 12
+          }
+        ]
+      },
+      "objectives": {
+        "count": 0,
+        "placement": "No markers; each player secretly picks one terrain piece wholly in the enemy half.",
+        "markerKind": "terrain"
+      },
+      "specialRules": [
+        "Secret picks at game start: one of your Heroes to protect, one enemy Hero to hunt (neither may be a General unless that side has only one Hero), and one terrain piece wholly in the opponent's half."
+      ],
+      "gameEnd": "Once either army is Broken, roll a D6 at the end of every turn: on 1-2 the game ends, otherwise play another turn. Most VP wins, equal VP is a draw.",
+      "scoring": [
+        {
+          "label": "Your secret Hero alive / alive and unwounded / alive, unwounded, no Fate spent",
+          "points": "1 / 3 / 5",
+          "when": "end of game"
+        },
+        {
+          "label": "Secret enemy Hero wounded (Fate-saved wounds don't count) / slain / slain by your model in Combat",
+          "points": "1 / 3 / 5",
+          "when": "end of game"
+        },
+        {
+          "label": "Secret terrain: more models on or touching it / at least 2 and double / at least 2 and enemy has none",
+          "points": "1 / 3 / 5",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy General wounded / slain",
+          "points": "1 / 2 if slain",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy army Broken / Broken while yours is not",
+          "points": "1 / 3",
+          "when": "end of game"
+        }
+      ]
+    },
+    {
+      "id": "clash-by-moonlight",
+      "name": "Clash by Moonlight",
+      "pool": 6,
+      "board": "48x48",
+      "deployment": {
+        "type": "long-edges",
+        "description": "Roll off; winner picks a side. Players alternate placing one Warband at a time wholly within 12\" of their own board edge, every model within 6\" of its Captain.",
+        "zones": [
+          {
+            "seat": "p1",
+            "shape": "rect",
+            "x": 0,
+            "y": 36,
+            "w": 48,
+            "h": 12
+          },
+          {
+            "seat": "p2",
+            "shape": "rect",
+            "x": 0,
+            "y": 0,
+            "w": 48,
+            "h": 12
+          }
+        ]
+      },
+      "objectives": {
+        "count": 1,
+        "placement": "Single objective in the centre.",
+        "fixedPositions": [
+          [
+            24,
+            24
+          ]
+        ],
+        "markerKind": "objective"
+      },
+      "specialRules": [
+        "Dark of Night"
+      ],
+      "gameEnd": "Ends at the end of any turn in which an army is down to 25% or fewer of its starting models; most VP wins, equal VP is a draw.",
+      "scoring": [
+        {
+          "label": "Enemy army Broken / Broken while yours is not",
+          "points": "1 / 4",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy General wounded / slain",
+          "points": "1 / 4 if slain",
+          "when": "end of game"
+        },
+        {
+          "label": "Opponent has no banners left (auto if they never had one)",
+          "points": "2",
+          "when": "end of game"
+        },
+        {
+          "label": "You still have a banner / more banners than opponent",
+          "points": "1 / 2",
+          "when": "end of game"
+        },
+        {
+          "label": "Each enemy Hero slain (max 4)",
+          "points": "1 each, max 4",
+          "when": "end of game"
+        },
+        {
+          "label": "Centre objective: more models within 3\" / double or only you",
+          "points": "1 / 4",
+          "when": "end of game"
+        }
+      ]
+    },
+    {
+      "id": "lead-from-the-front",
+      "name": "Lead from the Front",
+      "pool": 6,
+      "board": "48x48",
+      "deployment": {
+        "type": "long-edges",
+        "description": "Roll off; winner picks a side. Players alternate placing one Warband at a time wholly within 12\" of their own board edge, every model within 6\" of its Captain.",
+        "zones": [
+          {
+            "seat": "p1",
+            "shape": "rect",
+            "x": 0,
+            "y": 36,
+            "w": 48,
+            "h": 12
+          },
+          {
+            "seat": "p2",
+            "shape": "rect",
+            "x": 0,
+            "y": 0,
+            "w": 48,
+            "h": 12
+          }
+        ]
+      },
+      "objectives": {
+        "count": 3,
+        "placement": "One in the centre, the others halfway between it and the middle of the east and west edges.",
+        "fixedPositions": [
+          [
+            12,
+            24
+          ],
+          [
+            24,
+            24
+          ],
+          [
+            36,
+            24
+          ]
+        ],
+        "markerKind": "objective"
+      },
+      "specialRules": [
+        "A Time of Heroes",
+        "Initial priority: roll-off winner simply has Priority in turn 1 (not a choice)."
+      ],
+      "gameEnd": "Ends at the end of any turn in which an army is down to 25% or fewer of its starting models; most VP wins, equal VP is a draw.",
+      "scoring": [
+        {
+          "label": "Each objective with Heroes of both sides within 3\" where one of yours has a higher Heroic Tier than any enemy Hero there",
+          "points": "2 each",
+          "when": "end of game"
+        },
+        {
+          "label": "Each objective with your Hero and no enemy Hero within 3\"",
+          "points": "4 each",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy army Broken / Broken while yours is not",
+          "points": "1 / 3",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy General wounded / slain",
+          "points": "1 / 3 if slain",
+          "when": "end of game"
+        },
+        {
+          "label": "Opponent has no banners left (auto if they never had one)",
+          "points": "2",
+          "when": "end of game"
+        }
+      ]
+    },
+    {
+      "id": "convergence",
+      "name": "Convergence",
+      "pool": 6,
+      "board": "48x48",
+      "deployment": {
+        "type": "corners",
+        "description": "Same as Divide & Conquer: winner takes two opposite corners (A and B), opponent the other two; Warbands alternate wholly within 12\" of corner A, then corner B, and so on.",
+        "zones": [
+          {
+            "seat": "p1",
+            "shape": "quarter-circle",
+            "cx": 0,
+            "cy": 0,
+            "r": 12,
+            "label": "A"
+          },
+          {
+            "seat": "p1",
+            "shape": "quarter-circle",
+            "cx": 48,
+            "cy": 48,
+            "r": 12,
+            "label": "B"
+          },
+          {
+            "seat": "p2",
+            "shape": "quarter-circle",
+            "cx": 48,
+            "cy": 0,
+            "r": 12,
+            "label": "A"
+          },
+          {
+            "seat": "p2",
+            "shape": "quarter-circle",
+            "cx": 0,
+            "cy": 48,
+            "r": 12,
+            "label": "B"
+          }
+        ]
+      },
+      "objectives": {
+        "count": 4,
+        "placement": "Four Heirlooms, each halfway between the centre and the middle of one board edge.",
+        "fixedPositions": [
+          [
+            24,
+            12
+          ],
+          [
+            36,
+            24
+          ],
+          [
+            24,
+            36
+          ],
+          [
+            12,
+            24
+          ]
+        ],
+        "markerKind": "heirloom"
+      },
+      "specialRules": [
+        "Heirloom of Power"
+      ],
+      "gameEnd": "Once either army is Broken, roll a D6 at the end of every turn: on 1-2 the game ends, otherwise play another turn. Most VP wins, equal VP is a draw.",
+      "scoring": [
+        {
+          "label": "Each Heirloom held by a friendly model / held within 6\" of the centre",
+          "points": "1 / 3",
+          "when": "end of game"
+        },
+        {
+          "label": "More models within 6\" of the centre",
+          "points": "2",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy army Broken / Broken while yours is not",
+          "points": "1 / 3",
+          "when": "end of game"
+        },
+        {
+          "label": "Enemy General wounded / slain",
+          "points": "1 / 3 if slain",
+          "when": "end of game"
+        }
+      ]
+    }
+  ]
+}

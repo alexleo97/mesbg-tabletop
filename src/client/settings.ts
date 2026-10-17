@@ -73,10 +73,11 @@ export interface Settings {
   bodyFont: string;
   photos: boolean;
   zones: boolean;
+  deployment: boolean;
   grid: boolean;
 }
 
-const DEFAULTS: Settings = { theme: 'classic', headingFont: 'cinzel', bodyFont: 'system', photos: true, zones: true, grid: true };
+const DEFAULTS: Settings = { theme: 'classic', headingFont: 'cinzel', bodyFont: 'system', photos: true, zones: true, deployment: true, grid: true };
 const KEY = 'mesbg-tabletop:settings';
 
 function load(): Settings {

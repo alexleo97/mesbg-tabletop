@@ -12,3 +12,10 @@ What's copied: army lists, unit names and types, points, options, profile charac
 Unit photos are not stored in this repository. The app shows them by linking to the list builder's own image host (`resources.mesbg-list-builder.com`), and you can turn them off in the Table panel.
 
 As the list builder's NOTICE says, names, statistics, rules and images relating to the Middle-earth Strategy Battle Game remain the property of their rights holders (Games Workshop and Middle-earth Enterprises). They are not licensed under the AGPL. This is an unofficial fan project.
+
+## scenarios.json
+
+Deployment zones, objective positions, game-end conditions and scoring for the 24 matched play
+scenarios of the 2024 edition, recorded as game facts and summarised in our own words. No text,
+maps or images from Games Workshop's Matched Play Guide are included. Where the players choose
+corners or which edge is north, the zones show one example layout.

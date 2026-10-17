@@ -268,3 +268,31 @@ label.check input { width: auto; min-height: 0; }
 .wound-chart th, .wound-chart td { text-align: center; padding: 4px 2px; white-space: nowrap; }
 .wound-chart td { cursor: pointer; }
 .wound-chart td.on { background: var(--gold); color: var(--ink); font-weight: 700; }
+
+/* Scenarios */
+.deploy-zone { fill: none; stroke-width: 0.15; stroke-dasharray: 0.6 0.4; }
+.deploy-zone.p1 { fill: var(--p1); fill-opacity: 0.12; stroke: var(--p1); }
+.deploy-zone.p2 { fill: var(--p2); fill-opacity: 0.12; stroke: var(--p2); }
+.deploy-zone.either { fill: #fff; fill-opacity: 0.08; stroke: #fff; }
+.deploy-zone.sub { fill-opacity: 0.08; stroke-dasharray: 0.2 0.3; }
+.deploy-edge { stroke-width: 1; stroke-opacity: 0.6; stroke-dasharray: 1 0.5; }
+.deploy-edge.p1 { stroke: var(--p1); }
+.deploy-edge.p2 { stroke: var(--p2); }
+.deploy-edge.either { stroke: #fff; }
+.scenario select { flex: 1; min-width: 0; }
+.scenario p { margin: 4px 0; line-height: 1.4; }
+.scenario .small, .scenario small { font-size: 0.85em; }
+.scenario ul { margin: 4px 0; padding-left: 18px; }
+table.vp { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+table.vp th, table.vp td { border-bottom: 1px solid var(--line); padding: 4px; vertical-align: middle; text-align: left; }
+table.vp th.p1 { color: var(--p1); }
+table.vp th.p2 { color: var(--p2); }
+table.vp td small { display: block; color: var(--muted); }
+table.vp .vp-cell { white-space: nowrap; text-align: center; }
+table.vp .vp-cell button { width: 28px; height: 28px; padding: 0; }
+table.vp .vp-cell b { display: inline-block; min-width: 20px; text-align: center; }
+table.vp tr.total td { font-weight: 700; font-size: 1rem; text-align: center; }
+table.vp tr.total td:first-child { text-align: left; }
+.vp-chip { white-space: nowrap; }
+.vp-chip .p1 { color: var(--p1); }
+.vp-chip .p2 { color: var(--p2); }
