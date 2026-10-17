@@ -233,6 +233,8 @@ export interface Flow {
   arrived?: Seat[];
   /** Models that have shot this turn; each may shoot once. */
   shot?: string[];
+  /** Models that moved more than half their Move this turn, so can't shoot. */
+  farMoved?: string[];
   /** Duels rolled this turn, by group, so the same one isn't rolled twice. */
   duels?: string[];
   starts?: Record<string, [number, number]>;
