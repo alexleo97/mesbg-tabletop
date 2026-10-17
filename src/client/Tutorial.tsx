@@ -204,5 +204,5 @@ function ChapterRun({
   );
 
   // A fresh game screen per lesson clears selections and fits the table again.
-  return <Game key={step} room="practice" settings={settings} updateSettings={updateSettings} practice={game} overlay={card} />;
+  return <Game key={step} room="practice" settings={settings} updateSettings={updateSettings} practice={game} overlay={card} setupCard={lesson.setupCard} />;
 }

@@ -67,6 +67,8 @@ export interface Lesson {
   setup: () => GameState;
   /** Carry on from the last lesson's table when coming straight from it. */
   continues?: boolean;
+  /** Shows the setup card (with Start the battle), for a lesson that starts the battle. */
+  setupCard?: boolean;
   done?: (s: GameState, start: GameState) => boolean;
 }
 
@@ -150,6 +152,7 @@ export const CHAPTERS: Chapter[] = [
           </>
         ),
         task: 'Press Start the battle, then Roll for priority. If you win, take Priority.',
+        setupCard: true,
         setup: () => table(),
         done: s => s.flow.started && s.phase !== 'priority',
       },
