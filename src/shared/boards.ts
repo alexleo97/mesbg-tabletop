@@ -88,8 +88,8 @@ export const STARTER_BOARDS: StarterBoard[] = [
       [
         rect('ruin', 31.5, 31, 5, 4, 15),
         circle('wood', 9, 32, 11, 6.5, -8),
-        rect('field', 38, 34.5, 9, 7),
-        rect('field', 45, 34.5, 5, 7),
+        rect('field', 39.5, 35.5, 8, 6),
+        rect('field', 45.75, 35.5, 4.5, 6),
         rect('building', 29.5, 38.5, 5, 3.5, -4),
         circle('rock', 15.5, 39, 3.2, 2.4, 30),
         circle('wood', 18, 31.5, 5, 4, 10),
@@ -130,8 +130,6 @@ export const STARTER_BOARDS: StarterBoard[] = [
       [
         road([[-3, 23], [12, 24.4], [24, 24], [36, 23.6], [51, 25]], 3.2),
         road([[25, 51], [24.5, 36], [24, 24], [23.5, 12], [23, -3]], 2.8),
-        // The market square's broken well.
-        circle('rock', 24, 24, 1.6, 1.6),
       ],
     ),
   },
