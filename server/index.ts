@@ -3,10 +3,9 @@ import { createReadStream, existsSync, mkdirSync, readFileSync, statSync, writeF
 import { createServer } from 'node:http';
 import { extname, join, normalize, resolve } from 'node:path';
 import { WebSocket, WebSocketServer } from 'ws';
-import { initialState, loadState, MAX_DICE, reduce } from '../src/shared/reducer.ts';
+import { initialState, loadState, reduce } from '../src/shared/reducer.ts';
 import type { Action, ClientMessage, GameState, Revert, Role, RoomSummary, Seat, ServerMessage } from '../src/shared/types.ts';
-import { cleanFight, cleanShot, resolveDuel, resolveShot, resolveStrikes } from '../src/shared/fight.ts';
-import { priorityChooser } from '../src/shared/flow.ts';
+import { DICE_REQUESTS, resolveRequest } from '../src/shared/resolve.ts';
 import { scenarioById } from '../src/shared/scenarios.ts';
 import { announceGame, discordEnabled } from './discord.ts';
 import { diffForUndo, mergeReverts, UNDOABLE } from '../src/shared/undo.ts';
@@ -94,12 +93,7 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
     case 'rolled':
     case 'revert':
     case 'undo':
-    case 'fight':
-    case 'strikes':
-    case 'shoot':
-    case 'rollPriority':
     case 'priorityRolled':
-    case 'rollFate':
     case 'fateRolled':
       return null; // only the server produces dice results and undo changes
     case 'declareHeroic':
@@ -113,26 +107,6 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
     }
     case 'passHeroic':
       return action.seat === client.role ? action : null;
-    case 'roll': {
-      const count = Math.max(1, Math.min(MAX_DICE, Math.round(Number(action.count) || 1)));
-      const target = action.target === undefined ? undefined : Math.max(1, Math.min(7, Math.round(Number(action.target) || 4)));
-      const then = target === undefined || action.then === undefined ? undefined : Math.max(1, Math.min(6, Math.round(Number(action.then) || 4)));
-      const dice = Array.from({ length: count }, () => randomInt(1, 7));
-      return {
-        type: 'rolled',
-        roll: {
-          id: `r-${Date.now().toString(36)}-${randomInt(1e9).toString(36)}`,
-          by: client.role,
-          label: String(action.label ?? '').slice(0, 80),
-          dice,
-          target,
-          ...(then && target ? { then, follow: dice.filter(d => d >= target).map(() => randomInt(1, 7)) } : {}),
-          ...(action.sum !== undefined && target === undefined ? { sum: Math.max(2, Math.min(12, Math.round(Number(action.sum)) || 7)) } : {}),
-          ...(mine(action.model) ? { model: action.model } : {}),
-          at: Date.now(),
-        },
-      };
-    }
     case 'loadState':
       // A loaded save keeps its board, but not its dice history, so rolls can't be forged.
       return { type: 'loadState', state: { ...loadState(action.state), log: [] } };
@@ -295,48 +269,12 @@ wss.on('connection', (ws, req) => {
       sendUndoDepth(room, client.role);
       return;
     }
-    if (msg.action?.type === 'fight') {
-      const req = client.role === 'spectator' ? null : cleanFight(msg.action.fight);
-      if (!req) return;
-      const group = `f-${Date.now().toString(36)}-${randomInt(1e9).toString(36)}`;
-      for (const roll of resolveDuel(req, () => randomInt(1, 7), client.role, group)) apply(room, { type: 'rolled', roll });
-      return;
-    }
-    if (msg.action?.type === 'strikes') {
-      const req = client.role === 'spectator' ? null : cleanFight(msg.action.fight);
-      const group = String(msg.action.group ?? '');
-      const rolls = room.state.log.filter(r => r.group === group);
-      // Strikes follow a duel that's still in the log, once.
-      if (!req || !group.startsWith('f-') || !rolls.some(r => r.side !== undefined) || rolls.some(r => r.against || r.note || r.label.startsWith('Roll-off'))) return;
-      for (const roll of resolveStrikes(req, rolls, () => randomInt(1, 7), client.role, group).rolls) apply(room, { type: 'rolled', roll });
-      if (req.combat) record(room, client.role, { type: 'resolveCombat', key: req.combat });
-      return;
-    }
-    if (msg.action?.type === 'rollFate') {
-      const m = room.state.models[String(msg.action.id)];
-      if (!m || m.owner !== client.role || !m.pending || m.fate < 1) return;
-      const roll = { id: `r-${Date.now().toString(36)}-${randomInt(1e9).toString(36)}`, by: client.role, label: `Fate roll: ${m.name} (4+ saves a wound)`, dice: [randomInt(1, 7)], target: 4, model: m.id, at: Date.now() };
-      apply(room, { type: 'fateRolled', id: m.id, roll });
-      return;
-    }
-    if (msg.action?.type === 'shoot') {
-      const req = client.role === 'spectator' ? null : cleanShot(msg.action.shot);
-      if (!req) return;
-      const group = `s-${Date.now().toString(36)}-${randomInt(1e9).toString(36)}`;
-      for (const roll of resolveShot(req, () => randomInt(1, 7), client.role, group).rolls) apply(room, { type: 'rolled', roll });
-      return;
-    }
-    if (msg.action?.type === 'rollPriority') {
-      if (client.role === 'spectator' || room.state.phase !== 'priority') return;
-      // Roll off; a first-turn tie is simply rolled again.
-      let roll: [number, number];
-      let chooser: Seat | null;
-      do {
-        roll = [randomInt(1, 7), randomInt(1, 7)];
-        chooser = priorityChooser(roll, room.state.turn, room.state.flow.chooser);
-        apply(room, { type: 'rolled', roll: { id: `r-${Date.now().toString(36)}-${randomInt(1e9).toString(36)}`, by: client.role, label: `Priority roll, turn ${room.state.turn}`, dice: roll, at: Date.now() } });
-      } while (!chooser);
-      apply(room, { type: 'priorityRolled', roll, chooser });
+    if (DICE_REQUESTS.has(msg.action?.type)) {
+      if (client.role === 'spectator') return;
+      const out = resolveRequest(room.state, client.role, msg.action, () => randomInt(1, 7), () => `${Date.now().toString(36)}-${randomInt(1e9).toString(36)}`);
+      if (!out) return;
+      for (const a of out.apply) apply(room, a);
+      if (out.record) record(room, client.role, out.record);
       return;
     }
     const action = authorise(client, msg.action, room.state);

@@ -41,7 +41,7 @@ const worthKeeping = (s: GameState) => s.flow.started || Object.keys(s.models).l
 
 export type ConnectionStatus = 'connecting' | 'online' | 'offline';
 
-interface Snapshot {
+export interface Snapshot {
   state: GameState;
   status: ConnectionStatus;
   players: Role[];
@@ -49,8 +49,18 @@ interface Snapshot {
   undoDepth: number;
 }
 
+/** What the game screen needs from a game: the live server room, or a practice game in the browser. */
+export interface Connection {
+  readonly room: string;
+  subscribe: (l: () => void) => () => void;
+  getSnapshot: () => Snapshot;
+  dispatch(action: Action): void;
+  setRole(role: Role): void;
+  close(): void;
+}
+
 /** Keeps this browser's copy of a room in step with the server, reconnecting when the link drops. */
-export class RoomConnection {
+export class RoomConnection implements Connection {
   private ws?: WebSocket;
   private listeners = new Set<() => void>();
   private retry = 0;
@@ -132,6 +142,6 @@ export class RoomConnection {
   }
 }
 
-export function useRoom(conn: RoomConnection) {
+export function useRoom(conn: Connection) {
   return useSyncExternalStore(conn.subscribe, conn.getSnapshot);
 }

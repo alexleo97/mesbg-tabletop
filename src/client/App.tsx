@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PHASES, type Model, type Role, type RoomSummary, type Seat } from '../shared/types.ts';
 import { Board, type Tool } from './Board.tsx';
-import { RoomConnection, useRoom } from './net.ts';
+import { RoomConnection, useRoom, type Connection } from './net.ts';
 import { pictureUrl } from '../shared/catalog.ts';
 import { useCatalog } from './ListBuilder.tsx';
 import { ArmyPanel, DicePanel, SelectionPanel, SettingsPanel, TablePanel } from './Panels.tsx';
@@ -15,6 +15,7 @@ import { combats } from '../shared/flow.ts';
 import { distanceBetween, formatInches } from '../shared/geometry.ts';
 import { scenarioById, vpTotal } from '../shared/scenarios.ts';
 import { useSettings, type Settings } from './settings.ts';
+import { Tutorial } from './Tutorial.tsx';
 
 const DISCORD_INVITE = 'https://discord.gg/epNRWMxGws';
 
@@ -77,6 +78,9 @@ function Lobby({ settings, updateSettings }: { settings: Settings; updateSetting
       <h1>MESBG Tabletop</h1>
       <p>Play the Middle-earth Strategy Battle Game in your browser, on a computer or phone.</p>
       <button className="primary big" onClick={() => go(randomRoom())}>Start a new game</button>
+      <button className="learn" onClick={() => (location.search = '?learn')}>
+        New to the game? <b>Learn to play</b> in a guided practice battle
+      </button>
       <div className="join">
         <input placeholder="Game code, e.g. osgiliath-1234" value={code} onChange={e => setCode(e.target.value)} onKeyDown={e => e.key === 'Enter' && go(code)} />
         <button onClick={() => go(code)}>Join</button>
@@ -122,11 +126,21 @@ function Lobby({ settings, updateSettings }: { settings: Settings; updateSetting
 
 type PanelTab = 'model' | 'dice' | 'rules' | 'army' | 'table' | 'settings';
 
-function Game({ room, settings, updateSettings }: { room: string; settings: Settings; updateSettings: (p: Partial<Settings>) => void }) {
+interface GameProps {
+  room: string;
+  settings: Settings;
+  updateSettings: (p: Partial<Settings>) => void;
+  /** A game that isn't a server room, such as the training; you play player 1. */
+  practice?: Connection;
+  /** Shown over the table, such as the current lesson. */
+  overlay?: React.ReactNode;
+}
+
+export function Game({ room, settings, updateSettings, practice, overlay }: GameProps) {
   const roleKey = `role:${room}`;
-  const [role, setRole] = useState<Role | null>(() => (storage.get(roleKey) as Role | null) ?? null);
+  const [role, setRole] = useState<Role | null>(() => (practice ? 'p1' : ((storage.get(roleKey) as Role | null) ?? null)));
   // One connection per room; role changes are sent over it rather than reconnecting.
-  const conn = useMemo(() => new RoomConnection(room, role ?? 'spectator'), [room]);
+  const conn = useMemo<Connection>(() => practice ?? new RoomConnection(room, role ?? 'spectator'), [room, practice]);
   const { state, status, players, undoDepth } = useRoom(conn);
   const [tool, setTool] = useState<Tool>('move');
   const [sight, setSight] = useState(false);
@@ -143,9 +157,9 @@ function Game({ room, settings, updateSettings }: { room: string; settings: Sett
   useEffect(() => {
     if (role) {
       conn.setRole(role);
-      storage.set(roleKey, role);
+      if (!practice) storage.set(roleKey, role);
     }
-  }, [role, conn, roleKey]);
+  }, [role, conn, roleKey, practice]);
 
   // Drop selections for models that were deleted or killed elsewhere.
   useEffect(() => {
@@ -283,6 +297,7 @@ function Game({ room, settings, updateSettings }: { room: string; settings: Sett
 
       <main className={`main ${panelOpen ? 'panel-open' : ''}`}>
         <div className="table-area">
+          {overlay}
           <div className="stage">
             <Board
               state={state}
@@ -459,7 +474,10 @@ function Game({ room, settings, updateSettings }: { room: string; settings: Sett
 }
 
 export function App() {
-  const room = cleanRoom(new URLSearchParams(location.search).get('room') ?? '');
+  const params = new URLSearchParams(location.search);
+  const room = cleanRoom(params.get('room') ?? '');
   const [settings, updateSettings] = useSettings();
+  if (params.has('learn'))
+    return <Tutorial settings={settings} updateSettings={updateSettings} onExit={() => (location.search = '')} onPlay={() => (location.search = `?room=${randomRoom()}`)} />;
   return room.length >= 3 ? <Game room={room} settings={settings} updateSettings={updateSettings} /> : <Lobby settings={settings} updateSettings={updateSettings} />;
 }
