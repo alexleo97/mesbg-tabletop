@@ -40,10 +40,15 @@ export function heroicCombatWon(state: GameState, m: Model): boolean {
  * a Heroic Combat freed them to fight again).
  */
 export function fightDone(state: GameState, c: Combat): boolean {
-  const resolved = state.flow.resolved;
-  if (resolved.includes(c.key)) return true;
-  const fought = new Set(resolved.flatMap(k => k.split(',')));
-  return [c.p1, c.p2].some(side => side.length > 0 && side.every(id => fought.has(id) && !heroicCombatWon(state, state.models[id])));
+  if (state.flow.resolved.includes(c.key)) return true;
+  const fought = foughtThisTurn(state);
+  return [c.p1, c.p2].some(side => side.length > 0 && side.every(id => fought.has(id)));
+}
+
+/** Models that have fought this turn and may not fight again (a Heroic Combat won lets its side fight again). */
+export function foughtThisTurn(state: GameState): Set<string> {
+  const ids = state.flow.resolved.flatMap(k => k.split(',')).filter(id => state.models[id] && !heroicCombatWon(state, state.models[id]));
+  return new Set(ids);
 }
 
 /** Whether a model's moves are held to an allowance this phase (see moveAllowance). */

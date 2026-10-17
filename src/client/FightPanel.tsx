@@ -3,6 +3,7 @@ import { modelStats } from '../shared/catalog.ts';
 import { duelLeader, strikeWounds, type Fighter } from '../shared/fight.ts';
 import { declared, phaseAllows } from '../shared/heroics.ts';
 import { waitingOnMight } from '../shared/bot.ts';
+import { foughtThisTurn } from '../shared/movement.ts';
 import { BOT_NAME, type Action, type GameState, type Model, type Role, type Seat } from '../shared/types.ts';
 import { useCatalog } from './ListBuilder.tsx';
 import { RollRow } from './Panels.tsx';
@@ -57,6 +58,8 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
   const victim = lastRolls.find(r => r.against)?.against;
   const victimModel = victim ? state.models[victim] : undefined;
 
+  // A model that backed away into another fight has already fought this turn, so it doesn't roll again.
+  const fought = state.flow.started && state.phase === 'fight' ? foughtThisTurn(state) : new Set<string>();
   const ready = sides.p1.length > 0 && sides.p2.length > 0 && role !== 'spectator';
   // Fights are rolled in the Fight phase once the battle is under way.
   const fightNow = role === 'spectator' || phaseAllows(state, role, { type: 'fight' });
@@ -100,6 +103,7 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
                       {f.strike && <small className="heroic-tag">Heroic Strike</small>}
                       {f.defence && <small className="heroic-tag">Heroic Defence</small>}
                       {declared(state, m.id, 'Heroic Strength') && <small className="heroic-tag">Heroic Strength</small>}
+                      {fought.has(m.id) && <small className="heroic-tag">Fought this turn: sits this one out</small>}
                     </span>
                     {STATS.map(([k, label]) => (
                       <label key={k} className="mini-stat">
