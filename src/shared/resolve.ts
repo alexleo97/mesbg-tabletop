@@ -1,9 +1,10 @@
 import { backAway } from './backAway.ts';
+import { inTheWay } from './sight.ts';
 import { cleanFight, cleanShot, resolveDuel, resolveShot, resolveStrikes } from './fight.ts';
 import { priorityChooser } from './flow.ts';
 import { touching } from './objects.ts';
 import { MAX_DICE } from './reducer.ts';
-import type { Action, GameState, Seat } from './types.ts';
+import type { Action, DiceRoll, GameState, Seat } from './types.ts';
 
 /** Dice requests a player sends, which only whoever holds the dice (the server, or the browser in practice games) can answer. */
 export const DICE_REQUESTS = new Set<Action['type']>(['roll', 'fight', 'strikes', 'shoot', 'rollFate', 'rollPriority', 'uncover']);
@@ -64,16 +65,29 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
         retreat = backAway(state, ids((1 - winner) as 0 | 1), ids(winner));
         return retreat.trapped.includes(target);
       };
-      const struck = resolveStrikes(req, rolls, d6, seat, group, now, cornered).rolls.map((roll): Action => ({ type: 'rolled', roll }));
+      const { rolls: strikes, outcome } = resolveStrikes(req, rolls, d6, seat, group, now, cornered);
+      // Wounds go first, so a loser they slay stays where it fell rather than backing away.
       return {
-        apply: [...struck, ...(retreat?.moves.length ? [{ type: 'backAway', moves: retreat.moves } as Action] : [])],
+        apply: [
+          ...strikes.map((roll): Action => ({ type: 'rolled', roll })),
+          ...woundAction(state, strikes, outcome.target?.id, outcome.wounds, ids(outcome.winner), 'fight', group),
+          ...(retreat?.moves.length ? [{ type: 'backAway', moves: retreat.moves } as Action] : []),
+        ],
         ...(req.combat ? { record: { type: 'resolveCombat', key: req.combat } } : {}),
       };
     }
     case 'shoot': {
       const req = cleanShot(action.shot);
       if (!req) return null;
-      return { apply: resolveShot(req, d6, seat, `s-${uid()}`, now).rolls.map(roll => ({ type: 'rolled', roll })) };
+      // The game counts what's in the way itself, from the table.
+      const shooter = state.models[req.shooter.id];
+      const target = state.models[req.target.id];
+      if (shooter && target) req.obstacles = Math.min(5, inTheWay(state, shooter, target).length);
+      const group = `s-${uid()}`;
+      const shot = resolveShot(req, d6, seat, group, now);
+      return {
+        apply: [...shot.rolls.map((roll): Action => ({ type: 'rolled', roll })), ...woundAction(state, shot.rolls, req.target.id, shot.wounds, [req.shooter.id], 'shoot', group)],
+      };
     }
     case 'rollFate': {
       const m = state.models[String(action.id)];
@@ -109,4 +123,22 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
     default:
       return null;
   }
+}
+
+/**
+ * Whether a fight or shot's wounds can be taken straight away: not while a hero who rolled could still spend Might to
+ * turn a failed die into a success (then the players apply them, after deciding).
+ */
+function autoWound(state: GameState, rolls: DiceRoll[]): boolean {
+  return !rolls.some(r => {
+    const m = r.model ? state.models[r.model] : undefined;
+    if (!m?.hero || m.might < 1 || r.target === undefined) return false;
+    return r.dice.some(d => d < r.target!) || (r.follow ?? []).some(d => d < (r.then ?? 7));
+  });
+}
+
+/** The wounds of a fight or shot, taken as soon as the dice land when nothing is left to decide. */
+function woundAction(state: GameState, rolls: DiceRoll[], victim: string | undefined, count: number, by: string[], how: 'fight' | 'shoot', group: string): Action[] {
+  if (!victim || count < 1 || !state.models[victim] || !autoWound(state, rolls)) return [];
+  return [{ type: 'wound', id: victim, count, by, how, group }];
 }

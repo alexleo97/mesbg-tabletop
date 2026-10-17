@@ -1,5 +1,7 @@
 import { bookBase, round } from './bases.ts';
 import { mmToIn } from './geometry.ts';
+import { insidePolygon, outline } from './sight.ts';
+import type { Scenario, Zone } from './scenarios.ts';
 import type { Base, GameState, Model, Seat } from './types.ts';
 
 /** One line of an army list: a profile and how many of it. */
@@ -184,7 +186,7 @@ interface Pending {
  * Each warband is placed as its own block (heroes at the front, followers in ranks behind) with a gap between
  * warbands, and a warband deployed later goes beside the ones already there.
  */
-export function deployList(entries: ListEntry[], owner: Seat, state: Pick<GameState, 'board' | 'models'>): Model[] {
+export function deployList(entries: ListEntry[], owner: Seat, state: Pick<GameState, 'board' | 'models' | 'terrain'>, scenario?: Scenario): Model[] {
   const { w: boardW, h: boardH } = state.board;
   const placed: Model[] = [];
   const gap = 0.15;
@@ -211,6 +213,10 @@ export function deployList(entries: ListEntry[], owner: Seat, state: Pick<GameSt
     for (let i = 0; i < e.count; i++) list.push({ e, base, w: mmToIn(base.w), h: mmToIn(base.h) });
     groups.set(e.group ?? '', list);
   }
+
+  // Scenarios with corner, semicircle or wedge zones get their armies packed into those zones instead.
+  const zones = shapedZones(scenario, owner, boardW, boardH);
+  if (zones.length) return packIntoZones([...groups.values()], zones, owner, state, boxes);
 
   // Each warband as a block: heroes in the front rank, then followers (foot before riders) in ranks about twice as
   // wide as they are deep. Spots are relative to the block's back-left corner, with depth measured towards the enemy.
@@ -280,33 +286,126 @@ export function deployList(entries: ListEntry[], owner: Seat, state: Pick<GameSt
       }
     }
     for (const { m, x, depth } of band.spots) {
-      const maxWounds = Math.max(1, Math.round(m.e.wounds ?? 1));
-      const model: Model = {
-        id: newId('m'),
-        owner,
-        name: m.e.name,
-        x: Math.min(boardW - m.w / 2, left + x),
-        y: back + inward * depth,
-        rot: owner === 'p1' ? 0 : 180,
-        base: m.base,
-        move: m.e.move ?? defaultMove(m.e.name, m.base),
-        wounds: maxWounds,
-        maxWounds,
-        might: m.e.might ?? 0,
-        will: m.e.will ?? 0,
-        fate: m.e.fate ?? 0,
-        hero: m.e.hero,
-        dead: false,
-        ...(m.e.profileId ? { profileId: m.e.profileId } : {}),
-        ...(m.e.options?.length ? { options: m.e.options } : {}),
-        ...(m.e.general ? { general: true } : {}),
-        ...(m.e.points ? { points: m.e.points } : {}),
-        ...(m.e.tier ? { tier: m.e.tier } : {}),
-      };
+      const model = makeModel(m, owner, Math.min(boardW - m.w / 2, left + x), back + inward * depth);
       placed.push(model);
       const r = Math.max(m.w, m.h) / 2;
       boxes.push({ x0: model.x - r, x1: model.x + r, y0: model.y - r, y1: model.y + r });
     }
   }
+  return placed;
+}
+
+/** A model for a list entry, standing at (x, y) facing the enemy. */
+function makeModel(m: Pending, owner: Seat, x: number, y: number): Model {
+  const maxWounds = Math.max(1, Math.round(m.e.wounds ?? 1));
+  const model: Model = {
+    id: newId('m'),
+    owner,
+    name: m.e.name,
+    x,
+    y,
+    rot: owner === 'p1' ? 0 : 180,
+    base: m.base,
+    move: m.e.move ?? defaultMove(m.e.name, m.base),
+    wounds: maxWounds,
+    maxWounds,
+    might: m.e.might ?? 0,
+    will: m.e.will ?? 0,
+    fate: m.e.fate ?? 0,
+    hero: m.e.hero,
+    dead: false,
+    ...(m.e.profileId ? { profileId: m.e.profileId } : {}),
+    ...(m.e.options?.length ? { options: m.e.options } : {}),
+    ...(m.e.general ? { general: true } : {}),
+    ...(m.e.points ? { points: m.e.points } : {}),
+    ...(m.e.tier ? { tier: m.e.tier } : {}),
+  };
+  return model;
+}
+
+/** A deployment zone scaled to the table: whether a point is in it, and the spot armies pack out from. */
+interface Area {
+  inside: (x: number, y: number) => boolean;
+  anchor: { x: number; y: number };
+}
+
+/**
+ * The player's deployment zones when they aren't strips along the long edges (those keep the block layout above):
+ * corner quarter-circles, edge semicircles and wedges. Sub-zones picked by a roll are left out.
+ */
+function shapedZones(scenario: Scenario | undefined, owner: Seat, w: number, h: number): Area[] {
+  const sx = w / 48;
+  const sy = h / 48;
+  const mine = (scenario?.deployment.zones ?? []).filter((z: Zone) => z.seat === owner && !/sub-zone/i.test(z.label ?? ''));
+  if (!mine.length || mine.every(z => z.shape === 'rect' || z.shape === 'edge')) return [];
+  return mine.flatMap((z): Area[] => {
+    switch (z.shape) {
+      case 'circle':
+      case 'semicircle':
+      case 'quarter-circle': {
+        const cx = z.cx * sx;
+        const cy = z.cy * sy;
+        return [{ inside: (x, y) => ((x - cx) / (z.r * sx)) ** 2 + ((y - cy) / (z.r * sy)) ** 2 <= 1, anchor: { x: cx, y: cy } }];
+      }
+      case 'polygon': {
+        const poly = z.points.map(([x, y]) => ({ x: x * sx, y: y * sy }));
+        // Pack out from the corner of the table the wedge holds.
+        const corner = poly.find(p => (p.x === 0 || p.x === w) && (p.y === 0 || p.y === h) && poly.filter(q => q.x === p.x || q.y === p.y).length === 3) ?? poly[0];
+        return [{ inside: (x, y) => insidePolygon(poly, { x, y }), anchor: corner }];
+      }
+      case 'rect':
+        return [{ inside: (x, y) => x >= z.x * sx && x <= (z.x + z.w) * sx && y >= z.y * sy && y <= (z.y + z.h) * sy, anchor: { x: (z.x + z.w / 2) * sx, y: (z.y + z.h / 2) * sy } }];
+      default:
+        return [];
+    }
+  });
+}
+
+/**
+ * Packs each warband into a zone, taking the zones in turn (so an army with two zones splits between them), as close
+ * to the zone's corner or edge as it fits. Every model stands wholly inside the zone, on the table, clear of other
+ * models and off buildings and cliffs, facing the middle of the table.
+ */
+function packIntoZones(
+  groups: Pending[][],
+  zones: Area[],
+  owner: Seat,
+  state: Pick<GameState, 'board' | 'models' | 'terrain'>,
+  boxes: { x0: number; x1: number; y0: number; y1: number }[],
+): Model[] {
+  const { w, h } = state.board;
+  const solid = Object.values(state.terrain ?? {}).filter(t => t.kind === 'building' || t.kind === 'cliff').map(t => outline(t));
+  const gap = 0.15;
+  const step = 0.25;
+  const spots = zones.map(z => {
+    const out: { x: number; y: number; d: number }[] = [];
+    for (let x = step / 2; x < w; x += step) for (let y = step / 2; y < h; y += step) if (z.inside(x, y)) out.push({ x, y, d: Math.hypot(x - z.anchor.x, y - z.anchor.y) });
+    return out.sort((a, b) => a.d - b.d);
+  });
+  const fits = (z: number, x: number, y: number, r: number) =>
+    x - r >= 0 && y - r >= 0 && x + r <= w && y + r <= h &&
+    [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r], [r * 0.7, r * 0.7], [-r * 0.7, r * 0.7], [r * 0.7, -r * 0.7], [-r * 0.7, -r * 0.7]].every(([dx, dy]) => zones[z].inside(x + dx, y + dy)) &&
+    !solid.some(poly => insidePolygon(poly, { x, y })) &&
+    boxes.every(b => b.x1 + gap <= x - r || b.x0 - gap >= x + r || b.y1 + gap <= y - r || b.y0 - gap >= y + r);
+  const placed: Model[] = [];
+  groups.forEach((group, gi) => {
+    // Followers nearest the corner, heroes out in front of them.
+    const order = [...group.filter(m => !m.e.hero), ...group.filter(m => m.e.hero)];
+    for (const m of order) {
+      const r = Math.max(m.w, m.h) / 2;
+      let at: { x: number; y: number } | undefined;
+      for (let k = 0; k < zones.length && !at; k++) {
+        const z = (gi + k) % zones.length;
+        at = spots[z].find(p => fits(z, p.x, p.y, r));
+      }
+      // No room left in any zone: fall back to the nearest free spot on the table.
+      at ??= { x: Math.min(w - r, Math.max(r, zones[gi % zones.length].anchor.x)), y: Math.min(h - r, Math.max(r, zones[gi % zones.length].anchor.y)) };
+      const model = makeModel(m, owner, at.x, at.y);
+      // Face the middle of the table.
+      model.rot = Math.round((Math.atan2(w / 2 - at.x, -(h / 2 - at.y)) * 180) / Math.PI / 15) * 15;
+      placed.push(model);
+      boxes.push({ x0: at.x - r, x1: at.x + r, y0: at.y - r, y1: at.y + r });
+    }
+  });
   return placed;
 }

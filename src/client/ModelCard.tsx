@@ -62,15 +62,14 @@ export function rulesOf(m: Model, catalog: Catalog | null): string[] {
 
 /** A selected model's card: its profile at a glance and the actions that make sense in this phase. */
 export function ModelCard({ state, dispatch, role, model: m, catalog, target, clearTarget, combat, openFight, openTab, close }: Props) {
-  const [obstacles, setObstacles] = useState(0);
   const drag = useDraggable('model-card');
   const [photoFailed, setPhotoFailed] = useState(false);
   const [openRule, setOpenRule] = useState<string | null>(null);
-  // What's between the shooter and its target, as a starting count of In the Way rolls.
+  // What's between the shooter and its target: the game rolls In the Way for each (up to 5).
   const between = target ? inTheWay(state, m, target) : [];
+  const obstacles = Math.min(5, between.length);
   const seen = target ? sightTo(state, m, target) : null;
   const up = groundAt(state, m);
-  useEffect(() => setObstacles(Math.min(5, between.length)), [target?.id, between.length]);
   const unit = m.profileId ? catalog?.units[m.profileId] : undefined;
   const printed = unit && statsWithOptions(unit, unit.options.filter(o => m.options?.includes(o.name)).map(o => o.id));
   const stats = modelStats(catalog, m);
@@ -120,15 +119,12 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
             At <b>{target.name}</b>: {formatInches(dist)} of {weapon.range}"{inRange ? '' : ', out of range'}. Hits on {shoot}+, wounds on {formatNeed(need)}.
           </p>
           {seen === 'hidden' && <p className="warn">Terrain seems to hide {target.name} completely. Check from the model's eye level.</p>}
-          {between.length > 0 && <p className="muted small">In the way: {between.join(', ')}.</p>}
+          <p className="muted small">
+            {between.length
+              ? `In the way: ${between.join(', ')}. That's ${obstacles} In the Way roll${obstacles === 1 ? '' : 's'}, rolled for you.`
+              : 'Nothing is in the way.'}
+          </p>
           <div className="row wrap">
-            <span className="counter">
-              <button onClick={() => setObstacles(o => Math.max(0, o - 1))} aria-label="Fewer things in the way">−</button>
-              <span>
-                In the way <b>{obstacles}</b>
-              </span>
-              <button onClick={() => setObstacles(o => Math.min(5, o + 1))} aria-label="More things in the way">+</button>
-            </span>
             <button
               className="primary"
               disabled={!inRange || !need || !phaseAllows(state, role, { type: 'shoot', shot: { shooter: { id: m.id } } })}

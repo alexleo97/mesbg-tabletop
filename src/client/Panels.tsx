@@ -1,3 +1,4 @@
+import { scenarioById } from '../shared/scenarios.ts';
 import { armyStatus } from '../shared/status.ts';
 import { ResultReport } from './ResultReport.tsx';
 import { MapsSection } from './Maps.tsx';
@@ -279,7 +280,7 @@ function OpponentArmy({ state, dispatch, seat }: { state: GameState; dispatch: D
       entries = listEntries(roster, catalog).flatMap(g => g.entries);
       name = premade?.name ?? army;
     }
-    dispatch({ type: 'addModels', models: deployList(entries, seat, state) });
+    dispatch({ type: 'addModels', models: deployList(entries, seat, state, scenarioById(state.scenario)) });
     dispatch({ type: 'setName', seat, name: `${BOT_NAME} (${name})` });
   };
   if (theirs.length)
@@ -352,7 +353,7 @@ export function ArmyPanel({ state, dispatch, role }: { state: GameState; dispatc
     if (onTable(owner) && !(warband && byWarband.has(owner))) return;
     if (warband) setByWarband(prev => new Set(prev).add(owner));
     const count = entries.reduce((a, e) => a + e.count, 0);
-    dispatch({ type: 'addModels', models: deployList(entries, owner, state) });
+    dispatch({ type: 'addModels', models: deployList(entries, owner, state, scenarioById(state.scenario)) });
     setMessage(`Deployed ${count === 1 ? '1 model' : `${count} models`} for ${state.names[owner] || (owner === 'p1' ? 'Player 1' : 'Player 2')}.${note}`);
   };
 
@@ -398,7 +399,7 @@ export function ArmyPanel({ state, dispatch, role }: { state: GameState; dispatc
 
   const addOne = () => {
     if (!single.trim()) return;
-    const models = deployList([{ name: single.trim(), count: 1, hero: false }], owner, state);
+    const models = deployList([{ name: single.trim(), count: 1, hero: false }], owner, state, scenarioById(state.scenario));
     dispatch({ type: 'addModels', models });
     setSingle('');
   };

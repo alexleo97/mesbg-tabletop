@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { deployList, guessBase, parseList } from '../src/shared/importList.ts';
 import { distanceBetween } from '../src/shared/geometry.ts';
 import { initialState, reduce } from '../src/shared/reducer.ts';
+import { scenarioById } from '../src/shared/scenarios.ts';
+import type { Model } from '../src/shared/types.ts';
 
 describe('parseList', () => {
   it('reads nested JSON warbands and skips wargear options', () => {
@@ -105,5 +107,33 @@ describe('deployList', () => {
     const [m] = deployList([{ name: 'Orc', count: 1, hero: false }], 'p2', initialState());
     expect(m.y).toBeLessThan(3);
     expect(m.rot).toBe(180);
+  });
+});
+
+describe('deploying into scenario zones', () => {
+  const zoneTest = (id: string, seat: 'p1' | 'p2') => {
+    const s = { ...initialState(), board: { w: 72, h: 48, mat: 'grass' as const } };
+    const entries = [
+      { name: 'Captain', count: 1, hero: true, group: 'a' },
+      { name: 'Warrior', count: 12, hero: false, group: 'a' },
+      { name: 'Lieutenant', count: 1, hero: true, group: 'b' },
+      { name: 'Archer', count: 12, hero: false, group: 'b' },
+    ];
+    return deployList(entries, seat, s, scenarioById(id));
+  };
+
+  it('splits an army between its two corners in Divide and Conquer', () => {
+    const ms = zoneTest('divide-and-conquer', 'p1');
+    expect(ms).toHaveLength(26);
+    // Player 1's corners are top-left and bottom-right: 12" quarter circles, scaled to a 72" x 48" table.
+    const inCorner = (m: Model, cx: number, cy: number) => ((m.x - cx) / 18) ** 2 + ((m.y - cy) / 12) ** 2 <= 1;
+    expect(ms.every(m => inCorner(m, 0, 0) || inCorner(m, 72, 48))).toBe(true);
+    expect(ms.filter(m => inCorner(m, 0, 0)).length).toBe(13);
+    for (const a of ms) for (const b of ms) if (a !== b) expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThan(0.9);
+  });
+
+  it('keeps an army inside the semicircle in Treasure Hoard', () => {
+    const ms = zoneTest('treasure-hoard', 'p2');
+    expect(ms.every(m => ((m.x - 36) / 18) ** 2 + (m.y / 12) ** 2 <= 1)).toBe(true);
   });
 });

@@ -34,7 +34,7 @@ export function setup(armies: [string, string], points: number, scenario: string
   (['p1', 'p2'] as const).forEach((seat, i) => {
     const r = botRoster(catalog, armies[i], points, rand);
     const entries = listEntries(r, catalog).flatMap(g => g.entries);
-    const models = deployList(entries, seat, state).map(m => ({ ...m, id: `${seat}-${n++}` }));
+    const models = deployList(entries, seat, state, scenario ? scenarioById(scenario) : undefined).map(m => ({ ...m, id: `${seat}-${n++}` }));
     state = reduce(state, { type: 'addModels', models });
   });
   return reduce(state, { type: 'startGame', at: 1 });
