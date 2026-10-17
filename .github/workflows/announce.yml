@@ -1,0 +1,22 @@
+# Posts each change merged into main to Discord, when the DISCORD_WEBHOOK_URL repository secret is set.
+name: Announce updates
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  announce:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post to Discord
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TITLE: ${{ github.event.head_commit.message }}
+          LINK: ${{ github.event.head_commit.url }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then echo "No DISCORD_WEBHOOK_URL secret; skipping."; exit 0; fi
+          title=$(printf '%s' "$TITLE" | head -n1)
+          jq -n --arg t "$title" --arg l "$LINK" \
+            '{content: ("🛠️ **Update on its way:** " + $t + "\nThe live site picks it up in a few minutes. <" + $l + ">"), allowed_mentions: {parse: []}}' \
+            | curl -sSf -H 'content-type: application/json' -d @- "$WEBHOOK"
