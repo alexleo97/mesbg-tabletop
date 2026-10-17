@@ -12,7 +12,8 @@ import { CoachBar } from './CoachBar.tsx';
 import { FightPanel } from './FightPanel.tsx';
 import { ModelCard, weaponOf } from './ModelCard.tsx';
 import { SightHint } from './SightHint.tsx';
-import { combats } from '../shared/flow.ts';
+import { combats, other } from '../shared/flow.ts';
+import { waitingOnMight } from '../shared/bot.ts';
 import { distanceBetween, formatInches } from '../shared/geometry.ts';
 import { scenarioById } from '../shared/scenarios.ts';
 import { vpTotals } from '../shared/scoring.ts';
@@ -109,6 +110,9 @@ function Lobby({ settings, updateSettings }: { settings: Settings; updateSetting
           <div className="hero-actions">
             <button className="primary big" onClick={() => go(randomRoom())}>
               Start a new game
+            </button>
+            <button className="big" onClick={() => (location.search = `?room=${randomRoom()}&vs=computer`)}>
+              Play the computer
             </button>
             <button className="big" onClick={() => (location.search = '?learn')}>
               Learn to play
@@ -209,7 +213,9 @@ interface GameProps {
 
 export function Game({ room, settings, updateSettings, practice, overlay }: GameProps) {
   const roleKey = `role:${room}`;
-  const [role, setRole] = useState<Role | null>(() => (practice ? 'p1' : ((storage.get(roleKey) as Role | null) ?? null)));
+  // Arriving to play the computer: you take player 1 and it takes player 2.
+  const vsComputer = useMemo(() => !practice && new URLSearchParams(location.search).get('vs') === 'computer', []);
+  const [role, setRole] = useState<Role | null>(() => (practice || vsComputer ? 'p1' : ((storage.get(roleKey) as Role | null) ?? null)));
   // One connection per room; role changes are sent over it rather than reconnecting.
   const conn = useMemo<Connection>(() => practice ?? new RoomConnection(room, role ?? 'spectator'), [room, practice]);
   const { state, status, players, undoDepth, invite, refused, marks } = useRoom(conn);
@@ -274,6 +280,18 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
       dispatch({ type: 'setScenery', w: m.data.w, h: m.data.h, mat: m.data.mat, terrain });
     });
   }, [mapId, seat, players.includes(seat as Seat), status]);
+  useEffect(() => {
+    if (!vsComputer || seat !== 'p1' || !players.includes('p1') || status !== 'online') return;
+    const url = new URL(location.href);
+    url.searchParams.delete('vs');
+    history.replaceState(null, '', url);
+    if (!state.bot && !players.includes('p2')) dispatch({ type: 'setBot', seat: 'p2' });
+  }, [seat, players.includes('p1'), status]);
+  // When the computer holds off its strikes for you to spend Might, the fight opens so you can.
+  const mightFight = waitingOnMight(state);
+  useEffect(() => {
+    if (mightFight && seat && seat !== state.bot) setFightKey(mightFight);
+  }, [mightFight]);
   const leave = () => {
     location.search = '';
   };
@@ -305,9 +323,9 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
         )}
         <div className="seats">
           {(['p1', 'p2'] as const).map(s => (
-            <button key={s} className={`seat ${s}`} disabled={!!state.private && !invite} onClick={() => setRole(s)}>
+            <button key={s} className={`seat ${s}`} disabled={(!!state.private && !invite) || state.bot === s} onClick={() => setRole(s)}>
               {state.names[s] || (s === 'p1' ? 'Player 1' : 'Player 2')}
-              <small>{taken(s) ? 'connected now' : s === 'p1' ? 'deploys from the bottom' : 'deploys from the top'}</small>
+              <small>{state.bot === s ? 'played by the computer' : taken(s) ? 'connected now' : s === 'p1' ? 'deploys from the bottom' : 'deploys from the top'}</small>
             </button>
           ))}
         </div>
@@ -567,11 +585,23 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
                       />
                     )}
                     <select value={role} onChange={e => setRole(e.target.value as Role)} aria-label="Your seat">
-                      <option value="p1">Player 1</option>
-                      <option value="p2">Player 2</option>
+                      <option value="p1" disabled={state.bot === 'p1'}>Player 1</option>
+                      <option value="p2" disabled={state.bot === 'p2'}>Player 2</option>
                       <option value="spectator">Spectator</option>
                     </select>
                   </div>
+                  {seat && (
+                    <label className="check">
+                      <input
+                        type="checkbox"
+                        checked={state.bot === other(seat)}
+                        disabled={!state.bot && players.includes(other(seat))}
+                        onChange={e => dispatch({ type: 'setBot', seat: e.target.checked ? other(seat) : null })}
+                      />
+                      The computer plays {seatName(other(seat))}
+                      {!state.bot && players.includes(other(seat)) ? ' (someone is sitting there now)' : ''}
+                    </label>
+                  )}
                   <h4>Game</h4>
                   <label className="check">
                     <input type="checkbox" checked={state.listed} disabled={role === 'spectator' || state.private} onChange={e => dispatch({ type: 'setListed', listed: e.target.checked })} />

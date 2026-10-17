@@ -8,7 +8,9 @@ import { objectiveMarkers, river, STARTER_BOARDS, starterTerrain } from '../shar
 import { baseLabel, loadCatalog, parseBuilderExport, STAT_NAMES, startingPoints, statsWithOptions } from '../shared/catalog.ts';
 import { deployList, guessBase, newId, parseList, type ListEntry } from '../shared/importList.ts';
 import { BASE_SIZES } from '../shared/bases.ts';
-import { addSavedList, listEntries, ListBuilder, SavedLists, Portrait, useCatalog } from './ListBuilder.tsx';
+import { addSavedList, ListBuilder, SavedLists, Portrait, useCatalog } from './ListBuilder.tsx';
+import { listEntries } from '../shared/warbands.ts';
+import { botRoster, playableArmies } from '../shared/botList.ts';
 import { parseAdmiral } from '../shared/admiral.ts';
 import { MATS, TERRAIN_KINDS, type Action, type Base, type DiceRoll, type GameState, type Mat, type Model, type Role, type Seat, type Terrain, type TerrainKind } from '../shared/types.ts';
 import { BODY_FONTS, HEADING_FONTS, THEMES, type Settings } from './settings.ts';
@@ -250,6 +252,53 @@ export function DicePanel({ state, dispatch, role }: { state: GameState; dispatc
   );
 }
 
+/** In a game against the computer: a random army for it to play, from any army at the size you pick. */
+function ComputerArmy({ state, dispatch, seat }: { state: GameState; dispatch: Dispatch; seat: Seat }) {
+  const { catalog } = useCatalog();
+  const [army, setArmy] = useState('');
+  const mine = Object.values(state.models).filter(m => m.owner !== seat).reduce((n, m) => n + (m.points ?? 0), 0);
+  const [points, setPoints] = useState(() => (mine > 0 ? Math.max(200, Math.round(mine / 50) * 50) : 500));
+  const theirs = Object.values(state.models).filter(m => m.owner === seat);
+  if (!catalog) return <p className="hint">Loading armies…</p>;
+  const armies = playableArmies(catalog);
+  const deploy = () => {
+    const pick = army || armies[Math.floor(Math.random() * armies.length)];
+    const roster = botRoster(catalog, pick, points);
+    const entries = listEntries(roster, catalog).flatMap(g => g.entries);
+    const rest = { ...state, models: Object.fromEntries(Object.entries(state.models).filter(([, m]) => m.owner !== seat)) };
+    if (theirs.length) dispatch({ type: 'removeModels', ids: theirs.map(m => m.id) });
+    dispatch({ type: 'addModels', models: deployList(entries, seat, rest) });
+    dispatch({ type: 'setName', seat, name: `Computer (${pick})` });
+  };
+  return (
+    <div className="computer-army">
+      <h4>The computer's army</h4>
+      <div className="row wrap">
+        <select value={army} onChange={e => setArmy(e.target.value)} aria-label="The computer's army">
+          <option value="">Any army</option>
+          {armies.map(a => (
+            <option key={a} value={a}>
+              {a}
+            </option>
+          ))}
+        </select>
+        <label className="mini-stat">
+          Points
+          <input type="number" min={100} max={2000} step={50} value={points} onChange={e => setPoints(Math.max(100, Math.min(2000, Number(e.target.value) || 500)))} />
+        </label>
+        <button className="primary" disabled={state.flow.started} onClick={deploy}>
+          {theirs.length ? 'Deal a new army' : 'Deploy its army'}
+        </button>
+      </div>
+      <p className="fine">
+        {theirs.length
+          ? `${theirs.length} models on the table, ${theirs.reduce((n, m) => n + (m.points ?? 0), 0)} pts. You can also give it one of your lists: pick its side above, then a list.`
+          : 'Pick an army and a size, or let it choose. You can also give it one of your lists: pick its side above, then a list.'}
+      </p>
+    </div>
+  );
+}
+
 export function ArmyPanel({ state, dispatch, role }: { state: GameState; dispatch: Dispatch; role: Role }) {
   const [text, setText] = useState('');
   const [owner, setOwner] = useState<Seat>(role === 'p2' ? 'p2' : 'p1');
@@ -325,6 +374,7 @@ export function ArmyPanel({ state, dispatch, role }: { state: GameState; dispatc
         ))}
       </div>
       {role === 'spectator' && <p className="hint">Spectators can watch but can't deploy armies. Pick a player seat in the top bar to join in.</p>}
+      {state.bot && role !== 'spectator' && <ComputerArmy state={state} dispatch={dispatch} seat={state.bot} />}
       <div className="row seg">
         <button className={mode === 'lists' ? 'on' : ''} onClick={() => setMode('lists')}>My lists</button>
         <button className={mode === 'build' ? 'on' : ''} onClick={() => setMode('build')}>Build</button>

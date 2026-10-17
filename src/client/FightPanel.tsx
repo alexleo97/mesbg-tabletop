@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { modelStats } from '../shared/catalog.ts';
 import { duelLeader, strikeWounds, type Fighter } from '../shared/fight.ts';
 import { declared } from '../shared/heroics.ts';
+import { waitingOnMight } from '../shared/bot.ts';
 import type { Action, GameState, Model, Role, Seat } from '../shared/types.ts';
 import { useCatalog } from './ListBuilder.tsx';
 import { RollRow } from './Panels.tsx';
@@ -20,7 +21,6 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
   const [edits, setEdits] = useState<Record<string, Partial<Record<Stat, number>>>>({});
   const [targets, setTargets] = useState<Record<Seat, string>>({ p1: '', p2: '' });
   const [trapped, setTrapped] = useState(false);
-  const [applied, setApplied] = useState<string | null>(null);
 
   const chosen = ids.map(id => state.models[id]).filter((m): m is Model => !!m && !m.dead);
   const sides: Record<Seat, Model[]> = { p1: chosen.filter(m => m.owner === 'p1'), p2: chosen.filter(m => m.owner === 'p2') };
@@ -68,8 +68,7 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
     if (!victimModel || !lastGroup) return;
     // Whoever struck the blows gets the credit, for scenarios that count kills.
     const by = [...new Set(lastRolls.filter(r => r.against === victimModel.id && r.model).map(r => r.model!))];
-    dispatch({ type: 'wound', id: victimModel.id, count: wounds, by, how: 'fight' });
-    setApplied(lastGroup);
+    dispatch({ type: 'wound', id: victimModel.id, count: wounds, by, how: 'fight', group: lastGroup });
   };
   const sideName = (i: 0 | 1) => {
     const ms = i === 0 ? sides.p1 : sides.p2;
@@ -159,6 +158,9 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
                 )}{' '}
                 Heroes can spend Might on their own dice first.
               </p>
+              {state.bot && state.bot !== role && combat && waitingOnMight(state) === combat && (
+                <p className="warn">The computer is waiting for you: spend Might on your hero's dice if you want to, then roll the strikes.</p>
+              )}
               {ready && (
                 <div className="row wrap">
                   <label className="check">
@@ -171,7 +173,7 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
               )}
             </>
           )}
-          {struck && victimModel && wounds > 0 && !victimModel.dead && applied !== lastGroup && role !== 'spectator' && (
+          {struck && victimModel && wounds > 0 && !victimModel.dead && !state.flow.applied?.includes(lastGroup!) && role !== 'spectator' && (
             <button onClick={applyWounds}>
               Wound {victimModel.name} {wounds} time{wounds === 1 ? '' : 's'}
               {victimModel.hero && victimModel.fate > 0 ? ' (Fate can be rolled)' : victimModel.wounds - wounds <= 0 ? ' (slain)' : ''}

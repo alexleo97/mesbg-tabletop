@@ -433,10 +433,14 @@ function step(state: GameState, action: Action): GameState {
       const m = state.models[action.id];
       const n = int(action.count, 0, 30, 0);
       if (!m || m.dead || !n) return state;
+      // Each fight or shot's wounds are taken once, whoever presses the button first.
+      const group = action.group === undefined ? '' : str(action.group, 80);
+      if (group && state.flow.applied?.includes(group)) return state;
       const by = Array.isArray(action.by) ? action.by.filter(i => typeof i === 'string' && state.models[i]) : [];
       const struck = { ...m, ...(by.length ? { lastHit: cleanHit({ ids: by, how: action.how }) } : { lastHit: undefined }) };
       const hit = m.hero && m.fate > 0 ? { ...struck, pending: (m.pending ?? 0) + n } : takeWounds(struck, n);
-      return { ...state, models: { ...state.models, [m.id]: hit } };
+      const flow = group ? { ...state.flow, applied: [...(state.flow.applied ?? []), group].slice(-60) } : state.flow;
+      return { ...state, flow, models: { ...state.models, [m.id]: hit } };
     }
     case 'fateRolled': {
       const m = state.models[action.id];
@@ -496,6 +500,12 @@ function step(state: GameState, action: Action): GameState {
       else delete mine[action.key];
       const picks = { p1: {}, p2: {}, ...state.flow.picks, [action.seat]: mine };
       return { ...state, flow: { ...state.flow, picks } };
+    }
+    case 'setBot': {
+      if (action.seat === null) return { ...state, bot: undefined };
+      if (!isSeat(action.seat)) return state;
+      // Nobody else can join a game against the computer, so it leaves the open games list.
+      return { ...state, bot: action.seat, listed: false, names: { ...state.names, [action.seat]: state.names[action.seat] || 'Computer' } };
     }
     case 'setPriority':
       return { ...state, priority: isSeat(action.seat) ? action.seat : null };
@@ -639,6 +649,7 @@ export function loadState(raw: unknown): GameState {
   }
   if (o.listed === false) out = { ...out, listed: false };
   if (o.private === true) out = { ...out, private: true, listed: false };
+  if (isSeat(o.bot)) out = { ...out, bot: o.bot };
   if (o.flow && typeof o.flow === 'object') {
     const f = o.flow as Partial<Flow>;
     const seats = (v: unknown) => (Array.isArray(v) ? [...new Set(v.filter(isSeat))] : []);
@@ -667,6 +678,7 @@ export function loadState(raw: unknown): GameState {
           : {}),
         ...(f.fort && typeof f.fort === 'object' ? { fort: { p1: int(f.fort.p1, 0, 999, 0), p2: int(f.fort.p2, 0, 999, 0) } } : {}),
         ...(f.picks && typeof f.picks === 'object' ? { picks: { p1: cleanPicks(f.picks.p1), p2: cleanPicks(f.picks.p2) } } : {}),
+        ...(Array.isArray(f.applied) ? { applied: f.applied.filter(g => typeof g === 'string').map(g => g.slice(0, 80)).slice(-60) } : {}),
       },
     };
   }

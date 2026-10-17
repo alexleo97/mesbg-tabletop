@@ -168,6 +168,8 @@ export interface GameState {
   accounts?: Partial<Record<Seat, Account>>;
   /** The result one player has reported, waiting for the other to agree. */
   result?: GameResult;
+  /** The seat the computer plays, in a game against it. */
+  bot?: Seat;
 }
 
 export interface Account {
@@ -218,6 +220,8 @@ export interface Flow {
   fort?: Record<Seat, number>;
   /** Each player's secret choices, shown to the other player once the game is over. */
   picks?: Record<Seat, Picks>;
+  /** Fights and shots whose wounds have been taken off already, by roll group, so they're never taken twice. */
+  applied?: string[];
 }
 
 export interface Heroic {
@@ -260,7 +264,7 @@ export type Action =
   /** A hero spends a Might point to raise one of its own dice by 1. `follow` picks the follow-up dice of a 6/4+ roll. */
   | { type: 'useMight'; roll: string; die: number; follow?: boolean }
   /** Wounds dealt to a model. A hero with Fate holds them as pending until its player decides. */
-  | { type: 'wound'; id: string; count: number; by?: string[]; how?: 'fight' | 'shoot' | 'other' }
+  | { type: 'wound'; id: string; count: number; by?: string[]; how?: 'fight' | 'shoot' | 'other'; group?: string }
   /** A model picks up a marker it is touching, turns a face-down marker over, or drops what it carries. */
   | { type: 'pickUp'; model: string; marker: string }
   | { type: 'flip'; model: string; marker: string }
@@ -272,6 +276,8 @@ export type Action =
   /** A model leaves the table over a board edge. */
   | { type: 'escape'; model: string }
   | { type: 'setPick'; seat: Seat; key: (typeof PICK_KEYS)[number]; value: string | null }
+  /** The computer takes this seat, or (null) leaves the game to two people again. */
+  | { type: 'setBot'; seat: Seat | null }
   /** Request from a client: the server rolls a Fate point for a hero's pending wound. */
   | { type: 'rollFate'; id: string }
   | { type: 'fateRolled'; id: string; roll: DiceRoll }
