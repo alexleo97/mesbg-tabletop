@@ -86,9 +86,9 @@ export const STARTER_BOARDS: StarterBoard[] = [
       circle('wood', 9, 33, 10, 6.5, -8),
       circle('wood', 16.5, 30.5, 4.5, 3.5, 10),
       circle('rock', 14, 40, 3.2, 2.4, 30),
-      // North bank: a watchtower on a hill, a cottage with its garden wall, an old wood.
-      circle('hill', 37, 12, 11, 7, 15),
-      rect('ruin', 37, 12, 4, 4, 15),
+      // North bank: a hill with a ruined watchtower beside it, a cottage with its garden wall, an old wood.
+      circle('hill', 38.5, 10.5, 9, 6, 15),
+      rect('ruin', 30.5, 7, 4, 4, 10),
       circle('wood', 6.5, 10, 10, 8),
       rect('building', 16, 14, 5, 3.5, 5),
       rect('wall', 16, 10.8, 6, 0.5, 5),

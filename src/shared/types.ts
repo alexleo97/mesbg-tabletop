@@ -173,7 +173,12 @@ export interface GameState {
   result?: GameResult;
   /** The seat the computer plays, in a game against it. */
   bot?: Seat;
+  /** How quickly the computer plays its turn: Normal unless set. */
+  botSpeed?: BotSpeed;
 }
+
+export type BotSpeed = 'normal' | 'fast' | 'instant';
+export const BOT_SPEEDS: BotSpeed[] = ['normal', 'fast', 'instant'];
 
 export interface Account {
   id: string;
@@ -281,6 +286,7 @@ export type Action =
   | { type: 'setPick'; seat: Seat; key: (typeof PICK_KEYS)[number]; value: string | null }
   /** The computer takes this seat, or (null) leaves the game to two people again. */
   | { type: 'setBot'; seat: Seat | null }
+  | { type: 'setBotSpeed'; speed: BotSpeed }
   /** Request from a client: the server rolls a Fate point for a hero's pending wound. */
   | { type: 'rollFate'; id: string }
   | { type: 'fateRolled'; id: string; roll: DiceRoll }

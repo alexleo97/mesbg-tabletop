@@ -54,8 +54,6 @@ export function layoutProblems(b: StarterBoard): string[] {
   for (let i = 0; i < solid.length; i++)
     for (let j = i + 1; j < solid.length; j++) {
       const [a, c] = [solid[i], solid[j]];
-      // Things can stand on a hill.
-      if (a.kind === 'hill' || c.kind === 'hill') continue;
       if (gap(outline(a, 24), outline(c, 24)) < APART) out.push(`${name(a)} overlaps ${name(c)}`);
     }
   return out;

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BOT_NAME, PHASES, type Terrain, type Model, type Role, type RoomSummary, type Seat } from '../shared/types.ts';
+import { BOT_NAME, BOT_SPEEDS, PHASES, type Terrain, type Model, type Role, type RoomSummary, type Seat } from '../shared/types.ts';
 import { Board, type Tool } from './Board.tsx';
 import { RoomConnection, useRoom, type Connection } from './net.ts';
 import { pictureUrl } from '../shared/catalog.ts';
@@ -389,7 +389,7 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
         <button className="leave" onClick={leave} title="Leave this game and go back to the home screen" aria-label="Leave game">
           ⟵
         </button>
-        <button className="room" onClick={() => void copyLink()} title={state.private && !seat ? 'Copy the link to watch this game' : 'Copy invite link'}>
+        <button className="room" onClick={() => !state.bot && void copyLink()} title={state.bot ? 'Solo battle' : state.private && !seat ? 'Copy the link to watch this game' : 'Copy invite link'}>
           {state.private && <span title="Private game: only invited players can take a seat">🔒</span>}
           <span className="room-name">{copied ? 'Link copied' : room}</span> <span className={`dot ${status}`} />
         </button>
@@ -402,6 +402,15 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
             </span>
           ))}
         </div>
+        {state.bot && seat && (
+          <button
+            className="bot-speed"
+            onClick={() => dispatch({ type: 'setBotSpeed', speed: BOT_SPEEDS[(BOT_SPEEDS.indexOf(state.botSpeed ?? 'normal') + 1) % BOT_SPEEDS.length] })}
+            title={`How fast ${BOT_NAME.replace(/^The /, 'the ')} plays its turn. Click to change.`}
+          >
+            {{ normal: '▶ Normal', fast: '⏩ Fast', instant: '⏭ Instant' }[state.botSpeed ?? 'normal']}
+          </button>
+        )}
         <BrokenTags state={state} />
         {scenarioById(state.scenario) && (
           <button className="vp-chip" onClick={() => openTab('table')} title={scenarioById(state.scenario)!.name}>
@@ -592,27 +601,32 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
                       <option value="spectator">Spectator</option>
                     </select>
                   </div>
-                  {seat && (
+                  {seat && !state.bot && (
                     <label className="check">
                       <input
                         type="checkbox"
-                        checked={state.bot === other(seat)}
-                        disabled={!state.bot && players.includes(other(seat))}
+                        checked={false}
+                        disabled={players.includes(other(seat))}
                         onChange={e => dispatch({ type: 'setBot', seat: e.target.checked ? other(seat) : null })}
                       />
-                      {BOT_NAME} plays {seatName(other(seat))}
-                      {!state.bot && players.includes(other(seat)) ? ' (someone is sitting there now)' : ''}
+                      Let {BOT_NAME.replace(/^The /, 'the ')} play the other side
+                      {players.includes(other(seat)) ? ' (someone is sitting there now)' : ''}
                     </label>
                   )}
+                  {state.bot && <p className="hint">A solo battle against {BOT_NAME.replace(/^The /, 'the ')}. Nobody else can join it.</p>}
                   <h4>Game</h4>
+                  {!state.bot && (
                   <label className="check">
                     <input type="checkbox" checked={state.listed} disabled={role === 'spectator' || state.private} onChange={e => dispatch({ type: 'setListed', listed: e.target.checked })} />
                     Show this game in the open games list
                   </label>
+                  )}
+                  {!state.bot && (
                   <label className="check">
                     <input type="checkbox" checked={!!state.private} disabled={!seat || !conn.setPrivate} onChange={e => conn.setPrivate?.(e.target.checked)} />
                     Private game: only people you send the invite link to can take a seat. Anyone can still watch.
                   </label>
+                  )}
                   {state.flow.started && role !== 'spectator' && (
                     <label>
                       Correct the phase
@@ -631,8 +645,8 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
                     </label>
                   )}
                   <div className="row wrap">
-                    <button onClick={() => void copyLink()}>{state.private ? 'Copy invite link (to play)' : 'Copy invite link'}</button>
-                    {state.private && seat && <button onClick={() => void copyLink(false)}>Copy link to watch</button>}
+                    {!state.bot && <button onClick={() => void copyLink()}>{state.private ? 'Copy invite link (to play)' : 'Copy invite link'}</button>}
+                    {!state.bot && state.private && seat && <button onClick={() => void copyLink(false)}>Copy link to watch</button>}
                     <button onClick={leave}>Leave game</button>
                   </div>
                 </div>

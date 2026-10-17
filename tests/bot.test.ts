@@ -56,6 +56,13 @@ describe('the computer player', () => {
     expect(reduce(s, { type: 'setBot', seat: null }).bot).toBeUndefined();
   });
 
+  it('can be told to play faster', () => {
+    const s = reduce(initialState(), { type: 'setBotSpeed', speed: 'instant' });
+    expect(s.botSpeed).toBe('instant');
+    expect(reduce(s, { type: 'setBotSpeed', speed: 'normal' }).botSpeed).toBeUndefined();
+    expect(reduce(s, { type: 'setBotSpeed', speed: 'warp' as never }).botSpeed).toBe('instant');
+  });
+
   it('never takes the same wounds twice', () => {
     let s = reduce(initialState(), { type: 'addModels', models: [mk('a', 'p1', 10, 10, { wounds: 3, maxWounds: 3 })] });
     s = reduce(s, { type: 'wound', id: 'a', count: 1, group: 'f-1' });
