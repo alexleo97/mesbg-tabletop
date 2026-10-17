@@ -2,7 +2,7 @@
 
 **Play the Middle-earth Strategy Battle Game in your browser: [mesbg-vtt.app](https://mesbg-vtt.app)**
 
-Start a game, send your opponent the link, and play on a computer or phone. There's nothing to install.
+Start a game, send your opponent the link, and play in your browser on a computer. There's nothing to install.
 
 - **Learn to play** in a guided practice battle.
 - **Play the computer** when nobody's around: it weighs up fights, uses Might and heroic actions, and plays the scenario.
