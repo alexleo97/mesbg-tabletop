@@ -47,6 +47,8 @@ export interface Model {
   tier?: number;
   /** Left the table via a board edge (still counts as on the table for Broken). */
   escaped?: boolean;
+  /** Off the table, waiting to arrive (Maelstrom of Battle). */
+  waiting?: boolean;
   /** Models whose attacks have taken wounds off this one, and who struck the last blow and how. */
   hurtBy?: string[];
   killedBy?: { ids: string[]; how: 'fight' | 'shoot' | 'other' };
@@ -227,6 +229,8 @@ export interface Flow {
   courage?: Record<string, boolean>;
   /** Broken sides whose models have taken their Courage tests this turn. */
   braved?: Seat[];
+  /** Sides whose waiting warbands have rolled to arrive this turn. */
+  arrived?: Seat[];
   /** Models that have shot this turn; each may shoot once. */
   shot?: string[];
   starts?: Record<string, [number, number]>;
@@ -254,6 +258,7 @@ export type Action =
   | { type: 'moveModels'; moves: { id: string; x: number; y: number; rot?: number }[] }
   /** Losers of a fight backing away, worked out with the strikes (never sent by a player). */
   | { type: 'backAway'; moves: { id: string; x: number; y: number }[] }
+  | { type: 'arrive'; seat: Seat; moves: { id: string; x: number; y: number; rot: number }[] }
   /** Courage test results, worked out with the dice (never sent by a player). Models of a Broken side that fail flee. */
   | { type: 'courageTaken'; results: Record<string, boolean>; broken?: Seat }
   | { type: 'updateModel'; id: string; patch: Partial<Omit<Model, 'id'>> }

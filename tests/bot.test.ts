@@ -90,9 +90,11 @@ describe('the computer player', () => {
   });
 
   it('plays whole games to the end without getting stuck', () => {
-    for (const seed of [1, 2]) {
+    for (const seed of [1, 2, 3]) {
       const rand = seeded(seed);
-      const { state } = play(setup(['Minas Tirith', 'Legions of Mordor'], 300, seed === 2 ? 'domination' : null, rand), rand);
+      const { state } = play(setup(['Minas Tirith', 'Legions of Mordor'], 300, [null, 'domination', 'hold-ground'][seed - 1], rand), rand);
+      // In Maelstrom of Battle every warband has come on by the end.
+      expect(Object.values(state.models).filter(m => m.waiting).length).toBe(0);
       expect(state.turn).toBeGreaterThan(2);
       const lost = Object.values(state.models).filter(m => m.dead).length;
       expect(lost).toBeGreaterThan(0);

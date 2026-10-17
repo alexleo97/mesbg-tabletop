@@ -6,6 +6,7 @@ import { combats } from '../src/shared/flow.ts';
 import { deployList } from '../src/shared/importList.ts';
 import { initialState, reduce } from '../src/shared/reducer.ts';
 import { DICE_REQUESTS, resolveRequest } from '../src/shared/resolve.ts';
+import { arrivalsDue, rollArrivals } from '../src/shared/maelstrom.ts';
 import { scenarioById, scenarioMarkers } from '../src/shared/scenarios.ts';
 import { endCheck, endRollLabel, gameWinner } from '../src/shared/status.ts';
 import { listEntries } from '../src/shared/warbands.ts';
@@ -64,6 +65,9 @@ export function play(state: GameState, rand: () => number, maxSteps = 20000) {
   const counts: Record<string, number> = {};
   while (steps++ < maxSteps) {
     now += 500;
+    // As the server does: Maelstrom warbands roll to arrive as their side starts to move.
+    const due = arrivalsDue(state);
+    if (due) for (const a of rollArrivals(state, due, d6, uid, rand, now)) state = reduce(state, a);
     if (gameWinner(state) && !state.result) state = reduce(state, { type: 'gameOver', winner: gameWinner(state)! });
     if (state.result) break;
     let acted = false;

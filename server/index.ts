@@ -8,6 +8,7 @@ import type { Account, Action, ClientMessage, GameState, Revert, Role, RoomSumma
 import { DICE_REQUESTS, resolveRequest } from '../src/shared/resolve.ts';
 import { phaseAllows } from '../src/shared/heroics.ts';
 import { brokenSideToTest, brokenTests, terrorAhead, terrorTest } from '../src/shared/courage.ts';
+import { arrivalsDue, rollArrivals } from '../src/shared/maelstrom.ts';
 import { cleanMark } from '../src/shared/marks.ts';
 import { scenarioById } from '../src/shared/scenarios.ts';
 import { announceGame, closeVoiceRoom, discordEnabled, discordMember, openVoiceRoom, sweepVoiceRooms, voiceEnabled } from './discord.ts';
@@ -135,6 +136,8 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
   switch (action.type) {
     case 'rolled':
     case 'backAway':
+    case 'courageTaken':
+    case 'arrive':
     case 'revert':
     case 'undo':
     case 'priorityRolled':
@@ -248,6 +251,7 @@ function apply(room: Room, action: Action) {
     }
   }
   rollBrokenTests(room);
+  rollReinforcements(room);
   scheduleBot(room);
   updateVoice(room);
   const r = room.state.result;
@@ -309,6 +313,19 @@ function rollBrokenTests(room: Room) {
     for (const a of brokenTests(room.state, seat, CATALOG, serverDice, serverId)) apply(room, a);
   } finally {
     rollingCourage = false;
+  }
+}
+
+/** As a Maelstrom side starts to move, rolls for its warbands still off the table and brings on those that arrive. */
+let rollingArrivals = false;
+function rollReinforcements(room: Room) {
+  const seat = !rollingArrivals && arrivalsDue(room.state);
+  if (!seat) return;
+  rollingArrivals = true;
+  try {
+    for (const a of rollArrivals(room.state, seat, serverDice, serverId, () => randomInt(0, 1e6) / 1e6)) apply(room, a);
+  } finally {
+    rollingArrivals = false;
   }
 }
 

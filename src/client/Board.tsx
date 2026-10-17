@@ -162,7 +162,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
   const fitted = useRef(false);
 
   // Models that left the table over an edge are off it.
-  const models = useMemo(() => Object.values(state.models).filter(m => !m.dead && !m.escaped), [state.models]);
+  const models = useMemo(() => Object.values(state.models).filter(m => !m.dead && !m.escaped && !m.waiting), [state.models]);
   // Roads and water lie on the ground, under everything else; bridges sit on top of the water.
   const terrain = useMemo(() => {
     const layer = (k: string) => (k === 'road' ? 0 : k === 'water' ? 1 : k === 'bridge' ? 3 : 2);

@@ -4,6 +4,7 @@ import { activeSeat, other, type Combat } from '../shared/flow.ts';
 import { canDeclare, heroicInfo, heroicsSettled, heroicTurn, HEROICS, orderRollLabel, orderRollNeeded, phaseHeroics } from '../shared/heroics.ts';
 import { RollRow } from './Panels.tsx';
 import { useDraggable } from './useDraggable.tsx';
+import { isMaelstrom, waitingWarbands, warbandName } from '../shared/maelstrom.ts';
 import { scenarioById } from '../shared/scenarios.ts';
 import { scoreLines, vpTotals } from '../shared/scoring.ts';
 import { armyStatus, endCheck, endRollLabel } from '../shared/status.ts';
@@ -146,6 +147,21 @@ function FateStep({ state, dispatch, role, name }: { state: GameState; dispatch:
 }
 
 /** The turn guide: says what happens now, whose go it is, and offers the next step as one button. */
+/** Maelstrom of Battle: the warbands still off the table, which the game rolls for as their side starts to move. */
+function Reinforcements({ state, name }: { state: GameState; name: (s: Seat) => string }) {
+  const sides = (['p1', 'p2'] as Seat[]).map(s => ({ s, bands: waitingWarbands(state, s) })).filter(x => x.bands.length);
+  if (!sides.length) return null;
+  return (
+    <div className="reinforcements">
+      {sides.map(({ s, bands }) => (
+        <p key={s} className="muted small">
+          <b className={s}>{name(s)}</b> off the table: {bands.map(b => `${warbandName(b)} (${b.length})`).join(', ')}. They roll to arrive as {name(s)} starts to move.
+        </p>
+      ))}
+    </div>
+  );
+}
+
 export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, openFight }: Props) {
   let combats = allCombats;
   const [small, setSmall] = useState(false);
@@ -184,7 +200,11 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
             <button onClick={() => openTab('army')}>Army</button>
           </li>
           <li>
-            <span>Deploy each army in its zone{scenario ? ' (shown on the board)' : ''}.</span>
+            <span>
+              {isMaelstrom(state)
+                ? 'Maelstrom of Battle: deploy your list and it waits off the table. Each warband rolls to arrive as its side starts to move.'
+                : `Deploy each army in its zone${scenario ? ' (shown on the board)' : ''}.`}
+            </span>
           </li>
         </ol>
         {me && waiting && <p className="hint">{waiting}</p>}
@@ -380,6 +400,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
       {!small && (
         <div className="coach-body">
           {flow.started && <FateStep state={state} dispatch={dispatch} role={role} name={name} />}
+          {flow.started && <Reinforcements state={state} name={name} />}
           {state.result && <ResultReport state={state} role={role} dispatch={dispatch} />}
           {/* Once the game is over, the result is all the guide shows; a draw offer sits above the turn as usual. */}
           {!(state.result && (state.result.by === 'game' || state.result.agreed)) && body}

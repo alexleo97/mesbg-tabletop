@@ -104,7 +104,7 @@ function worth(m: Model): number {
   return Math.max(m.hero ? 4 : 0.5, base) * (m.general ? 1.5 : 1);
 }
 
-const isUp = (m: Model) => !m.dead && !m.escaped;
+const isUp = (m: Model) => !m.dead && !m.escaped && !m.waiting;
 const side = (state: GameState, seat: Seat) => Object.values(state.models).filter(m => m.owner === seat && isUp(m));
 const engagedWith = (state: GameState, m: Model) => Object.values(state.models).filter(e => e.owner !== m.owner && isUp(e) && Math.abs(e.x - m.x) < 5 && Math.abs(e.y - m.y) < 5 && distanceBetween(m, e) <= CONTACT_SLACK);
 const radius = (m: Model) => mmToIn((m.base.w + m.base.h) / 2) / 2;
@@ -138,7 +138,8 @@ export function botStep(state: GameState, seat: Seat, catalog: Catalog | null, m
   sync(memo, state, now);
   const ctx: Ctx = { state, seat, catalog, memo, now, profiles: new Map(), person };
   if (state.result) return resultStep(ctx);
-  if (!side(state, seat).length) return null;
+  // A side with nothing left does nothing; one whose warbands are still waiting to arrive still takes its turns.
+  if (!Object.values(state.models).some(m => m.owner === seat && !m.dead && !m.escaped)) return null;
   const picks = picksStep(ctx);
   if (picks) return picks;
   if (!state.flow.started) return null;
