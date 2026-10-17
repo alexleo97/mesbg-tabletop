@@ -180,7 +180,7 @@ export function resolveShot(req: ShotRequest, d6: D6, by: Role, group: string, n
     rolls.push({ id: `${group}-${rolls.length}`, by, label: label.slice(0, 80), dice, at: now, group, ...extra });
   const { shooter, target } = req;
   const toHit = Array.from({ length: shooter.shots }, d6);
-  push(`${shooter.name} shoots ${target.name} (${shooter.weapon}, ${shooter.shoot}+)`, toHit, { target: shooter.shoot, model: shooter.id });
+  push(`${shooter.name} shoots ${target.name} (${shooter.weapon}, ${shooter.shoot}+)`, toHit, { target: shooter.shoot, model: shooter.id, aim: target.id });
   let hits = toHit.filter(d => d >= shooter.shoot).length;
   for (let i = 0; i < req.obstacles && hits > 0; i++) {
     const past = Array.from({ length: hits }, d6);

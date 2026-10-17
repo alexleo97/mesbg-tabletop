@@ -68,7 +68,7 @@ export function Effects({ state, fontSize }: { state: GameState; fontSize: numbe
       const named = r.label.match(/ shoots (.+?) \(/)?.[1];
       const wounded = state.log.find(x => x.group === r.group && x.against)?.against;
       // The target is the model the shot was rolled against, or the nearest enemy with the name in the label.
-      const target = (wounded && state.models[wounded]) ||
+      const target = (r.aim && state.models[r.aim]) || (wounded && state.models[wounded]) ||
         Object.values(state.models)
           .filter(m => shooter && m.owner !== shooter.owner && m.name === named)
           .sort((a, b) => Math.hypot(a.x - shooter!.x, a.y - shooter!.y) - Math.hypot(b.x - shooter!.x, b.y - shooter!.y))[0];

@@ -105,7 +105,9 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
 
   let action: React.ReactNode = null;
   if (state.phase === 'shoot' && mine && weapon && state.flow.started) {
-    if (!target) action = <p className="hint">Tap an enemy model to aim the {weapon.name.toLowerCase()} ({weapon.range}", S{weapon.s}).</p>;
+    const hasShot = !!state.flow.shot?.includes(m.id);
+    if (!target)
+      action = hasShot ? <p className="hint">{m.name} has shot this turn. Each model shoots once a turn.</p> : <p className="hint">Tap an enemy model to aim the {weapon.name.toLowerCase()} ({weapon.range}", S{weapon.s}).</p>;
     else {
       const dist = distanceBetween(m, target);
       const tStats = modelStats(catalog, target);
@@ -127,8 +129,8 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
           <div className="row wrap">
             <button
               className="primary"
-              disabled={!inRange || !need || !phaseAllows(state, role, { type: 'shoot', shot: { shooter: { id: m.id } } })}
-              title={!phaseAllows(state, role, { type: 'shoot', shot: { shooter: { id: m.id } } }) ? 'Models shoot in the Shoot phase, when it is their side’s turn.' : undefined}
+              disabled={hasShot || !inRange || !need || !phaseAllows(state, role, { type: 'shoot', shot: { shooter: { id: m.id } } })}
+              title={hasShot ? `${m.name} has shot this turn. Each model shoots once a turn.` : !phaseAllows(state, role, { type: 'shoot', shot: { shooter: { id: m.id } } }) ? 'Models shoot in the Shoot phase, when it is their side’s turn.' : undefined}
               onClick={() =>
                 dispatch({
                   type: 'shoot',
@@ -136,7 +138,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
                 })
               }
             >
-              Shoot
+              {hasShot ? 'Shot this turn' : 'Shoot'}
             </button>
             <button onClick={clearTarget}>Change target</button>
           </div>
