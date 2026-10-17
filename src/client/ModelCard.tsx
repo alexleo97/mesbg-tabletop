@@ -4,7 +4,7 @@ import { strikeWounds } from '../shared/fight.ts';
 import type { Combat } from '../shared/flow.ts';
 import { heroicInfo } from '../shared/heroics.ts';
 import { carriedBy, markerActions, OBJECT_NAMES } from '../shared/objects.ts';
-import { inTheWay, sightTo } from '../shared/sight.ts';
+import { groundAt, inTheWay, sightTo } from '../shared/sight.ts';
 import RULES from '../data/special-rules.json';
 import { RollRow } from './Panels.tsx';
 import { useDraggable } from './useDraggable.tsx';
@@ -70,6 +70,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
   // What's between the shooter and its target, as a starting count of In the Way rolls.
   const between = target ? inTheWay(state, m, target) : [];
   const seen = target ? sightTo(state, m, target) : null;
+  const up = groundAt(state, m);
   useEffect(() => setObstacles(Math.min(5, between.length)), [target?.id, between.length]);
   const unit = m.profileId ? catalog?.units[m.profileId] : undefined;
   const printed = unit && statsWithOptions(unit, unit.options.filter(o => m.options?.includes(o.name)).map(o => o.id));
@@ -201,6 +202,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
           </>
         )}
       </div>
+      {up > 0 && <p className="muted high-ground">▲ Standing {up}" up: sees and shoots over lower terrain.</p>}
       {heroics.length > 0 && (
         <div className="row wrap">
           {heroics.map(h => (

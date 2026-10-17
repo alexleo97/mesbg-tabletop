@@ -8,7 +8,7 @@ import { scenarioById } from '../shared/scenarios.ts';
 import { MATERIALS, textures } from './textures.ts';
 import { TERRAIN_INFO, terrainRules } from '../shared/terrain.ts';
 import { limitMove, moveStart, movesLimited, settleMove } from '../shared/movement.ts';
-import { inDifficult, insidePolygon, inTheWay, isDifficult, moveCost, outline, shadowPath, sightTo } from '../shared/sight.ts';
+import { groundAt, inDifficult, insidePolygon, inTheWay, isDifficult, moveCost, outline, shadowPath, sightTo } from '../shared/sight.ts';
 
 export type Tool = 'move' | 'select' | 'measure' | 'mark';
 
@@ -521,7 +521,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
               const now = dragPos[id];
               if (!m || !now) return null;
               const d = Math.hypot(now.x - o.x, now.y - o.y);
-              // Difficult terrain costs double, so the move is judged on what it costs.
+              // Difficult terrain costs double and climbing costs the height, so the move is judged on what it costs.
               const { cost, difficult } = moveCost(state, o, now);
               const over = cost > m.move + 1e-6;
               return (
@@ -532,7 +532,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
                   <line className={`trail ${over ? 'over' : ''}`} x1={o.x} y1={o.y} x2={now.x} y2={now.y} />
                   {id === gesture.tapId && (
                     <text className={`trail-label ${over ? 'over' : ''}`} x={now.x} y={now.y - halfExtents(m.base).ry - 0.3} textAnchor="middle">
-                      {difficult ? `${formatInches(d)} (${formatInches(cost)} in difficult terrain)` : formatInches(d)} / {m.move}"
+                      {difficult ? `${formatInches(d)} (${formatInches(cost)} in difficult terrain)` : cost > d + 0.05 ? `${formatInches(d)} (${formatInches(cost)} with climbing)` : formatInches(d)} / {m.move}"
                     </text>
                   )}
                 </g>
@@ -599,6 +599,18 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
                   {TERRAIN_INFO[t.kind].name}
                 </text>
               ))}
+          {/* Models standing up high show how far up they are. */}
+          {models.map(m0 => {
+            const m = shown(m0);
+            const up = groundAt(state, m);
+            if (!up) return null;
+            const { rx, ry } = halfExtents(m.base);
+            return (
+              <text key={`h-${m.id}`} className="model-height" x={m.x + rx + 0.1} y={m.y - ry * 0.6} textAnchor="start" pointerEvents="none">
+                ▲{up}
+              </text>
+            );
+          })}
           {showNames &&
             models.map(m0 => {
               const m = shown(m0);

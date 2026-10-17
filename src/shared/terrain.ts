@@ -1,4 +1,4 @@
-import { blocksSight, isDifficult, slowsShots } from './sight.ts';
+import { blocksSight, heightOf, isDifficult, slowsShots } from './sight.ts';
 import type { Terrain, TerrainKind } from './types.ts';
 
 /** What each kind of terrain is called, the group it belongs to and a note on how it plays, in this site's own words. */
@@ -24,7 +24,9 @@ export const TERRAIN_GROUPS = ['Area terrain', 'Obstacle', 'Barrier', 'Impassabl
 export function terrainRules(t: Terrain): string[] {
   const out: string[] = [];
   if (isDifficult(t)) out.push('Difficult terrain: moving through it costs double.');
-  if (blocksSight(t)) out.push('Blocks line of sight: models fully behind it are hidden.');
+  if (blocksSight(t)) out.push(`Blocks line of sight up to ${heightOf(t)}" high: models behind it are hidden unless someone looks down from higher up.`);
+  if (t.kind === 'hill') out.push(`Models on it stand ${heightOf(t)}" up, so they see and shoot over lower terrain.`);
+  if (t.kind === 'rock' || t.kind === 'building' || t.kind === 'cliff') out.push(`Climbing up or down it costs ${heightOf(t)}" of a model's move.`);
   if (slowsShots(t)) out.push('In the Way: shots through it need an In the Way roll.');
   out.push(TERRAIN_INFO[t.kind].note);
   return out;

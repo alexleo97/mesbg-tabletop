@@ -172,6 +172,7 @@ h1, h3, h4, .topbar .room, .phases .turn, .roster-summary b, .name-input, .tabs 
 .marks .ping-ring.late { animation-delay: 0.4s; }
 @keyframes ping { from { transform: scale(0.2); opacity: 1; } to { transform: scale(3); opacity: 0; } }
 .board.tool-mark { cursor: crosshair; }
+.model-height { fill: #fff; font-weight: 700; font-size: 0.8em; paint-order: stroke; stroke: #000; stroke-width: 0.08; }
 .ruler line { stroke: var(--gold); stroke-width: 0.08; }
 .ruler circle { fill: var(--gold); }
 .ruler text { fill: #fff; font-weight: 700; paint-order: stroke; stroke: #000; stroke-width: 0.08; }
