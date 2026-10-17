@@ -20,6 +20,7 @@ import { Tutorial } from './Tutorial.tsx';
 import { ProfilePage } from './Account.tsx';
 import { ArmiesCard, ArmiesPage, MapsCard, MapsPage, randomRoom, SitePage, TopPlayersCard } from './Home.tsx';
 import { getMap } from './cloud.ts';
+import { MapEditor } from './MapEditor.tsx';
 import { LeaderboardPage } from './Leaderboard.tsx';
 import { useAuth } from './auth.ts';
 
@@ -527,6 +528,7 @@ export function App() {
   const [settings, updateSettings] = useSettings();
   if (params.has('armies')) return <ArmiesPage />;
   if (params.has('maps')) return <MapsPage />;
+  if (params.has('mapeditor')) return <MapEditor settings={settings} />;
   if (params.has('leaderboard'))
     return (
       <SitePage page="leaderboard">

@@ -130,7 +130,12 @@ export function MapsPage() {
   return (
     <SitePage page="maps" wide>
       <h1>Maps</h1>
-      <p className="muted">Pick a table to play on. To make your own, start a game, lay out terrain from the ⛰ Table tab and save it there.</p>
+      <div className="page-intro">
+        <p className="muted">Pick a table to play on, or make your own.</p>
+        <a className="button-link primary-link" href="?mapeditor">
+          + Create a map
+        </a>
+      </div>
       <div className="row seg page-tabs">
         <button className={tab === 'shared' ? 'on' : ''} onClick={() => setTab('shared')}>
           Community maps
@@ -169,6 +174,9 @@ export function MapsPage() {
                 </button>
                 {m.owner === profile?.id && (
                   <>
+                    <a className="button-link" href={`?mapeditor=${m.id}`}>
+                      Edit
+                    </a>
                     <label className="check">
                       <input
                         type="checkbox"

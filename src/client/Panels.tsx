@@ -379,12 +379,15 @@ export function TablePanel({
   role,
   selectedTerrain,
   setSelectedTerrain,
+  editor,
 }: {
   state: GameState;
   dispatch: Dispatch;
   role: Role;
   selectedTerrain: string | null;
   setSelectedTerrain: (id: string | null) => void;
+  /** In the map editor: just the terrain tools, without the game's save, load and finish options. */
+  editor?: boolean;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const t = selectedTerrain ? state.terrain[selectedTerrain] : undefined;
@@ -428,7 +431,7 @@ export function TablePanel({
           </button>
         ))}
       </div>
-      <MapsSection state={state} dispatch={dispatch} onLoaded={() => setSelectedTerrain(null)} />
+      {!editor && <MapsSection state={state} dispatch={dispatch} onLoaded={() => setSelectedTerrain(null)} />}
       <label>
         Ground
         <select value={state.board.mat} onChange={e => dispatch({ type: 'setBoard', w: state.board.w, h: state.board.h, mat: e.target.value as Mat })}>
@@ -511,26 +514,35 @@ export function TablePanel({
         ))}
       </div>
 
-      <h4>Game</h4>
-      <div className="row">
-        <button onClick={save}>Save game</button>
-        <button onClick={() => fileRef.current?.click()}>Load game</button>
-        <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={e => load(e.target.files?.[0])} />
-      </div>
-      {state.flow.started && !state.result && role !== 'spectator' && (
-        <details className="finish">
-          <summary>Finish the game early</summary>
-          <ResultReport state={state} role={role} dispatch={dispatch} early />
-        </details>
+      {!editor && (
+        <>
+          <h4>Game</h4>
+          <div className="row">
+            <button onClick={save}>Save game</button>
+            <button onClick={() => fileRef.current?.click()}>Load game</button>
+            <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={e => load(e.target.files?.[0])} />
+          </div>
+          {state.flow.started && !state.result && role !== 'spectator' && (
+            <details className="finish">
+              <summary>Finish the game early</summary>
+              <ResultReport state={state} role={role} dispatch={dispatch} early />
+            </details>
+          )}
+          <button
+            className="danger"
+            onClick={() => {
+              if (confirm('Clear the whole table for both players?')) dispatch({ type: 'loadState', state: { ...state, models: {}, terrain: {}, turn: 1, phase: 'priority', priority: null } });
+            }}
+          >
+            Clear table
+          </button>
+        </>
       )}
-      <button
-        className="danger"
-        onClick={() => {
-          if (confirm('Clear the whole table for both players?')) dispatch({ type: 'loadState', state: { ...state, models: {}, terrain: {}, turn: 1, phase: 'priority', priority: null } });
-        }}
-      >
-        Clear table
-      </button>
+      {editor && Object.keys(state.terrain).length > 0 && (
+        <button className="danger" onClick={() => confirm('Remove all the terrain?') && dispatch({ type: 'setScenery', w: state.board.w, h: state.board.h, mat: state.board.mat, terrain: [] })}>
+          Clear all terrain
+        </button>
+      )}
     </div>
   );
 }

@@ -720,3 +720,20 @@ details.finish summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
   .coach-body .go { flex: 1 1 100%; min-width: 0; }
   .heroic-pick select { flex-basis: 100%; }
 }
+
+/* Map editor: the table on the left, tools on the right. */
+.editor-page { height: 100%; }
+.editor { flex: 1; display: flex; min-height: 0; }
+.editor-stage { flex: 1; position: relative; display: flex; min-width: 0; }
+.editor-side { width: 360px; background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; }
+.editor-side .panel-body { overflow: visible; flex: none; }
+.editor-save { border-bottom: 1px solid var(--line); }
+.editor-save h3 { margin: 0; color: var(--gold); }
+.page-intro { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.button-link.primary-link { background: var(--gold); color: var(--ink); border-color: var(--gold); font-weight: 600; }
+@media (max-width: 700px) {
+  .editor-page { padding-bottom: 0; height: auto; }
+  .editor { flex-direction: column; }
+  .editor-stage { height: 60vh; flex: none; }
+  .editor-side { width: auto; border-left: 0; border-top: 1px solid var(--line); padding-bottom: calc(70px + env(safe-area-inset-bottom)); }
+}
