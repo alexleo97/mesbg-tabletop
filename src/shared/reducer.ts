@@ -1,3 +1,4 @@
+import { bookBase, round } from './bases.ts';
 import { heroicInfo } from './heroics.ts';
 import { limitMove, moveStart, movesLimited } from './movement.ts';
 import { canPickUp, markerUpkeep, syncCarried, touching, canEscape } from './objects.ts';
@@ -62,12 +63,16 @@ const isPhase = (v: unknown): v is Phase => PHASES.includes(v as Phase);
 const id = (v: unknown) => str(v, 64);
 const isMat = (v: unknown): v is Mat => MATS.includes(v as Mat);
 
-function cleanBase(b: unknown, fallback: Base): Base {
+function cleanBase(b: unknown, fallback: Base, name = ''): Base {
   if (!b || typeof b !== 'object') return fallback;
   const o = b as Record<string, unknown>;
-  const shape = o.shape === 'oval' || o.shape === 'rect' || o.shape === 'round' ? o.shape : fallback.shape;
-  const w = num(o.w, 10, 200, fallback.w);
-  return { shape, w, h: shape === 'round' ? w : num(o.h, 10, 200, fallback.h) };
+  const w = num(o.w, 10, 250, fallback.w);
+  const h = num(o.h, 10, 250, fallback.h);
+  // Square-cornered bases came from older saves: riders (25×50mm) go on their 40mm mount's base, anything else on
+  // its size from the books.
+  if (o.shape === 'rect') return w <= 25 && h <= 50 ? round(40) : (bookBase(name) ?? round(Math.max(w, h) > 100 ? 100 : 60));
+  if (o.shape === 'oval' && w !== h) return { shape: 'oval', w, h };
+  return round(w);
 }
 
 /** Normalises an untrusted model, filling anything missing or out of range. */
@@ -96,7 +101,7 @@ export function cleanModel(m: Partial<Model>, prev?: Model): Model | null {
     x: num(m.x, -24, 200, base.x),
     y: num(m.y, -24, 200, base.y),
     rot: num(m.rot, -360, 720, base.rot) % 360,
-    base: m.base !== undefined ? cleanBase(m.base, base.base) : base.base,
+    base: m.base !== undefined ? cleanBase(m.base, base.base, typeof m.name === 'string' ? m.name : base.name) : base.base,
     move: num(m.move, 0, 24, base.move),
     maxWounds: int(m.maxWounds, 1, 30, base.maxWounds),
     wounds: 0,

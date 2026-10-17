@@ -5,8 +5,9 @@ import { DEFAULT_HEIGHT, heightOf, isDifficult } from '../shared/sight.ts';
 import { TERRAIN_GROUPS, TERRAIN_INFO, terrainRules } from '../shared/terrain.ts';
 import { useRef, useState } from 'react';
 import { objectiveMarkers, river, STARTER_BOARDS, starterTerrain } from '../shared/boards.ts';
-import { loadCatalog, parseBuilderExport, STAT_NAMES, startingPoints, statsWithOptions } from '../shared/catalog.ts';
+import { baseLabel, loadCatalog, parseBuilderExport, STAT_NAMES, startingPoints, statsWithOptions } from '../shared/catalog.ts';
 import { deployList, guessBase, newId, parseList, type ListEntry } from '../shared/importList.ts';
+import { BASE_SIZES } from '../shared/bases.ts';
 import { addSavedList, ListBuilder, SavedLists, Portrait, useCatalog } from './ListBuilder.tsx';
 import { listEntries } from '../shared/warbands.ts';
 import { botRoster, playableArmies } from '../shared/botList.ts';
@@ -16,16 +17,7 @@ import { BODY_FONTS, HEADING_FONTS, THEMES, type Settings } from './settings.ts'
 
 type Dispatch = (a: Action) => void;
 
-const BASE_PRESETS: { label: string; base: Base }[] = [
-  { label: '25mm round', base: { shape: 'round', w: 25, h: 25 } },
-  { label: '32mm round', base: { shape: 'round', w: 32, h: 32 } },
-  { label: '40mm round', base: { shape: 'round', w: 40, h: 40 } },
-  { label: '50mm round', base: { shape: 'round', w: 50, h: 50 } },
-  { label: '60mm round', base: { shape: 'round', w: 60, h: 60 } },
-  { label: '25×50mm cavalry', base: { shape: 'rect', w: 25, h: 50 } },
-  { label: '60×35mm oval', base: { shape: 'oval', w: 35, h: 60 } },
-  { label: '105×165mm Mûmak', base: { shape: 'rect', w: 105, h: 165 } },
-];
+const BASE_PRESETS: { label: string; base: Base }[] = BASE_SIZES.map(base => ({ label: `${baseLabel(base)} ${base.shape === 'oval' ? 'oval' : 'round'}`, base }));
 
 const baseKey = (b: Base) => `${b.shape}:${b.w}x${b.h}`;
 
@@ -157,7 +149,7 @@ export function SelectionPanel({ state, selected, dispatch, clear }: { state: Ga
       <label>
         Base
         <select value={baseKey(m.base)} onChange={e => setBase(e.target.value)}>
-          {!BASE_PRESETS.some(p => baseKey(p.base) === baseKey(m.base)) && <option value={baseKey(m.base)}>{`${m.base.w}×${m.base.h}mm`}</option>}
+          {!BASE_PRESETS.some(p => baseKey(p.base) === baseKey(m.base)) && <option value={baseKey(m.base)}>{baseLabel(m.base)}</option>}
           {BASE_PRESETS.map(p => (
             <option key={p.label} value={baseKey(p.base)}>{p.label}</option>
           ))}
@@ -412,7 +404,7 @@ export function ArmyPanel({ state, dispatch, role }: { state: GameState; dispatc
         <input placeholder="Model name" value={single} onChange={e => setSingle(e.target.value)} onKeyDown={e => e.key === 'Enter' && addOne()} />
         <button onClick={addOne}>Add</button>
       </div>
-      {single && <p className="hint">Base: {guessBase(single).w}×{guessBase(single).h}mm (change it after placing)</p>}
+      {single && <p className="hint">Base: {baseLabel(guessBase(single))} (change it after placing)</p>}
 
       <h4>Forces</h4>
       <p className="muted">

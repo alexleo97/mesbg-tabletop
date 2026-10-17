@@ -514,7 +514,7 @@ export const CHAPTERS: Chapter[] = [
         setup: () =>
           inPhase('move', {
             drop: ['warrior'],
-            add: [model('knight', 'Knight of Minas Tirith', 'p1', 15, 21, KNIGHT, { move: 10, base: { shape: 'rect', w: 25, h: 50 } })],
+            add: [model('knight', 'Knight of Minas Tirith', 'p1', 15, 21, KNIGHT, { move: 10, base: { shape: 'round', w: 40, h: 40 } })],
           }),
         done: s => s.phase !== 'move' && combats(s).some(c => [...c.p1, ...c.p2].includes('knight')),
       },

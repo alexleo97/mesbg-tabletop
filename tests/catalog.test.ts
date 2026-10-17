@@ -15,11 +15,11 @@ describe('bundled data', () => {
 });
 
 describe('entriesFor', () => {
-  it('mounts a hero on a cavalry base with the mount\'s move', () => {
+  it('puts a mounted hero on its mount\'s base with the mount\'s move', () => {
     const unit = catalog.units[THRANDUIL];
     const elk = unit.options.find(o => o.name === 'Great Elk')!;
     const [e] = entriesFor(THRANDUIL, unit, [elk.id], 1);
-    expect(e).toMatchObject({ name: unit.name, hero: true, might: 3, will: 3, fate: 3, wounds: 3, move: 10, base: { shape: 'rect', w: 25, h: 50 } });
+    expect(e).toMatchObject({ name: unit.name, hero: true, might: 3, will: 3, fate: 3, wounds: 3, move: 10, base: { shape: 'round', w: 50, h: 50 } });
     expect(e.options).toEqual(['Great Elk']);
   });
 
@@ -69,7 +69,7 @@ describe('parseBuilderExport', () => {
     expect(r.name).toBe('Woodland Realm');
     expect(r.missing).toEqual(['[nope] unknown']);
     expect(r.entries.map(e => [e.name, e.count, e.base?.shape])).toEqual([
-      ['Thranduil, King of the Woodland Realm', 1, 'rect'],
+      ['Thranduil, King of the Woodland Realm', 1, 'round'],
       ['Palace Guard', 10, 'round'],
     ]);
   });
@@ -84,4 +84,22 @@ it('builds picture URLs on the list builder\'s image host', () => {
   expect(pictureUrl({ origin: 'Elven Kingdoms', name: 'Palace Guard' })).toBe(
     'https://resources.mesbg-list-builder.com/v2024/images/profiles/Elven%20Kingdoms/pictures/Palace%20Guard.png',
   );
+});
+
+describe('base sizes', () => {
+  it('gives every profile and mount a base from the books', () => {
+    const odd: string[] = [];
+    for (const [id, unit] of Object.entries(catalog.units)) {
+      for (const e of entriesFor(id, unit, [], 1)) if (e.base?.shape === 'rect') odd.push(e.name);
+      for (const o of unit.options.filter(o => o.mount)) {
+        const [e] = entriesFor(id, unit, [o.id], 1);
+        if (e.base!.w < 40) odd.push(`${unit.name} with ${o.name}`);
+      }
+    }
+    expect(odd).toEqual([]);
+    const rider = Object.entries(catalog.units).find(([, u]) => u.name === 'Rider of Rohan')!;
+    expect(entriesFor(rider[0], rider[1], [], 1)[0].base).toEqual({ shape: 'round', w: 40, h: 40 });
+    const ent = Object.entries(catalog.units).find(([, u]) => u.name === 'Treebeard')!;
+    expect(entriesFor(ent[0], ent[1], [], 1)[0].base).toEqual({ shape: 'round', w: 60, h: 60 });
+  });
 });
