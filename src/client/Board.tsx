@@ -68,6 +68,9 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
   const [gesture, setGesture] = useState<Gesture | null>(null);
   const [dragPos, setDragPos] = useState<Record<string, Point> | null>(null);
   const [ruler, setRuler] = useState<{ start: Point; end: Point; from?: string } | null>(null);
+  useEffect(() => {
+    if (tool !== 'measure') setRuler(null);
+  }, [tool]);
   const pointers = useRef(new Map<number, Point>());
   const lastSend = useRef(0);
   const fitted = useRef(false);
@@ -302,7 +305,9 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
       const inBox = models.filter(m => m.x >= x0 && m.x <= x1 && m.y >= y0 && m.y <= y1).map(m => m.id);
       setSelected(new Set(gesture.additive ? [...selected, ...inBox] : inBox));
     } else if (gesture.kind === 'measure') {
-      setRuler({ start: gesture.start, end: p, from: gesture.from });
+      // A tap without a drag clears the ruler instead of leaving a zero-length one behind.
+      const moved = Math.hypot(p.x - gesture.start.x, p.y - gesture.start.y) >= 0.25;
+      setRuler(moved ? { start: gesture.start, end: p, from: gesture.from } : null);
     }
     setGesture(null);
   };
