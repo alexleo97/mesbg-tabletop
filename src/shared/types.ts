@@ -134,6 +134,8 @@ export interface DiceRoll {
   group?: string;
   /** For strikes in a fight: the model they were rolled against. */
   against?: string;
+  /** For a shot: the model it was aimed at, whether or not it hit. */
+  aim?: string;
   /** A one-line summary shown under the roll, such as who won a fight. */
   note?: string;
   /** The model the roll was made for, so its hero can spend Might on it. */
@@ -223,6 +225,8 @@ export interface Flow {
   courage?: Record<string, boolean>;
   /** Broken sides whose models have taken their Courage tests this turn. */
   braved?: Seat[];
+  /** Models that have shot this turn; each may shoot once. */
+  shot?: string[];
   starts?: Record<string, [number, number]>;
   /** Each hero's Fate at the start of the game, so Fate spent can be counted. */
   startFate?: Record<string, number>;

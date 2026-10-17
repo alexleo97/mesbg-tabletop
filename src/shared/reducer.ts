@@ -46,7 +46,7 @@ function goTo(state: GameState, phase: Phase, turn: number): GameState {
       done: [],
       resolved: newTurn ? [] : state.flow.resolved,
       heroics: newTurn ? [] : state.flow.heroics,
-      ...(newTurn ? { courage: {}, braved: [] } : {}),
+      ...(newTurn ? { courage: {}, braved: [], shot: [] } : {}),
       passed: [],
       lastHeroic: null,
       starts: {},
@@ -245,6 +245,7 @@ function cleanRoll(r: unknown): DiceRoll | null {
     ...(o.group ? { group: id(o.group) } : {}),
     ...(o.note ? { note: str(o.note, 140) } : {}),
     ...(o.against ? { against: id(o.against) } : {}),
+    ...(o.aim ? { aim: id(o.aim) } : {}),
     ...(o.model ? { model: id(o.model) } : {}),
     ...(o.f !== undefined ? { f: int(o.f, 1, 10, 3) } : {}),
     ...(o.side === 0 || o.side === 1 ? { side: o.side } : {}),
@@ -576,7 +577,10 @@ function step(state: GameState, action: Action): GameState {
       const r = cleanRoll(action.roll);
       if (!r) return state;
       const log = [...state.log, r];
-      return { ...state, log: log.slice(-MAX_LOG) };
+      // A shot's first roll marks its shooter as having shot this turn.
+      const shooter = r.group?.startsWith('s-') && r.id === `${r.group}-0` ? r.model : undefined;
+      const flow = shooter && !state.flow.shot?.includes(shooter) ? { ...state.flow, shot: [...(state.flow.shot ?? []), shooter].slice(-400) } : state.flow;
+      return { ...state, flow, log: log.slice(-MAX_LOG) };
     }
     case 'loadState':
       return loadState(action.state);
@@ -704,6 +708,7 @@ export function loadState(raw: unknown): GameState {
         ...(f.starts ? { starts: cleanStarts(f.starts) } : {}),
         ...(f.courage && typeof f.courage === 'object' ? { courage: Object.fromEntries(Object.entries(f.courage).slice(0, 400).map(([k, v]) => [k.slice(0, 80), v === true])) } : {}),
         ...(f.braved ? { braved: seats(f.braved) } : {}),
+        ...(Array.isArray(f.shot) ? { shot: f.shot.slice(0, 400).map(x => String(x).slice(0, 80)) } : {}),
         ...(f.startFate && typeof f.startFate === 'object' ? { startFate: cleanCounts(f.startFate, 9) } : {}),
         ...(f.control && typeof f.control === 'object'
           ? { control: Object.fromEntries(Object.entries(f.control).slice(0, 50).map(([k, v]) => [k.slice(0, 80), isSeat(v) ? v : null])) }
