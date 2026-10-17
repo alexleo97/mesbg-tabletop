@@ -229,8 +229,9 @@ export const OBJECTIVE_SPOTS: [number, number][] = [
   [6, 11],
 ];
 
+/** Five markers in the usual spread; unlocked so players can drag them where the scenario says. */
 export function objectiveMarkers(w: number, h: number, newId: (p: string) => string): Terrain[] {
-  return OBJECTIVE_SPOTS.map(([dx, dy]) => ({ id: newId('t'), kind: 'objective', shape: 'circle', x: w / 2 + dx, y: h / 2 + dy, w: 1.6, h: 1.6, rot: 0, locked: true }));
+  return OBJECTIVE_SPOTS.map(([dx, dy]) => ({ id: newId('t'), kind: 'objective', shape: 'circle', x: w / 2 + dx, y: h / 2 + dy, w: 1.6, h: 1.6, rot: 0, locked: false }));
 }
 
 export function starterTerrain(b: StarterBoard, newId: (p: string) => string): Terrain[] {
