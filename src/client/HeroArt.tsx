@@ -1,18 +1,45 @@
 import { useMemo } from 'react';
-import { STARTER_BOARDS, starterTerrain } from '../shared/boards.ts';
+import { starterTerrain } from '../shared/boards.ts';
+import { pictureUrl } from '../shared/catalog.ts';
+import { mmToIn } from '../shared/geometry.ts';
+import { BOARD, EVIL, GOOD, type Token } from './heroBattle.ts';
 import { TerrainArt, TerrainDefs } from './TerrainArt.tsx';
 import { MATERIALS, textures } from './textures.ts';
 
-// The home page banner: the River Crossing table drawn with the game's own textures, two warbands
-// facing each other across the river.
+// The home page banner: the River Crossing table drawn with the game's own textures, Gondor and Mordor facing each
+// other across the river as photo tokens on their book-sized bases, the way they look in a game.
 
-const BOARD = STARTER_BOARDS.find(b => b.id === 'river-crossing')!;
 const LAYER = (k: string) => (k === 'road' ? 0 : k === 'water' ? 1 : k === 'bridge' ? 3 : 2);
 
-/** Ranks of bases: [x, y] centres in inches. */
-const rank = (x: number, y: number, n: number, gap = 1.15): [number, number][] => Array.from({ length: n }, (_, i) => [x + i * gap, y]);
-const GOOD = [...rank(33.6, 29.5, 6), ...rank(34.2, 30.7, 5), [37.5, 32.1] as [number, number]];
-const EVIL = [...rank(33.2, 20.4, 6), ...rank(33.8, 19.2, 5), [36.2, 17.8] as [number, number]];
+const initials = (name: string) =>
+  name
+    .split(/[\s,]+/)
+    .filter(w => /^[A-Z]/.test(w))
+    .slice(0, 2)
+    .map(w => w[0])
+    .join('');
+
+const RING = 0.1;
+
+function PhotoToken({ t, side, i }: { t: Token; side: 'p1' | 'p2'; i: number }) {
+  const r = mmToIn(t.mm) / 2;
+  const id = `hero-clip-${side}-${i}`;
+  return (
+    <g className={`hero-token ${side} ${t.hero ? 'hero' : ''}`} transform={`translate(${t.x} ${t.y})`}>
+      <clipPath id={id}>
+        <circle r={r} />
+      </clipPath>
+      <circle className="hero-base" r={r} />
+      <text className="hero-initials" textAnchor="middle" dominantBaseline="central" style={{ fontSize: r * 0.8 }}>
+        {initials(t.name)}
+      </text>
+      <image href={pictureUrl(t)} x={-r} y={-r} width={2 * r} height={2 * r} preserveAspectRatio="xMidYMid slice" clipPath={`url(#${id})`} onError={e => (e.currentTarget.style.display = 'none')} />
+      {/* Rings drawn inside the base's edge and touching, the hero's gold ring outermost. */}
+      {t.hero && <circle className="hero-gold" r={r - RING / 2} />}
+      <circle className="hero-ring" r={r - (t.hero ? RING * 1.5 : RING / 2)} />
+    </g>
+  );
+}
 
 export function HeroArt() {
   const tex = useMemo(() => textures(), []);
@@ -21,7 +48,7 @@ export function HeroArt() {
     return starterTerrain(BOARD, () => `hero-${n++}`).sort((a, b) => LAYER(a.kind) - LAYER(b.kind));
   }, []);
   return (
-    <svg className="hero-art" viewBox="9 17.5 39 14.5" preserveAspectRatio="xMaxYMid slice" aria-hidden>
+    <svg className="hero-art" viewBox="7.9 18.9 36.6 13.2" preserveAspectRatio="xMaxYMid slice" aria-hidden>
       <defs>
         <TerrainDefs />
         {MATERIALS.map(m => (
@@ -37,11 +64,11 @@ export function HeroArt() {
             <TerrainArt t={t} mat={BOARD.mat} />
           </g>
         ))}
-        {GOOD.map(([x, y], i) => (
-          <circle key={`g${i}`} className="hero-base p1" cx={x} cy={y} r={0.49} />
+        {GOOD.map((t, i) => (
+          <PhotoToken key={`g${i}`} t={t} side="p1" i={i} />
         ))}
-        {EVIL.map(([x, y], i) => (
-          <circle key={`e${i}`} className="hero-base p2" cx={x} cy={y} r={0.49} />
+        {EVIL.map((t, i) => (
+          <PhotoToken key={`e${i}`} t={t} side="p2" i={i} />
         ))}
       </g>
     </svg>
