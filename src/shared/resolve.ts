@@ -1,7 +1,8 @@
 import { backAway } from './backAway.ts';
 import { inTheWay } from './sight.ts';
 import { cleanFight, cleanShot, resolveDuel, resolveShot, resolveStrikes } from './fight.ts';
-import { priorityChooser } from './flow.ts';
+import { combatFromKey, priorityChooser } from './flow.ts';
+import { fightDone } from './movement.ts';
 import { touching } from './objects.ts';
 import { MAX_DICE } from './reducer.ts';
 import type { Action, DiceRoll, GameState, Seat } from './types.ts';
@@ -14,6 +15,16 @@ export interface Resolved {
   apply: Action[];
   /** A follow-on change the player can undo, such as ticking off a fight. */
   record?: Action;
+}
+
+/**
+ * Whether any of these models is in a duel rolled this turn but not yet struck, so a second request for the same
+ * fight (both players clicking at once, or the Palantír and its opponent) doesn't roll it again.
+ */
+function duelOpen(state: GameState, ids: string[]) {
+  const set = new Set(ids);
+  const r = [...state.log].reverse().find(x => x.group?.startsWith('f-') && x.side !== undefined && x.model && set.has(x.model));
+  return !!r && !!state.flow.duels?.includes(r.group!) && !state.log.some(x => x.group === r.group && (x.against || x.note || x.label.startsWith('Roll-off')));
 }
 
 /**
@@ -49,7 +60,7 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
     }
     case 'fight': {
       const req = cleanFight(action.fight);
-      if (!req) return null;
+      if (!req || (state.flow.started && req.combat && fightDone(state, combatFromKey(state, req.combat) ?? { key: req.combat, p1: [], p2: [] })) || duelOpen(state, req.sides.flat().map(f => f.id))) return null;
       return { apply: resolveDuel(req, d6, seat, `f-${uid()}`, now).map(roll => ({ type: 'rolled', roll })) };
     }
     case 'strikes': {

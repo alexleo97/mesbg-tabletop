@@ -1,6 +1,6 @@
 import { distanceBetween, type Point } from './geometry.ts';
 import { moveCost } from './sight.ts';
-import { combatFromKey } from './flow.ts';
+import { combatFromKey, type Combat } from './flow.ts';
 import { canActivate, phaseHeroics } from './heroics.ts';
 import type { GameState, Model } from './types.ts';
 
@@ -32,6 +32,18 @@ export function heroicCombatWon(state: GameState, m: Model): boolean {
     const theirs = m.owner === 'p1' ? c.p2 : c.p1;
     return ours.includes(m.id) && ours.some(id => heroes.includes(id)) && theirs.every(id => state.models[id].dead);
   });
+}
+
+/**
+ * Whether a fight has been fought this turn. Once one is, a model slain in it changes which models touch, so the
+ * survivors make up a "new" fight; it's still done if everyone on one side has already fought this turn (unless
+ * a Heroic Combat freed them to fight again).
+ */
+export function fightDone(state: GameState, c: Combat): boolean {
+  const resolved = state.flow.resolved;
+  if (resolved.includes(c.key)) return true;
+  const fought = new Set(resolved.flatMap(k => k.split(',')));
+  return [c.p1, c.p2].some(side => side.length > 0 && side.every(id => fought.has(id) && !heroicCombatWon(state, state.models[id])));
 }
 
 /** Whether a model's moves are held to an allowance this phase (see moveAllowance). */

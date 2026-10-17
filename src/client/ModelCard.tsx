@@ -2,6 +2,7 @@ import { useEffect, useState, type Ref } from 'react';
 import { loadRulesText, modelStats, pictureUrl, startingPoints, statsWithOptions, STAT_NAMES, type Catalog } from '../shared/catalog.ts';
 import { strikeWounds } from '../shared/fight.ts';
 import type { Combat } from '../shared/flow.ts';
+import { fightDone } from '../shared/movement.ts';
 import { heroicInfo, phaseAllows } from '../shared/heroics.ts';
 import { carriedBy, markerActions, OBJECT_NAMES } from '../shared/objects.ts';
 import { groundAt, inTheWay, sightTo } from '../shared/sight.ts';
@@ -152,7 +153,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
       );
     }
   } else if (state.phase === 'fight' && combat) {
-    const done = state.flow.resolved.includes(combat.key);
+    const done = fightDone(state, combat);
     action = (
       <button className={done ? '' : 'primary'} onClick={() => openFight(combat.key)}>
         {done ? '✓ Fight rolled, view it' : 'Roll this fight'}

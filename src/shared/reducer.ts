@@ -47,7 +47,7 @@ function goTo(state: GameState, phase: Phase, turn: number): GameState {
       done: [],
       resolved: newTurn ? [] : state.flow.resolved,
       heroics: newTurn ? [] : state.flow.heroics,
-      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [] } : {}),
+      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [] } : {}),
       passed: [],
       lastHeroic: null,
       starts: {},
@@ -598,7 +598,9 @@ function step(state: GameState, action: Action): GameState {
       const log = [...state.log, r];
       // A shot's first roll marks its shooter as having shot this turn.
       const shooter = r.group?.startsWith('s-') && r.id === `${r.group}-0` ? r.model : undefined;
-      const flow = shooter && !state.flow.shot?.includes(shooter) ? { ...state.flow, shot: [...(state.flow.shot ?? []), shooter].slice(-400) } : state.flow;
+      let flow = shooter && !state.flow.shot?.includes(shooter) ? { ...state.flow, shot: [...(state.flow.shot ?? []), shooter].slice(-400) } : state.flow;
+      // So does a duel's first roll, for its fight.
+      if (r.group?.startsWith('f-') && r.id === `${r.group}-0` && r.side !== undefined) flow = { ...flow, duels: [...(flow.duels ?? []), r.group].slice(-200) };
       return { ...state, flow, log: log.slice(-MAX_LOG) };
     }
     case 'loadState':
@@ -729,6 +731,7 @@ export function loadState(raw: unknown): GameState {
         ...(f.braved ? { braved: seats(f.braved) } : {}),
         ...(f.arrived ? { arrived: seats(f.arrived) } : {}),
         ...(Array.isArray(f.shot) ? { shot: f.shot.slice(0, 400).map(x => String(x).slice(0, 80)) } : {}),
+        ...(Array.isArray(f.duels) ? { duels: f.duels.slice(0, 200).map(x => String(x).slice(0, 80)) } : {}),
         ...(f.startFate && typeof f.startFate === 'object' ? { startFate: cleanCounts(f.startFate, 9) } : {}),
         ...(f.control && typeof f.control === 'object'
           ? { control: Object.fromEntries(Object.entries(f.control).slice(0, 50).map(([k, v]) => [k.slice(0, 80), isSeat(v) ? v : null])) }

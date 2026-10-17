@@ -13,6 +13,7 @@ import { FightPanel } from './FightPanel.tsx';
 import { ModelCard, weaponOf } from './ModelCard.tsx';
 import { SightHint } from './SightHint.tsx';
 import { combatFromKey, combats, other } from '../shared/flow.ts';
+import { fightDone } from '../shared/movement.ts';
 import { waitingOnMight } from '../shared/bot.ts';
 import { distanceBetween, formatInches } from '../shared/geometry.ts';
 import { scenarioById } from '../shared/scenarios.ts';
@@ -462,7 +463,7 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
               }}
               onModelTap={onModelTap}
               links={aimLinks}
-              fights={state.flow.started && state.phase === 'fight' ? fights.map(c => ({ key: c.key, ids: [...c.p1, ...c.p2], done: state.flow.resolved.includes(c.key) })) : undefined}
+              fights={state.flow.started && state.phase === 'fight' ? fights.map(c => ({ key: c.key, ids: [...c.p1, ...c.p2], done: fightDone(state, c) })) : undefined}
               onFightTap={setFightKey}
               sightFrom={sight && single ? single.id : undefined}
               sightRange={sight && single ? weaponOf(single, catalog)?.range : undefined}
