@@ -542,3 +542,13 @@ table.vp tr.total td:first-child { text-align: left; }
 .row.center { justify-content: center; }
 .row.center > * { flex: 0 0 auto; }
 p.warn { color: #e8a84a; }
+.maps { display: flex; flex-direction: column; gap: 6px; }
+.map-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.map-list li { display: flex; gap: 4px; }
+.map-load { flex: 1; display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: 2px; }
+.map-load small { color: var(--muted); }
+.hint.sync { margin: 0; }
+.profile-lists { text-align: left; display: flex; flex-direction: column; gap: 6px; }
+.profile-lists h3 { margin: 6px 0 0; }
+.profile-lists ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.profile-lists li { display: flex; justify-content: space-between; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }

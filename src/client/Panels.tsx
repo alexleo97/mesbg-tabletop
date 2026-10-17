@@ -1,4 +1,5 @@
 import { armyStatus } from '../shared/status.ts';
+import { MapsSection } from './Maps.tsx';
 import { isDifficult } from '../shared/sight.ts';
 import { useRef, useState } from 'react';
 import { objectiveMarkers, STARTER_BOARDS, starterTerrain } from '../shared/boards.ts';
@@ -421,6 +422,7 @@ export function TablePanel({
           </button>
         ))}
       </div>
+      <MapsSection state={state} dispatch={dispatch} onLoaded={() => setSelectedTerrain(null)} />
       <label>
         Ground
         <select value={state.board.mat} onChange={e => dispatch({ type: 'setBoard', w: state.board.w, h: state.board.h, mat: e.target.value as Mat })}>

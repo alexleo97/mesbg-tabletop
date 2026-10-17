@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { entriesFor, entryPoints, isHeroType, loadCatalog, pictureUrl, type Catalog, type CatalogUnit } from '../shared/catalog.ts';
 import type { ListEntry } from '../shared/importList.ts';
+import { useAuth } from './auth.ts';
+import { cloudLists, deleteCloudList, isUuid, mergeLists, newUuid, saveCloudList } from './cloud.ts';
 
 interface RosterEntry {
   key: string;
@@ -14,6 +16,8 @@ export interface Roster {
   name: string;
   army: string;
   entries: RosterEntry[];
+  /** When it was last changed, to tell which copy is newer when syncing with your account. */
+  updatedAt?: number;
 }
 
 const STORE_KEY = 'mesbg-tabletop:lists';
@@ -35,7 +39,9 @@ function saveAll(lists: Roster[]) {
   }
 }
 
-const uid = () => Math.random().toString(36).slice(2, 10);
+const uid = newUuid;
+/** A list's contents, ignoring when it was saved. */
+const same = (a: Roster | undefined, b: Roster) => !!a && JSON.stringify({ ...a, updatedAt: 0 }) === JSON.stringify({ ...b, updatedAt: 0 });
 
 export function useCatalog() {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
@@ -60,14 +66,48 @@ export function ListBuilder({ onDeploy, deployLabel }: { onDeploy: (entries: Lis
   const [filter, setFilter] = useState('');
   const [adding, setAdding] = useState(false);
 
-  // Keep the current list saved as it's edited.
+  const { profile } = useAuth();
+  const [synced, setSynced] = useState<'off' | 'syncing' | 'saved' | 'failed'>('off');
+  const upload = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const pointsOf = (r: Roster) => (catalog ? r.entries.reduce((a, e) => a + entryPoints(catalog.units[e.unitId], e.optionIds, e.count), 0) : undefined);
+
+  // Signed in: bring this browser's lists and your account's together, then keep them in step.
+  useEffect(() => {
+    if (!profile) return setSynced('off');
+    let alive = true;
+    setSynced('syncing');
+    void cloudLists().then(async cloud => {
+      if (!alive) return;
+      if (!cloud) return setSynced('failed');
+      // Lists made before accounts existed get an id the database accepts.
+      const local = loadSaved().map(r => (isUuid(r.id) ? r : { ...r, id: newUuid() }));
+      const merged = mergeLists(local, cloud).slice(0, 30);
+      const newer = merged.filter(r => !same(cloud.find(c => c.id === r.id), r) || (r.updatedAt ?? 0) > (cloud.find(c => c.id === r.id)?.updatedAt ?? 0));
+      const ok = (await Promise.all(newer.map(r => saveCloudList(r)))).every(Boolean);
+      if (!alive) return;
+      saveAll(merged);
+      setSaved(merged);
+      setRoster(cur => merged.find(r => r.id === cur.id) ?? merged[0] ?? cur);
+      setSynced(ok ? 'saved' : 'failed');
+    });
+    return () => {
+      alive = false;
+    };
+  }, [profile?.id]);
+
+  // Keep the current list saved as it's edited, in this browser and on your account.
   useEffect(() => {
     if (!roster.army && roster.entries.length === 0) return;
+    if (same(saved.find(r => r.id === roster.id), roster)) return;
+    const stamped = { ...roster, updatedAt: Date.now() };
     setSaved(prev => {
-      const next = [roster, ...prev.filter(r => r.id !== roster.id)].slice(0, 30);
+      const next = [stamped, ...prev.filter(r => r.id !== roster.id)].slice(0, 30);
       saveAll(next);
       return next;
     });
+    if (!profile) return;
+    clearTimeout(upload.current);
+    upload.current = setTimeout(() => void saveCloudList(stamped, pointsOf(stamped)).then(ok => setSynced(ok ? 'saved' : 'failed')), 1200);
   }, [roster]);
 
   const armies = useMemo(() => {
@@ -139,6 +179,7 @@ export function ListBuilder({ onDeploy, deployLabel }: { onDeploy: (entries: Lis
               if (!confirm(`Delete "${roster.name}"?`)) return;
               const next = saved.filter(r => r.id !== roster.id);
               saveAll(next);
+              if (profile) void deleteCloudList(roster.id);
               setSaved(next);
               setRoster(next[0] ?? { id: uid(), name: 'My list', army: '', entries: [] });
             }}
@@ -147,6 +188,12 @@ export function ListBuilder({ onDeploy, deployLabel }: { onDeploy: (entries: Lis
           </button>
         )}
       </div>
+      <p className="hint sync">
+        {synced === 'off' && 'Lists are kept in this browser. Sign in with Discord on the home page to keep them on every device.'}
+        {synced === 'syncing' && 'Syncing with your account…'}
+        {synced === 'saved' && '✓ Saved to your account'}
+        {synced === 'failed' && "Couldn't reach your account, so changes are only in this browser for now."}
+      </p>
       <input aria-label="List name" value={roster.name} onChange={e => setRoster(r => ({ ...r, name: e.target.value }))} />
       <select aria-label="Army" value={roster.army} onChange={e => setRoster(r => ({ ...r, army: e.target.value }))}>
         <option value="">Choose an army…</option>
