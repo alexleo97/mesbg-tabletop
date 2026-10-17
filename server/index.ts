@@ -14,6 +14,7 @@ const PORT = Number(process.env.PORT ?? 8787);
 const DIST = resolve(process.env.DIST_DIR ?? 'dist');
 const DATA = resolve(process.env.DATA_DIR ?? 'data/rooms');
 const ROOM_TTL_MS = 1000 * 60 * 60 * 24 * 14;
+const CANONICAL = (process.env.PUBLIC_URL ?? '').replace(/\/$/, '');
 const ROOM_ID = /^[a-z0-9-]{3,40}$/;
 
 interface Client {
@@ -203,6 +204,13 @@ const server = createServer((req, res) => {
   const url = new URL(req.url ?? '/', 'http://localhost');
   if (url.pathname === '/healthz') {
     res.writeHead(200, { 'content-type': 'text/plain' }).end('ok');
+    return;
+  }
+  // One address for everyone: sign-ins and saved games live per address in the browser, so the old
+  // onrender.com one sends visitors on to PUBLIC_URL. Health checks still answer at either.
+  const host = req.headers.host ?? '';
+  if (CANONICAL && host.endsWith('.onrender.com') && !CANONICAL.includes(host)) {
+    res.writeHead(301, { location: CANONICAL + url.pathname + url.search }).end();
     return;
   }
   if (url.pathname === '/api/config') {

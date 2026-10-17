@@ -66,14 +66,17 @@ function start() {
   void supabase().then(async sb => {
     if (!sb) return set({ loading: false, enabled: false });
     set({ enabled: true });
-    const { data } = await sb.auth.getSession();
-    await loadProfile(sb, data.session);
-    // A sign-in that just came back from Discord leaves ?code=… in the address; tidy it away.
+    // A failed sign-in comes back with the reason in the address, in the query or after the #.
     const url = new URL(location.href);
-    if (url.searchParams.has('code')) {
-      url.searchParams.delete('code');
-      history.replaceState(null, '', url);
-    }
+    const hash = new URLSearchParams(url.hash.slice(1));
+    const failed = url.searchParams.get('error_description') ?? hash.get('error_description');
+    const { data, error } = await sb.auth.getSession();
+    await loadProfile(sb, data.session);
+    if (failed || error) set({ error: `Sign-in didn't work: ${failed ?? error?.message}` });
+    // Tidy the sign-in leftovers (?code=…, ?error=…) out of the address.
+    for (const k of ['code', 'error', 'error_code', 'error_description']) url.searchParams.delete(k);
+    if (hash.has('error') || hash.has('access_token')) url.hash = '';
+    if (url.href !== location.href) history.replaceState(null, '', url);
     sb.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'USER_UPDATED') void loadProfile(sb, session);
     });
