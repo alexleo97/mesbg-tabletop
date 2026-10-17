@@ -9,10 +9,18 @@ import { cloudLists, mergeLists } from './cloud.ts';
 
 export type Page = 'play' | 'armies' | 'maps' | 'leaderboard' | 'profile';
 
-const PAGES: [Page, string, string][] = [
+// A folded map in the text colour, since the map emoji draws as a coloured globe on some systems.
+export const MapIcon = () => (
+  <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" style={{ verticalAlign: '-0.125em' }}>
+    <path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z" />
+    <path d="M9 4v14M15 6v14" />
+  </svg>
+);
+
+const PAGES: [Page, ReactNode, string][] = [
   ['play', '⚔', 'Play'],
   ['armies', '🛡', 'Armies'],
-  ['maps', '🗺', 'Maps'],
+  ['maps', <MapIcon key="maps" />, 'Maps'],
   ['leaderboard', '🏆', 'Leaderboard'],
 ];
 

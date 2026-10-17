@@ -21,7 +21,7 @@ import { useSettings, type Settings } from './settings.ts';
 import { Tutorial } from './Tutorial.tsx';
 import { HeroArt } from './HeroArt.tsx';
 import { ProfilePage } from './Account.tsx';
-import { ArmiesCard, ArmiesPage, MapsCard, MapsPage, randomRoom, SitePage, TopPlayersCard } from './Home.tsx';
+import { ArmiesCard, ArmiesPage, MapIcon, MapsCard, MapsPage, randomRoom, SitePage, TopPlayersCard } from './Home.tsx';
 import { getMap } from './cloud.ts';
 import { MapEditor } from './MapEditor.tsx';
 import { LeaderboardPage } from './Leaderboard.tsx';
@@ -135,7 +135,9 @@ function Lobby({ settings, updateSettings }: { settings: Settings; updateSetting
         </li>
         <li>
           <a href="?maps">
-            <span className="step-icon" aria-hidden>🗺</span>
+            <span className="step-icon" aria-hidden>
+              <MapIcon />
+            </span>
             <b>Pick a table</b>
             <small>Ready-made boards, or lay out your own.</small>
           </a>
