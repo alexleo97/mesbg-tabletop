@@ -23,8 +23,9 @@ const run = (s: GameState, ...actions: Action[]) => actions.reduce(reduce, s);
 const line = (s: GameState, i: number) => scoreLines(s)[i].vp;
 /** Puts a model down anywhere, as if the battle hadn't started (once it has, moves are held to the model's Move). */
 const tp = (s: GameState, id: string, x: number, y: number) => {
-  const moved = reduce({ ...s, flow: { ...s.flow, started: false } }, { type: 'moveModels', moves: [{ id, x, y }] });
-  return { ...moved, flow: { ...moved.flow, started: s.flow.started } };
+  // Outside the rules: no move limits and no deployment zones.
+  const moved = reduce({ ...s, scenario: null, flow: { ...s.flow, started: false } }, { type: 'moveModels', moves: [{ id, x, y }] });
+  return { ...moved, scenario: s.scenario, flow: { ...moved.flow, started: s.flow.started } };
 };
 /** Puts a model in base contact with a marker. */
 const at = (s: GameState, id: string, t: string) => tp(s, id, s.terrain[t].x, s.terrain[t].y + 0.8 + 0.49);

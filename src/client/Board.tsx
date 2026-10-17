@@ -8,6 +8,7 @@ import { ScenarioZones } from './ScenarioZones.tsx';
 import { scenarioById } from '../shared/scenarios.ts';
 import { MATERIALS, textures } from './textures.ts';
 import { TERRAIN_INFO, terrainRules } from '../shared/terrain.ts';
+import { holdInZones } from '../shared/deployment.ts';
 import { limitMove, moveAllowance, moveStart, movesLimited, settleMove } from '../shared/movement.ts';
 import { groundAt, inDifficult, insidePolygon, inTheWay, isDifficult, moveCost, outline, shadowPath, sightTo } from '../shared/sight.ts';
 
@@ -385,6 +386,8 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
         const allowance = m && moveAllowance(state, m);
         pos[id] = m && allowance != null ? limitMove(state, moveStart(state, m), to, allowance) : to;
       }
+      // Before the battle, models stop at the edge of their deployment zone, as the server would hold them there.
+      if (!state.flow.started) for (const mv of holdInZones(state, Object.entries(pos).map(([id, p]) => ({ id, ...p })))) if (pos[mv.id]) pos[mv.id] = { x: mv.x, y: mv.y };
       setDragPos(pos);
       sendMoves(pos, false);
     } else if (gesture.kind === 'terrain') {
