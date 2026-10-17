@@ -6,6 +6,7 @@ import { ScenarioZones } from './ScenarioZones.tsx';
 import { scenarioById } from '../shared/scenarios.ts';
 import { MATERIALS, textures } from './textures.ts';
 import { TERRAIN_INFO, terrainRules } from '../shared/terrain.ts';
+import { limitMove, moveStart, movesLimited, settleMove } from '../shared/movement.ts';
 import { inDifficult, insidePolygon, inTheWay, isDifficult, moveCost, outline, shadowPath, sightTo } from '../shared/sight.ts';
 
 export type Tool = 'move' | 'select' | 'measure';
@@ -300,7 +301,12 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
       if (!gesture.moved && Math.hypot(dx, dy) * view.s < TAP_SLOP_PX) return;
       if (!gesture.moved) setGesture({ ...gesture, moved: true });
       const pos: Record<string, Point> = {};
-      for (const [id, o] of Object.entries(gesture.origin)) pos[id] = { x: o.x + dx, y: o.y + dy };
+      for (const [id, o] of Object.entries(gesture.origin)) {
+        const m = state.models[id];
+        const to = { x: o.x + dx, y: o.y + dy };
+        // In the Move phase a model stops at the edge of its Move, as the server would hold it there anyway.
+        pos[id] = m && movesLimited(state, m) ? limitMove(state, moveStart(state, m), to, m.move) : to;
+      }
       setDragPos(pos);
       sendMoves(pos, false);
     } else if (gesture.kind === 'terrain') {
@@ -327,8 +333,12 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
     }
     const p = toBoard(e.clientX, e.clientY);
     if (gesture.kind === 'drag') {
-      if (gesture.moved && dragPos) sendMoves(dragPos, true);
-      else if (gesture.wasSelected && gesture.multi) {
+      if (gesture.moved && dragPos) {
+        // A model dropped just short of an enemy is charging it: finish the move into base contact.
+        const settled: Record<string, Point> = {};
+        for (const [id, at] of Object.entries(dragPos)) settled[id] = state.models[id] ? settleMove(state, state.models[id], at) : at;
+        sendMoves(settled, true);
+      } else if (gesture.wasSelected && gesture.multi) {
         const next = new Set(selected);
         next.delete(gesture.tapId);
         setSelected(next);
@@ -448,21 +458,29 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
           {showDeployment && scenarioById(state.scenario) && <ScenarioZones s={scenarioById(state.scenario)!} w={state.board.w} h={state.board.h} />}
 
           {models.filter(m => selected.has(m.id)).map(m => {
-            // While dragging, zones stay where the move started so you can see the limit.
-            const s = m;
+            // In the Move phase the move zone stays where the model began the phase, so you can see how far it can still go.
+            const s = movesLimited(state, m) ? { ...m, ...moveStart(state, m) } : m;
             return (
-              <g key={`z-${m.id}`} transform={`translate(${s.x} ${s.y}) rotate(${s.rot})`} pointerEvents="none">
-                {showZones && <ZoneShape m={m} pad={m.move} className="zone-move" />}
-                {showZones && inDifficult(state, m) && <ZoneShape m={m} pad={m.move / 2} className="zone-move slow" />}
-                {showZones && <ZoneShape m={m} pad={1} className="zone-control" />}
+              <g key={`z-${m.id}`} pointerEvents="none">
+                <g transform={`translate(${s.x} ${s.y}) rotate(${s.rot})`}>
+                  {showZones && <ZoneShape m={m} pad={m.move} className="zone-move" />}
+                  {showZones && inDifficult(state, s) && <ZoneShape m={m} pad={m.move / 2} className="zone-move slow" />}
+                </g>
+                {showZones && (
+                  <g transform={`translate(${m.x} ${m.y}) rotate(${m.rot})`}>
+                    <ZoneShape m={m} pad={1} className="zone-control" />
+                  </g>
+                )}
               </g>
             );
           })}
 
           {dragPos &&
             gesture?.kind === 'drag' &&
-            Object.entries(gesture.origin).map(([id, o]) => {
+            Object.entries(gesture.origin).map(([id, dragFrom]) => {
               const m = state.models[id];
+              // Measure from where the model began the Move phase, so several short drags add up.
+              const o = m && movesLimited(state, m) ? moveStart(state, m) : dragFrom;
               const now = dragPos[id];
               if (!m || !now) return null;
               const d = Math.hypot(now.x - o.x, now.y - o.y);

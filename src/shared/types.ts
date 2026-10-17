@@ -161,6 +161,8 @@ export interface Flow {
   lastHeroic: Seat | null;
   /** When this game started (server time), so each game's result is recorded once. */
   startedAt?: number;
+  /** Where each model that has moved this Move phase started from, so its Move is counted across drags. */
+  starts?: Record<string, [number, number]>;
 }
 
 export interface Heroic {

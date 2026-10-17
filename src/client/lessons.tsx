@@ -165,7 +165,7 @@ export const CHAPTERS: Chapter[] = [
         body: (
           <>
             <p>In the Move phase the player with Priority moves their models first, then the other player. Each model may move up to its Mv in inches, in any direction, turning as it goes.</p>
-            <p>Tap a model to select it: the faint ring shows how far it can go. While you drag, a line shows the distance, and it turns red if you go too far.</p>
+            <p>Tap a model to select it: the faint ring shows how far it can go. While you drag, a line shows the distance, and the model stops when it runs out of Move. Short drags add up, so a model can't creep further by moving twice.</p>
           </>
         ),
         task: 'Drag your Ranger at least 2" towards the rocks.',
@@ -212,7 +212,7 @@ export const CHAPTERS: Chapter[] = [
         body: (
           <>
             <p>Moving into base contact with an enemy is a charge. Models touching bases will fight each other in the Fight phase, and a charged model can't move away.</p>
-            <p>Charging first lets you pick your fights. Several of your models can gang up on one enemy.</p>
+            <p>Charging first lets you pick your fights. Several of your models can gang up on one enemy. Drop a model just short of an enemy and it finishes the charge into contact for you.</p>
           </>
         ),
         task: 'Drag your Warrior into base contact with the nearest Orc, then press Done moving.',

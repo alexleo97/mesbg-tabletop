@@ -1,4 +1,5 @@
 import { heroicInfo } from './heroics.ts';
+import { limitMove, moveStart, movesLimited } from './movement.ts';
 import { MATS, PHASES, TERRAIN_KINDS, type Action, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type Phase, type Seat, type Terrain } from './types.ts';
 
 export const MAX_MODELS = 600;
@@ -40,6 +41,7 @@ function goTo(state: GameState, phase: Phase, turn: number): GameState {
       heroics: newTurn ? [] : state.flow.heroics,
       passed: [],
       lastHeroic: null,
+      starts: {},
     },
   };
 }
@@ -139,6 +141,16 @@ function cleanPath(p: unknown): [number, number, number][] | undefined {
   return out.map(([x, y, hw]) => [num(x, -60, 60, 0), num(y, -60, 60, 0), num(hw, 0.2, 8, 1)]);
 }
 
+/** Move phase starting points from untrusted JSON. */
+function cleanStarts(v: unknown): Record<string, [number, number]> {
+  const out: Record<string, [number, number]> = {};
+  if (!v || typeof v !== 'object') return out;
+  for (const [k, p] of Object.entries(v).slice(0, 500)) {
+    if (Array.isArray(p) && p.length === 2 && p.every(n => typeof n === 'number' && Number.isFinite(n))) out[k.slice(0, 80)] = [p[0], p[1]];
+  }
+  return out;
+}
+
 function cleanRoll(r: unknown): DiceRoll | null {
   if (!r || typeof r !== 'object') return null;
   const o = r as Partial<DiceRoll>;
@@ -205,17 +217,20 @@ export function reduce(state: GameState, action: Action): GameState {
     case 'moveModels': {
       if (!Array.isArray(action.moves)) return state;
       const models = { ...state.models };
+      let starts = state.flow.starts;
       for (const mv of action.moves) {
         const prev = mv && models[mv.id];
         if (!prev) continue;
-        models[prev.id] = {
-          ...prev,
-          x: num(mv.x, -24, 200, prev.x),
-          y: num(mv.y, -24, 200, prev.y),
-          rot: mv.rot === undefined ? prev.rot : num(mv.rot, -360, 720, prev.rot) % 360,
-        };
+        let to = { x: num(mv.x, -24, 200, prev.x), y: num(mv.y, -24, 200, prev.y) };
+        // In the Move phase a model goes no further than its Move from where it began the phase.
+        if (movesLimited(state, prev) && (to.x !== prev.x || to.y !== prev.y)) {
+          const from = moveStart(state, prev);
+          to = limitMove(state, from, to, prev.move);
+          if (!starts?.[prev.id]) starts = { ...starts, [prev.id]: [from.x, from.y] };
+        }
+        models[prev.id] = { ...prev, ...to, rot: mv.rot === undefined ? prev.rot : num(mv.rot, -360, 720, prev.rot) % 360 };
       }
-      return { ...state, models };
+      return { ...state, models, ...(starts !== state.flow.starts ? { flow: { ...state.flow, starts } } : {}) };
     }
     case 'updateModel': {
       const prev = state.models[action.id];
@@ -507,6 +522,7 @@ export function loadState(raw: unknown): GameState {
         passed: seats(f.passed),
         lastHeroic: isSeat(f.lastHeroic) ? f.lastHeroic : null,
         ...(Number.isFinite(f.startedAt) ? { startedAt: Number(f.startedAt) } : {}),
+        ...(f.starts ? { starts: cleanStarts(f.starts) } : {}),
       },
     };
   }
