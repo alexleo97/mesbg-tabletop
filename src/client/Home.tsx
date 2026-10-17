@@ -65,7 +65,7 @@ export function ArmiesPage() {
         </button>
       )}
       <div className="armies-builder">
-        <ListBuilder />
+        <ListBuilder wide />
       </div>
     </SitePage>
   );

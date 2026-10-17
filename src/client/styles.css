@@ -607,8 +607,59 @@ details.finish summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
 .page-body { display: flex; flex-direction: column; gap: 14px; }
 .center-self { align-self: center; }
 .page-tabs { width: min(420px, 100%); align-self: center; }
+.icon-btn { width: 34px; min-height: 34px; padding: 0; background: transparent; border-color: transparent; color: var(--muted); }
+.icon-btn:hover { border-color: var(--line); color: var(--text); }
+.icon-btn.on { background: var(--panel); border-color: var(--gold); color: var(--gold); }
+.builder-setup { display: grid; grid-template-columns: 1fr; gap: 8px; }
+.builder.wide .builder-setup { grid-template-columns: 1.2fr 1.4fr 1fr; }
+.next-step { margin: 0; padding: 8px 12px; border-radius: 10px; background: color-mix(in srgb, var(--gold) 14%, transparent); border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent); }
+.builder-cols { display: flex; flex-direction: column; gap: 12px; }
+.builder-list { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.builder.wide .builder-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 18px; }
+.builder.wide .builder-pick { position: sticky; top: 12px; }
+.builder.wide .unit-picker ul { max-height: 62vh; }
+.points-bar { height: 6px; border-radius: 3px; background: var(--panel-2); overflow: hidden; }
+.points-bar span { display: block; height: 100%; background: var(--gold); }
+.points-bar.over span { background: #e06c5a; }
+.checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; font-size: 0.88rem; }
+.checks .ok { color: #8fc98f; }
+.checks .bad { color: #f0a35e; }
+.warband { border: 1px solid var(--line); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.warband.over { border-color: #f0a35e; }
+.warband > header { display: flex; justify-content: space-between; align-items: baseline; padding: 0 4px; }
+.warband > header span { font-family: var(--font-head); color: var(--gold); }
+.warband > header small { color: var(--muted); }
+.warband.over > header small { color: #f0a35e; }
+.roster li.warband-lead { border-left: 3px solid var(--gold); }
+.leader-badge { margin-left: 6px; font-size: 0.75rem; color: var(--gold); font-weight: 600; white-space: nowrap; }
+.add-warriors, .add-hero { border-style: dashed; }
+.move-to { display: flex; align-items: center; gap: 8px; }
+.move-to small { color: var(--muted); }
+.move-to select { flex: 1; min-height: 34px; }
+.picker-head { display: flex; align-items: center; gap: 8px; }
+.picker-head b { flex: 1; }
+.picker-head small { color: var(--muted); }
+.pick-row { display: flex; gap: 4px; align-items: center; }
+.unit-picker .pick-row .pick-main { flex: 1; min-width: 0; width: auto; }
+.unit-picker .pick-row .icon-btn { flex: 0 0 34px; width: 34px; }
+.unit-picker li { display: flex; flex-direction: column; gap: 4px; }
+.unit-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; font-size: 0.88rem; }
+.unit-card p { margin: 0; }
+.uc-meta { color: var(--muted); }
+.uc-stats { width: 100%; border-collapse: collapse; text-align: center; }
+.uc-stats th { color: var(--muted); font-weight: 500; font-size: 0.75rem; cursor: help; }
+.uc-stats td { font-weight: 700; padding: 2px 0; }
+.uc-stats th, .uc-stats td { border-bottom: 1px solid var(--line); }
+.uc-mwf b { color: var(--gold); }
+.uc-line small, .uc-rules > small { color: var(--muted); margin-right: 4px; }
+.uc-rules { display: flex; flex-direction: column; gap: 4px; }
+.uc-rule { background: var(--panel-2); border-radius: 8px; padding: 6px 8px; }
+.army-guide { background: var(--panel-2); border-radius: 12px; padding: 12px 14px; }
+.army-guide header { display: flex; align-items: center; justify-content: space-between; }
+.army-guide h3 { margin: 0; color: var(--gold); }
+.army-guide ol { margin: 8px 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; line-height: 1.4; }
 .armies-builder { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
-.armies-builder .builder { max-width: 640px; margin: 0 auto; }
+.armies-builder .builder { max-width: 1100px; margin: 0 auto; }
 
 .map-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
 .map-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; }
