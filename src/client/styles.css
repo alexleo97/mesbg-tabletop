@@ -134,6 +134,14 @@ h1, h3, h4, .topbar .room, .phases .turn, .roster-summary b, .name-input, .tabs 
 .terrain .objective { fill: #3a342c; stroke: #c9a227; stroke-width: 0.1; }
 .terrain .objective-ring { fill: none; stroke: #c9a22788; stroke-width: 0.05; stroke-dasharray: 0.2 0.12; pointer-events: none; }
 .terrain .objective-star { fill: #e0c25a; pointer-events: none; }
+.terrain .objective-glyph { fill: #e0c25a; font-weight: 700; font-family: Cinzel, serif; pointer-events: none; }
+.terrain .objective-glyph.p1 { fill: #8cb8f2; }
+.terrain .objective-glyph.p2 { fill: #f08a82; }
+.marker-actions { margin-top: 6px; }
+.carrying { margin: 4px 0; }
+.pick-row { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin: 4px 0; }
+.pick-row span { flex: 1; }
+.pick-row select { width: 55%; }
 .terrain.selected .ground { stroke: var(--gold); stroke-width: 0.16; }
 .terrain.locked.selected .ground { stroke-dasharray: 0.3 0.2; }
 .model .base { stroke: #111; stroke-width: 0.05; }

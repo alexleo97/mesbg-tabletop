@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { newId } from '../shared/importList.ts';
 import { COMMON_RULES, POOLS, SCENARIOS, scenarioById, scenarioFromDice, scenarioMarkers, SELECTION_RULE, vpTotal } from '../shared/scenarios.ts';
-import { scoreLines, vpTotals } from '../shared/scoring.ts';
-import type { Action, GameState, Role, Seat } from '../shared/types.ts';
+import { generalOf, scoreLines, vpTotals } from '../shared/scoring.ts';
+import { gameEnded } from '../shared/status.ts';
+import type { Action, GameState, Model, Picks, Role, Seat } from '../shared/types.ts';
 
 type Dispatch = (a: Action) => void;
 const ROLL_LABEL = 'Scenario roll (pool, then scenario)';
@@ -76,8 +77,9 @@ export function ScenarioPanel({ state, dispatch, role }: { state: GameState; dis
             Pool {s.pool}: {POOLS[s.pool]}
           </p>
 
+          <PicksPanel state={state} dispatch={dispatch} role={role} seatName={seatName} />
           <h4>Victory points</h4>
-          <p className="fine">The game scores what it can see as if the game ended now. Lines marked ✎ are yours to enter.</p>
+          <p className="fine">The game scores every line from the table as if the game ended now.</p>
           <table className="vp">
             <thead>
               <tr>
@@ -166,6 +168,103 @@ export function ScenarioPanel({ state, dispatch, role }: { state: GameState; dis
           <p className="fine">Our own shorthand of the matched play scenario. The Matched Play Guide has the full rules and maps.</p>
         </>
       )}
+    </div>
+  );
+}
+
+type PickKey = keyof Picks;
+interface PickSpec {
+  key: PickKey;
+  label: string;
+  /** Whose models it names: your own or the enemy's. A terrain pick names a piece in the enemy half. */
+  of: 'own' | 'enemy' | 'terrain';
+  /** The General can't be picked unless it's that side's only Hero. */
+  notGeneral?: boolean;
+}
+
+/** The secret choices each scenario asks for. */
+const PICKS: Record<string, PickSpec[]> = {
+  assassination: [
+    { key: 'target', label: 'Your Target (an enemy Hero)', of: 'enemy', notGeneral: true },
+    { key: 'assassin', label: 'Your Assassin', of: 'own', notGeneral: true },
+  ],
+  'contest-of-champions': [{ key: 'champion', label: 'Your Champion', of: 'own' }],
+  'fog-of-war': [
+    { key: 'protect', label: 'Your Hero to protect', of: 'own', notGeneral: true },
+    { key: 'hunt', label: 'The enemy Hero to hunt', of: 'enemy', notGeneral: true },
+    { key: 'terrain', label: 'Terrain to hold (in the enemy half)', of: 'terrain' },
+  ],
+};
+
+/** Heroes a side may pick: not its General, unless the General is its only Hero. */
+function pickableHeroes(state: GameState, seat: Seat, notGeneral?: boolean): Model[] {
+  const side = Object.values(state.models).filter(m => m.owner === seat);
+  const heroes = side.filter(m => m.hero);
+  const general = generalOf(side);
+  return notGeneral && heroes.length > 1 ? heroes.filter(m => m !== general) : heroes;
+}
+
+/**
+ * Secret picks for scenarios that need them. Your own are yours to set before the game starts; your opponent's stay
+ * hidden until the game is over.
+ */
+function PicksPanel({ state, dispatch, role, seatName }: { state: GameState; dispatch: Dispatch; role: Role; seatName: (s: Seat) => string }) {
+  const specs = state.scenario ? PICKS[state.scenario] : undefined;
+  if (!specs) return null;
+  const over = gameEnded(state) || !!state.result;
+  const enemy = (s: Seat): Seat => (s === 'p1' ? 'p2' : 'p1');
+  const nameOf = (id: string | undefined) => (id ? (state.models[id]?.name ?? 'a terrain piece') : 'nothing');
+  const options = (seat: Seat, p: PickSpec): { id: string; name: string }[] => {
+    if (p.of === 'terrain') {
+      const half = state.board.h / 2;
+      // Wholly in the opponent's half: the top half for player 1.
+      return Object.values(state.terrain)
+        .filter(t => t.kind !== 'objective' && t.kind !== 'road' && (seat === 'p1' ? t.y + t.h / 2 <= half : t.y - t.h / 2 >= half))
+        .map((t, i) => ({ id: t.id, name: `${t.kind[0].toUpperCase()}${t.kind.slice(1)} ${i + 1} (${Math.round(t.x)}", ${Math.round(t.y)}")` }));
+    }
+    return pickableHeroes(state, p.of === 'own' ? seat : enemy(seat), p.notGeneral).map(m => ({ id: m.id, name: m.name }));
+  };
+  const mine = role === 'p1' || role === 'p2' ? role : null;
+  return (
+    <div className="picks">
+      <h4>Secret picks</h4>
+      {mine ? (
+        specs.map(p => {
+          const value = state.flow.picks?.[mine]?.[p.key] ?? '';
+          const opts = options(mine, p);
+          return (
+            <div key={p.key} className="pick-row">
+              <span>{p.label}</span>
+              <select aria-label={p.label} value={value} disabled={state.flow.started} onChange={e => dispatch({ type: 'setPick', seat: mine, key: p.key, value: e.target.value || null })}>
+                <option value="">{opts.length ? 'Choose…' : 'Nothing to choose yet'}</option>
+                {opts.map(o => (
+                  <option key={o.id} value={o.id}>
+                    {o.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          );
+        })
+      ) : (
+        <p className="fine">Each player picks in secret; you'll see them once the game is over.</p>
+      )}
+      {mine && !state.flow.started && specs.some(p => !state.flow.picks?.[mine]?.[p.key]) && (
+        <p className="fine">Make your picks before the game starts. They score nothing until they're made.</p>
+      )}
+      {(['p1', 'p2'] as const)
+        .filter(seat => seat !== mine)
+        .map(seat => {
+          const theirs = state.flow.picks?.[seat] ?? {};
+          const made = specs.filter(p => theirs[p.key]).length;
+          return (
+            <p key={seat} className="fine">
+              {over
+                ? `${seatName(seat)} picked ${specs.map(p => `${p.label.replace(/^Your /, 'their ').toLowerCase()}: ${nameOf(theirs[p.key])}`).join('; ')}.`
+                : `${seatName(seat)} has made ${made} of ${specs.length} pick${specs.length === 1 ? '' : 's'}.`}
+            </p>
+          );
+        })}
     </div>
   );
 }

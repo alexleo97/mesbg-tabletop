@@ -40,6 +40,13 @@ export interface Model {
   /** What the model cost in the list, and its heroic tier (5 for a Hero of Legend), for scenarios that score them. */
   points?: number;
   tier?: number;
+  /** Left the table via a board edge (still counts as on the table for Broken). */
+  escaped?: boolean;
+  /** Models whose attacks have taken wounds off this one, and who struck the last blow and how. */
+  hurtBy?: string[];
+  killedBy?: { ids: string[]; how: 'fight' | 'shoot' | 'other' };
+  /** Who made the latest attack on it, until its wounds are settled. */
+  lastHit?: { ids: string[]; how: 'fight' | 'shoot' | 'other' };
   /** Wounds this hero has suffered but not yet taken, while they decide on Fate rolls. */
   pending?: number;
   /** The hero's last failed Fate roll for the current wound, which Might could still turn into a save. */
@@ -70,7 +77,40 @@ export interface Terrain {
    * (in inches from the piece's centre, before rotation) and the half-width of the water there.
    */
   path?: [number, number, number][];
+  /** A scenario marker that means something: an artefact to dig up, a relic, a supply to guard, a wounded ally. */
+  object?: MarkerObject;
+  /** The side a relic, supply or wounded ally belongs to. */
+  side?: Seat;
+  /** Face down (an unrevealed heirloom marker) or still buried (an artefact not yet uncovered). */
+  hidden?: boolean;
+  /** The model carrying it. */
+  carrier?: string;
+  /** Where it started, for relics that score for being moved. */
+  home?: [number, number];
+  /** Off the table: carried off an edge, destroyed, rescued, or a decoy turned over. */
+  gone?: 'off' | 'destroyed' | 'rescued' | 'revealed';
+  /** Who carried it off, destroyed it or turned it over. */
+  by?: Seat;
+  /** The turn each side last tried to uncover it, as only one try per side per turn is allowed. */
+  tried?: Partial<Record<Seat, number>>;
 }
+
+export const MARKER_OBJECTS = ['artefact', 'relic', 'heirloom', 'decoy', 'supply', 'ally'] as const;
+export type MarkerObject = (typeof MARKER_OBJECTS)[number];
+
+/** Secret choices some scenarios ask each player to make, by model or terrain id. */
+export interface Picks {
+  /** Assassination: the enemy Hero you're hunting, and your own Hero sent to do it. */
+  target?: string;
+  assassin?: string;
+  /** Contest of Champions: your Champion. */
+  champion?: string;
+  /** Fog of War: your Hero to protect, the enemy Hero to hunt, and the terrain piece to hold. */
+  protect?: string;
+  hunt?: string;
+  terrain?: string;
+}
+export const PICK_KEYS = ['target', 'assassin', 'champion', 'protect', 'hunt', 'terrain'] as const;
 
 export interface DiceRoll {
   id: string;
@@ -174,6 +214,8 @@ export interface Flow {
   control?: Record<string, Seat | null>;
   /** Fortification Points earned so far, for scenarios that keep a running total. */
   fort?: Record<Seat, number>;
+  /** Each player's secret choices, shown to the other player once the game is over. */
+  picks?: Record<Seat, Picks>;
 }
 
 export interface Heroic {
@@ -216,7 +258,18 @@ export type Action =
   /** A hero spends a Might point to raise one of its own dice by 1. `follow` picks the follow-up dice of a 6/4+ roll. */
   | { type: 'useMight'; roll: string; die: number; follow?: boolean }
   /** Wounds dealt to a model. A hero with Fate holds them as pending until its player decides. */
-  | { type: 'wound'; id: string; count: number }
+  | { type: 'wound'; id: string; count: number; by?: string[]; how?: 'fight' | 'shoot' | 'other' }
+  /** A model picks up a marker it is touching, turns a face-down marker over, or drops what it carries. */
+  | { type: 'pickUp'; model: string; marker: string }
+  | { type: 'flip'; model: string; marker: string }
+  | { type: 'drop'; marker: string }
+  /** Request from a client: the server rolls the Intelligence test to uncover a buried artefact. */
+  | { type: 'uncover'; model: string; marker: string; intelligence: number }
+  /** Server result of an uncover attempt. */
+  | { type: 'uncovered'; model: string; marker: string; roll: DiceRoll }
+  /** A model leaves the table over a board edge. */
+  | { type: 'escape'; model: string }
+  | { type: 'setPick'; seat: Seat; key: (typeof PICK_KEYS)[number]; value: string | null }
   /** Request from a client: the server rolls a Fate point for a hero's pending wound. */
   | { type: 'rollFate'; id: string }
   | { type: 'fateRolled'; id: string; roll: DiceRoll }

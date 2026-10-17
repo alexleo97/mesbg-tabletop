@@ -1,10 +1,11 @@
 import { cleanFight, cleanShot, resolveDuel, resolveShot, resolveStrikes } from './fight.ts';
 import { priorityChooser } from './flow.ts';
+import { touching } from './objects.ts';
 import { MAX_DICE } from './reducer.ts';
 import type { Action, GameState, Seat } from './types.ts';
 
 /** Dice requests a player sends, which only whoever holds the dice (the server, or the browser in practice games) can answer. */
-export const DICE_REQUESTS = new Set<Action['type']>(['roll', 'fight', 'strikes', 'shoot', 'rollFate', 'rollPriority']);
+export const DICE_REQUESTS = new Set<Action['type']>(['roll', 'fight', 'strikes', 'shoot', 'rollFate', 'rollPriority', 'uncover']);
 
 export interface Resolved {
   /** Results everyone applies, in order. */
@@ -70,6 +71,16 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       if (!m || m.owner !== seat || !m.pending || m.fate < 1) return null;
       const roll = { id: `r-${uid()}`, by: seat, label: `Fate roll: ${m.name} (4+ saves a wound)`, dice: [d6()], target: 4, model: m.id, at: now };
       return { apply: [{ type: 'fateRolled', id: m.id, roll }] };
+    }
+    case 'uncover': {
+      // One Intelligence test per side per Artefact each turn, by an infantry model touching it.
+      const m = state.models[String(action.model)];
+      const t = state.terrain[String(action.marker)];
+      if (!m || m.owner !== seat || m.dead || m.escaped || m.base.h > m.base.w) return null;
+      if (!t || t.object !== 'artefact' || !t.hidden || t.gone || t.tried?.[seat] === state.turn || !touching(m, t)) return null;
+      const sum = Math.max(2, Math.min(12, Math.round(Number(action.intelligence)) || 7));
+      const roll = { id: `r-${uid()}`, by: seat, label: `Uncover the Artefact: ${m.name}`.slice(0, 80), dice: [d6(), d6()], sum, at: now };
+      return { apply: [{ type: 'uncovered', model: m.id, marker: t.id, roll }] };
     }
     case 'rollPriority': {
       if (state.phase !== 'priority') return null;

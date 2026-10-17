@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { initialState, reduce } from '../src/shared/reducer.ts';
+import { SCENARIOS } from '../src/shared/scenarios.ts';
 import { scoreLines, vpTotals } from '../src/shared/scoring.ts';
 import { gameWinner } from '../src/shared/status.ts';
 import type { GameState, Model, Seat } from '../src/shared/types.ts';
@@ -34,12 +35,8 @@ describe('scenario scoring', () => {
     expect(vpTotals(s)).toEqual({ p1: 3, p2: 0 });
   });
 
-  it('keeps hand-entered lines for things the table cannot show', () => {
-    let s = game('assassination', [mk('p1', 10, 40, { hero: true }), mk('p2', 10, 8, { hero: true })]);
-    s = reduce(s, { type: 'setVP', seat: 'p1', key: '0', value: 6 });
-    const lines = scoreLines(s);
-    expect(lines[0]).toMatchObject({ auto: false, vp: { p1: 6, p2: 0 } });
-    expect(vpTotals(s).p1).toBe(6);
+  it('works out every line of every scenario', () => {
+    for (const sc of SCENARIOS) expect(scoreLines(game(sc.id, [mk('p1', 10, 40), mk('p2', 10, 8)])).filter(l => !l.auto).map(l => `${sc.id}: ${l.label}`)).toEqual([]);
   });
 
   it('holds objectives in Capture and Control until the other side touches them', () => {

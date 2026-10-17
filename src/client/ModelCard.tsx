@@ -3,6 +3,7 @@ import { loadRulesText, modelStats, pictureUrl, startingPoints, statsWithOptions
 import { strikeWounds } from '../shared/fight.ts';
 import type { Combat } from '../shared/flow.ts';
 import { heroicInfo } from '../shared/heroics.ts';
+import { carriedBy, markerActions, OBJECT_NAMES } from '../shared/objects.ts';
 import { inTheWay, sightTo } from '../shared/sight.ts';
 import RULES from '../data/special-rules.json';
 import { RollRow } from './Panels.tsx';
@@ -80,6 +81,8 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
   }, []);
   const explain = (r: string) => rulesText[unit?.ruleRefs?.[r] ?? ''] ?? ruleSummary(r);
   const mine = role === m.owner;
+  const markers = markerActions(state, m);
+  const carried = carriedBy(state, m);
   const weapon = weaponOf(m, catalog);
   const patch = (p: Partial<Model>) => dispatch({ type: 'updateModel', id: m.id, patch: p });
   const photo = unit && pictureUrl(unit);
@@ -142,7 +145,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
           {shotWounds > 0 && lastShot && lastShot.against === target.id && appliedShot !== lastShot.group && !target.dead && (
             <button
               onClick={() => {
-                dispatch({ type: 'wound', id: target.id, count: shotWounds });
+                dispatch({ type: 'wound', id: target.id, count: shotWounds, by: [m.id], how: 'shoot' });
                 setAppliedShot(lastShot.group ?? null);
               }}
             >
@@ -234,6 +237,30 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
         </div>
       )}
       {action}
+      {carried.length > 0 && <p className="muted carrying">Carrying {carried.map(t => `the ${OBJECT_NAMES[t.object!]}`).join(' and ')}.</p>}
+      {mine && markers.length > 0 && (
+        <div className="row wrap marker-actions">
+          {markers.map(a => (
+            <button
+              key={a.kind + (a.marker ?? '')}
+              className="primary"
+              onClick={() =>
+                dispatch(
+                  a.kind === 'escape'
+                    ? { type: 'escape', model: m.id }
+                    : a.kind === 'drop'
+                      ? { type: 'drop', marker: a.marker! }
+                      : a.kind === 'uncover'
+                        ? { type: 'uncover', model: m.id, marker: a.marker!, intelligence: stats?.I ?? 7 }
+                        : { type: a.kind, model: m.id, marker: a.marker! },
+                )
+              }
+            >
+              {a.label}
+            </button>
+          ))}
+        </div>
+      )}
       {recent && (
         <ol className="log card-roll">
           <RollRow r={recent} state={state} role={role} dispatch={dispatch} />

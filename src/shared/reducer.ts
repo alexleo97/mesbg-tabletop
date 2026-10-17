@@ -1,7 +1,8 @@
 import { heroicInfo } from './heroics.ts';
 import { limitMove, moveStart, movesLimited } from './movement.ts';
+import { canPickUp, markerUpkeep, syncCarried, touching, canEscape } from './objects.ts';
 import { endPhaseUpkeep } from './scoring.ts';
-import { MATS, PHASES, TERRAIN_KINDS, type Action, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type Phase, type Seat, type Terrain } from './types.ts';
+import { MARKER_OBJECTS, MATS, PHASES, PICK_KEYS, TERRAIN_KINDS, type Action, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type Phase, type Picks, type Seat, type Terrain } from './types.ts';
 
 export const MAX_MODELS = 600;
 export const MAX_TERRAIN = 200;
@@ -31,9 +32,11 @@ const newFlow = (): Flow => ({ started: false, chooser: null, chooserTurn: 0, ro
 function goTo(state: GameState, phase: Phase, turn: number): GameState {
   const newTurn = turn !== state.turn;
   // Scenario bookkeeping happens as the End phase begins.
-  const upkeep = phase === 'end' && state.phase !== 'end' && state.flow.started ? endPhaseUpkeep(state) : {};
+  const ending = phase === 'end' && state.phase !== 'end' && state.flow.started;
+  const upkeep = ending ? endPhaseUpkeep(state) : {};
   return {
     ...state,
+    ...(ending ? { terrain: markerUpkeep(state) } : {}),
     phase,
     turn,
     priority: newTurn && state.flow.started ? null : state.priority,
@@ -113,11 +116,51 @@ export function cleanModel(m: Partial<Model>, prev?: Model): Model | null {
   const tier = m.tier !== undefined ? int(m.tier, 0, 9, 0) : base.tier;
   if (tier) out.tier = tier;
   out.wounds = int(m.wounds, 0, out.maxWounds, Math.min(base.wounds, out.maxWounds));
+  if ('escaped' in m ? m.escaped === true : base.escaped) out.escaped = true;
+  const hurtBy = 'hurtBy' in m ? (Array.isArray(m.hurtBy) ? [...new Set(m.hurtBy.slice(0, 40).map(id))] : undefined) : base.hurtBy;
+  if (hurtBy?.length) out.hurtBy = hurtBy;
+  const killedBy = 'killedBy' in m ? cleanHit(m.killedBy) : base.killedBy;
+  if (killedBy && out.dead) out.killedBy = killedBy;
+  const lastHit = 'lastHit' in m ? cleanHit(m.lastHit) : base.lastHit;
+  if (lastHit) out.lastHit = lastHit;
   const pending = 'pending' in m ? int(m.pending, 0, 30, 0) : (base.pending ?? 0);
   if (pending && out.hero && !out.dead) out.pending = pending;
   const fateRoll = 'fateRoll' in m ? (m.fateRoll ? id(m.fateRoll) : undefined) : base.fateRoll;
   if (fateRoll && out.pending) out.fateRoll = fateRoll;
   return out.id ? out : null;
+}
+
+/** Who struck a model, from untrusted JSON. */
+function cleanHit(v: unknown): Model['lastHit'] {
+  if (!v || typeof v !== 'object') return undefined;
+  const o = v as { ids?: unknown; how?: unknown };
+  const ids = Array.isArray(o.ids) ? [...new Set(o.ids.slice(0, 20).map(id))].filter(Boolean) : [];
+  return { ids, how: o.how === 'fight' || o.how === 'shoot' ? o.how : 'other' };
+}
+
+/** The marker fields of a terrain piece: what it is and what has happened to it. */
+function cleanObject(t: Partial<Terrain>, base: Terrain, out: Terrain) {
+  const pick = <K extends keyof Terrain>(k: K) => (k in t ? t[k] : base[k]);
+  const object = pick('object');
+  if (out.kind !== 'objective' || !MARKER_OBJECTS.includes(object as never)) return;
+  out.object = object;
+  const side = pick('side');
+  if (isSeat(side)) out.side = side;
+  if (pick('hidden') === true) out.hidden = true;
+  const carrier = pick('carrier');
+  if (typeof carrier === 'string' && carrier) out.carrier = id(carrier);
+  const home = pick('home');
+  if (Array.isArray(home) && home.length === 2) out.home = [num(home[0], -24, 200, out.x), num(home[1], -24, 200, out.y)];
+  const gone = pick('gone');
+  if (gone === 'off' || gone === 'destroyed' || gone === 'rescued' || gone === 'revealed') out.gone = gone;
+  const by = pick('by');
+  if (isSeat(by)) out.by = by;
+  const tried = pick('tried');
+  if (tried && typeof tried === 'object') {
+    const clean: Partial<Record<Seat, number>> = {};
+    for (const x of ['p1', 'p2'] as const) if (tried[x] !== undefined) clean[x] = int(tried[x], 0, 99, 0);
+    out.tried = clean;
+  }
 }
 
 function cleanTerrain(t: Partial<Terrain>, prev?: Terrain): Terrain | null {
@@ -140,6 +183,7 @@ function cleanTerrain(t: Partial<Terrain>, prev?: Terrain): Terrain | null {
       base.path.map(([x, y, hw]) => [(x * out.w) / prev.w, (y * out.h) / prev.h, hw] as [number, number, number])
     : base.path);
   if (path) out.path = path;
+  cleanObject(t, base, out);
   return out.id ? out : null;
 }
 
@@ -153,6 +197,17 @@ function cleanPath(p: unknown): [number, number, number][] | undefined {
 /** Numbers by id from untrusted JSON. */
 function cleanCounts(v: object, max: number): Record<string, number> {
   return Object.fromEntries(Object.entries(v).slice(0, 500).map(([k, n]) => [k.slice(0, 80), int(n, 0, max, 0)]));
+}
+
+/** A player's secret picks from untrusted JSON. */
+function cleanPicks(v: unknown): Picks {
+  const out: Picks = {};
+  if (!v || typeof v !== 'object') return out;
+  for (const k of PICK_KEYS) {
+    const x = (v as Record<string, unknown>)[k];
+    if (typeof x === 'string' && x) out[k] = id(x);
+  }
+  return out;
 }
 
 /** Move phase starting points from untrusted JSON. */
@@ -193,7 +248,11 @@ function cleanRoll(r: unknown): DiceRoll | null {
 /** Takes wounds off a model, removing it as a casualty when none are left. */
 function takeWounds(m: Model, n: number): Model {
   const wounds = Math.max(0, m.wounds - n);
-  return wounds > 0 ? { ...m, wounds } : { ...m, wounds: 0, dead: true, pending: undefined, fateRoll: undefined };
+  // Remember who did it, for scenarios that score kills by particular models.
+  const hit = m.lastHit;
+  const hurtBy = hit?.ids.length && n > 0 ? [...new Set([...(m.hurtBy ?? []), ...hit.ids])] : m.hurtBy;
+  const out = { ...m, ...(hurtBy ? { hurtBy } : {}) };
+  return wounds > 0 ? { ...out, wounds } : { ...out, wounds: 0, dead: true, pending: undefined, fateRoll: undefined, ...(hit ? { killedBy: hit } : {}) };
 }
 
 /**
@@ -217,6 +276,11 @@ function settle(m: Model): Model {
  * `roll` is a request only; the server replaces it with `rolled`, so here it is a no-op.
  */
 export function reduce(state: GameState, action: Action): GameState {
+  // Carried markers go wherever their carrier goes.
+  return syncCarried(step(state, action));
+}
+
+function step(state: GameState, action: Action): GameState {
   switch (action.type) {
     case 'addModels': {
       if (!Array.isArray(action.models)) return state;
@@ -234,7 +298,7 @@ export function reduce(state: GameState, action: Action): GameState {
       let starts = state.flow.starts;
       for (const mv of action.moves) {
         const prev = mv && models[mv.id];
-        if (!prev) continue;
+        if (!prev || prev.escaped) continue;
         let to = { x: num(mv.x, -24, 200, prev.x), y: num(mv.y, -24, 200, prev.y) };
         // In the Move phase a model goes no further than its Move from where it began the phase.
         if (movesLimited(state, prev) && (to.x !== prev.x || to.y !== prev.y)) {
@@ -293,6 +357,8 @@ export function reduce(state: GameState, action: Action): GameState {
           started: true,
           ...(Number.isFinite(action.at) ? { startedAt: Number(action.at) } : {}),
           startFate: Object.fromEntries(Object.values(state.models).filter(m => m.hero).map(m => [m.id, m.fate])),
+          // Secret picks are made before the first turn.
+          ...(state.flow.picks ? { picks: state.flow.picks } : {}),
         },
       };
     case 'priorityRolled': {
@@ -360,7 +426,9 @@ export function reduce(state: GameState, action: Action): GameState {
       const m = state.models[action.id];
       const n = int(action.count, 0, 30, 0);
       if (!m || m.dead || !n) return state;
-      const hit = m.hero && m.fate > 0 ? { ...m, pending: (m.pending ?? 0) + n } : takeWounds(m, n);
+      const by = Array.isArray(action.by) ? action.by.filter(i => typeof i === 'string' && state.models[i]) : [];
+      const struck = { ...m, ...(by.length ? { lastHit: cleanHit({ ids: by, how: action.how }) } : { lastHit: undefined }) };
+      const hit = m.hero && m.fate > 0 ? { ...struck, pending: (m.pending ?? 0) + n } : takeWounds(struck, n);
       return { ...state, models: { ...state.models, [m.id]: hit } };
     }
     case 'fateRolled': {
@@ -377,6 +445,50 @@ export function reduce(state: GameState, action: Action): GameState {
       const n = action.all ? m.pending : 1;
       const hit = takeWounds({ ...m, pending: m.pending - n, fateRoll: undefined }, n);
       return { ...state, models: { ...state.models, [m.id]: settle(hit) } };
+    }
+    case 'pickUp': {
+      const m = state.models[action.model];
+      const t = state.terrain[action.marker];
+      if (!m || !t || !canPickUp(state, m, t)) return state;
+      return { ...state, terrain: { ...state.terrain, [t.id]: { ...t, carrier: m.id } } };
+    }
+    case 'drop': {
+      const t = state.terrain[action.marker];
+      // Heirlooms can't be put down.
+      if (!t?.carrier || t.object === 'heirloom') return state;
+      const { carrier: _c, ...rest } = t;
+      return { ...state, terrain: { ...state.terrain, [t.id]: rest } };
+    }
+    case 'flip': {
+      const m = state.models[action.model];
+      const t = state.terrain[action.marker];
+      if (!m || m.dead || m.escaped || !t?.hidden || (t.object !== 'heirloom' && t.object !== 'decoy') || !touching(m, t)) return state;
+      // A decoy is taken away; the real Heirloom goes straight to whoever found it.
+      const next: Terrain = t.object === 'decoy' ? { ...t, hidden: undefined, gone: 'revealed', by: m.owner } : { ...t, hidden: undefined, carrier: m.id };
+      return { ...state, terrain: { ...state.terrain, [t.id]: cleanTerrain(next, t)! } };
+    }
+    case 'uncovered': {
+      const m = state.models[action.model];
+      const t = state.terrain[action.marker];
+      const r = cleanRoll(action.roll);
+      if (!m || !t || !r || t.object !== 'artefact' || !t.hidden) return state;
+      const passed = r.dice.reduce((a, b) => a + b, 0) >= (r.sum ?? 7);
+      const next: Terrain = { ...t, tried: { ...t.tried, [m.owner]: state.turn }, ...(passed ? { hidden: undefined, carrier: m.id } : {}) };
+      return { ...state, log: [...state.log, r].slice(-MAX_LOG), terrain: { ...state.terrain, [t.id]: cleanTerrain(next, t)! } };
+    }
+    case 'escape': {
+      const m = state.models[action.model];
+      if (!m || !canEscape(state, m)) return state;
+      return { ...state, models: { ...state.models, [m.id]: { ...m, escaped: true } } };
+    }
+    case 'setPick': {
+      if (!isSeat(action.seat) || !PICK_KEYS.includes(action.key)) return state;
+      const value = typeof action.value === 'string' && (state.models[action.value] || state.terrain[action.value]) ? action.value : undefined;
+      const mine: Picks = { ...state.flow.picks?.[action.seat] };
+      if (value) mine[action.key] = value;
+      else delete mine[action.key];
+      const picks = { p1: {}, p2: {}, ...state.flow.picks, [action.seat]: mine };
+      return { ...state, flow: { ...state.flow, picks } };
     }
     case 'setPriority':
       return { ...state, priority: isSeat(action.seat) ? action.seat : null };
@@ -547,6 +659,7 @@ export function loadState(raw: unknown): GameState {
           ? { control: Object.fromEntries(Object.entries(f.control).slice(0, 50).map(([k, v]) => [k.slice(0, 80), isSeat(v) ? v : null])) }
           : {}),
         ...(f.fort && typeof f.fort === 'object' ? { fort: { p1: int(f.fort.p1, 0, 999, 0), p2: int(f.fort.p2, 0, 999, 0) } } : {}),
+        ...(f.picks && typeof f.picks === 'object' ? { picks: { p1: cleanPicks(f.picks.p1), p2: cleanPicks(f.picks.p2) } } : {}),
       },
     };
   }

@@ -53,6 +53,8 @@ export function endCheck(state: GameState, names: Record<Seat, string>): EndChec
   }
   const quartered = seats.filter(x => s[x].quartered);
   if (rule === 'both-quartered') {
+    const artefacts = Object.values(state.terrain).filter(t => t.object === 'artefact');
+    if (artefacts.length && artefacts.every(t => t.gone === 'off')) return { over: true, rollNeeded: false, reason: 'Every Artefact has left the table, so the game ends.' };
     return quartered.length === 2 ? { over: true, rollNeeded: false, reason: 'Both armies are down to 25%, so the game ends.' } : null;
   }
   return quartered.length

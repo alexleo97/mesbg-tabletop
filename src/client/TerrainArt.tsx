@@ -318,11 +318,20 @@ export function TerrainArt({ t, mat }: { t: Terrain; mat: Mat }) {
         <>
           <circle className="ground objective" r={t.w / 2} filter="url(#hard-shadow)" />
           <circle className="objective-ring" r={t.w / 2 - 0.08} />
-          <path className="objective-star" d={star(t.w * 0.28)} />
+          {t.object ? (
+            <text className={`objective-glyph ${t.side ?? ''}`} fontSize={t.w * 0.62} textAnchor="middle" dominantBaseline="central">
+              {t.hidden ? '?' : GLYPHS[t.object]}
+            </text>
+          ) : (
+            <path className="objective-star" d={star(t.w * 0.28)} />
+          )}
         </>
       );
   }
 }
+
+/** A letter on each kind of scenario marker, so you can tell them apart at a glance. */
+const GLYPHS: Record<NonNullable<Terrain['object']>, string> = { artefact: 'A', relic: 'R', heirloom: 'H', decoy: '✕', supply: 'S', ally: '+' };
 
 function star(r: number) {
   const pts: string[] = [];
