@@ -41,7 +41,7 @@ export interface Model {
   fateRoll?: string;
 }
 
-export const TERRAIN_KINDS = ['wood', 'rock', 'building', 'water', 'hill', 'wall', 'ruin', 'cliff', 'field', 'objective'] as const;
+export const TERRAIN_KINDS = ['wood', 'rock', 'building', 'water', 'hill', 'wall', 'ruin', 'cliff', 'field', 'objective', 'bridge'] as const;
 export type TerrainKind = (typeof TERRAIN_KINDS)[number];
 
 /** Battle mat surfaces. */
@@ -60,6 +60,11 @@ export interface Terrain {
   locked: boolean;
   /** Halves movement inside it. Unset means the kind's default (woods, water and ruins are difficult). */
   difficult?: boolean;
+  /**
+   * A river or stream drawn along a winding centreline instead of the plain shape: each point is x, y
+   * (in inches from the piece's centre, before rotation) and the half-width of the water there.
+   */
+  path?: [number, number, number][];
 }
 
 export interface DiceRoll {

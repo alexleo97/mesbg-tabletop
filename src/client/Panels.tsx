@@ -4,7 +4,7 @@ import { MapsSection } from './Maps.tsx';
 import { isDifficult } from '../shared/sight.ts';
 import { TERRAIN_GROUPS, TERRAIN_INFO, terrainRules } from '../shared/terrain.ts';
 import { useRef, useState } from 'react';
-import { objectiveMarkers, STARTER_BOARDS, starterTerrain } from '../shared/boards.ts';
+import { objectiveMarkers, river, STARTER_BOARDS, starterTerrain } from '../shared/boards.ts';
 import { loadCatalog, parseBuilderExport, STAT_NAMES, statsWithOptions } from '../shared/catalog.ts';
 import { deployList, guessBase, newId, parseList, type ListEntry } from '../shared/importList.ts';
 import { ListBuilder, SavedLists, Portrait, useCatalog } from './ListBuilder.tsx';
@@ -367,7 +367,8 @@ const TERRAIN_PRESETS: { label: string; t: Omit<Terrain, 'id' | 'x' | 'y' | 'loc
   { label: 'Building', t: { kind: 'building', shape: 'rect', w: 5, h: 4, rot: 0 } },
   { label: 'Wall', t: { kind: 'wall', shape: 'rect', w: 6, h: 0.5, rot: 0 } },
   { label: 'Water', t: { kind: 'water', shape: 'circle', w: 9, h: 4, rot: 0 } },
-  { label: 'River', t: { kind: 'water', shape: 'rect', w: 3, h: 20, rot: 0 } },
+  { label: 'River', t: { ...river([[0, 0], [2.5, 6], [-1.5, 12], [1, 18], [0, 24]], 3.4), rot: 0 } },
+  { label: 'Bridge', t: { kind: 'bridge', shape: 'rect', w: 7, h: 2.6, rot: 0 } },
   { label: 'Ruin', t: { kind: 'ruin', shape: 'rect', w: 4, h: 3, rot: 0 } },
   { label: 'Cliff', t: { kind: 'cliff', shape: 'circle', w: 6, h: 8, rot: 0 } },
   { label: 'Field', t: { kind: 'field', shape: 'rect', w: 8, h: 5, rot: 0 } },

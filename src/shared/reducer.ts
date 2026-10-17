@@ -124,7 +124,19 @@ function cleanTerrain(t: Partial<Terrain>, prev?: Terrain): Terrain | null {
   };
   const difficult = 'difficult' in t ? t.difficult : base.difficult;
   if (typeof difficult === 'boolean') out.difficult = difficult;
+  const path = cleanPath(t.path) ?? (base.path && prev && (out.w !== prev.w || out.h !== prev.h)
+    ? // Resizing a river stretches its course; the water keeps its width.
+      base.path.map(([x, y, hw]) => [(x * out.w) / prev.w, (y * out.h) / prev.h, hw] as [number, number, number])
+    : base.path);
+  if (path) out.path = path;
   return out.id ? out : null;
+}
+
+function cleanPath(p: unknown): [number, number, number][] | undefined {
+  if (!Array.isArray(p) || p.length < 2) return undefined;
+  const out = p.slice(0, 120).filter(v => Array.isArray(v) && v.length === 3 && v.every(n => typeof n === 'number' && Number.isFinite(n)));
+  if (out.length < 2) return undefined;
+  return out.map(([x, y, hw]) => [num(x, -60, 60, 0), num(y, -60, 60, 0), num(hw, 0.2, 8, 1)]);
 }
 
 function cleanRoll(r: unknown): DiceRoll | null {

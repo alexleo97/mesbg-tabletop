@@ -13,10 +13,11 @@ export const TERRAIN_INFO: Record<TerrainKind, { name: string; type: string; not
   water: { name: 'Water', type: 'Water', note: 'Shallow water and streams slow models down. Deep water, if you agree it is deep, means swimming.' },
   hill: { name: 'Hill', type: 'Elevation', note: 'Open ground that gives height: models up here can see over low terrain. It does not slow movement.' },
   objective: { name: 'Objective', type: 'Marker', note: 'A scenario objective. It does not block movement or sight.' },
+  bridge: { name: 'Bridge', type: 'Crossing', note: 'Carries models over water at full speed. Narrow, so it makes a natural choke point.' },
 };
 
 /** The groups used to sort terrain in the Table panel, in the order shown. */
-export const TERRAIN_GROUPS = ['Area terrain', 'Obstacle', 'Barrier', 'Impassable', 'Water', 'Elevation', 'Marker'] as const;
+export const TERRAIN_GROUPS = ['Area terrain', 'Obstacle', 'Barrier', 'Impassable', 'Water', 'Crossing', 'Elevation', 'Marker'] as const;
 
 /** How this piece plays here: what the board and turn guide use, plus the kind's note. */
 export function terrainRules(t: Terrain): string[] {

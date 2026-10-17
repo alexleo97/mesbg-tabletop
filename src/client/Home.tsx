@@ -82,6 +82,7 @@ const KIND_CLASS: Record<TerrainKind, string> = {
   cliff: 'rock',
   field: 'field',
   objective: 'objective',
+  bridge: 'bridge',
 };
 
 /** A small top-down drawing of a map's terrain. */

@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react';
+import { bandOutline } from '../shared/sight.ts';
 import type { Mat, Terrain } from '../shared/types.ts';
 import { TREES, type Material } from './textures.ts';
 
@@ -16,6 +17,7 @@ const MATERIAL: Record<Terrain['kind'], Material> = {
   cliff: 'cliff',
   field: 'farmland',
   objective: 'stone',
+  bridge: 'wall',
 };
 
 function rand(seed: string, i: number) {
@@ -83,8 +85,27 @@ function riverPath(t: Terrain): string {
 
 const isRiver = (t: Terrain) => t.kind === 'water' && t.shape === 'rect';
 
+/** A river along its centreline, with smooth banks. */
+function bandPath(path: [number, number, number][], grow = 0): string {
+  return smoothClosed(bandOutline(path.map(([x, y, hw]) => [x, y, Math.max(0.05, hw + grow)] as [number, number, number])).map(p => [p.x, p.y] as Pt));
+}
+
+/** A smooth open line through the centreline, for the deep channel and the current. */
+function centreLine(path: [number, number, number][]): string {
+  let d = `M ${path[0][0].toFixed(3)} ${path[0][1].toFixed(3)}`;
+  for (let i = 0; i < path.length - 1; i++) {
+    const p0 = path[Math.max(0, i - 1)];
+    const p1 = path[i];
+    const p2 = path[i + 1];
+    const p3 = path[Math.min(path.length - 1, i + 2)];
+    d += ` C ${(p1[0] + (p2[0] - p0[0]) / 6).toFixed(3)} ${(p1[1] + (p2[1] - p0[1]) / 6).toFixed(3)} ${(p2[0] - (p3[0] - p1[0]) / 6).toFixed(3)} ${(p2[1] - (p3[1] - p1[1]) / 6).toFixed(3)} ${p2[0].toFixed(3)} ${p2[1].toFixed(3)}`;
+  }
+  return d;
+}
+
 /** The outline used for the ground of a piece. */
 function outline(t: Terrain): string {
+  if (t.path && t.path.length > 1) return bandPath(t.path);
   if (isRiver(t)) return riverPath(t);
   if (t.shape === 'rect') return rectPath(t.w, t.h);
   return blob(t, 1, t.kind === 'rock' || t.kind === 'cliff' ? 0.16 : 0.09);
@@ -205,6 +226,20 @@ export function TerrainArt({ t, mat }: { t: Terrain; mat: Mat }) {
         </>
       );
     case 'water':
+      if (t.path && t.path.length > 1) {
+        const hw = t.path.reduce((a, p) => a + p[2], 0) / t.path.length;
+        return (
+          <>
+            {/* Muddy banks fading into the grass, then shallows, then a darker channel down the middle. */}
+            <path className="river-mud" d={bandPath(t.path, 0.55)} filter="url(#bank-blur)" />
+            <path className="river-edge" d={bandPath(t.path, 0.18)} />
+            <path className="ground water-surface" d={d} fill={tex} />
+            <path className="river-shallows" d={d} />
+            <path className="river-deep" d={centreLine(t.path)} strokeWidth={hw * 1.1} filter="url(#bank-blur)" />
+            <path className="river-current" d={centreLine(t.path)} strokeWidth={hw * 0.12} />
+          </>
+        );
+      }
       return (
         <>
           <path className="bank" d={d} />
@@ -252,6 +287,21 @@ export function TerrainArt({ t, mat }: { t: Terrain; mat: Mat }) {
           <rect className="hedge" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} rx={0.2} />
         </>
       );
+    case 'bridge': {
+      // Long side runs along w: planks laid across it, a rail down each edge.
+      const planks = Math.max(3, Math.round(t.w / 0.45));
+      return (
+        <>
+          <rect className="ground bridge-deck" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} rx={0.12} filter="url(#hard-shadow)" />
+          {Array.from({ length: planks - 1 }, (_, i) => {
+            const x = -t.w / 2 + ((i + 1) * t.w) / planks;
+            return <line key={i} className="bridge-plank" x1={x} x2={x} y1={-t.h / 2 + 0.2} y2={t.h / 2 - 0.2} />;
+          })}
+          <rect className="bridge-rail" x={-t.w / 2} y={-t.h / 2} width={t.w} height={0.22} />
+          <rect className="bridge-rail" x={-t.w / 2} y={t.h / 2 - 0.22} width={t.w} height={0.22} />
+        </>
+      );
+    }
     case 'objective':
       return (
         <>
@@ -279,6 +329,9 @@ export function TerrainDefs() {
     <>
       <filter id="soft-shadow" x="-20%" y="-20%" width="140%" height="140%">
         <feDropShadow dx="0.12" dy="0.18" stdDeviation="0.18" floodColor="#000" floodOpacity="0.45" />
+      </filter>
+      <filter id="bank-blur" x="-10%" y="-10%" width="120%" height="120%">
+        <feGaussianBlur stdDeviation="0.25" />
       </filter>
       <filter id="hard-shadow" x="-20%" y="-20%" width="140%" height="140%">
         <feDropShadow dx="0.16" dy="0.24" stdDeviation="0.08" floodColor="#000" floodOpacity="0.55" />

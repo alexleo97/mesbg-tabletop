@@ -6,7 +6,7 @@ import { ScenarioZones } from './ScenarioZones.tsx';
 import { scenarioById } from '../shared/scenarios.ts';
 import { MATERIALS, textures } from './textures.ts';
 import { TERRAIN_INFO, terrainRules } from '../shared/terrain.ts';
-import { inDifficult, inTheWay, isDifficult, moveCost, outline, shadowPath, sightTo } from '../shared/sight.ts';
+import { inDifficult, insidePolygon, inTheWay, isDifficult, moveCost, outline, shadowPath, sightTo } from '../shared/sight.ts';
 
 export type Tool = 'move' | 'select' | 'measure';
 
@@ -187,7 +187,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
       const dy = p.y - t.y;
       const lx = dx * Math.cos(a) - dy * Math.sin(a);
       const ly = dx * Math.sin(a) + dy * Math.cos(a);
-      const inside = t.shape === 'rect' ? Math.abs(lx) <= t.w / 2 && Math.abs(ly) <= t.h / 2 : (lx / (t.w / 2)) ** 2 + (ly / (t.h / 2)) ** 2 <= 1;
+      const inside = t.path ? insidePolygon(outline(t), p) : t.shape === 'rect' ? Math.abs(lx) <= t.w / 2 && Math.abs(ly) <= t.h / 2 : (lx / (t.w / 2)) ** 2 + (ly / (t.h / 2)) ** 2 <= 1;
       if (inside) return t;
     }
     return null;
@@ -417,6 +417,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
         <g transform={`translate(${view.x} ${view.y}) scale(${view.s})`} style={{ fontSize }}>
           <rect className="mat" width={state.board.w} height={state.board.h} fill={`url(#tex-${state.board.mat})`} />
           {showGrid && gridLines}
+          <g clipPath="url(#board-clip)">
           {terrain.map(t => (
             <g
               key={t.id}
@@ -426,9 +427,12 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
               <TerrainArt t={t} mat={state.board.mat} />
             </g>
           ))}
-          {terrain.filter(isDifficult).map(t => (
-            <polygon key={`d-${t.id}`} className="difficult" points={outline(t).map(p => `${p.x},${p.y}`).join(' ')} pointerEvents="none" />
-          ))}
+          </g>
+          <g clipPath="url(#board-clip)">
+            {terrain.filter(isDifficult).map(t => (
+              <polygon key={`d-${t.id}`} className="difficult" points={outline(t).map(p => `${p.x},${p.y}`).join(' ')} pointerEvents="none" />
+            ))}
+          </g>
           {sight && (
             <g clipPath="url(#board-clip)" pointerEvents="none">
               <path className="los-shadow" d={sight.path} />
