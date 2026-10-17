@@ -50,7 +50,8 @@ export function scenarioMarkers(s: Scenario, w: number, h: number, newId: (p: st
     w: 1.6,
     h: 1.6,
     rot: 0,
-    locked: true,
+    // Players place and nudge markers themselves, so they can be dragged.
+    locked: false,
   }));
 }
 
