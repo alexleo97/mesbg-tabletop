@@ -1,3 +1,4 @@
+import { backAway } from './backAway.ts';
 import { cleanFight, cleanShot, resolveDuel, resolveShot, resolveStrikes } from './fight.ts';
 import { priorityChooser } from './flow.ts';
 import { touching } from './objects.ts';
@@ -56,8 +57,16 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       const rolls = state.log.filter(r => r.group === group);
       // Strikes follow a duel that's still in the log, once.
       if (!req || !group.startsWith('f-') || !rolls.some(r => r.side !== undefined) || rolls.some(r => r.against || r.note || r.label.startsWith('Roll-off'))) return null;
+      // The losers back away 1" by themselves; one with nowhere to go is trapped, and takes double strikes.
+      let retreat: ReturnType<typeof backAway> | undefined;
+      const ids = (side: 0 | 1) => req.sides[side].map(f => f.id).filter(id => state.models[id]);
+      const cornered = (winner: 0 | 1, target: string) => {
+        retreat = backAway(state, ids((1 - winner) as 0 | 1), ids(winner));
+        return retreat.trapped.includes(target);
+      };
+      const struck = resolveStrikes(req, rolls, d6, seat, group, now, cornered).rolls.map((roll): Action => ({ type: 'rolled', roll }));
       return {
-        apply: resolveStrikes(req, rolls, d6, seat, group, now).rolls.map(roll => ({ type: 'rolled', roll })),
+        apply: [...struck, ...(retreat?.moves.length ? [{ type: 'backAway', moves: retreat.moves } as Action] : [])],
         ...(req.combat ? { record: { type: 'resolveCombat', key: req.combat } } : {}),
       };
     }

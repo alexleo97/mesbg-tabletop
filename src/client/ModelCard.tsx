@@ -2,7 +2,7 @@ import { useEffect, useState, type Ref } from 'react';
 import { loadRulesText, modelStats, pictureUrl, startingPoints, statsWithOptions, STAT_NAMES, type Catalog } from '../shared/catalog.ts';
 import { strikeWounds } from '../shared/fight.ts';
 import type { Combat } from '../shared/flow.ts';
-import { heroicInfo } from '../shared/heroics.ts';
+import { heroicInfo, phaseAllows } from '../shared/heroics.ts';
 import { carriedBy, markerActions, OBJECT_NAMES } from '../shared/objects.ts';
 import { groundAt, inTheWay, sightTo } from '../shared/sight.ts';
 import RULES from '../data/special-rules.json';
@@ -81,7 +81,8 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
   }, []);
   const explain = (r: string) => rulesText[unit?.ruleRefs?.[r] ?? ''] ?? ruleSummary(r);
   const mine = role === m.owner;
-  const markers = markerActions(state, m);
+  // Objectives are handled as models move (dropping one is always allowed).
+  const markers = markerActions(state, m).filter(a => a.kind === 'drop' || phaseAllows(state, m.owner, { type: a.kind }));
   const carried = carriedBy(state, m);
   const weapon = weaponOf(m, catalog);
   const patch = (p: Partial<Model>) => dispatch({ type: 'updateModel', id: m.id, patch: p });
@@ -130,7 +131,8 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
             </span>
             <button
               className="primary"
-              disabled={!inRange || !need}
+              disabled={!inRange || !need || !phaseAllows(state, role, { type: 'shoot', shot: { shooter: { id: m.id } } })}
+              title={!phaseAllows(state, role, { type: 'shoot', shot: { shooter: { id: m.id } } }) ? 'Models shoot in the Shoot phase, when it is their side’s turn.' : undefined}
               onClick={() =>
                 dispatch({
                   type: 'shoot',

@@ -1,15 +1,18 @@
 import { distanceBetween, type Point } from './geometry.ts';
 import { moveCost } from './sight.ts';
+import { canActivate } from './heroics.ts';
 import type { GameState, Model } from './types.ts';
 
 /**
  * How far a model may go this phase, from where it began the phase, once the battle is under way: its Move in the
  * Move phase, 1" in the Fight phase (to back away or make way for a friend), and not at all in the other phases,
- * where it can only turn on the spot. Null before the battle starts, when models can be set up anywhere.
+ * where it can only turn on the spot. In the Move phase that waits for its side's turn to move (see canActivate).
+ * Null before the battle starts, when models can be set up anywhere.
  */
 export function moveAllowance(state: GameState, m: Model): number | null {
   if (!state.flow.started || m.dead) return null;
-  return state.phase === 'move' ? m.move : state.phase === 'fight' ? 1 : 0;
+  if (state.phase === 'move') return canActivate(state, m.owner) ? m.move : 0;
+  return state.phase === 'fight' ? 1 : 0;
 }
 
 /** Whether a model's moves are held to an allowance this phase (see moveAllowance). */

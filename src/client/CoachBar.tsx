@@ -297,7 +297,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
     body = (
       <>
         <HeroicStep state={state} dispatch={dispatch} role={role} name={name} />
-        {combats.length === 0 && <p>No models are in base contact, so there are no fights this turn.</p>}
+        {combats.length === 0 && <p>{flow.resolved.length ? 'Every fight this turn has been fought, and the losers have backed away.' : 'No models are in base contact, so there are no fights this turn.'}</p>}
         {combats.length > 0 && (
           <div className="fight-list">
             {combats.map(c => (

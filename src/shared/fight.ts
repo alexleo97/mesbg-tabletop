@@ -108,8 +108,11 @@ export function duelLeader(rolls: DiceRoll[]): { winner: 0 | 1; how: 'dice' | 'f
   return null;
 }
 
-/** Rolls the winner's strikes for a duel already rolled. `duel` is that duel's rolls, as the log now has them. */
-export function resolveStrikes(req: FightRequest, duel: DiceRoll[], d6: D6, by: Role, group: string, now = Date.now()): { rolls: DiceRoll[]; outcome: FightOutcome } {
+/**
+ * Rolls the winner's strikes for a duel already rolled. `duel` is that duel's rolls, as the log now has them.
+ * `cornered` says whether the model being struck can't back away, which doubles the strikes as `trapped` does.
+ */
+export function resolveStrikes(req: FightRequest, duel: DiceRoll[], d6: D6, by: Role, group: string, now = Date.now(), cornered?: (winner: 0 | 1, target: string) => boolean): { rolls: DiceRoll[]; outcome: FightOutcome } {
   const rolls: DiceRoll[] = [];
   const push = (label: string, dice: number[], extra: Partial<DiceRoll> = {}) =>
     rolls.push({ id: `${group}-${duel.length + rolls.length}`, by, label: label.slice(0, 80), dice, at: now, group, ...extra });
@@ -128,14 +131,15 @@ export function resolveStrikes(req: FightRequest, duel: DiceRoll[], d6: D6, by: 
 
   const losers = req.sides[1 - winner];
   const target = losers.find(f => f.id === req.targets[winner]) ?? losers[0];
+  const trapped = req.trapped || !!cornered?.(winner, target.id);
   for (const f of req.sides[winner]) {
     const base = woundNeed(f.s, target.d);
     // Heroic Defence: only natural 6s wound (both dice for 6/4+ style results).
     const need = base && target.defence ? { target: 6, ...(base.then ? { then: 6 } : {}) } : base;
     if (!need) continue;
-    const dice = Array.from({ length: f.a * (req.trapped ? 2 : 1) }, d6);
+    const dice = Array.from({ length: f.a * (trapped ? 2 : 1) }, d6);
     const follow = need.then ? dice.filter(d => d >= need.target).map(d6) : undefined;
-    push(`${f.name} strikes ${target.name} (${formatNeed(need)})`, dice, { target: need.target, against: target.id, model: f.id, ...(need.then ? { then: need.then, follow } : {}) });
+    push(`${f.name} strikes ${target.name}${trapped ? ', trapped,' : ''} (${formatNeed(need)})`, dice, { target: need.target, against: target.id, model: f.id, ...(need.then ? { then: need.then, follow } : {}) });
   }
   const wounds = strikeWounds(rolls);
   const why = how === 'dice' ? 'higher roll' : how === 'fight' ? 'higher Fight' : 'roll-off';

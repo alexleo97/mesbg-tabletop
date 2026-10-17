@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { modelStats } from '../shared/catalog.ts';
 import { duelLeader, strikeWounds, type Fighter } from '../shared/fight.ts';
-import { declared } from '../shared/heroics.ts';
+import { declared, phaseAllows } from '../shared/heroics.ts';
 import { waitingOnMight } from '../shared/bot.ts';
 import { BOT_NAME, type Action, type GameState, type Model, type Role, type Seat } from '../shared/types.ts';
 import { useCatalog } from './ListBuilder.tsx';
@@ -58,6 +58,8 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
   const victimModel = victim ? state.models[victim] : undefined;
 
   const ready = sides.p1.length > 0 && sides.p2.length > 0 && role !== 'spectator';
+  // Fights are rolled in the Fight phase once the battle is under way.
+  const fightNow = role === 'spectator' || phaseAllows(state, role, { type: 'fight' });
   const request = () => {
     const target = (s: Seat) => (sides[s].some(m => m.id === targets[s]) ? targets[s] : sides[s][0].id);
     return { sides: [sides.p1.map(fighter), sides.p2.map(fighter)] as [Fighter[], Fighter[]], targets: [target('p2'), target('p1')] as [string, string], trapped, ...(combat ? { combat } : {}) };
@@ -132,9 +134,9 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
       {ready && (!lastGroup || struck) && (
         <div className="row wrap">
           <label className="check">
-            <input type="checkbox" checked={trapped} onChange={e => setTrapped(e.target.checked)} /> Loser is trapped (double strikes)
+            <input type="checkbox" checked={trapped} onChange={e => setTrapped(e.target.checked)} /> Loser is trapped (double strikes; checked for you when it can't back away)
           </label>
-          <button className="primary" onClick={duel}>
+          <button className="primary" onClick={duel} disabled={!fightNow} title={fightNow ? undefined : 'Fights are rolled in the Fight phase.'}>
             {struck ? 'Roll a new duel' : 'Roll the duel'}
           </button>
         </div>
@@ -164,9 +166,9 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
               {ready && (
                 <div className="row wrap">
                   <label className="check">
-                    <input type="checkbox" checked={trapped} onChange={e => setTrapped(e.target.checked)} /> Loser is trapped (double strikes)
+                    <input type="checkbox" checked={trapped} onChange={e => setTrapped(e.target.checked)} /> Loser is trapped (double strikes; checked for you when it can't back away)
                   </label>
-                  <button className="primary" onClick={strikes}>
+                  <button className="primary" onClick={strikes} disabled={!fightNow} title={fightNow ? undefined : 'Fights are rolled in the Fight phase.'}>
                     Roll strikes
                   </button>
                 </div>

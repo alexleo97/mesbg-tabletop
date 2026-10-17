@@ -12,7 +12,7 @@ import { CoachBar } from './CoachBar.tsx';
 import { FightPanel } from './FightPanel.tsx';
 import { ModelCard, weaponOf } from './ModelCard.tsx';
 import { SightHint } from './SightHint.tsx';
-import { combats, other } from '../shared/flow.ts';
+import { combatFromKey, combats, other } from '../shared/flow.ts';
 import { waitingOnMight } from '../shared/bot.ts';
 import { distanceBetween, formatInches } from '../shared/geometry.ts';
 import { scenarioById } from '../shared/scenarios.ts';
@@ -380,7 +380,8 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
           return [{ from: shooter.id, to: target.id, label: `${formatInches(d)} / ${w.range}"`, ok: d <= w.range }];
         })()
       : undefined;
-  const fight = fightKey ? fights.find(c => c.key === fightKey) : undefined;
+  // The fight stays open after its losers back away, so its wounds can still be applied.
+  const fight = fightKey ? (fights.find(c => c.key === fightKey) ?? combatFromKey(state, fightKey)) : undefined;
   const singleCombat = single ? fights.find(c => c.p1.includes(single.id) || c.p2.includes(single.id)) : undefined;
 
   return (

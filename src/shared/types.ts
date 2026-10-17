@@ -242,6 +242,8 @@ export interface Heroic {
 export type Action =
   | { type: 'addModels'; models: Model[] }
   | { type: 'moveModels'; moves: { id: string; x: number; y: number; rot?: number }[] }
+  /** Losers of a fight backing away, worked out with the strikes (never sent by a player). */
+  | { type: 'backAway'; moves: { id: string; x: number; y: number }[] }
   | { type: 'updateModel'; id: string; patch: Partial<Omit<Model, 'id'>> }
   | { type: 'removeModels'; ids: string[] }
   | { type: 'addTerrain'; terrain: Terrain }
