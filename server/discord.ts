@@ -8,10 +8,10 @@ let lastPost = 0;
 
 export const discordEnabled = () => /^https:\/\/(discord|discordapp)\.com\/api\/webhooks\//.test(WEBHOOK);
 
-/** Posts a message, at most one every 30 seconds so a busy evening can't spam the channel. */
-export async function postToDiscord(content: string): Promise<void> {
-  if (!discordEnabled() || Date.now() - lastPost < MIN_GAP_MS) return;
-  lastPost = Date.now();
+/** Posts a message, at most one every 30 seconds (unless `always`) so a busy evening can't spam the channel. */
+export async function postToDiscord(content: string, always = false): Promise<void> {
+  if (!discordEnabled() || (!always && Date.now() - lastPost < MIN_GAP_MS)) return;
+  if (!always) lastPost = Date.now();
   try {
     const res = await fetch(WEBHOOK, {
       method: 'POST',
@@ -65,5 +65,94 @@ export async function discordMember(token: string): Promise<{ member: boolean | 
     return { member: Array.isArray(list) && list.some(g => g.id === guild), guild };
   } catch {
     return { member: null };
+  }
+}
+
+// Voice rooms for games in progress. Set DISCORD_BOT_TOKEN (never commit it) to a bot in our server that can
+// manage channels: when two players start a game the server opens a voice channel for it under the
+// Battlefields category (or DISCORD_VOICE_CATEGORY_ID) and posts its invite, and takes it down afterwards.
+
+const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN ?? '';
+const CATEGORY_ID = process.env.DISCORD_VOICE_CATEGORY_ID ?? '';
+const CATEGORY_NAME = 'battlefields';
+/** Every game channel's name starts with this, so tidying up never touches the server's own channels. */
+const VOICE_PREFIX = '⚔ ';
+const API = 'https://discord.com/api/v10';
+
+export const voiceEnabled = () => BOT_TOKEN.length > 0;
+
+interface Channel {
+  id: string;
+  name: string;
+  type: number;
+  parent_id?: string | null;
+}
+
+async function bot<T>(method: string, path: string, body?: unknown): Promise<T | null> {
+  try {
+    const res = await fetch(`${API}${path}`, {
+      method,
+      headers: { authorization: `Bot ${BOT_TOKEN}`, 'content-type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    if (!res.ok) {
+      console.warn(`Discord ${method} ${path.split('/')[1]} failed: ${res.status}`);
+      return null;
+    }
+    return res.status === 204 ? ({} as T) : ((await res.json()) as T);
+  } catch (err) {
+    console.warn('Discord request failed:', err);
+    return null;
+  }
+}
+
+let category: string | null = CATEGORY_ID || null;
+
+async function voiceCategory(guild: string, channels?: Channel[]): Promise<string | null> {
+  if (category) return category;
+  const list = channels ?? (await bot<Channel[]>('GET', `/guilds/${guild}/channels`)) ?? [];
+  category = list.find(c => c.type === 4 && c.name.toLowerCase() === CATEGORY_NAME)?.id ?? null;
+  return category;
+}
+
+/** A channel name from the players' names, as plain text Discord accepts. */
+export function voiceName(room: string, names: string[]) {
+  const clean = names.map(n => plain(n).replace(/\s+/g, ' ').slice(0, 40)).filter(Boolean);
+  return `${VOICE_PREFIX}${clean.length === 2 ? clean.join(' vs ') : room}`.slice(0, 100);
+}
+
+/** Opens a voice channel for a game and posts its invite. Gives the channel's id, or null if Discord said no. */
+export async function openVoiceRoom(room: string, names: string[], scenario: string | undefined): Promise<string | null> {
+  if (!voiceEnabled()) return null;
+  const guild = await ourGuild();
+  if (!guild) return null;
+  const parent = await voiceCategory(guild);
+  const channel = await bot<Channel>('POST', `/guilds/${guild}/channels`, { name: voiceName(room, names), type: 2, ...(parent ? { parent_id: parent } : {}) });
+  if (!channel) return null;
+  const invite = await bot<{ code: string }>('POST', `/channels/${channel.id}/invites`, { max_age: 60 * 60 * 12, unique: true });
+  const who = names.map(n => plain(n)).filter(Boolean);
+  const players = who.length === 2 ? `**${who[0]}** and **${who[1]}**` : 'Two players';
+  const link = BASE ? ` Watch: ${BASE}/?room=${room}` : '';
+  if (invite) void postToDiscord(`🔊 ${players} started a game${scenario ? ` (${plain(scenario)})` : ''}. Voice room: https://discord.gg/${invite.code}${link}`, true);
+  return channel.id;
+}
+
+export async function closeVoiceRoom(channel: string): Promise<void> {
+  if (voiceEnabled()) await bot('DELETE', `/channels/${channel}`);
+}
+
+const snowflakeTime = (id: string) => Number(BigInt(id) >> 22n) + 1420070400000;
+
+/** Takes down game channels no room still uses, such as ones left behind by a restart, once they're old enough. */
+export async function sweepVoiceRooms(inUse: Set<string>, minAgeMs: number): Promise<void> {
+  if (!voiceEnabled()) return;
+  const guild = await ourGuild();
+  if (!guild) return;
+  const channels = await bot<Channel[]>('GET', `/guilds/${guild}/channels`);
+  if (!channels) return;
+  const parent = await voiceCategory(guild, channels);
+  for (const c of channels) {
+    if (c.type !== 2 || !c.name.startsWith(VOICE_PREFIX) || (c.parent_id ?? null) !== parent || inUse.has(c.id)) continue;
+    if (Date.now() - snowflakeTime(c.id) > minAgeMs) await closeVoiceRoom(c.id);
   }
 }

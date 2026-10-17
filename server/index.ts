@@ -8,7 +8,7 @@ import type { Account, Action, ClientMessage, GameState, Revert, Role, RoomSumma
 import { DICE_REQUESTS, resolveRequest } from '../src/shared/resolve.ts';
 import { cleanMark } from '../src/shared/marks.ts';
 import { scenarioById } from '../src/shared/scenarios.ts';
-import { announceGame, discordEnabled, discordMember } from './discord.ts';
+import { announceGame, closeVoiceRoom, discordEnabled, discordMember, openVoiceRoom, sweepVoiceRooms, voiceEnabled } from './discord.ts';
 import { saveResult, verifyToken } from './accounts.ts';
 import { gameWinner } from '../src/shared/status.ts';
 import { diffForUndo, mergeReverts, UNDOABLE } from '../src/shared/undo.ts';
@@ -55,6 +55,10 @@ interface Room {
   invite?: string;
   /** The computer player's memory and its next step, in a game against it. */
   bot?: { memo: BotMemo; timer?: NodeJS.Timeout; busy?: boolean };
+  /** The Discord voice channel opened for this game, and when it is due to come down. */
+  voice?: { id?: string; opening?: boolean; closeAt?: number };
+  /** When a player was last connected, so an abandoned game's voice channel can be taken down. */
+  seen: number;
 }
 
 interface UndoEntry {
@@ -76,19 +80,21 @@ function getRoom(id: string): Room {
     const file = join(DATA, `${id}.json`);
     let state = initialState();
     let invite: string | undefined;
+    let voice: string | undefined;
     const blank = !existsSync(file);
     if (!blank) {
       try {
         const saved = JSON.parse(readFileSync(file, 'utf8'));
         state = loadState(saved);
         if (typeof saved?._invite === 'string') invite = saved._invite;
+        if (typeof saved?._voice === 'string') voice = saved._voice;
       } catch (err) {
         console.warn(`Could not read saved room ${id}:`, err);
       }
     }
     // A private game whose code was lost can't be joined by anyone, so it opens up again.
     if (state.private && !invite) state = reduce(state, { type: 'setPrivate', private: false });
-    room = { id, state, clients: new Set(), touched: Date.now(), undo: { p1: [], p2: [] }, blank, invite };
+    room = { id, state, clients: new Set(), touched: Date.now(), undo: { p1: [], p2: [] }, blank, invite, seen: Date.now(), voice: voice ? { id: voice } : undefined };
     rooms.set(id, room);
   }
   return room;
@@ -99,7 +105,8 @@ function scheduleSave(room: Room) {
   if (room.saveTimer) return;
   room.saveTimer = setTimeout(() => {
     room.saveTimer = undefined;
-    writeFileSync(join(DATA, `${room.id}.json`), JSON.stringify(room.invite ? { ...room.state, _invite: room.invite } : room.state));
+    const extra = { ...(room.invite ? { _invite: room.invite } : {}), ...(room.voice?.id ? { _voice: room.voice.id } : {}) };
+    writeFileSync(join(DATA, `${room.id}.json`), JSON.stringify({ ...room.state, ...extra }));
   }, 2000);
 }
 
@@ -231,6 +238,7 @@ function apply(room: Room, action: Action) {
     }
   }
   scheduleBot(room);
+  updateVoice(room);
   const r = room.state.result;
   const a = room.state.accounts;
   if (r?.agreed && !r.saved && a?.p1 && a.p2 && !room.saving && (room.saveTries ?? 0) < 3) {
@@ -241,6 +249,40 @@ function apply(room: Room, action: Action) {
       if (ok) apply(room, { type: 'resultSaved' });
     });
   }
+}
+
+/** How long a voice channel stays up after the game ends, or after both players have left. */
+const VOICE_LINGER_MS = 1000 * 60 * 5;
+const VOICE_ABANDONED_MS = 1000 * 60 * 15;
+
+/** Opens a Discord voice channel once two people start playing each other, and books its removal when the game ends. */
+function updateVoice(room: Room) {
+  if (!voiceEnabled()) return;
+  const s = room.state;
+  if (s.result) {
+    if (room.voice?.id && !room.voice.closeAt) room.voice.closeAt = Date.now() + VOICE_LINGER_MS;
+    return;
+  }
+  if (room.voice || !s.flow.started || s.bot) return;
+  const seated = new Set([...room.clients].map(c => c.role));
+  if (!seated.has('p1') || !seated.has('p2')) return;
+  room.voice = { opening: true };
+  const voice = room.voice;
+  void openVoiceRoom(room.id, [s.names.p1 ?? '', s.names.p2 ?? ''], scenarioById(s.scenario)?.name).then(id => {
+    voice.opening = false;
+    if (!id) return;
+    voice.id = id;
+    scheduleSave(room);
+  });
+}
+
+/** Takes the channel down. After a finished game an empty marker stays so it isn't reopened until the next game starts. */
+function closeVoice(room: Room) {
+  const id = room.voice?.id;
+  if (!id) return;
+  room.voice = room.state.result ? {} : undefined;
+  scheduleSave(room);
+  void closeVoiceRoom(id);
 }
 
 const BOT_PAUSE = 500;
@@ -534,7 +576,14 @@ wss.on('connection', (ws, req) => {
     if (action.type === 'setBot' && action.seat && [...room.clients].some(c => c.role === action.seat)) return;
     record(room, client.role, action);
     if (action.type === 'loadState') room.undo = { p1: [], p2: [] };
-    if (action.type === 'startGame') room.saveTries = 0;
+    if (action.type === 'startGame') {
+      room.saveTries = 0;
+      // A new game in the same room gets a voice channel of its own.
+      if (room.voice && !room.voice.id && !room.voice.opening) {
+        room.voice = undefined;
+        updateVoice(room);
+      }
+    }
   };
 
   ws.on('close', () => {
@@ -551,9 +600,20 @@ setInterval(() => {
 setInterval(() => {
   for (const room of rooms.values()) {
     for (const c of room.clients) c.tokens = Math.min(120, c.tokens + 60);
-    if (room.clients.size === 0 && Date.now() - room.touched > 1000 * 60 * 30) rooms.delete(room.id);
+    if ([...room.clients].some(c => c.role !== 'spectator')) room.seen = Date.now();
+    if (room.voice?.id && (Date.now() > (room.voice.closeAt ?? Infinity) || Date.now() - room.seen > VOICE_ABANDONED_MS)) closeVoice(room);
+    if (room.clients.size === 0 && Date.now() - room.touched > 1000 * 60 * 30) {
+      closeVoice(room);
+      rooms.delete(room.id);
+    }
   }
 }, 1000).unref();
+
+// Take down game voice channels no room in memory still uses (left over from a restart, say).
+setInterval(() => {
+  const inUse = new Set([...rooms.values()].map(r => r.voice?.id).filter((id): id is string => !!id));
+  void sweepVoiceRooms(inUse, VOICE_ABANDONED_MS * 2);
+}, 1000 * 60 * 10).unref();
 
 // Forget rooms nobody has touched for two weeks.
 setInterval(() => {
