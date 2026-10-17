@@ -1,5 +1,5 @@
 import { useEffect, useState, type Ref } from 'react';
-import { loadRulesText, modelStats, pictureUrl, statsWithOptions, STAT_NAMES, type Catalog } from '../shared/catalog.ts';
+import { loadRulesText, modelStats, pictureUrl, startingPoints, statsWithOptions, STAT_NAMES, type Catalog } from '../shared/catalog.ts';
 import { strikeWounds } from '../shared/fight.ts';
 import type { Combat } from '../shared/flow.ts';
 import { heroicInfo } from '../shared/heroics.ts';
@@ -32,14 +32,16 @@ export function weaponOf(m: Model, catalog: Catalog | null) {
   return unit ? missileWeapon([...unit.wargear, ...(m.options ?? [])]) : undefined;
 }
 
-function Counter({ label, value, max, onChange }: { label: string; value: number; max: number; onChange: (v: number) => void }) {
+/** A hero's Might, Will or Fate as pips: filled for what's left, hollow for what's been spent. The game spends them. */
+function Points({ label, value, max }: { label: string; value: number; max: number }) {
+  if (max <= 0 && value <= 0) return null;
+  const total = Math.max(max, value);
   return (
-    <span className="counter">
-      <button onClick={() => onChange(Math.max(0, value - 1))} aria-label={`Spend ${label}`}>−</button>
-      <span>
-        {label} <b>{value}</b>
-      </span>
-      <button onClick={() => onChange(Math.min(max, value + 1))} aria-label={`Add ${label}`}>+</button>
+    <span className="points" aria-label={`${label}: ${value} of ${total} left`} title={`${label}: ${value} of ${total} left`}>
+      <small>{label}</small>
+      {Array.from({ length: total }, (_, i) => (
+        <i key={i} className={i < value ? 'on' : ''} />
+      ))}
     </span>
   );
 }
@@ -71,6 +73,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
   const unit = m.profileId ? catalog?.units[m.profileId] : undefined;
   const printed = unit && statsWithOptions(unit, unit.options.filter(o => m.options?.includes(o.name)).map(o => o.id));
   const stats = modelStats(catalog, m);
+  const start = startingPoints(catalog, m);
   const [rulesText, setRulesText] = useState<Record<string, string>>({});
   useEffect(() => {
     loadRulesText().then(setRulesText, () => {});
@@ -187,11 +190,11 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
             </button>
           ))}
         </span>
-        {m.hero && mine && (
+        {m.hero && (
           <>
-            <Counter label="Might" value={m.might} max={9} onChange={v => patch({ might: v })} />
-            <Counter label="Will" value={m.will} max={9} onChange={v => patch({ will: v })} />
-            <Counter label="Fate" value={m.fate} max={9} onChange={v => patch({ fate: v })} />
+            <Points label="Might" value={m.might} max={start?.might ?? m.might} />
+            <Points label="Will" value={m.will} max={start?.will ?? m.will} />
+            <Points label="Fate" value={m.fate} max={start?.fate ?? m.fate} />
           </>
         )}
       </div>
@@ -240,7 +243,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
         {mine && (
           <button onClick={() => dispatch({ type: 'roll', count: 2, label: `Courage test: ${m.name}`, model: m.id, ...(stats?.C ? { sum: stats.C } : {}) })}>Courage</button>
         )}
-        {mine && m.hero && m.will > 0 && <button onClick={() => openTab('rules')}>Cast a power</button>}
+        {mine && m.will > 0 && !!(m.profileId && catalog?.units[m.profileId]?.powers?.length) && <button onClick={() => openTab('rules')}>Cast a power</button>}
         {mine && (
           <button onClick={() => patch(m.wounds > 0 ? { wounds: 0, dead: true } : { dead: true })} title="Move to the casualty pile">
             Slain

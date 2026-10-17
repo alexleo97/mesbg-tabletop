@@ -735,7 +735,12 @@ details.finish summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
 }
 .saved-lists { display: flex; flex-direction: column; gap: 8px; }
 .list-cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.list-cards li { display: flex; align-items: center; gap: 8px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.list-cards > li { display: flex; flex-direction: column; gap: 6px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.list-card-row { display: flex; align-items: center; gap: 8px; }
+.by-warband { align-self: flex-start; min-height: 0; padding: 0; background: none; border: none; color: var(--muted); text-decoration: underline; font-size: 0.85rem; }
+.warband-deploy { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.warband-deploy li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 0; border-top: 1px solid var(--line); }
+.warband-deploy small { color: var(--muted); }
 .list-card-name { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .list-card-name small { color: var(--muted); }
 .button-link { display: inline-flex; align-items: center; justify-content: center; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); text-decoration: none; text-align: center; }
@@ -862,3 +867,12 @@ details.finish summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
 .chapter-text { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .chapter-text small { color: var(--muted); line-height: 1.35; }
 .chapter-count { flex: none; color: var(--muted); font-size: 0.75rem; align-self: flex-start; }
+
+/* Might, Will and Fate as pips: lit for each point left, hollow for each spent. */
+.points { display: inline-flex; align-items: center; gap: 3px; font-size: 0.85rem; margin-right: 10px; }
+.points small { color: var(--muted); margin-right: 2px; }
+.points i { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--gold); opacity: 0.55; }
+.points i.on { background: var(--gold); opacity: 1; }
+.fix-points { margin-top: 8px; }
+.fix-points summary, .other-rolls summary { color: var(--muted); font-size: 0.85rem; cursor: pointer; }
+.fix-points .stepper { margin-top: 6px; }

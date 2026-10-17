@@ -68,11 +68,28 @@ export function Portrait({ unit, size = 40 }: { unit: Pick<CatalogUnit, 'origin'
   return <img className="portrait" src={pictureUrl(unit)} alt="" width={size} height={size} loading="lazy" onError={() => setFailed(true)} />;
 }
 
-/** Your saved lists, each ready to deploy in one tap. */
+/** A saved list as deployable entries, warband by warband, each tagged with its warband. */
+function listEntries(r: Roster, catalog: Catalog): { label: string; entries: ListEntry[] }[] {
+  const { warbands, independents, loose } = organise(r.entries, catalog);
+  const toEntries = (es: RosterEntry[], group: string) =>
+    es.flatMap(e => {
+      const unit = catalog.units[e.unitId];
+      return unit ? entriesFor(e.unitId, unit, e.optionIds, e.count).map(x => ({ ...x, group })) : [];
+    });
+  return [
+    ...warbands.map(w => ({ label: w.members.length ? `${w.unit.name}'s warband` : w.unit.name, entries: toEntries([w.leader, ...w.members], w.leader.key) })),
+    ...independents.map(e => ({ label: catalog.units[e.unitId]?.name ?? 'Hero', entries: toEntries([e], e.key) })),
+    ...(loose.length ? [{ label: 'Not in a warband', entries: toEntries(loose, 'loose') }] : []),
+  ];
+}
+
+/** Your saved lists, each ready to deploy in one tap, or one warband at a time. */
 export function SavedLists({ onDeploy, onBuild }: { onDeploy: (entries: ListEntry[], name: string) => void; onBuild: () => void }) {
   const { catalog, error } = useCatalog();
   const { profile } = useAuth();
   const [lists, setLists] = useState<Roster[]>(loadSaved);
+  const [open, setOpen] = useState<string | null>(null);
+  const [sent, setSent] = useState<Set<string>>(new Set());
   // Signed in: pick up lists built on another device.
   useEffect(() => {
     if (!profile) return;
@@ -91,28 +108,51 @@ export function SavedLists({ onDeploy, onBuild }: { onDeploy: (entries: ListEntr
           {ready.map(r => {
             const pts = r.entries.reduce((a, e) => a + entryPoints(catalog.units[e.unitId], e.optionIds, e.count), 0);
             const models = r.entries.reduce((a, e) => a + e.count * Math.max(1, catalog.units[e.unitId]?.mwfw?.length ?? 1), 0);
+            const groups = listEntries(r, catalog);
+            const expanded = open === r.id;
             return (
-              <li key={r.id}>
-                <span className="list-card-name">
-                  <b>{r.name}</b>
-                  <small>
-                    {r.army} · {pts} pts · {models} models
-                  </small>
-                </span>
-                <button
-                  className="primary shrink"
-                  onClick={() =>
-                    onDeploy(
-                      r.entries.flatMap(e => {
-                        const unit = catalog.units[e.unitId];
-                        return unit ? entriesFor(e.unitId, unit, e.optionIds, e.count) : [];
-                      }),
-                      r.name,
-                    )
-                  }
-                >
-                  Deploy
-                </button>
+              <li key={r.id} className="list-card">
+                <div className="list-card-row">
+                  <span className="list-card-name">
+                    <b>{r.name}</b>
+                    <small>
+                      {r.army} · {pts} pts · {models} models
+                    </small>
+                  </span>
+                  <button className="primary shrink" onClick={() => onDeploy(groups.flatMap(g => g.entries), r.name)}>
+                    Deploy all
+                  </button>
+                </div>
+                {groups.length > 1 && (
+                  <button className="link by-warband" aria-expanded={expanded} onClick={() => setOpen(expanded ? null : r.id)}>
+                    {expanded ? 'Hide warbands' : 'Deploy one warband at a time'}
+                  </button>
+                )}
+                {expanded && (
+                  <ul className="warband-deploy">
+                    {groups.map((g, i) => {
+                      const key = `${r.id}:${i}`;
+                      const n = g.entries.reduce((a, e) => a + e.count, 0);
+                      return (
+                        <li key={key}>
+                          <span>
+                            {g.label} <small>{n === 1 ? '1 model' : `${n} models`}</small>
+                          </span>
+                          <button
+                            className="shrink"
+                            disabled={sent.has(key)}
+                            onClick={() => {
+                              onDeploy(g.entries, g.label);
+                              setSent(prev => new Set(prev).add(key));
+                            }}
+                          >
+                            {sent.has(key) ? 'Deployed' : 'Deploy'}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
               </li>
             );
           })}
@@ -234,13 +274,7 @@ export function ListBuilder({ onDeploy, deployLabel, wide: page }: { onDeploy?: 
     if (leadsWarband(u)) setPicking({ lead: key });
   };
 
-  const deploy = () => {
-    const entries = roster.entries.flatMap(e => {
-      const unit = catalog.units[e.unitId];
-      return unit ? entriesFor(e.unitId, unit, e.optionIds, e.count) : [];
-    });
-    onDeploy?.(entries, roster.name);
-  };
+  const deploy = () => onDeploy?.(listEntries(roster, catalog).flatMap(g => g.entries), roster.name);
 
   // The one thing to do next, so a new player always knows where they are.
   const empty = warbands.find(w => w.size === 0);
