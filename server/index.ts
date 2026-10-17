@@ -1,13 +1,15 @@
 import { randomInt } from 'node:crypto';
 import { createReadStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { extname, join, normalize, resolve } from 'node:path';
+import { extname, join, normalize, resolve, sep } from 'node:path';
 import { WebSocket, WebSocketServer } from 'ws';
 import { initialState, loadState, reduce } from '../src/shared/reducer.ts';
-import type { Action, ClientMessage, GameState, Revert, Role, RoomSummary, Seat, ServerMessage } from '../src/shared/types.ts';
+import type { Account, Action, ClientMessage, GameState, Revert, Role, RoomSummary, Seat, ServerMessage } from '../src/shared/types.ts';
 import { DICE_REQUESTS, resolveRequest } from '../src/shared/resolve.ts';
 import { scenarioById } from '../src/shared/scenarios.ts';
 import { announceGame, discordEnabled } from './discord.ts';
+import { saveResult, verifyToken } from './accounts.ts';
+import { gameWinner } from '../src/shared/status.ts';
 import { diffForUndo, mergeReverts, UNDOABLE } from '../src/shared/undo.ts';
 
 const PORT = Number(process.env.PORT ?? 8787);
@@ -15,12 +17,16 @@ const DIST = resolve(process.env.DIST_DIR ?? 'dist');
 const DATA = resolve(process.env.DATA_DIR ?? 'data/rooms');
 const ROOM_TTL_MS = 1000 * 60 * 60 * 24 * 14;
 const CANONICAL = (process.env.PUBLIC_URL ?? '').replace(/\/$/, '');
+/** Games held in memory at once, so nobody can exhaust the server by opening endless rooms. */
+const MAX_ROOMS = 2000;
 const ROOM_ID = /^[a-z0-9-]{3,40}$/;
 
 interface Client {
   ws: WebSocket;
   role: Role;
   tokens: number;
+  /** The signed-in account behind this browser, once checked. */
+  account?: Account;
 }
 
 interface Room {
@@ -33,6 +39,9 @@ interface Room {
   undo: Record<Seat, UndoEntry[]>;
   /** Already posted to Discord as an open game (or decided not to). */
   announced?: boolean;
+  /** A result is being written to the leaderboard right now. */
+  saving?: boolean;
+  saveTries?: number;
   /** Nothing has happened here since the server started and there was no save, so a player's browser may restore its copy. */
   blank: boolean;
 }
@@ -85,6 +94,14 @@ const broadcast = (room: Room, msg: ServerMessage) => {
   for (const c of room.clients) if (c.ws.readyState === WebSocket.OPEN) c.ws.send(data);
 };
 
+/** Marks a seat as belonging to the signed-in player sitting in it. */
+function seatAccount(room: Room, client: Client) {
+  if (client.role === 'spectator' || !client.account || room.state.result?.saved) return;
+  const current = room.state.accounts?.[client.role];
+  if (current?.id === client.account.id && current.name === client.account.name) return;
+  apply(room, { type: 'seatAccount', seat: client.role, account: client.account });
+}
+
 /** Turns a client's request into the action everyone applies, or null if it isn't allowed. */
 function authorise(client: Client, action: Action, state: GameState): Action | null {
   if (!action || typeof action !== 'object' || typeof action.type !== 'string') return null;
@@ -96,7 +113,22 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
     case 'undo':
     case 'priorityRolled':
     case 'fateRolled':
-      return null; // only the server produces dice results and undo changes
+    case 'seatAccount':
+    case 'resultSaved':
+      return null; // only the server produces dice results, undo changes and account details
+    case 'gameOver':
+      return null;
+    case 'startGame':
+      return { type: 'startGame', at: Date.now() };
+    case 'proposeResult':
+    case 'concede':
+    case 'answerResult': {
+      // Only the player in that seat, and the signed-in one if the seat has an account.
+      const seat = action.seat;
+      if (seat !== client.role) return null;
+      const owner = state.accounts?.[seat];
+      return !owner || owner.id === client.account?.id ? action : null;
+    }
     case 'declareHeroic':
       return mine(action.model) ? action : null;
     case 'takeWound':
@@ -109,8 +141,8 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
     case 'passHeroic':
       return action.seat === client.role ? action : null;
     case 'loadState':
-      // A loaded save keeps its board, but not its dice history, so rolls can't be forged.
-      return { type: 'loadState', state: { ...loadState(action.state), log: [] } };
+      // A loaded save keeps its board, but not its dice history or a result, so neither can be forged.
+      return { type: 'loadState', state: { ...loadState(action.state), log: [], accounts: state.accounts, result: undefined } };
     default:
       return action;
   }
@@ -156,6 +188,25 @@ function apply(room: Room, action: Action) {
   room.state = reduce(room.state, action);
   broadcast(room, { type: 'action', action });
   scheduleSave(room);
+  // The game declares its own winner as soon as it's over (and corrects it if the score changes before both confirm).
+  if (action.type !== 'gameOver') {
+    const winner = gameWinner(room.state);
+    if (winner) {
+      const before = room.state;
+      room.state = reduce(room.state, { type: 'gameOver', winner });
+      if (room.state !== before) broadcast(room, { type: 'action', action: { type: 'gameOver', winner } });
+    }
+  }
+  const r = room.state.result;
+  const a = room.state.accounts;
+  if (r?.agreed && !r.saved && a?.p1 && a.p2 && !room.saving && (room.saveTries ?? 0) < 3) {
+    room.saving = true;
+    room.saveTries = (room.saveTries ?? 0) + 1;
+    void saveResult(room.id, room.state).then(ok => {
+      room.saving = false;
+      if (ok) apply(room, { type: 'resultSaved' });
+    });
+  }
 }
 
 /** Applies a player's action and remembers how to take it back. */
@@ -200,7 +251,33 @@ const MIME: Record<string, string> = {
   '.webmanifest': 'application/manifest+json',
 };
 
+/** Browser protections on every response: HTTPS only, no framing by other sites, and only our own scripts. */
+function secure(res: import('node:http').ServerResponse) {
+  const supabase = (process.env.SUPABASE_URL ?? '').replace(/\/$/, '');
+  res.setHeader('strict-transport-security', 'max-age=31536000; includeSubDomains');
+  res.setHeader('x-content-type-options', 'nosniff');
+  res.setHeader('referrer-policy', 'strict-origin-when-cross-origin');
+  res.setHeader('x-frame-options', 'DENY');
+  res.setHeader('permissions-policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader(
+    'content-security-policy',
+    [
+      "default-src 'self'",
+      "script-src 'self'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob: https:",
+      "font-src 'self' data:",
+      `connect-src 'self' ws: wss: ${supabase}`.trim(),
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "object-src 'none'",
+    ].join('; '),
+  );
+}
+
 const server = createServer((req, res) => {
+  secure(res);
   const url = new URL(req.url ?? '/', 'http://localhost');
   if (url.pathname === '/healthz') {
     res.writeHead(200, { 'content-type': 'text/plain' }).end('ok');
@@ -223,8 +300,16 @@ const server = createServer((req, res) => {
     res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(openRooms()));
     return;
   }
-  let file = normalize(join(DIST, decodeURIComponent(url.pathname)));
-  if (!file.startsWith(DIST) || !existsSync(file) || statSync(file).isDirectory()) file = join(DIST, 'index.html');
+  let path: string;
+  try {
+    path = decodeURIComponent(url.pathname);
+  } catch {
+    // A malformed address used to throw here and take the whole server down.
+    res.writeHead(400).end('Bad request');
+    return;
+  }
+  let file = normalize(join(DIST, path));
+  if (!file.startsWith(DIST + sep) || !existsSync(file) || statSync(file).isDirectory()) file = join(DIST, 'index.html');
   if (!existsSync(file)) {
     res.writeHead(404).end('Not built yet. Run `npm run build`, or use `npm run dev`.');
     return;
@@ -246,12 +331,26 @@ wss.on('connection', (ws, req) => {
     ws.close();
     return;
   }
+  if (!rooms.has(roomId) && rooms.size >= MAX_ROOMS) {
+    send(ws, { type: 'error', message: 'The server is full right now. Try again in a few minutes.' });
+    ws.close();
+    return;
+  }
   const room = getRoom(roomId);
   const client: Client = { ws, role: 'spectator', tokens: 120 };
   room.clients.add(client);
   send(ws, { type: 'snapshot', state: room.state, players: players(room), blank: room.blank });
 
   ws.on('message', data => {
+    try {
+      onMessage(data);
+    } catch (err) {
+      // One bad message must never take the server (and everyone's games) down.
+      console.warn('Ignored a message that failed:', err);
+    }
+  });
+
+  const onMessage = (data: import('ws').RawData) => {
     // Simple rate limit: refills 60 messages per second, bursts up to 120.
     if (client.tokens <= 0) return;
     client.tokens--;
@@ -266,13 +365,25 @@ wss.on('connection', (ws, req) => {
       if (client.role !== 'spectator') scheduleAnnouncement(room);
       broadcast(room, { type: 'presence', players: players(room) });
       if (client.role !== 'spectator') sendUndoDepth(room, client.role);
+      seatAccount(room, client);
       return;
     }
     if (msg.type === 'restore') {
       // After a restart wipes the server, the first player back brings the game with them.
       if (!room.blank || client.role === 'spectator') return;
       room.undo = { p1: [], p2: [] };
-      apply(room, { type: 'loadState', state: { ...loadState(msg.state), log: [] } });
+      apply(room, { type: 'loadState', state: { ...loadState(msg.state), log: [], accounts: undefined, result: undefined } });
+      return;
+    }
+    if (msg.type === 'identify') {
+      if (!msg.token) {
+        client.account = undefined;
+        return;
+      }
+      void verifyToken(msg.token).then(account => {
+        client.account = account ?? undefined;
+        seatAccount(room, client);
+      });
       return;
     }
     if (msg.type !== 'action') return;
@@ -295,7 +406,8 @@ wss.on('connection', (ws, req) => {
     if (!action) return;
     record(room, client.role, action);
     if (action.type === 'loadState') room.undo = { p1: [], p2: [] };
-  });
+    if (action.type === 'startGame') room.saveTries = 0;
+  };
 
   ws.on('close', () => {
     room.clients.delete(client);

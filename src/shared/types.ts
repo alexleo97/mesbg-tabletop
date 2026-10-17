@@ -110,6 +110,26 @@ export interface GameState {
   /** Shown in the home screen's list of open games. */
   listed: boolean;
   flow: Flow;
+  /** Signed-in players in each seat, set by the server once it has checked their sign-in. */
+  accounts?: Partial<Record<Seat, Account>>;
+  /** The result one player has reported, waiting for the other to agree. */
+  result?: GameResult;
+}
+
+export interface Account {
+  id: string;
+  name: string;
+}
+
+export interface GameResult {
+  winner: Seat | 'draw';
+  /** Worked out by the game, a player conceding, or a player offering a draw. */
+  by: Seat | 'game';
+  /** Players who have confirmed a result the game worked out. */
+  confirmed?: Seat[];
+  agreed: boolean;
+  /** Recorded for the leaderboard. */
+  saved?: boolean;
 }
 
 /** Where the guided turn sequence is up to. */
@@ -132,6 +152,8 @@ export interface Flow {
   passed: Seat[];
   /** Who last declared or passed this phase, so the other player goes next. */
   lastHeroic: Seat | null;
+  /** When this game started (server time), so each game's result is recorded once. */
+  startedAt?: number;
 }
 
 export interface Heroic {
@@ -156,7 +178,8 @@ export type Action =
   | { type: 'setScenario'; id: string | null }
   | { type: 'setVP'; seat: Seat; key: string; value: number }
   | { type: 'setListed'; listed: boolean }
-  | { type: 'startGame' }
+  /** `at`: when the server started it, which tells one game in a room from the next. */
+  | { type: 'startGame'; at?: number }
   /** Request from a client; the server rolls off and sends `priorityRolled`. */
   | { type: 'rollPriority' }
   | { type: 'priorityRolled'; roll: [number, number]; chooser: Seat }
@@ -184,6 +207,18 @@ export type Action =
   | { type: 'setBoard'; w: number; h: number; mat?: Mat }
   /** Replaces the mat and all terrain at once, e.g. when loading a starter board. Models stay. */
   | { type: 'setScenery'; w: number; h: number; mat: Mat; terrain: Terrain[] }
+  /** Server only: who is signed in at a seat. */
+  | { type: 'seatAccount'; seat: Seat; account: Account | null }
+  /** A player offers a draw. */
+  | { type: 'proposeResult'; seat: Seat; winner: Seat | 'draw' }
+  /** A player confirms the game's result or accepts a draw offer; `agree: false` turns down or withdraws an offer. */
+  | { type: 'answerResult'; seat: Seat; agree: boolean }
+  /** A player gives the game to their opponent. */
+  | { type: 'concede'; seat: Seat }
+  /** Server only: the game has ended with this winner. */
+  | { type: 'gameOver'; winner: Seat | 'draw' }
+  /** Server only: the agreed result is on the leaderboard. */
+  | { type: 'resultSaved' }
   /** Request from a client; the server turns it into a `rolled` action with real dice. */
   | { type: 'roll'; count: number; target?: number; then?: number; sum?: number; label: string; model?: string }
   | { type: 'rolled'; roll: DiceRoll }
@@ -218,7 +253,9 @@ export type ClientMessage =
   | { type: 'action'; action: Action }
   | { type: 'hello'; role: Role }
   /** A player's browser offering its saved copy of a game the server has lost. */
-  | { type: 'restore'; state: GameState };
+  | { type: 'restore'; state: GameState }
+  /** A signed-in player's sign-in token, so their seat counts towards their stats. */
+  | { type: 'identify'; token: string | null };
 
 export type ServerMessage =
   /** `blank`: the server has nothing for this room yet, so a player may restore it. */

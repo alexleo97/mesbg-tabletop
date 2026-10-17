@@ -56,6 +56,8 @@ export interface Connection {
   getSnapshot: () => Snapshot;
   dispatch(action: Action): void;
   setRole(role: Role): void;
+  /** The player's sign-in token, so the server can tell who is in each seat. */
+  setToken?(token: string | null): void;
   close(): void;
 }
 
@@ -66,6 +68,7 @@ export class RoomConnection implements Connection {
   private retry = 0;
   private closed = false;
   private saveTimer?: ReturnType<typeof setTimeout>;
+  private token: string | null = null;
   private snap: Snapshot = { state: initialState(), status: 'connecting', players: [], undoDepth: 0 };
 
   constructor(
@@ -84,6 +87,7 @@ export class RoomConnection implements Connection {
     ws.onopen = () => {
       this.retry = 0;
       ws.send(JSON.stringify({ type: 'hello', role: this.role }));
+      if (this.token) ws.send(JSON.stringify({ type: 'identify', token: this.token }));
     };
     ws.onmessage = ev => {
       const msg = JSON.parse(ev.data) as ServerMessage;
@@ -123,6 +127,12 @@ export class RoomConnection implements Connection {
     this.role = role;
     this.set({ undoDepth: 0 });
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: 'hello', role }));
+  }
+
+  setToken(token: string | null) {
+    if (token === this.token) return;
+    this.token = token;
+    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: 'identify', token }));
   }
 
   dispatch(action: Action) {

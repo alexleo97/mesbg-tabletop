@@ -153,6 +153,7 @@ export function ProfilePage({ onHome }: { onHome: () => void }) {
       )}
       <div className="row wrap center">
         <button onClick={onHome}>Home</button>
+        {enabled && <button onClick={() => (location.search = '?leaderboard')}>🏆 Leaderboard</button>}
         {signedIn && <button onClick={() => void signOut().then(onHome)}>Sign out</button>}
       </div>
     </div>

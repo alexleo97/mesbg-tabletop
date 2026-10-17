@@ -1,9 +1,10 @@
 import { useState } from 'react';
+import { ResultReport } from './ResultReport.tsx';
 import { activeSeat, other, type Combat } from '../shared/flow.ts';
 import { canDeclare, heroicInfo, heroicsSettled, heroicTurn, HEROICS, orderRollLabel, orderRollNeeded, phaseHeroics } from '../shared/heroics.ts';
 import { RollRow } from './Panels.tsx';
 import { scenarioById, vpTotal } from '../shared/scenarios.ts';
-import { armyStatus, endCheck } from '../shared/status.ts';
+import { armyStatus, endCheck, endRollLabel } from '../shared/status.ts';
 import { PHASES, type Action, type GameState, type Model, type Role, type Seat } from '../shared/types.ts';
 
 const PHASE_LABEL: Record<(typeof PHASES)[number], string> = { priority: 'Priority', move: 'Move', shoot: 'Shoot', fight: 'Fight', end: 'End' };
@@ -310,7 +311,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
     title = 'End of turn';
     const names = { p1: name('p1'), p2: name('p2') };
     const check = endCheck(state, names);
-    const rollLabel = `Game end roll, turn ${state.turn} (1-2 ends)`;
+    const rollLabel = endRollLabel(state.turn);
     const endRoll = [...state.log].reverse().find(r => r.label === rollLabel);
     const over = check?.over || (endRoll !== undefined && endRoll.dice[0] <= 2);
     const vp = { p1: vpTotal(state.vp.p1), p2: vpTotal(state.vp.p2) };
@@ -330,10 +331,12 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
           </p>
         )}
         {over ? (
-          <p className="result">
-            Game over.{' '}
-            {scenarioById(state.scenario) ? `${names.p1} ${vp.p1} – ${vp.p2} ${names.p2}: ${lead ? `${names[lead]} wins.` : 'a draw.'}` : ''}
-          </p>
+          <>
+            <p className="result">
+              Game over.{' '}
+              {scenarioById(state.scenario) ? `${names.p1} ${vp.p1} – ${vp.p2} ${names.p2}: ${lead ? `${names[lead]} wins.` : 'a draw.'}` : ''}
+            </p>
+          </>
         ) : (
           me &&
           (!check?.rollNeeded || endRoll) && (
@@ -367,7 +370,9 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
       {!small && (
         <div className="coach-body">
           {flow.started && <FateStep state={state} dispatch={dispatch} role={role} name={name} />}
-          {body}
+          {state.result && <ResultReport state={state} role={role} dispatch={dispatch} />}
+          {/* Once the game is over, the result is all the guide shows; a draw offer sits above the turn as usual. */}
+          {!(state.result && (state.result.by === 'game' || state.result.agreed)) && body}
         </div>
       )}
     </section>
