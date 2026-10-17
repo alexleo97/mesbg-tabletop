@@ -6,6 +6,8 @@
   --text: #ece6da;
   --muted: #a39a8a;
   --gold: #c9a227;
+  /* Heroes are ringed in the same gold whatever the theme, so it is never set by a theme. */
+  --hero-gold: #d4a62a;
   --p1: #3b7dd8;
   --p1-soft: #3b7dd855;
   --p2: #d0453b;
@@ -147,7 +149,7 @@ h1, h3, h4, .topbar .room, .phases .turn, .roster-summary b, .name-input, .tabs 
 .model .base { stroke: #111; stroke-width: 0.05; }
 .model.p1 .base { fill: var(--p1); }
 .model.p2 .base { fill: var(--p2); }
-.model.hero .base { stroke: var(--gold); stroke-width: 0.1; }
+.model.hero .base { stroke: var(--hero-gold); stroke-width: 0.1; }
 .model.selected .base { stroke: #fff; stroke-width: 0.12; }
 .model .facing { fill: #fff; opacity: 0.9; }
 .model .label { fill: #fff; font-weight: 700; pointer-events: none; }
@@ -360,7 +362,7 @@ small.muted, p.small { font-size: 0.8rem; }
 .model .ring { fill: none; stroke-width: 0.09; }
 .model.p1 .ring { stroke: var(--p1); }
 .model.p2 .ring { stroke: var(--p2); }
-.model.hero .ring { stroke: var(--gold); }
+.model .ring.gold { stroke: var(--hero-gold); }
 .model.selected .ring { stroke: #fff; stroke-width: 0.12; }
 
 /* Rules quick reference */
@@ -781,7 +783,7 @@ details.finish summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
 .hero-initials { fill: var(--text); font-weight: 700; }
 .hero-token.p1 .hero-ring { stroke: var(--p1); }
 .hero-token.p2 .hero-ring { stroke: var(--p2); }
-.hero-gold { fill: none; stroke: var(--gold); stroke-width: 0.1; }
+.hero-gold { fill: none; stroke: var(--hero-gold); stroke-width: 0.1; }
 .home-banner::before { content: ''; position: absolute; inset: 0; z-index: -1; background: linear-gradient(90deg, var(--bg) 0%, color-mix(in srgb, var(--bg) 88%, transparent) 38%, color-mix(in srgb, var(--bg) 30%, transparent) 70%, transparent 100%); }
 .home-hero { display: flex; flex-direction: column; gap: 18px; padding: 40px 44px; max-width: 620px; }
 .home-hero h1 { font-size: 2.8rem; line-height: 1.1; margin: 0; text-align: left; text-shadow: 0 2px 12px #000a; }

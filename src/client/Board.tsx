@@ -117,8 +117,9 @@ function MoveZones({ state, models }: { state: GameState; models: Model[] }) {
   );
 }
 
-function BaseShape({ m, className = 'base' }: { m: Model; className?: string }) {
-  const { rx, ry } = halfExtents(m.base);
+function BaseShape({ m, className = 'base', grow = 0 }: { m: Model; className?: string; grow?: number }) {
+  const { rx: bx, ry: by } = halfExtents(m.base);
+  const rx = bx + grow, ry = by + grow;
   if (m.base.shape === 'rect') return <rect className={className} x={-rx} y={-ry} width={2 * rx} height={2 * ry} rx={0.04} />;
   return <ellipse className={className} rx={rx} ry={ry} />;
 }
@@ -604,7 +605,9 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
                         transform={`rotate(${-m.rot})`}
                       />
                     </g>
-                    <BaseShape m={m} className="ring" />
+                    {/* A hero keeps its side's ring just inside a gold one at the edge. */}
+                    <BaseShape m={m} className="ring" grow={m.hero ? -0.09 : 0} />
+                    {m.hero && <BaseShape m={m} className="ring gold" />}
                   </>
                 )}
                 <path className="facing" d={`M ${-0.12} ${-ry + 0.04} L 0 ${-ry - 0.1} L ${0.12} ${-ry + 0.04} Z`} />
