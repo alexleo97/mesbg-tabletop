@@ -1,3 +1,4 @@
+import { armyStatus } from '../shared/status.ts';
 import { useRef, useState } from 'react';
 import { objectiveMarkers, STARTER_BOARDS, starterTerrain } from '../shared/boards.ts';
 import { loadCatalog, parseBuilderExport, STAT_NAMES, statsWithOptions } from '../shared/catalog.ts';
@@ -164,7 +165,9 @@ export function RollRow({ r, state }: { r: DiceRoll; state: GameState }) {
           <span key={i} className={`die ${r.target ? (d >= r.target ? 'hit' : 'miss') : ''}`}>{d}</span>
         ))}
         {wounds === null && hits !== null && <span className="hits">{hits} success{hits === 1 ? '' : 'es'}</span>}
-        {r.dice.length > 1 && hits === null && <span className="hits">total {r.dice.reduce((a, b) => a + b, 0)}</span>}
+        {r.dice.length > 1 && hits === null && (
+          <span className="hits">{r.group ? `best ${Math.max(...r.dice)}` : `total ${r.dice.reduce((a, b) => a + b, 0)}`}</span>
+        )}
       </div>
       {wounds !== null && (
         <div className="dice follow">
@@ -175,6 +178,7 @@ export function RollRow({ r, state }: { r: DiceRoll; state: GameState }) {
           <span className="hits">{wounds} success{wounds === 1 ? '' : 'es'}</span>
         </div>
       )}
+      {r.note && <div className="roll-note">{r.note}</div>}
     </li>
   );
 }
@@ -306,7 +310,7 @@ export function ArmyPanel({ state, dispatch, role }: { state: GameState; dispatc
       <h4>Forces</h4>
       <p className="muted">
         {(['p1', 'p2'] as const).map(s => `${state.names[s] || (s === 'p1' ? 'Player 1' : 'Player 2')}: ${alive(s)}/${total(s)}`).join(' · ')}
-        {(['p1', 'p2'] as const).some(s => total(s) > 0 && alive(s) <= total(s) / 2) && <b className="broken"> · an army is Broken</b>}
+        {(['p1', 'p2'] as const).some(s => armyStatus(state, s).broken) && <b className="broken"> · an army is Broken</b>}
       </p>
 
       {casualties.length > 0 && (

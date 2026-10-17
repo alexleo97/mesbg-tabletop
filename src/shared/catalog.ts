@@ -68,6 +68,22 @@ export function statsWithOptions(unit: CatalogUnit, optionIds: string[]): string
   return stats;
 }
 
+export type StatName = (typeof STAT_NAMES)[number];
+
+/** A model's printed stats as numbers ("4+" becomes 4), with its options applied, when the unit is known. */
+export function modelStats(catalog: Catalog | null | undefined, m: { profileId?: string; options?: string[] } | undefined): Partial<Record<StatName, number>> | null {
+  const unit = m?.profileId ? catalog?.units[m.profileId] : undefined;
+  if (!unit) return null;
+  const stats = statsWithOptions(unit, unit.options.filter(o => m!.options?.includes(o.name)).map(o => o.id));
+  if (!stats) return null;
+  const out: Partial<Record<StatName, number>> = {};
+  STAT_NAMES.forEach((k, i) => {
+    const n = parseInt(stats[i], 10);
+    if (Number.isFinite(n)) out[k] = n;
+  });
+  return out;
+}
+
 function mountBase(name: string): Base {
   const b = guessBase(name);
   if (b.shape === 'round' && b.w === 25) return { shape: 'rect', w: 25, h: 50 };

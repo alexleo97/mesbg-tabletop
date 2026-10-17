@@ -17,6 +17,7 @@ export function initialState(): GameState {
     names: {},
     scenario: null,
     vp: { p1: {}, p2: {} },
+    listed: true,
   };
 }
 
@@ -110,6 +111,9 @@ function cleanRoll(r: unknown): DiceRoll | null {
     ...(o.then !== undefined && Array.isArray(o.follow)
       ? { then: int(o.then, 1, 6, 4), follow: o.follow.slice(0, MAX_DICE).map(d => int(d, 1, 6, 1)) }
       : {}),
+    ...(o.group ? { group: id(o.group) } : {}),
+    ...(o.note ? { note: str(o.note, 140) } : {}),
+    ...(o.against ? { against: id(o.against) } : {}),
     at: num(o.at, 0, Number.MAX_SAFE_INTEGER, 0),
   };
 }
@@ -200,6 +204,8 @@ export function reduce(state: GameState, action: Action): GameState {
       if (Object.keys(tally).length > 40) return state;
       return { ...state, vp: { ...state.vp, [action.seat]: tally } };
     }
+    case 'setListed':
+      return { ...state, listed: action.listed !== false };
     case 'setName':
       if (!isSeat(action.seat)) return state;
       return { ...state, names: { ...state.names, [action.seat]: str(action.name, 40) } };
@@ -223,6 +229,38 @@ export function reduce(state: GameState, action: Action): GameState {
     }
     case 'loadState':
       return loadState(action.state);
+    case 'revert': {
+      const r = action.revert;
+      if (!r || typeof r !== 'object') return state;
+      let out = state;
+      if (r.models) {
+        const models = { ...out.models };
+        for (const [mid, m] of Object.entries(r.models)) {
+          const clean = m && cleanModel(m);
+          if (clean) models[mid] = clean;
+          else delete models[mid];
+        }
+        out = { ...out, models };
+      }
+      if (r.terrain) {
+        const terrain = { ...out.terrain };
+        for (const [tid, t] of Object.entries(r.terrain)) {
+          const clean = t && cleanTerrain(t);
+          if (clean) terrain[tid] = clean;
+          else delete terrain[tid];
+        }
+        out = { ...out, terrain };
+      }
+      const f = r.fields;
+      if (f) {
+        // Rebuild the fields through the same cleaning a saved game gets.
+        const fixed = loadState({ ...out, ...f, log: [] });
+        out = { ...out, ...Object.fromEntries(Object.keys(f).map(k => [k, fixed[k as keyof GameState]])) };
+      }
+      return out;
+    }
+    case 'undo':
+    case 'fight':
     case 'roll':
     default:
       return state;
@@ -247,6 +285,7 @@ export function loadState(raw: unknown): GameState {
   for (const seat of ['p1', 'p2'] as const) {
     for (const [key, value] of Object.entries(o.vp?.[seat] ?? {}).slice(0, 40)) out = reduce(out, { type: 'setVP', seat, key, value: value as number });
   }
+  if (o.listed === false) out = { ...out, listed: false };
   if (Array.isArray(o.log)) out = { ...out, log: o.log.map(cleanRoll).filter(r => r !== null).slice(-MAX_LOG) };
   return out;
 }

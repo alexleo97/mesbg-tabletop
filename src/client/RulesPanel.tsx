@@ -1,9 +1,11 @@
 import { useState } from 'react';
-import { STAT_NAMES, statsWithOptions } from '../shared/catalog.ts';
+import { modelStats } from '../shared/catalog.ts';
 import { D6_TABLES, formatNeed, HEROIC_ACTIONS, MISSILE_WEAPONS, TURN_SUMMARY, woundNeed } from '../shared/rules.ts';
 import type { Action, GameState, Model, Role } from '../shared/types.ts';
 import { useCatalog } from './ListBuilder.tsx';
 import { RollRow } from './Panels.tsx';
+import { FightPanel } from './FightPanel.tsx';
+import { MagicPanel } from './MagicPanel.tsx';
 
 type Dispatch = (a: Action) => void;
 
@@ -18,19 +20,9 @@ function Num({ label, value, min, max, onChange }: { label: string; value: numbe
   );
 }
 
-/** A selected model's printed stats as numbers (Sv "4+" becomes 4), when the unit is known. */
 function useStats(m: Model | undefined) {
   const { catalog } = useCatalog();
-  const unit = m?.profileId ? catalog?.units[m.profileId] : undefined;
-  if (!unit) return null;
-  const stats = statsWithOptions(unit, unit.options.filter(o => m!.options?.includes(o.name)).map(o => o.id));
-  if (!stats) return null;
-  const out: Partial<Record<(typeof STAT_NAMES)[number], number>> = {};
-  STAT_NAMES.forEach((k, i) => {
-    const n = parseInt(stats[i], 10);
-    if (Number.isFinite(n)) out[k] = n;
-  });
-  return out;
+  return modelStats(catalog, m);
 }
 
 export function RulesPanel({ state, dispatch, role, selected }: { state: GameState; dispatch: Dispatch; role: Role; selected: Set<string> }) {
@@ -55,6 +47,8 @@ export function RulesPanel({ state, dispatch, role, selected }: { state: GameSta
 
   return (
     <div className="panel-body rules">
+      <FightPanel state={state} dispatch={dispatch} role={role} selected={selected} />
+
       <h4>Roll to wound</h4>
       {one && stats && (
         <div className="row wrap">
@@ -129,6 +123,8 @@ export function RulesPanel({ state, dispatch, role, selected }: { state: GameSta
           {lastTable && <p className="table-result">{lastTable.results[tableRow(last.dice[0])]}</p>}
         </div>
       )}
+
+      <MagicPanel state={state} dispatch={dispatch} role={role} selected={selected} />
 
       <details>
         <summary>D6 tables</summary>
