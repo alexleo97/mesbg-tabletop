@@ -8,6 +8,7 @@ Build your army in the [MESBG List Builder](https://v2024.mesbg-list-builder.com
 
 ## What it does
 
+- **Learn to play.** The home screen's *Learn to play* button opens a ten-lesson practice battle in your browser against a quiet Mordor patrol. It walks through priority, heroic actions, moving, charging, shooting, fighting with Might, Fate and the end of the turn, and each lesson ticks off when you've done its task. Link to it with `?learn`.
 - **Guided turns.** The turn guide at the bottom of the screen runs the game for you. It walks through setup (scenario, board, armies, deployment), then each turn's phases in order. It rolls off for priority (re-rolling first-turn ties and passing later ties to the player who didn't choose last time), says whose go it is in the Move and Shoot phases, finds every fight on the table, and checks Broken armies and the scenario's end at the end of the turn. You press one button to move on.
 - **Tap a model to act.** Selecting a model shows its profile, wounds, Might, Will and Fate, plus the actions that fit the phase. In the Shoot phase, tap an enemy to aim: it shows the range and what you need to hit and wound, then one tap rolls the hit, any In the Way rolls and the wound together. In the Fight phase, models in base contact get a ⚔ marker that opens the fight. Courage tests show whether they passed.
 - **Real-scale board.** The board is 48"×48" by default (or 72"×48" / 24"×24"), with a 1" grid. Bases are real sizes: 25mm infantry, 25×50mm cavalry, and 40mm/60mm monsters.

@@ -1,0 +1,72 @@
+import { activeSeat } from '../shared/flow.ts';
+import { heroicTurn } from '../shared/heroics.ts';
+import { reduce } from '../shared/reducer.ts';
+import { DICE_REQUESTS, resolveRequest } from '../shared/resolve.ts';
+import type { Action, GameState, Role } from '../shared/types.ts';
+import type { Connection, Snapshot } from './net.ts';
+
+const d6 = () => 1 + Math.floor(Math.random() * 6);
+let n = 0;
+const uid = () => `${Date.now().toString(36)}-${(n++).toString(36)}`;
+
+/**
+ * A game played entirely in this browser, for the training. You play player 1; player 2 is a
+ * quiet opponent that passes and finishes its turns straight away so the lesson keeps moving.
+ */
+export class PracticeGame implements Connection {
+  readonly room = 'practice';
+  private listeners = new Set<() => void>();
+  private snap: Snapshot;
+
+  constructor(state: GameState) {
+    this.snap = { state, status: 'online', players: ['p1', 'p2'], undoDepth: 0 };
+  }
+
+  /** Starts a lesson from a fresh board. */
+  load(state: GameState) {
+    this.set(state);
+  }
+
+  dispatch(action: Action) {
+    let state = this.snap.state;
+    if (DICE_REQUESTS.has(action.type)) {
+      const out = resolveRequest(state, 'p1', action, d6, uid);
+      if (!out) return;
+      for (const a of [...out.apply, ...(out.record ? [out.record] : [])]) state = reduce(state, a);
+    } else if (action.type !== 'undo') state = reduce(state, action);
+    this.set(this.opponent(state));
+  }
+
+  /** Player 2 never declares heroics, gives Priority away and ends its activations at once. */
+  private opponent(state: GameState): GameState {
+    for (let i = 0; i < 6; i++) {
+      const next =
+        state.phase === 'priority' && state.flow.chooser === 'p2' && state.flow.chooserTurn === state.turn && !state.priority
+          ? reduce(state, { type: 'choosePriority', seat: 'p1' })
+          : heroicTurn(state) === 'p2'
+            ? reduce(state, { type: 'passHeroic', seat: 'p2' })
+            : activeSeat(state) === 'p2'
+              ? reduce(state, { type: 'endActivation', seat: 'p2' })
+              : state;
+      if (next === state) break;
+      state = next;
+    }
+    return state;
+  }
+
+  private set(state: GameState) {
+    this.snap = { ...this.snap, state };
+    for (const l of this.listeners) l();
+  }
+
+  setRole(_role: Role) {}
+
+  subscribe = (l: () => void) => {
+    this.listeners.add(l);
+    return () => void this.listeners.delete(l);
+  };
+
+  getSnapshot = () => this.snap;
+
+  close() {}
+}
