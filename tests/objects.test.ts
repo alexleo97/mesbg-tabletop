@@ -21,8 +21,13 @@ function game(scenario: string, models: Model[], rand = () => 0): GameState {
 }
 const run = (s: GameState, ...actions: Action[]) => actions.reduce(reduce, s);
 const line = (s: GameState, i: number) => scoreLines(s)[i].vp;
+/** Puts a model down anywhere, as if the battle hadn't started (once it has, moves are held to the model's Move). */
+const tp = (s: GameState, id: string, x: number, y: number) => {
+  const moved = reduce({ ...s, flow: { ...s.flow, started: false } }, { type: 'moveModels', moves: [{ id, x, y }] });
+  return { ...moved, flow: { ...moved.flow, started: s.flow.started } };
+};
 /** Puts a model in base contact with a marker. */
-const at = (s: GameState, id: string, t: string) => run(s, { type: 'moveModels', moves: [{ id, x: s.terrain[t].x, y: s.terrain[t].y + 0.8 + 0.49 }] });
+const at = (s: GameState, id: string, t: string) => tp(s, id, s.terrain[t].x, s.terrain[t].y + 0.8 + 0.49);
 
 describe('scenario markers', () => {
   it('carries a Relic, which follows its carrier and leaves with it', () => {
@@ -35,10 +40,10 @@ describe('scenario markers', () => {
     expect(markerActions(s, s.models[a.id]).map(x => x.kind)).toEqual(['pickUp']);
     s = run(s, { type: 'pickUp', model: a.id, marker: 't1' });
     expect(line(s, 0).p1).toBe(6);
-    s = run(s, { type: 'moveModels', moves: [{ id: a.id, x: 5, y: 40 }] });
+    s = tp(s, a.id, 5, 40);
     expect(s.terrain.t1.x).toBeCloseTo(5 + 0.49 * 0.7, 1);
     expect(line(s, 0).p1).toBe(9);
-    s = run(s, { type: 'moveModels', moves: [{ id: a.id, x: 0.5, y: 40 }] }, { type: 'escape', model: a.id });
+    s = run(tp(s, a.id, 0.5, 40), { type: 'escape', model: a.id });
     expect(s.terrain.t1).toMatchObject({ gone: 'off', by: 'p1' });
     expect(line(s, 0).p1).toBe(12);
   });
@@ -94,9 +99,9 @@ describe('scenario markers', () => {
   it('rescues a Wounded Ally carried into a Sanctuary', () => {
     const a = mk('p1', 12, 37.3);
     let s = game('escort-the-wounded', [a, mk('p2', 40, 4)]);
-    s = run(s, { type: 'pickUp', model: a.id, marker: 't0' }, { type: 'moveModels', moves: [{ id: a.id, x: 20, y: 20 }] });
+    s = tp(run(s, { type: 'pickUp', model: a.id, marker: 't0' }), a.id, 20, 20);
     expect(line(s, 0).p1).toBe(2);
-    s = run(s, { type: 'moveModels', moves: [{ id: a.id, x: 3, y: 3 }] }, { type: 'setPhase', phase: 'end' });
+    s = run(tp(s, a.id, 3, 3), { type: 'setPhase', phase: 'end' });
     expect(s.terrain.t0).toMatchObject({ gone: 'rescued' });
     expect(line(s, 0).p1).toBe(4);
   });

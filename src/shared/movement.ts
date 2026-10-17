@@ -2,8 +2,18 @@ import { distanceBetween, type Point } from './geometry.ts';
 import { moveCost } from './sight.ts';
 import type { GameState, Model } from './types.ts';
 
-/** Whether a model's moves are held to its Move value: only in the Move phase of a game under way. */
-export const movesLimited = (state: GameState, m: Model) => state.flow.started && state.phase === 'move' && !m.dead;
+/**
+ * How far a model may go this phase, from where it began the phase, once the battle is under way: its Move in the
+ * Move phase, 1" in the Fight phase (to back away or make way for a friend), and not at all in the other phases,
+ * where it can only turn on the spot. Null before the battle starts, when models can be set up anywhere.
+ */
+export function moveAllowance(state: GameState, m: Model): number | null {
+  if (!state.flow.started || m.dead) return null;
+  return state.phase === 'move' ? m.move : state.phase === 'fight' ? 1 : 0;
+}
+
+/** Whether a model's moves are held to an allowance this phase (see moveAllowance). */
+export const movesLimited = (state: GameState, m: Model) => moveAllowance(state, m) !== null;
 
 /** Where a model stood when this Move phase began (where it is now, if it hasn't moved yet). */
 export function moveStart(state: GameState, m: Model): Point {
@@ -33,7 +43,7 @@ export function limitMove(state: GameState, from: Point, to: Point, move: number
  * rest of the way into base contact, as long as its Move still reaches. Returns where it should end up.
  */
 export function settleMove(state: GameState, m: Model, at: Point): Point {
-  if (!movesLimited(state, m)) return at;
+  if (!movesLimited(state, m) || state.phase !== 'move') return at;
   const here = { ...m, ...at };
   let best: { e: Model; d: number } | null = null;
   for (const e of Object.values(state.models)) {

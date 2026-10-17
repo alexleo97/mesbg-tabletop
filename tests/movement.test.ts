@@ -32,6 +32,25 @@ describe('move limits', () => {
     const setup = reduce(reduce(initialState(), { type: 'addModels', models: [orc] }), { type: 'moveModels', moves: [{ id: 'o', x: 10, y: 5 }] });
     expect(setup.models.o.y).toBe(5);
   });
+
+  it("only lets a model turn outside the Move and Fight phases", () => {
+    for (const phase of ['priority', 'shoot', 'end'] as const) {
+      const s = move(reduce(inMove(), { type: 'setPhase', phase }), 10, 30);
+      expect(s.models.o.y).toBe(40);
+    }
+    const turned = reduce(reduce(inMove(), { type: 'setPhase', phase: 'shoot' }), { type: 'moveModels', moves: [{ id: 'o', x: 10, y: 40, rot: 90 }] });
+    expect(turned.models.o.rot).toBe(90);
+  });
+
+  it('allows 1" in the Fight phase, to back away', () => {
+    const s = move(reduce(inMove(), { type: 'setPhase', phase: 'fight' }), 10, 30);
+    expect(s.models.o.y).toBeCloseTo(39, 2);
+  });
+
+  it("can't be dodged by editing a model's position directly", () => {
+    const s = reduce(inMove(), { type: 'updateModel', id: 'o', patch: { x: 30, y: 5, wounds: 0 } });
+    expect(s.models.o).toMatchObject({ x: 10, y: 40, wounds: 0 });
+  });
 });
 
 describe('charging', () => {

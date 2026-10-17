@@ -8,7 +8,7 @@ import { ScenarioZones } from './ScenarioZones.tsx';
 import { scenarioById } from '../shared/scenarios.ts';
 import { MATERIALS, textures } from './textures.ts';
 import { TERRAIN_INFO, terrainRules } from '../shared/terrain.ts';
-import { limitMove, moveStart, movesLimited, settleMove } from '../shared/movement.ts';
+import { limitMove, moveAllowance, moveStart, movesLimited, settleMove } from '../shared/movement.ts';
 import { groundAt, inDifficult, insidePolygon, inTheWay, isDifficult, moveCost, outline, shadowPath, sightTo } from '../shared/sight.ts';
 
 export type Tool = 'move' | 'select' | 'measure' | 'mark';
@@ -82,13 +82,15 @@ function ZoneShape({ m, pad, className }: { m: Model; pad: number; className: st
  * outline with a single faint fill, so twenty overlapping circles don't fog the table.
  */
 function MoveZones({ state, models }: { state: GameState; models: Model[] }) {
+  // A zone for each model that can still go somewhere this phase.
+  models = models.filter(m => moveAllowance(state, m) !== 0);
   if (!models.length) return null;
   // In the Move phase the move zone stays where the model began the phase, so you can see how far it can still go.
   const starts = models.map(m => ({ m, s: movesLimited(state, m) ? { ...m, ...moveStart(state, m) } : m }));
   const zones = (className: string) =>
     starts.map(({ m, s }) => (
       <g key={m.id} transform={`translate(${s.x} ${s.y}) rotate(${s.rot})`}>
-        <ZoneShape m={m} pad={m.move} className={className} />
+        <ZoneShape m={m} pad={moveAllowance(state, m) ?? m.move} className={className} />
       </g>
     ));
   return (
@@ -103,7 +105,7 @@ function MoveZones({ state, models }: { state: GameState; models: Model[] }) {
         <g key={`z-${m.id}`}>
           {inDifficult(state, s) && (
             <g transform={`translate(${s.x} ${s.y}) rotate(${s.rot})`}>
-              <ZoneShape m={m} pad={m.move / 2} className="zone-move slow" />
+              <ZoneShape m={m} pad={(moveAllowance(state, m) ?? m.move) / 2} className="zone-move slow" />
             </g>
           )}
           <g transform={`translate(${m.x} ${m.y}) rotate(${m.rot})`}>
@@ -378,8 +380,9 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
       for (const [id, o] of Object.entries(gesture.origin)) {
         const m = state.models[id];
         const to = { x: o.x + dx, y: o.y + dy };
-        // In the Move phase a model stops at the edge of its Move, as the server would hold it there anyway.
-        pos[id] = m && movesLimited(state, m) ? limitMove(state, moveStart(state, m), to, m.move) : to;
+        // Once the battle is under way a model stops at the edge of its allowance, as the server would hold it there anyway.
+        const allowance = m && moveAllowance(state, m);
+        pos[id] = m && allowance != null ? limitMove(state, moveStart(state, m), to, allowance) : to;
       }
       setDragPos(pos);
       sendMoves(pos, false);
@@ -548,7 +551,8 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
               const d = Math.hypot(now.x - o.x, now.y - o.y);
               // Difficult terrain costs double and climbing costs the height, so the move is judged on what it costs.
               const { cost, difficult } = moveCost(state, o, now);
-              const over = cost > m.move + 1e-6;
+              const allowance = moveAllowance(state, m) ?? m.move;
+              const over = cost > allowance + 1e-6;
               return (
                 <g key={`g-${id}`} pointerEvents="none">
                   <g transform={`translate(${o.x} ${o.y}) rotate(${m.rot})`} className="ghost">
@@ -557,7 +561,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
                   <line className={`trail ${over ? 'over' : ''}`} x1={o.x} y1={o.y} x2={now.x} y2={now.y} />
                   {id === gesture.tapId && (
                     <text className={`trail-label ${over ? 'over' : ''}`} x={now.x} y={now.y - halfExtents(m.base).ry - 0.3} textAnchor="middle">
-                      {difficult ? `${formatInches(d)} (${formatInches(cost)} in difficult terrain)` : cost > d + 0.05 ? `${formatInches(d)} (${formatInches(cost)} with climbing)` : formatInches(d)} / {m.move}"
+                      {difficult ? `${formatInches(d)} (${formatInches(cost)} in difficult terrain)` : cost > d + 0.05 ? `${formatInches(d)} (${formatInches(cost)} with climbing)` : formatInches(d)} / {allowance}"
                     </text>
                   )}
                 </g>
