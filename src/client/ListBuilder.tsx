@@ -41,6 +41,14 @@ function saveAll(lists: Roster[]) {
 }
 
 const uid = newUuid;
+
+/** Adds a list made elsewhere (an import) to your saved lists, and to your account when you're signed in. */
+export function addSavedList(r: Omit<Roster, 'id' | 'updatedAt'>): Roster {
+  const saved: Roster = { ...r, id: uid(), updatedAt: Date.now() };
+  saveAll([saved, ...loadSaved()]);
+  void saveCloudList(saved);
+  return saved;
+}
 /** A list's contents, ignoring when it was saved. */
 const same = (a: Roster | undefined, b: Roster) => !!a && JSON.stringify({ ...a, updatedAt: 0 }) === JSON.stringify({ ...b, updatedAt: 0 });
 
@@ -69,7 +77,7 @@ export function Portrait({ unit, size = 40 }: { unit: Pick<CatalogUnit, 'origin'
 }
 
 /** A saved list as deployable entries, warband by warband, each tagged with its warband. */
-function listEntries(r: Roster, catalog: Catalog): { label: string; entries: ListEntry[] }[] {
+export function listEntries(r: Roster, catalog: Catalog): { label: string; entries: ListEntry[] }[] {
   const { warbands, independents, loose } = organise(r.entries, catalog);
   const general = armyLeader(r.entries, catalog, r.leader);
   const toEntries = (es: RosterEntry[], group: string) =>
