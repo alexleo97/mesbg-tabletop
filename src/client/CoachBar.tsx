@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ResultReport } from './ResultReport.tsx';
 import { activeSeat, other, type Combat } from '../shared/flow.ts';
+import { phaseFinished } from '../shared/autoPhase.ts';
 import { fightDone } from '../shared/movement.ts';
 import { canDeclare, heroicInfo, heroicsSettled, heroicTurn, HEROICS, orderRollLabel, orderRollNeeded, phaseHeroics } from '../shared/heroics.ts';
 import { RollRow } from './Panels.tsx';
@@ -20,6 +21,8 @@ interface Props {
   combats: Combat[];
   openTab: (t: 'army' | 'table') => void;
   openFight: (key: string) => void;
+  /** The server moves finished Fight and End phases on by itself (not in the training, which runs in the browser). */
+  auto?: boolean;
 }
 
 type Dispatch = (a: Action) => void;
@@ -163,7 +166,7 @@ function Reinforcements({ state, name }: { state: GameState; name: (s: Seat) => 
   );
 }
 
-export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, openFight }: Props) {
+export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, openFight, auto }: Props) {
   let combats = allCombats;
   const [small, setSmall] = useState(false);
   const drag = useDraggable('coach');
@@ -329,6 +332,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
             ))}
           </div>
         )}
+        {auto && phaseFinished(state) && <p className="muted">Nothing left to fight: moving on to the End phase.</p>}
         {me && (
           <button className={open.length ? 'go' : 'primary go'} onClick={() => dispatch({ type: 'nextPhase' })}>
             {open.length ? `End fights (${open.length} not rolled)` : 'End the Fight phase'}
@@ -370,9 +374,12 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
         ) : (
           me &&
           (!check?.rollNeeded || endRoll) && (
-            <button className="primary go" onClick={() => dispatch({ type: 'nextPhase' })}>
-              Start turn {state.turn + 1}
-            </button>
+            <>
+              {auto && phaseFinished(state) && <p className="muted">Turn {state.turn + 1} starts in a moment.</p>}
+              <button className="primary go" onClick={() => dispatch({ type: 'nextPhase' })}>
+                Start turn {state.turn + 1}
+              </button>
+            </>
           )
         )}
       </>

@@ -559,7 +559,7 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
             )}
           </div>
 
-          {(!practice || setupCard || state.flow.started) && <CoachBar state={state} dispatch={dispatch} role={role} combats={fights} openTab={showTab} openFight={setFightKey} />}
+          {(!practice || setupCard || state.flow.started) && <CoachBar state={state} dispatch={dispatch} role={role} combats={fights} openTab={showTab} openFight={setFightKey} auto={!practice} />}
         </div>
 
         {fight && (
