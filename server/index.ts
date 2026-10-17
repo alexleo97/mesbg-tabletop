@@ -7,6 +7,8 @@ import { initialState, loadState, MAX_DICE, reduce } from '../src/shared/reducer
 import type { Action, ClientMessage, GameState, Revert, Role, RoomSummary, Seat, ServerMessage } from '../src/shared/types.ts';
 import { cleanFight, cleanShot, resolveFight, resolveShot } from '../src/shared/fight.ts';
 import { priorityChooser } from '../src/shared/flow.ts';
+import { scenarioById } from '../src/shared/scenarios.ts';
+import { announceGame, discordEnabled } from './discord.ts';
 import { diffForUndo, mergeReverts, UNDOABLE } from '../src/shared/undo.ts';
 
 const PORT = Number(process.env.PORT ?? 8787);
@@ -29,6 +31,8 @@ interface Room {
   saveTimer?: NodeJS.Timeout;
   /** Each player's recent changes, newest last, so they can take back their own misclicks. */
   undo: Record<Seat, UndoEntry[]>;
+  /** Already posted to Discord as an open game (or decided not to). */
+  announced?: boolean;
 }
 
 interface UndoEntry {
@@ -138,6 +142,21 @@ function openRooms(): RoomSummary[] {
     });
 }
 
+/**
+ * Posts a newly opened public game to Discord once, after a short wait so the host can type a name
+ * and so games where both players join straight away aren't posted.
+ */
+function scheduleAnnouncement(room: Room) {
+  if (room.announced || !discordEnabled()) return;
+  room.announced = true;
+  setTimeout(() => {
+    const seated = new Set([...room.clients].map(c => c.role).filter(r => r !== 'spectator'));
+    if (!room.state.listed || seated.size !== 1 || room.state.flow.started) return;
+    const host = [...seated][0] as Seat;
+    void announceGame(room.id, room.state.names[host] ?? '', scenarioById(room.state.scenario)?.name);
+  }, 20_000).unref();
+}
+
 function apply(room: Room, action: Action) {
   room.state = reduce(room.state, action);
   broadcast(room, { type: 'action', action });
@@ -236,6 +255,7 @@ wss.on('connection', (ws, req) => {
     }
     if (msg.type === 'hello') {
       client.role = msg.role === 'p1' || msg.role === 'p2' ? msg.role : 'spectator';
+      if (client.role !== 'spectator') scheduleAnnouncement(room);
       broadcast(room, { type: 'presence', players: players(room) });
       if (client.role !== 'spectator') sendUndoDepth(room, client.role);
       return;

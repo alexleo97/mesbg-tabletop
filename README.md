@@ -62,6 +62,7 @@ Games are kept in memory and saved to `data/rooms/` (set `DATA_DIR` to change it
 The production server is a single Node process: it serves the built app, the WebSocket sync at `/ws` and a health check at `/healthz`. Any host that supports WebSockets will run it:
 
 - **Render (free):** create a new Blueprint from this repo; `render.yaml` does the rest. On the free plan the server sleeps when idle (the first visit takes about a minute to wake it) and saved games reset on redeploy.
+- **Discord (optional):** set `DISCORD_WEBHOOK_URL` on the server (in Render: the service's Environment page) to post newly opened public games to a Discord channel. Add the same URL as a repository secret named `DISCORD_WEBHOOK_URL` to post each update merged into main. Keep the URL out of the code: anyone who has it can post to your channel.
 - **Docker:** `docker build -t mesbg-tabletop . && docker run -p 8787:8787 -v mesbg-data:/data mesbg-tabletop`
 
 ## How it's built
