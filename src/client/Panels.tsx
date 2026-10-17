@@ -582,6 +582,9 @@ export function SettingsPanel({ settings, update }: { settings: Settings; update
         <input type="checkbox" checked={settings.photos} onChange={e => update({ photos: e.target.checked })} /> Unit photos on bases
       </label>
       <label className="check">
+        <input type="checkbox" checked={settings.names} onChange={e => update({ names: e.target.checked })} /> Unit names under models
+      </label>
+      <label className="check">
         <input type="checkbox" checked={settings.zones} onChange={e => update({ zones: e.target.checked })} /> Move and 1" control zones
       </label>
       <label className="check">

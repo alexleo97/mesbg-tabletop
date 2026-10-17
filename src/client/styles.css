@@ -653,3 +653,55 @@ details.finish summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
 .list-card-name { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .list-card-name small { color: var(--muted); }
 .button-link { display: inline-flex; align-items: center; justify-content: center; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); text-decoration: none; text-align: center; }
+
+/* Home: a wide two-column start on computers, stacked on phones. */
+.site-main.wide { max-width: 1160px; padding-left: 24px; padding-right: 24px; }
+.home-top { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+.home-hero { display: flex; flex-direction: column; gap: 18px; padding: 28px 0 8px; }
+.home-hero h1 { font-size: 2.6rem; line-height: 1.15; }
+.home-hero .lead { font-size: 1.1rem; color: var(--muted); line-height: 1.5; max-width: 34em; }
+.hero-actions { display: flex; gap: 10px; }
+.hero-actions button { flex: 0 0 auto; min-width: 180px; }
+.home-hero .join { display: flex; gap: 8px; max-width: 460px; }
+.home-hero .join input { flex: 1; }
+.dash-card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+.dash-card header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.dash-card h2 { margin: 0; font-family: var(--font-head); color: var(--gold); font-size: 1.15rem; text-align: left; }
+.dash-card header a { color: var(--muted); text-decoration: none; font-size: 0.9rem; white-space: nowrap; }
+.dash-card header a:hover { color: var(--text); }
+.open-games.dash-card { margin-top: 0; max-height: 420px; overflow-y: auto; }
+.dash-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-top: 8px; }
+.dash-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.dash-list li { display: flex; justify-content: space-between; gap: 8px; padding: 8px 10px; background: var(--panel-2); border-radius: 8px; }
+.dash-list small { color: var(--muted); white-space: nowrap; }
+.dash-list b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dash-list.ranked { counter-reset: rank; }
+.dash-list.ranked li::before { counter-increment: rank; content: counter(rank); color: var(--gold); font-weight: 700; width: 1.2em; }
+.dash-list.ranked li b { flex: 1; }
+.dash-list li.me { outline: 1px solid var(--gold); }
+.dash-maps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.dash-map { padding: 0; overflow: hidden; display: flex; flex-direction: column; text-align: left; }
+.dash-map .map-preview { aspect-ratio: 1; }
+.dash-map span { padding: 4px 6px; font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; padding-top: 16px; border-top: 1px solid var(--line); }
+.home-foot .discord-link { display: inline-block; padding: 8px 14px; }
+.home-foot .fine { margin: 0 0 0 auto; }
+.site-main .lobby-settings { max-width: 460px; }
+
+/* Game screen on computers: labelled tabs and a roomier side panel. */
+@media (min-width: 801px) {
+  .panel-buttons button { flex-direction: row; gap: 6px; padding: 6px 12px; min-width: 0; }
+  .panel-buttons button span { font-size: 0.95rem; }
+  .panel-buttons small { font-size: 0.9rem; font-weight: 600; }
+  .panel { width: 380px; }
+}
+
+@media (max-width: 900px) {
+  .home-top { grid-template-columns: 1fr; gap: 16px; }
+  .home-hero { padding-top: 4px; }
+  .home-hero h1 { font-size: 2rem; }
+  .dash-grid { grid-template-columns: 1fr; }
+  .hero-actions button { flex: 1; min-width: 0; }
+  .home-foot .fine { margin: 0; }
+}
+.model-name { fill: #fff; font-weight: 600; font-size: 0.8em; paint-order: stroke; stroke: #000c; stroke-width: 0.09; }

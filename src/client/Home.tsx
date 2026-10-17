@@ -2,9 +2,10 @@ import { useEffect, useState, type ReactNode } from 'react';
 import type { Terrain, TerrainKind } from '../shared/types.ts';
 import { outline } from '../shared/sight.ts';
 import { AccountButton } from './Account.tsx';
-import { signIn, useAuth } from './auth.ts';
+import { leaderboard, signIn, useAuth, type Standing } from './auth.ts';
 import { deleteMap, listMaps, updateMap, type SavedMap } from './cloud.ts';
-import { ListBuilder } from './ListBuilder.tsx';
+import { ListBuilder, loadSaved, type Roster } from './ListBuilder.tsx';
+import { cloudLists, mergeLists } from './cloud.ts';
 
 export type Page = 'play' | 'armies' | 'maps' | 'leaderboard' | 'profile';
 
@@ -198,5 +199,102 @@ export function MapsPage() {
         </ul>
       )}
     </SitePage>
+  );
+}
+
+/** A card on the home page with a heading, a link to its full page, and a short preview. */
+function DashCard({ title, more, href, children }: { title: string; more: string; href: string; children: ReactNode }) {
+  return (
+    <section className="dash-card">
+      <header>
+        <h2>{title}</h2>
+        <a href={href}>{more} →</a>
+      </header>
+      {children}
+    </section>
+  );
+}
+
+/** Your lists at a glance, from this browser and your account. */
+export function ArmiesCard() {
+  const { profile } = useAuth();
+  const [lists, setLists] = useState<Roster[]>(loadSaved);
+  useEffect(() => {
+    if (profile) void cloudLists().then(cloud => cloud && setLists(mergeLists(loadSaved(), cloud)));
+  }, [profile?.id]);
+  const ready = lists.filter(r => r.entries.length).slice(0, 4);
+  return (
+    <DashCard title="Your armies" more={ready.length ? 'All armies' : 'Build one'} href="?armies">
+      {ready.length ? (
+        <ul className="dash-list">
+          {ready.map(r => (
+            <li key={r.id}>
+              <b>{r.name}</b>
+              <small>{r.army}</small>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="muted">Build your army once and deploy it in any game with one tap.</p>
+      )}
+    </DashCard>
+  );
+}
+
+/** The newest shared maps, as thumbnails. */
+export function MapsCard() {
+  const { enabled } = useAuth();
+  const [maps, setMaps] = useState<SavedMap[] | null>(null);
+  useEffect(() => {
+    if (enabled) void listMaps('shared').then(m => setMaps(m ?? []));
+  }, [enabled]);
+  if (!enabled) return null;
+  return (
+    <DashCard title="Community maps" more="All maps" href="?maps">
+      {maps === null ? (
+        <p className="muted">Loading…</p>
+      ) : maps.length === 0 ? (
+        <p className="muted">No shared maps yet. Lay out a table in a game and share it.</p>
+      ) : (
+        <div className="dash-maps">
+          {maps.slice(0, 3).map(m => (
+            <button key={m.id} className="dash-map" onClick={() => (location.search = `?room=${randomRoom()}&map=${m.id}`)} title={`Play on ${m.name}`}>
+              <MapPreview w={m.data.w} h={m.data.h} terrain={m.data.terrain ?? []} />
+              <span>{m.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </DashCard>
+  );
+}
+
+/** The top of the leaderboard. */
+export function TopPlayersCard() {
+  const { enabled, profile } = useAuth();
+  const [rows, setRows] = useState<Standing[] | null>(null);
+  useEffect(() => {
+    if (enabled) void leaderboard().then(r => setRows(r ?? []));
+  }, [enabled]);
+  if (!enabled) return null;
+  return (
+    <DashCard title="Top players" more="Leaderboard" href="?leaderboard">
+      {rows === null ? (
+        <p className="muted">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="muted">No ranked games yet. Finish a game against a signed-in player to get on the board.</p>
+      ) : (
+        <ol className="dash-list ranked">
+          {rows.slice(0, 5).map(r => (
+            <li key={r.id} className={r.id === profile?.id ? 'me' : ''}>
+              <b>{r.username}</b>
+              <small>
+                {r.wins} W · {r.games} games
+              </small>
+            </li>
+          ))}
+        </ol>
+      )}
+    </DashCard>
   );
 }

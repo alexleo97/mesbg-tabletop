@@ -22,7 +22,7 @@ export interface Roster {
 
 const STORE_KEY = 'mesbg-tabletop:lists';
 
-function loadSaved(): Roster[] {
+export function loadSaved(): Roster[] {
   try {
     const v = JSON.parse(localStorage.getItem(STORE_KEY) ?? '[]');
     return Array.isArray(v) ? v : [];

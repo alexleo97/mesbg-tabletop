@@ -18,7 +18,7 @@ import { scenarioById, vpTotal } from '../shared/scenarios.ts';
 import { useSettings, type Settings } from './settings.ts';
 import { Tutorial } from './Tutorial.tsx';
 import { ProfilePage } from './Account.tsx';
-import { ArmiesPage, MapsPage, randomRoom, SitePage } from './Home.tsx';
+import { ArmiesCard, ArmiesPage, MapsCard, MapsPage, randomRoom, SitePage, TopPlayersCard } from './Home.tsx';
 import { getMap } from './cloud.ts';
 import { LeaderboardPage } from './Leaderboard.tsx';
 import { useAuth } from './auth.ts';
@@ -75,52 +75,70 @@ function Lobby({ settings, updateSettings }: { settings: Settings; updateSetting
     if (clean.length >= 3) location.search = `?room=${clean}`;
   };
   return (
-    <SitePage page="play">
-      <h1 className="hero-title">MESBG Tabletop</h1>
-      <p>Play the Middle-earth Strategy Battle Game in your browser, on a computer or phone.</p>
-      <button className="primary big" onClick={() => go(randomRoom())}>Start a new game</button>
-      <button className="learn" onClick={() => (location.search = '?learn')}>
-        New to the game? <b>Learn to play</b> in a guided practice battle
-      </button>
-      <div className="join">
-        <input placeholder="Game code, e.g. osgiliath-1234" value={code} onChange={e => setCode(e.target.value)} onKeyDown={e => e.key === 'Enter' && go(code)} />
-        <button onClick={() => go(code)}>Join</button>
+    <SitePage page="play" wide>
+      <div className="home-top">
+        <section className="home-hero">
+          <h1>Play Middle-earth battles online</h1>
+          <p className="lead">Bring your army, pick a table and play a friend. The game keeps track of turns, rolls and rules for you, on a computer or a phone.</p>
+          <div className="hero-actions">
+            <button className="primary big" onClick={() => go(randomRoom())}>
+              Start a new game
+            </button>
+            <button className="big" onClick={() => (location.search = '?learn')}>
+              Learn to play
+            </button>
+          </div>
+          <div className="join">
+            <input placeholder="Have a game code? e.g. osgiliath-1234" value={code} onChange={e => setCode(e.target.value)} onKeyDown={e => e.key === 'Enter' && go(code)} />
+            <button onClick={() => go(code)}>Join</button>
+          </div>
+        </section>
+
+        <section className="open-games dash-card">
+          <header>
+            <h2>Open games</h2>
+          </header>
+          {games === null && <p className="muted">Looking for games…</p>}
+          {games?.length === 0 && <p className="muted">No open games right now. Start one and share the link, or find an opponent on Discord.</p>}
+          {games?.map(g => {
+            const free = (['p1', 'p2'] as const).filter(s => !g.seated.includes(s));
+            return (
+              <button key={g.id} className="game-row" onClick={() => go(g.id)}>
+                <span className="game-id">{g.id}</span>
+                <span className="game-who">
+                  <b className="p1">{g.names.p1 || 'Player 1'}</b> vs <b className="p2">{g.names.p2 || 'Player 2'}</b>
+                </span>
+                <span className="muted">
+                  {scenarioById(g.scenario)?.name ?? 'Open play'} · turn {g.turn}
+                  {g.spectators ? ` · ${g.spectators} watching` : ''}
+                </span>
+                <span className={`game-seat ${free.length ? 'free' : ''}`}>{free.length ? 'Join' : 'Watch'}</span>
+              </button>
+            );
+          })}
+        </section>
       </div>
 
-      <section className="open-games">
-        <h2>Open games</h2>
-        {games === null && <p className="muted">Looking for games…</p>}
-        {games?.length === 0 && <p className="muted">No open games right now. Start one and share the link.</p>}
-        {games?.map(g => {
-          const free = (['p1', 'p2'] as const).filter(s => !g.seated.includes(s));
-          return (
-            <button key={g.id} className="game-row" onClick={() => go(g.id)}>
-              <span className="game-id">{g.id}</span>
-              <span className="game-who">
-                <b className="p1">{g.names.p1 || 'Player 1'}</b> vs <b className="p2">{g.names.p2 || 'Player 2'}</b>
-              </span>
-              <span className="muted">
-                {scenarioById(g.scenario)?.name ?? 'Open play'} · turn {g.turn}
-                {g.spectators ? ` · ${g.spectators} watching` : ''}
-              </span>
-              <span className={`game-seat ${free.length ? 'free' : ''}`}>{free.length ? 'Seat open' : 'Full, watch'}</span>
-            </button>
-          );
-        })}
-      </section>
+      <div className="dash-grid">
+        <ArmiesCard />
+        <MapsCard />
+        <TopPlayersCard />
+      </div>
 
-      <a className="discord-link" href={DISCORD_INVITE} target="_blank" rel="noreferrer">
-        Join our Discord to find opponents, report bugs and suggest features
-      </a>
-      <button onClick={() => setShowSettings(v => !v)} aria-expanded={showSettings}>
-        ⚙ Settings
-      </button>
+      <footer className="home-foot">
+        <a className="discord-link" href={DISCORD_INVITE} target="_blank" rel="noreferrer">
+          Join our Discord
+        </a>
+        <button onClick={() => setShowSettings(v => !v)} aria-expanded={showSettings}>
+          ⚙ Display settings
+        </button>
+        <p className="fine">Unofficial fan project. Not affiliated with Games Workshop or Middle-earth Enterprises.</p>
+      </footer>
       {showSettings && (
         <div className="lobby-settings">
           <SettingsPanel settings={settings} update={updateSettings} />
         </div>
       )}
-      <p className="fine">Unofficial fan project. Not affiliated with Games Workshop or Middle-earth Enterprises.</p>
     </SitePage>
   );
 }
@@ -348,6 +366,7 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
               onFightTap={setFightKey}
               sightFrom={sight && single ? single.id : undefined}
               sightRange={sight && single ? weaponOf(single, catalog)?.range : undefined}
+              showNames={settings.names}
             />
 
             <div className="tool-rail" role="toolbar" aria-label="Tools">
@@ -372,6 +391,16 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
               >
                 <span>👁</span>
                 <small>Sight</small>
+              </button>
+              <button
+                className={settings.names ? 'on' : ''}
+                onClick={() => updateSettings({ names: !settings.names })}
+                title="Show unit names under models"
+                aria-label="Unit names"
+                aria-pressed={settings.names}
+              >
+                <span>🏷</span>
+                <small>Names</small>
               </button>
               <button onClick={() => dispatch({ type: 'undo' })} disabled={!canUndo} title="Undo your last change (Ctrl+Z)" aria-label="Undo">
                 <span>↶</span>
