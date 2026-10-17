@@ -7,7 +7,7 @@ import { initialState, loadState, reduce } from '../src/shared/reducer.ts';
 import type { Account, Action, ClientMessage, GameState, Revert, Role, RoomSummary, Seat, ServerMessage } from '../src/shared/types.ts';
 import { DICE_REQUESTS, resolveRequest } from '../src/shared/resolve.ts';
 import { scenarioById } from '../src/shared/scenarios.ts';
-import { announceGame, discordEnabled } from './discord.ts';
+import { announceGame, discordEnabled, discordMember } from './discord.ts';
 import { saveResult, verifyToken } from './accounts.ts';
 import { gameWinner } from '../src/shared/status.ts';
 import { diffForUndo, mergeReverts, UNDOABLE } from '../src/shared/undo.ts';
@@ -303,6 +303,23 @@ const server = createServer((req, res) => {
     // Both values are public by design: the browser needs them to offer Discord sign-in.
     const config = { supabaseUrl: process.env.SUPABASE_URL ?? null, supabaseAnonKey: process.env.SUPABASE_ANON_KEY ?? null };
     res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(config));
+    return;
+  }
+  if (url.pathname === '/api/discord-member' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => {
+      body += chunk;
+      if (body.length > 4096) req.destroy();
+    });
+    req.on('end', () => {
+      let token = '';
+      try {
+        token = String(JSON.parse(body).token ?? '');
+      } catch {
+        // Not JSON: answered as unknown below.
+      }
+      void discordMember(token).then(out => res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(out)));
+    });
     return;
   }
   if (url.pathname === '/api/rooms') {
