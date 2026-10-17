@@ -17,3 +17,5 @@ services:
         sync: false
       - key: DISCORD_WEBHOOK_URL
         sync: false
+      - key: DISCORD_BOT_TOKEN
+        sync: false
