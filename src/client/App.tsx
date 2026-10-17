@@ -211,9 +211,11 @@ interface GameProps {
   practice?: Connection;
   /** Shown over the table, such as the current lesson. */
   overlay?: React.ReactNode;
+  /** In the training, whether the setup card shows before the battle starts (only lessons that use it). */
+  setupCard?: boolean;
 }
 
-export function Game({ room, settings, updateSettings, practice, overlay }: GameProps) {
+export function Game({ room, settings, updateSettings, practice, overlay, setupCard }: GameProps) {
   const roleKey = `role:${room}`;
   // Arriving to play the computer: you take player 1 and it takes player 2.
   const vsComputer = useMemo(() => !practice && new URLSearchParams(location.search).get('vs') === 'computer', []);
@@ -556,7 +558,7 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
             )}
           </div>
 
-          <CoachBar state={state} dispatch={dispatch} role={role} combats={fights} openTab={showTab} openFight={setFightKey} />
+          {(!practice || setupCard || state.flow.started) && <CoachBar state={state} dispatch={dispatch} role={role} combats={fights} openTab={showTab} openFight={setFightKey} />}
         </div>
 
         {fight && (
