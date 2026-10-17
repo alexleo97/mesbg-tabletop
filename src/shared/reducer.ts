@@ -325,7 +325,7 @@ function step(state: GameState, action: Action): GameState {
       const models = { ...state.models };
       for (const mv of action.moves) {
         const prev = mv && models[mv.id];
-        if (prev) models[prev.id] = { ...prev, x: num(mv.x, -24, 200, prev.x), y: num(mv.y, -24, 200, prev.y) };
+        if (prev && !prev.dead) models[prev.id] = { ...prev, x: num(mv.x, -24, 200, prev.x), y: num(mv.y, -24, 200, prev.y) };
       }
       return { ...state, models };
     }
