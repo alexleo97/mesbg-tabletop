@@ -118,7 +118,7 @@ export function RulesPanel({ state, dispatch, role, selected }: { state: GameSta
       {last && (
         <div className="rules-result">
           <ol className="log">
-            <RollRow r={last} state={state} />
+            <RollRow r={last} state={state} role={role} dispatch={dispatch} />
           </ol>
           {lastTable && <p className="table-result">{lastTable.results[tableRow(last.dice[0])]}</p>}
         </div>

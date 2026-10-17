@@ -5,7 +5,7 @@ import { extname, join, normalize, resolve } from 'node:path';
 import { WebSocket, WebSocketServer } from 'ws';
 import { initialState, loadState, MAX_DICE, reduce } from '../src/shared/reducer.ts';
 import type { Action, ClientMessage, GameState, Revert, Role, RoomSummary, Seat, ServerMessage } from '../src/shared/types.ts';
-import { cleanFight, cleanShot, resolveFight, resolveShot } from '../src/shared/fight.ts';
+import { cleanFight, cleanShot, resolveDuel, resolveShot, resolveStrikes } from '../src/shared/fight.ts';
 import { priorityChooser } from '../src/shared/flow.ts';
 import { scenarioById } from '../src/shared/scenarios.ts';
 import { announceGame, discordEnabled } from './discord.ts';
@@ -33,6 +33,8 @@ interface Room {
   undo: Record<Seat, UndoEntry[]>;
   /** Already posted to Discord as an open game (or decided not to). */
   announced?: boolean;
+  /** Nothing has happened here since the server started and there was no save, so a player's browser may restore its copy. */
+  blank: boolean;
 }
 
 interface UndoEntry {
@@ -53,14 +55,15 @@ function getRoom(id: string): Room {
   if (!room) {
     const file = join(DATA, `${id}.json`);
     let state = initialState();
-    if (existsSync(file)) {
+    const blank = !existsSync(file);
+    if (!blank) {
       try {
         state = loadState(JSON.parse(readFileSync(file, 'utf8')));
       } catch (err) {
         console.warn(`Could not read saved room ${id}:`, err);
       }
     }
-    room = { id, state, clients: new Set(), touched: Date.now(), undo: { p1: [], p2: [] } };
+    room = { id, state, clients: new Set(), touched: Date.now(), undo: { p1: [], p2: [] }, blank };
     rooms.set(id, room);
   }
   return room;
@@ -83,18 +86,33 @@ const broadcast = (room: Room, msg: ServerMessage) => {
 };
 
 /** Turns a client's request into the action everyone applies, or null if it isn't allowed. */
-function authorise(client: Client, action: Action): Action | null {
+function authorise(client: Client, action: Action, state: GameState): Action | null {
   if (!action || typeof action !== 'object' || typeof action.type !== 'string') return null;
   if (client.role === 'spectator') return null;
+  const mine = (id: unknown) => typeof id === 'string' && state.models[id]?.owner === client.role;
   switch (action.type) {
     case 'rolled':
     case 'revert':
     case 'undo':
     case 'fight':
+    case 'strikes':
     case 'shoot':
     case 'rollPriority':
     case 'priorityRolled':
+    case 'rollFate':
+    case 'fateRolled':
       return null; // only the server produces dice results and undo changes
+    case 'declareHeroic':
+      return mine(action.model) ? action : null;
+    case 'takeWound':
+      return mine(action.id) ? action : null;
+    case 'useMight': {
+      // Only on your own hero's roll (in a fight, either player may have rolled it).
+      const r = state.log.find(x => x.id === action.roll);
+      return r && mine(r.model) ? action : null;
+    }
+    case 'passHeroic':
+      return action.seat === client.role ? action : null;
     case 'roll': {
       const count = Math.max(1, Math.min(MAX_DICE, Math.round(Number(action.count) || 1)));
       const target = action.target === undefined ? undefined : Math.max(1, Math.min(7, Math.round(Number(action.target) || 4)));
@@ -110,6 +128,7 @@ function authorise(client: Client, action: Action): Action | null {
           target,
           ...(then && target ? { then, follow: dice.filter(d => d >= target).map(() => randomInt(1, 7)) } : {}),
           ...(action.sum !== undefined && target === undefined ? { sum: Math.max(2, Math.min(12, Math.round(Number(action.sum)) || 7)) } : {}),
+          ...(mine(action.model) ? { model: action.model } : {}),
           at: Date.now(),
         },
       };
@@ -158,6 +177,7 @@ function scheduleAnnouncement(room: Room) {
 }
 
 function apply(room: Room, action: Action) {
+  room.blank = false;
   room.state = reduce(room.state, action);
   broadcast(room, { type: 'action', action });
   scheduleSave(room);
@@ -241,7 +261,7 @@ wss.on('connection', (ws, req) => {
   const room = getRoom(roomId);
   const client: Client = { ws, role: 'spectator', tokens: 120 };
   room.clients.add(client);
-  send(ws, { type: 'snapshot', state: room.state, players: players(room) });
+  send(ws, { type: 'snapshot', state: room.state, players: players(room), blank: room.blank });
 
   ws.on('message', data => {
     // Simple rate limit: refills 60 messages per second, bursts up to 120.
@@ -260,6 +280,13 @@ wss.on('connection', (ws, req) => {
       if (client.role !== 'spectator') sendUndoDepth(room, client.role);
       return;
     }
+    if (msg.type === 'restore') {
+      // After a restart wipes the server, the first player back brings the game with them.
+      if (!room.blank || client.role === 'spectator') return;
+      room.undo = { p1: [], p2: [] };
+      apply(room, { type: 'loadState', state: { ...loadState(msg.state), log: [] } });
+      return;
+    }
     if (msg.type !== 'action') return;
     if (msg.action?.type === 'undo') {
       if (client.role === 'spectator') return;
@@ -272,8 +299,24 @@ wss.on('connection', (ws, req) => {
       const req = client.role === 'spectator' ? null : cleanFight(msg.action.fight);
       if (!req) return;
       const group = `f-${Date.now().toString(36)}-${randomInt(1e9).toString(36)}`;
-      for (const roll of resolveFight(req, () => randomInt(1, 7), client.role, group).rolls) apply(room, { type: 'rolled', roll });
+      for (const roll of resolveDuel(req, () => randomInt(1, 7), client.role, group)) apply(room, { type: 'rolled', roll });
+      return;
+    }
+    if (msg.action?.type === 'strikes') {
+      const req = client.role === 'spectator' ? null : cleanFight(msg.action.fight);
+      const group = String(msg.action.group ?? '');
+      const rolls = room.state.log.filter(r => r.group === group);
+      // Strikes follow a duel that's still in the log, once.
+      if (!req || !group.startsWith('f-') || !rolls.some(r => r.side !== undefined) || rolls.some(r => r.against || r.note || r.label.startsWith('Roll-off'))) return;
+      for (const roll of resolveStrikes(req, rolls, () => randomInt(1, 7), client.role, group).rolls) apply(room, { type: 'rolled', roll });
       if (req.combat) record(room, client.role, { type: 'resolveCombat', key: req.combat });
+      return;
+    }
+    if (msg.action?.type === 'rollFate') {
+      const m = room.state.models[String(msg.action.id)];
+      if (!m || m.owner !== client.role || !m.pending || m.fate < 1) return;
+      const roll = { id: `r-${Date.now().toString(36)}-${randomInt(1e9).toString(36)}`, by: client.role, label: `Fate roll: ${m.name} (4+ saves a wound)`, dice: [randomInt(1, 7)], target: 4, model: m.id, at: Date.now() };
+      apply(room, { type: 'fateRolled', id: m.id, roll });
       return;
     }
     if (msg.action?.type === 'shoot') {
@@ -296,7 +339,7 @@ wss.on('connection', (ws, req) => {
       apply(room, { type: 'priorityRolled', roll, chooser });
       return;
     }
-    const action = authorise(client, msg.action);
+    const action = authorise(client, msg.action, room.state);
     if (!action) return;
     record(room, client.role, action);
     if (action.type === 'loadState') room.undo = { p1: [], p2: [] };

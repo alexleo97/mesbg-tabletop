@@ -42,11 +42,11 @@ export function MagicPanel({ state, dispatch, role, selected }: { state: GameSta
     if (one && one.will > 0) dispatch({ type: 'updateModel', id: one.id, patch: { will: Math.max(0, one.will - n) } });
   };
   const cast = () => {
-    dispatch({ type: 'roll', count: castWill, target: cv, label: `Cast ${power} (${cv}+)${one ? ` by ${one.name}` : ''}` });
+    dispatch({ type: 'roll', count: castWill, target: cv, label: `Cast ${power} (${cv}+)${one ? ` by ${one.name}` : ''}`, ...(one ? { model: one.id } : {}) });
     spend(castWill);
   };
   const resist = () => {
-    dispatch({ type: 'roll', count: resistWill, target: castBest, label: `Resist ${lastCast?.label.slice(5).replace(/ \(\d\+\).*/, '')} (${castBest}+)${one ? ` by ${one.name}` : ''}` });
+    dispatch({ type: 'roll', count: resistWill, target: castBest, label: `Resist ${lastCast?.label.slice(5).replace(/ \(\d\+\).*/, '')} (${castBest}+)${one ? ` by ${one.name}` : ''}`, ...(one ? { model: one.id } : {}) });
     spend(resistWill);
   };
 
@@ -83,8 +83,8 @@ export function MagicPanel({ state, dispatch, role, selected }: { state: GameSta
       {lastCast && (
         <div className="rules-result">
           <ol className="log">
-            <RollRow r={lastCast} state={state} />
-            {lastResist && <RollRow r={lastResist} state={state} />}
+            <RollRow r={lastCast} state={state} role={role} dispatch={dispatch} />
+            {lastResist && <RollRow r={lastResist} state={state} role={role} dispatch={dispatch} />}
           </ol>
           <p className="table-result">
             {!castOk

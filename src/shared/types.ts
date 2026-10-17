@@ -35,6 +35,10 @@ export interface Model {
   /** Unit id in the bundled MESBG data, used for the stat card and photo. */
   profileId?: string;
   options?: string[];
+  /** Wounds this hero has suffered but not yet taken, while they decide on Fate rolls. */
+  pending?: number;
+  /** The hero's last failed Fate roll for the current wound, which Might could still turn into a save. */
+  fateRoll?: string;
 }
 
 export const TERRAIN_KINDS = ['wood', 'rock', 'building', 'water', 'hill', 'wall', 'ruin', 'cliff', 'field', 'objective'] as const;
@@ -54,6 +58,8 @@ export interface Terrain {
   h: number;
   rot: number;
   locked: boolean;
+  /** Halves movement inside it. Unset means the kind's default (woods, water and ruins are difficult). */
+  difficult?: boolean;
 }
 
 export interface DiceRoll {
@@ -75,6 +81,13 @@ export interface DiceRoll {
   against?: string;
   /** A one-line summary shown under the roll, such as who won a fight. */
   note?: string;
+  /** The model the roll was made for, so its hero can spend Might on it. */
+  model?: string;
+  /** For duel rolls: the Fight value used and which side (0 is player 1) the model fought on. */
+  f?: number;
+  side?: 0 | 1;
+  /** Might points spent raising these dice. */
+  might?: number;
   at: number;
 }
 
@@ -113,6 +126,19 @@ export interface Flow {
   done: Seat[];
   /** Fights resolved this turn, by combat key. */
   resolved: string[];
+  /** Heroic actions declared this turn. */
+  heroics: Heroic[];
+  /** Players who have finished declaring heroic actions this phase. */
+  passed: Seat[];
+  /** Who last declared or passed this phase, so the other player goes next. */
+  lastHeroic: Seat | null;
+}
+
+export interface Heroic {
+  model: string;
+  /** The heroic action's name, from heroics.ts. */
+  action: string;
+  phase: Phase;
 }
 
 export type Action =
@@ -138,15 +164,30 @@ export type Action =
   /** A player has finished activating their models for this phase. */
   | { type: 'endActivation'; seat: Seat }
   | { type: 'resolveCombat'; key: string }
+  /** A hero spends a Might point to declare a heroic action this phase. */
+  | { type: 'declareHeroic'; model: string; action: string }
+  /** A player has no more heroic actions to declare this phase. */
+  | { type: 'passHeroic'; seat: Seat }
+  /** A hero spends a Might point to raise one of its own dice by 1. `follow` picks the follow-up dice of a 6/4+ roll. */
+  | { type: 'useMight'; roll: string; die: number; follow?: boolean }
+  /** Wounds dealt to a model. A hero with Fate holds them as pending until its player decides. */
+  | { type: 'wound'; id: string; count: number }
+  /** Request from a client: the server rolls a Fate point for a hero's pending wound. */
+  | { type: 'rollFate'; id: string }
+  | { type: 'fateRolled'; id: string; roll: DiceRoll }
+  /** A hero takes its next pending wound (or all of them) without more Fate rolls. */
+  | { type: 'takeWound'; id: string; all?: boolean }
+  /** Request from a client: the server rolls the winner's strikes for a duel already rolled in `group`. */
+  | { type: 'strikes'; fight: FightRequest; group: string }
   /** Request from a client: the server rolls to hit, In the Way and to wound, then sends `rolled`. */
   | { type: 'shoot'; shot: ShotRequest }
   | { type: 'setBoard'; w: number; h: number; mat?: Mat }
   /** Replaces the mat and all terrain at once, e.g. when loading a starter board. Models stay. */
   | { type: 'setScenery'; w: number; h: number; mat: Mat; terrain: Terrain[] }
   /** Request from a client; the server turns it into a `rolled` action with real dice. */
-  | { type: 'roll'; count: number; target?: number; then?: number; sum?: number; label: string }
+  | { type: 'roll'; count: number; target?: number; then?: number; sum?: number; label: string; model?: string }
   | { type: 'rolled'; roll: DiceRoll }
-  /** Request from a client: the server rolls the duel and strikes, then sends the results as `rolled`. */
+  /** Request from a client: the server rolls the duel (and any Heroic Strike), then sends the results as `rolled`. */
   | { type: 'fight'; fight: FightRequest }
   /** Request from a client to take back its own last change. */
   | { type: 'undo' }
@@ -173,10 +214,15 @@ export interface Revert {
   fields?: Partial<Pick<GameState, 'board' | 'turn' | 'phase' | 'priority' | 'names' | 'scenario' | 'vp' | 'listed' | 'flow'>>;
 }
 
-export type ClientMessage = { type: 'action'; action: Action } | { type: 'hello'; role: Role };
+export type ClientMessage =
+  | { type: 'action'; action: Action }
+  | { type: 'hello'; role: Role }
+  /** A player's browser offering its saved copy of a game the server has lost. */
+  | { type: 'restore'; state: GameState };
 
 export type ServerMessage =
-  | { type: 'snapshot'; state: GameState; players: Role[] }
+  /** `blank`: the server has nothing for this room yet, so a player may restore it. */
+  | { type: 'snapshot'; state: GameState; players: Role[]; blank?: boolean }
   | { type: 'action'; action: Action }
   | { type: 'presence'; players: Role[] }
   /** How many of your own changes the server can take back. */

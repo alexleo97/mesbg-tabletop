@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { activeSeat, other, type Combat } from '../shared/flow.ts';
+import { canDeclare, heroicInfo, heroicsSettled, heroicTurn, HEROICS, orderRollLabel, orderRollNeeded, phaseHeroics } from '../shared/heroics.ts';
+import { RollRow } from './Panels.tsx';
 import { scenarioById, vpTotal } from '../shared/scenarios.ts';
 import { armyStatus, endCheck } from '../shared/status.ts';
-import { PHASES, type Action, type GameState, type Role, type Seat } from '../shared/types.ts';
+import { PHASES, type Action, type GameState, type Model, type Role, type Seat } from '../shared/types.ts';
 
 const PHASE_LABEL: Record<(typeof PHASES)[number], string> = { priority: 'Priority', move: 'Move', shoot: 'Shoot', fight: 'Fight', end: 'End' };
 
@@ -15,8 +17,134 @@ interface Props {
   openFight: (key: string) => void;
 }
 
+type Dispatch = (a: Action) => void;
+
+/** Declaring heroic actions at the start of the Move, Shoot and Fight phases, taking turns from the player without Priority. */
+function HeroicStep({ state, dispatch, role, name }: { state: GameState; dispatch: Dispatch; role: Role; name: (s: Seat) => string }) {
+  const me = role === 'spectator' ? null : role;
+  const heroes = me ? canDeclare(state, me) : [];
+  const actions = HEROICS.filter(h => h.phase === state.phase);
+  const [hero, setHero] = useState('');
+  const [action, setAction] = useState('');
+  const turn = heroicTurn(state);
+  const settled = heroicsSettled(state);
+  const declaredNow = phaseHeroics(state);
+  const pickedHero = heroes.find(m => m.id === hero) ?? heroes[0];
+  const pickedAction = actions.find(a => a.name === action) ?? actions[0];
+  const orderLabel = orderRollLabel(state);
+  const orderRoll = [...state.log].reverse().find(r => r.label === orderLabel);
+
+  return (
+    <div className="heroic-step">
+      {declaredNow.length > 0 && (
+        <ul className="heroic-list">
+          {declaredNow.map(h => {
+            const m = state.models[h.model];
+            return (
+              <li key={h.model} className={m?.owner} title={heroicInfo(h.action)?.tip}>
+                ⚡ <b>{m?.name ?? 'Hero'}</b> {h.action}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {!settled && turn && (
+        <>
+          <p>
+            Heroic actions: <b className={turn}>{turn === role ? 'you' : name(turn)}</b> {turn === role ? 'can' : 'can now'} declare one (1 Might) or pass.
+          </p>
+          {me === turn && pickedHero && (
+            <>
+              <div className="row wrap heroic-pick">
+                <select value={pickedHero.id} onChange={e => setHero(e.target.value)} aria-label="Hero">
+                  {heroes.map((m: Model) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} ({m.might} Might)
+                    </option>
+                  ))}
+                </select>
+                <select value={pickedAction.name} onChange={e => setAction(e.target.value)} aria-label="Heroic action">
+                  {actions.map(a => (
+                    <option key={a.name} value={a.name}>
+                      {a.name}
+                      {a.universal ? '' : ' (if on its profile)'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <p className="muted small">{pickedAction.tip}</p>
+              <div className="row wrap">
+                <button className="primary" onClick={() => dispatch({ type: 'declareHeroic', model: pickedHero.id, action: pickedAction.name })}>
+                  Declare
+                </button>
+                <button onClick={() => dispatch({ type: 'passHeroic', seat: me })}>{declaredNow.some(h => state.models[h.model]?.owner === me) ? 'No more' : 'Pass'}</button>
+              </div>
+            </>
+          )}
+        </>
+      )}
+      {settled && orderRollNeeded(state) && (
+        <p>
+          Both sides declared heroic actions that go first.{' '}
+          {orderRoll ? (
+            <>
+              Rolled a <b>{orderRoll.dice[0]}</b>: the <b>{orderRoll.dice[0] <= 3 ? 'Evil' : 'Good'}</b> player picks a hero to go first, then the players alternate.
+            </>
+          ) : state.priority === role ? (
+            <button className="primary" onClick={() => dispatch({ type: 'roll', count: 1, label: orderLabel })}>
+              Roll for who goes first
+            </button>
+          ) : (
+            `${name(state.priority ?? 'p1')} rolls a D6: 1-3 the Evil player's hero goes first, 4+ the Good player's.`
+          )}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Heroes with wounds waiting on Fate rolls. */
+function FateStep({ state, dispatch, role, name }: { state: GameState; dispatch: Dispatch; role: Role; name: (s: Seat) => string }) {
+  const waiting = Object.values(state.models).filter(m => m.pending && !m.dead);
+  if (!waiting.length) return null;
+  return (
+    <div className="fate-step">
+      {waiting.map(m => {
+        const last = m.fateRoll ? state.log.find(r => r.id === m.fateRoll) : undefined;
+        const n = m.pending!;
+        return (
+          <div key={m.id} className={`fate ${m.owner}`}>
+            <p>
+              <b>{m.name}</b> has {n} wound{n === 1 ? '' : 's'} to resolve and {m.fate} Fate left. Each Fate point is a D6: 4+ saves one wound.
+            </p>
+            {last && (
+              <ol className="log">
+                <RollRow r={last} state={state} role={role} dispatch={dispatch} />
+              </ol>
+            )}
+            {m.owner === role ? (
+              <div className="row wrap">
+                {m.fate > 0 && (
+                  <button className="primary" onClick={() => dispatch({ type: 'rollFate', id: m.id })}>
+                    Roll Fate
+                  </button>
+                )}
+                <button onClick={() => dispatch({ type: 'takeWound', id: m.id })}>Take {n === 1 ? 'the wound' : 'one wound'}</button>
+                {n > 1 && <button onClick={() => dispatch({ type: 'takeWound', id: m.id, all: true })}>Take all {n}</button>}
+              </div>
+            ) : (
+              <p className="muted">Waiting for {name(m.owner)} to roll Fate.</p>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /** The turn guide: says what happens now, whose go it is, and offers the next step as one button. */
-export function CoachBar({ state, dispatch, role, combats, openTab, openFight }: Props) {
+export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, openFight }: Props) {
+  let combats = allCombats;
   const [small, setSmall] = useState(false);
   const name = (s: Seat) => state.names[s] || (s === 'p1' ? 'Player 1' : 'Player 2');
   const Who = ({ s, mid }: { s: Seat; mid?: boolean }) => <b className={s}>{s === role ? (mid ? 'you' : 'You') : name(s)}</b>;
@@ -110,6 +238,9 @@ export function CoachBar({ state, dispatch, role, combats, openTab, openFight }:
           ))}
         </>
       );
+  } else if ((state.phase === 'move' || state.phase === 'shoot' || state.phase === 'fight') && !heroicsSettled(state)) {
+    title = `${PHASE_LABEL[state.phase]} · heroic actions`;
+    body = <HeroicStep state={state} dispatch={dispatch} role={role} name={name} />;
   } else if (state.phase === 'move' || state.phase === 'shoot') {
     const act = activeSeat(state);
     const verb = state.phase === 'move' ? 'moving' : 'shooting';
@@ -117,10 +248,11 @@ export function CoachBar({ state, dispatch, role, combats, openTab, openFight }:
     const broken = act && armyStatus(state, act).broken;
     body = act ? (
       <>
+        <HeroicStep state={state} dispatch={dispatch} role={role} name={name} />
         <p>
           {state.phase === 'move' ? (
             <>
-              Heroic actions are declared first. Then <Who s={act} mid /> {act === role ? 'move' : 'moves'} each model up to its Move. Enemy control zones (1") can only be entered to charge.
+              <Who s={act} /> {act === role ? 'move' : 'moves'} each model up to its Move. Enemy control zones (1") can only be entered to charge.
             </>
           ) : (
             <>
@@ -144,6 +276,10 @@ export function CoachBar({ state, dispatch, role, combats, openTab, openFight }:
     ) : null;
   } else if (state.phase === 'fight') {
     title = `Fight · ${name(state.priority ?? 'p1')} picks the order`;
+    // Fights with a Heroic Combat go first.
+    const heroicCombat = new Set(phaseHeroics(state).filter(h => h.action === 'Heroic Combat').map(h => h.model));
+    const isHeroic = (c: Combat) => [...c.p1, ...c.p2].some(id => heroicCombat.has(id));
+    combats = [...combats].sort((a, b) => Number(isHeroic(b)) - Number(isHeroic(a)));
     const open = combats.filter(c => !flow.resolved.includes(c.key));
     const label = (c: Combat) => {
       const n = (ids: string[]) => (ids.length === 1 ? state.models[ids[0]]?.name : `${state.models[ids[0]]?.name} +${ids.length - 1}`);
@@ -151,12 +287,13 @@ export function CoachBar({ state, dispatch, role, combats, openTab, openFight }:
     };
     body = (
       <>
+        <HeroicStep state={state} dispatch={dispatch} role={role} name={name} />
         {combats.length === 0 && <p>No models are in base contact, so there are no fights this turn.</p>}
         {combats.length > 0 && (
           <div className="fight-list">
             {combats.map(c => (
               <button key={c.key} className={flow.resolved.includes(c.key) ? 'done' : ''} onClick={() => openFight(c.key)}>
-                {flow.resolved.includes(c.key) ? '✓ ' : '⚔ '}
+                {flow.resolved.includes(c.key) ? '✓ ' : isHeroic(c) ? '⚡ ' : '⚔ '}
                 {label(c)}
               </button>
             ))}
@@ -227,7 +364,12 @@ export function CoachBar({ state, dispatch, role, combats, openTab, openFight }:
           {small ? '▴' : '▾'}
         </button>
       </div>
-      {!small && <div className="coach-body">{body}</div>}
+      {!small && (
+        <div className="coach-body">
+          {flow.started && <FateStep state={state} dispatch={dispatch} role={role} name={name} />}
+          {body}
+        </div>
+      )}
     </section>
   );
 }
