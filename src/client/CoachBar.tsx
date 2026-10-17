@@ -242,7 +242,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
           {body}
           {broken.map(s => (
             <p key={s} className="warn">
-              <Who s={s} /> {s === role ? 'are' : 'is'} Broken: each model takes a Courage test when it activates and flees if it fails.
+              <Who s={s} /> {s === role ? 'are' : 'is'} Broken: as its turn to move starts, every model tests its Courage and those that fail flee. The dice are rolled for you.
             </p>
           ))}
         </>
@@ -271,7 +271,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
         </p>
         {broken && (
           <p className="warn">
-            <Who s={act} /> {act === role ? 'are' : 'is'} Broken: as each model activates, tap it and roll Courage on its card. A model that fails flees.
+            <Who s={act} /> {act === role ? 'are' : 'is'} Broken: Courage tests were rolled as this move began, and models that failed have fled. See the log.
           </p>
         )}
         {me === act ? (

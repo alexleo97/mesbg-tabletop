@@ -46,6 +46,7 @@ function goTo(state: GameState, phase: Phase, turn: number): GameState {
       done: [],
       resolved: newTurn ? [] : state.flow.resolved,
       heroics: newTurn ? [] : state.flow.heroics,
+      ...(newTurn ? { courage: {}, braved: [] } : {}),
       passed: [],
       lastHeroic: null,
       starts: {},
@@ -327,6 +328,19 @@ function step(state: GameState, action: Action): GameState {
         if (prev) models[prev.id] = { ...prev, x: num(mv.x, -24, 200, prev.x), y: num(mv.y, -24, 200, prev.y) };
       }
       return { ...state, models };
+    }
+    case 'courageTaken': {
+      if (!action.results || typeof action.results !== 'object') return state;
+      const models = { ...state.models };
+      const courage = { ...state.flow.courage };
+      for (const [id, pass] of Object.entries(action.results)) {
+        if (!models[id]) continue;
+        courage[id] = pass === true;
+        // A model of a Broken army that fails flees the battle.
+        if (!pass && action.broken) models[id] = { ...models[id], dead: true, wounds: 0 };
+      }
+      const braved = action.broken && isSeat(action.broken) ? [...new Set([...(state.flow.braved ?? []), action.broken])] : state.flow.braved;
+      return { ...state, models, flow: { ...state.flow, courage, ...(braved ? { braved } : {}) } };
     }
     case 'updateModel': {
       const prev = state.models[action.id];
@@ -688,6 +702,8 @@ export function loadState(raw: unknown): GameState {
         lastHeroic: isSeat(f.lastHeroic) ? f.lastHeroic : null,
         ...(Number.isFinite(f.startedAt) ? { startedAt: Number(f.startedAt) } : {}),
         ...(f.starts ? { starts: cleanStarts(f.starts) } : {}),
+        ...(f.courage && typeof f.courage === 'object' ? { courage: Object.fromEntries(Object.entries(f.courage).slice(0, 400).map(([k, v]) => [k.slice(0, 80), v === true])) } : {}),
+        ...(f.braved ? { braved: seats(f.braved) } : {}),
         ...(f.startFate && typeof f.startFate === 'object' ? { startFate: cleanCounts(f.startFate, 9) } : {}),
         ...(f.control && typeof f.control === 'object'
           ? { control: Object.fromEntries(Object.entries(f.control).slice(0, 50).map(([k, v]) => [k.slice(0, 80), isSeat(v) ? v : null])) }

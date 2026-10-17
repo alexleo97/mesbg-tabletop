@@ -7,6 +7,7 @@ import { initialState, loadState, reduce } from '../src/shared/reducer.ts';
 import type { Account, Action, ClientMessage, GameState, Revert, Role, RoomSummary, Seat, ServerMessage } from '../src/shared/types.ts';
 import { DICE_REQUESTS, resolveRequest } from '../src/shared/resolve.ts';
 import { phaseAllows } from '../src/shared/heroics.ts';
+import { brokenSideToTest, brokenTests, terrorAhead, terrorTest } from '../src/shared/courage.ts';
 import { cleanMark } from '../src/shared/marks.ts';
 import { scenarioById } from '../src/shared/scenarios.ts';
 import { announceGame, closeVoiceRoom, discordEnabled, discordMember, openVoiceRoom, sweepVoiceRooms, voiceEnabled } from './discord.ts';
@@ -246,6 +247,7 @@ function apply(room: Room, action: Action) {
       if (room.state !== before) broadcast(room, { type: 'action', action: { type: 'gameOver', winner } });
     }
   }
+  rollBrokenTests(room);
   scheduleBot(room);
   updateVoice(room);
   const r = room.state.result;
@@ -294,6 +296,41 @@ function closeVoice(room: Room) {
   void closeVoiceRoom(id);
 }
 
+const serverDice = () => randomInt(1, 7);
+const serverId = () => `${Date.now().toString(36)}-${randomInt(1e9).toString(36)}`;
+
+/** As a Broken side starts to move, rolls the Courage tests for its whole army. */
+let rollingCourage = false;
+function rollBrokenTests(room: Room) {
+  const seat = !rollingCourage && brokenSideToTest(room.state);
+  if (!seat) return;
+  rollingCourage = true;
+  try {
+    for (const a of brokenTests(room.state, seat, CATALOG, serverDice, serverId)) apply(room, a);
+  } finally {
+    rollingCourage = false;
+  }
+}
+
+/**
+ * Rolls Courage for any model this move would bring into contact with a terrifying enemy, if it hasn't tested this
+ * turn. Models that fail stay where they are; the rest of the move goes ahead.
+ */
+function testTerror(room: Room, action: Action): Action | null {
+  if (action.type !== 'moveModels' || !Array.isArray(action.moves)) return action;
+  const moves = action.moves.filter(mv => {
+    const m = room.state.models[mv?.id];
+    // Judged on where the model would really end up, after its Move limit.
+    const to = m && reduce(room.state, { type: 'moveModels', moves: [mv] }).models[m.id];
+    const enemy = m && to && terrorAhead(room.state, m, to, CATALOG);
+    if (!m || !enemy) return true;
+    const test = terrorTest(m, enemy, CATALOG, serverDice, serverId);
+    for (const a of test.actions) apply(room, a);
+    return test.pass;
+  });
+  return moves.length ? { ...action, moves } : null;
+}
+
 const BOT_PAUSE = 500;
 /** The Palantír speed setting shortens every pause between the computer's steps. */
 const BOT_PACE = { normal: 1, fast: 0.35, instant: 0.05 };
@@ -333,7 +370,10 @@ function runBot(room: Room) {
     if (action && DICE_REQUESTS.has(action.type)) {
       const out = resolveRequest(room.state, seat, action, () => randomInt(1, 7), () => `${Date.now().toString(36)}-${randomInt(1e9).toString(36)}`);
       for (const a of [...(out?.apply ?? []), ...(out?.record ? [out.record] : [])]) apply(room, a);
-    } else if (action) apply(room, action);
+    } else if (action) {
+      const moved = testTerror(room, action);
+      if (moved) apply(room, moved);
+    }
   } finally {
     bot.busy = false;
   }
@@ -581,8 +621,10 @@ wss.on('connection', (ws, req) => {
       if (out.record) record(room, client.role, out.record);
       return;
     }
-    const action = authorise(client, msg.action, room.state);
-    if (!action || (client.role !== 'spectator' && !phaseAllows(room.state, client.role, action))) return;
+    const allowed = authorise(client, msg.action, room.state);
+    if (!allowed || (client.role !== 'spectator' && !phaseAllows(room.state, client.role, allowed))) return;
+    const action = testTerror(room, allowed);
+    if (!action) return;
     // The computer can't take a seat someone is sitting in.
     if (action.type === 'setBot' && action.seat && [...room.clients].some(c => c.role === action.seat)) return;
     record(room, client.role, action);
