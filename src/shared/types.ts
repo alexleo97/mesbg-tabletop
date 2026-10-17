@@ -109,6 +109,8 @@ export interface GameState {
   vp: Record<Seat, Record<string, number>>;
   /** Shown in the home screen's list of open games. */
   listed: boolean;
+  /** Only players with the invite link may take a seat; anyone can still watch. */
+  private?: boolean;
   flow: Flow;
   /** Signed-in players in each seat, set by the server once it has checked their sign-in. */
   accounts?: Partial<Record<Seat, Account>>;
@@ -178,6 +180,8 @@ export type Action =
   | { type: 'setScenario'; id: string | null }
   | { type: 'setVP'; seat: Seat; key: string; value: number }
   | { type: 'setListed'; listed: boolean }
+  /** Sent by the server only, when a player makes the game private or open again. */
+  | { type: 'setPrivate'; private: boolean }
   /** `at`: when the server started it, which tells one game in a room from the next. */
   | { type: 'startGame'; at?: number }
   /** Request from a client; the server rolls off and sends `priorityRolled`. */
@@ -251,9 +255,12 @@ export interface Revert {
 
 export type ClientMessage =
   | { type: 'action'; action: Action }
-  | { type: 'hello'; role: Role }
+  /** `invite`: the private game's invite code, if this browser has one. */
+  | { type: 'hello'; role: Role; invite?: string }
+  /** A seated player making the game invite-only, or open to anyone again. */
+  | { type: 'privacy'; private: boolean }
   /** A player's browser offering its saved copy of a game the server has lost. */
-  | { type: 'restore'; state: GameState }
+  | { type: 'restore'; state: GameState; invite?: string }
   /** A signed-in player's sign-in token, so their seat counts towards their stats. */
   | { type: 'identify'; token: string | null };
 
@@ -264,4 +271,8 @@ export type ServerMessage =
   | { type: 'presence'; players: Role[] }
   /** How many of your own changes the server can take back. */
   | { type: 'undo'; count: number }
-  | { type: 'error'; message: string };
+  | { type: 'error'; message: string }
+  /** The private game's invite code, sent only to seated players (null once it's open again). */
+  | { type: 'invite'; code: string | null }
+  /** The seat asked for is invite-only, so you're watching instead. */
+  | { type: 'seatRefused'; message: string };

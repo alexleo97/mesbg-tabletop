@@ -350,7 +350,9 @@ export function reduce(state: GameState, action: Action): GameState {
       return { ...state, vp: { ...state.vp, [action.seat]: tally } };
     }
     case 'setListed':
-      return { ...state, listed: action.listed !== false };
+      return { ...state, listed: action.listed !== false && !state.private };
+    case 'setPrivate':
+      return action.private ? { ...state, private: true, listed: false } : { ...state, private: undefined };
     case 'setName':
       if (!isSeat(action.seat)) return state;
       return { ...state, names: { ...state.names, [action.seat]: str(action.name, 40) } };
@@ -471,6 +473,7 @@ export function loadState(raw: unknown): GameState {
     for (const [key, value] of Object.entries(o.vp?.[seat] ?? {}).slice(0, 40)) out = reduce(out, { type: 'setVP', seat, key, value: value as number });
   }
   if (o.listed === false) out = { ...out, listed: false };
+  if (o.private === true) out = { ...out, private: true, listed: false };
   if (o.flow && typeof o.flow === 'object') {
     const f = o.flow as Partial<Flow>;
     const seats = (v: unknown) => (Array.isArray(v) ? [...new Set(v.filter(isSeat))] : []);
