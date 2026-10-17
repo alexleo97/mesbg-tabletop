@@ -7,6 +7,7 @@ import { heroicInfo, phaseAllows } from '../shared/heroics.ts';
 import { carriedBy, markerActions, OBJECT_NAMES } from '../shared/objects.ts';
 import { groundAt, inTheWay, sightTo } from '../shared/sight.ts';
 import RULES from '../data/special-rules.json';
+import { CastBox } from './MagicPanel.tsx';
 import { RollRow } from './Panels.tsx';
 import { useDraggable } from './useDraggable.tsx';
 import { distanceBetween, formatInches } from '../shared/geometry.ts';
@@ -233,6 +234,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
         )
       )}
       {action}
+      {mine && state.phase === 'move' && <CastBox state={state} dispatch={dispatch} role={role} model={m} />}
       {carried.length > 0 && <p className="muted carrying">Carrying {carried.map(t => `the ${OBJECT_NAMES[t.object!]}`).join(' and ')}.</p>}
       {mine && markers.length > 0 && (
         <div className="row wrap marker-actions">
@@ -266,7 +268,6 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
         {mine && (
           <button onClick={() => dispatch({ type: 'roll', count: 2, label: `Courage test: ${m.name}`, model: m.id, ...(stats?.C ? { sum: stats.C } : {}) })}>Courage</button>
         )}
-        {mine && m.will > 0 && !!(m.profileId && catalog?.units[m.profileId]?.powers?.length) && <button onClick={() => openTab('rules')}>Cast a power</button>}
         {mine && (
           <button onClick={() => patch(m.wounds > 0 ? { wounds: 0, dead: true } : { dead: true })} title="Move to the casualty pile">
             Slain

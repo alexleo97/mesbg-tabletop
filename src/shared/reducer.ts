@@ -1,6 +1,7 @@
 import { bookBase, round } from './bases.ts';
 import { holdInZones } from './deployment.ts';
 import { heroicInfo } from './heroics.ts';
+import { pendingSpell } from './magic.ts';
 import { limitMove, moveAllowance, movedTooFar, moveStart } from './movement.ts';
 import { canPickUp, markerUpkeep, syncCarried, touching, canEscape } from './objects.ts';
 import { endPhaseUpkeep } from './scoring.ts';
@@ -49,7 +50,7 @@ function goTo(state: GameState, phase: Phase, turn: number): GameState {
       done: [],
       resolved: newTurn ? [] : state.flow.resolved,
       heroics: newTurn ? [] : state.flow.heroics,
-      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [] } : {}),
+      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], cast: [], spell: undefined } : {}),
       passed: [],
       lastHeroic: null,
       starts: {},
@@ -261,6 +262,15 @@ function cleanRoll(r: unknown): DiceRoll | null {
   };
 }
 
+/** A cast that Might has just lifted to its casting value now waits on its target, or takes effect if it can't be resisted. */
+function afterMight(state: GameState, rollId: string): GameState {
+  const p = pendingSpell(state);
+  if (!p || p.roll !== rollId || !p.cast) return state;
+  const resistable = p.target.owner !== p.caster.owner && p.target.will > 0;
+  const note = resistable ? `Cast on a ${p.best}. ${p.target.name} may resist with Will, needing a ${p.best} or more.` : 'The power takes effect.';
+  return { ...state, log: state.log.map(r => (r.id === rollId ? { ...r, note } : r)), flow: { ...state.flow, spell: resistable ? state.flow.spell : undefined } };
+}
+
 /** Takes wounds off a model, removing it as a casualty when none are left. */
 function takeWounds(m: Model, n: number): Model {
   const wounds = Math.max(0, m.wounds - n);
@@ -459,6 +469,22 @@ function step(state: GameState, action: Action): GameState {
     case 'passHeroic':
       if (!isSeat(action.seat) || state.flow.passed.includes(action.seat)) return state;
       return { ...state, flow: { ...state.flow, passed: [...state.flow.passed, action.seat], lastHeroic: action.seat } };
+    case 'spendWill': {
+      const m = state.models[action.id];
+      const n = int(action.count, 0, 9, 0);
+      return m && n ? { ...state, models: { ...state.models, [m.id]: { ...m, will: Math.max(0, m.will - n) } } } : state;
+    }
+    case 'spellPending': {
+      const s = action.spell;
+      if (!s) return { ...state, flow: { ...state.flow, spell: undefined } };
+      if (!state.models[s.caster] || !state.models[s.target]) return state;
+      return { ...state, flow: { ...state.flow, spell: { roll: id(s.roll), caster: id(s.caster), target: id(s.target), power: str(s.power, 60), cv: int(s.cv, 1, 6, 4) } } };
+    }
+    case 'letSpellFail': {
+      const p = pendingSpell(state);
+      if (!p || p.cast) return state;
+      return { ...state, flow: { ...state.flow, spell: undefined }, log: state.log.map(r => (r.id === p.roll ? { ...r, note: 'The power fails.' } : r)) };
+    }
     case 'useMight': {
       const i = state.log.findIndex(r => r.id === action.roll);
       const r = state.log[i];
@@ -477,7 +503,7 @@ function step(state: GameState, action: Action): GameState {
       let hero: Model = { ...m, might: m.might - 1 };
       // Might that turns a failed Fate roll into a 4+ saves the wound.
       if (hero.fateRoll === r.id && roll.dice[0] >= 4) hero = { ...hero, pending: (hero.pending ?? 1) - 1, fateRoll: undefined };
-      return { ...state, log, models: { ...state.models, [m.id]: settle(hero) } };
+      return afterMight({ ...state, log, models: { ...state.models, [m.id]: settle(hero) } }, roll.id);
     }
     case 'wound': {
       const m = state.models[action.id];
@@ -602,8 +628,9 @@ function step(state: GameState, action: Action): GameState {
       // A shot's first roll marks its shooter as having shot this turn.
       const shooter = r.group?.startsWith('s-') && r.id === `${r.group}-0` ? r.model : undefined;
       let flow = shooter && !state.flow.shot?.includes(shooter) ? { ...state.flow, shot: [...(state.flow.shot ?? []), shooter].slice(-400) } : state.flow;
-      // So does a duel's first roll, for its fight.
-      if (r.group?.startsWith('f-') && r.id === `${r.group}-0` && r.side !== undefined) flow = { ...flow, duels: [...(flow.duels ?? []), r.group].slice(-200) };
+      if (r.id.startsWith('w-') && r.model && !flow.cast?.includes(r.model)) flow = { ...flow, cast: [...(flow.cast ?? []), r.model].slice(-200) };
+      // So does a duel's first roll, for its fight (after any Heroic Strike roll).
+      if (r.group?.startsWith('f-') && r.side !== undefined && !flow.duels?.includes(r.group)) flow = { ...flow, duels: [...(flow.duels ?? []), r.group].slice(-200) };
       return { ...state, flow, log: log.slice(-MAX_LOG) };
     }
     case 'loadState':
@@ -734,6 +761,8 @@ export function loadState(raw: unknown): GameState {
         ...(f.braved ? { braved: seats(f.braved) } : {}),
         ...(f.arrived ? { arrived: seats(f.arrived) } : {}),
         ...(Array.isArray(f.shot) ? { shot: f.shot.slice(0, 400).map(x => String(x).slice(0, 80)) } : {}),
+        ...(Array.isArray(f.cast) ? { cast: f.cast.slice(0, 200).map(x => String(x).slice(0, 80)) } : {}),
+        ...(f.spell && typeof f.spell === 'object' ? { spell: { roll: id(f.spell.roll), caster: id(f.spell.caster), target: id(f.spell.target), power: str(f.spell.power, 60), cv: int(f.spell.cv, 1, 6, 4) } } : {}),
         ...(Array.isArray(f.farMoved) ? { farMoved: f.farMoved.slice(0, 400).map(x => String(x).slice(0, 80)) } : {}),
         ...(Array.isArray(f.duels) ? { duels: f.duels.slice(0, 200).map(x => String(x).slice(0, 80)) } : {}),
         ...(f.startFate && typeof f.startFate === 'object' ? { startFate: cleanCounts(f.startFate, 9) } : {}),

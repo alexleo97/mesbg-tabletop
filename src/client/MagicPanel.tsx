@@ -2,6 +2,9 @@ import { useState } from 'react';
 import magic from '../data/magic.json';
 import type { Action, GameState, Model, Role } from '../shared/types.ts';
 import type { Catalog } from '../shared/catalog.ts';
+import { distanceBetween, formatInches } from '../shared/geometry.ts';
+import { canActivate } from '../shared/heroics.ts';
+import { canCast, castTargets, powersOf } from '../shared/magic.ts';
 import { useCatalog, useRulesText } from './ListBuilder.tsx';
 import { RollRow } from './Panels.tsx';
 
@@ -25,126 +28,107 @@ function Num({ label, value, min, max, onChange }: { label: string; value: numbe
   );
 }
 
-/** The powers a model knows, from its profile, each with its fixed casting value. */
-function knownPowers(catalog: Catalog | null, m: Model | undefined): { name: string; range: string; cv: number; info?: Power }[] {
-  const unit = m?.profileId ? catalog?.units[m.profileId] : undefined;
-  return (unit?.powers ?? []).map(x => ({
-    name: x.name,
-    range: x.range,
-    cv: parseInt(x.cast, 10) || 4,
-    // "Fury (Mordor Orc)" is the Fury power for that kind of model.
-    info: POWERS.find(y => y.name === x.name || y.name === x.name.replace(/ \(.*\)$/, '')),
-  }));
+/** The power's plain-words effect, from our own summaries. */
+function powerEffect(catalog: Catalog | null, rulesText: Record<string, string>, m: Model, name: string): { info?: Power; effect?: string } {
+  const info = POWERS.find(y => y.name === name || y.name === name.replace(/ \(.*\)$/, ''));
+  const ref = m.profileId ? catalog?.units[m.profileId]?.ruleRefs?.[name] : undefined;
+  return { info, effect: info?.effect ?? (ref ? rulesText[ref] : undefined) };
 }
 
 /**
- * Casting and resisting for the selected model. The powers on offer are the ones on its profile, the casting value is
- * the profile's, and the dice spent come off its Will, so nothing has to be set by hand.
+ * Casting from a model's card in the Move phase: the powers on its profile, the targets in range it can see, and how
+ * much Will to spend. The game rolls, takes the Will off and asks the target's player about resisting.
  */
-export function MagicPanel({ state, dispatch, role, selected }: { state: GameState; dispatch: (a: Action) => void; role: Role; selected: Set<string> }) {
+export function CastBox({ state, dispatch, role, model: m }: { state: GameState; dispatch: (a: Action) => void; role: Role; model: Model }) {
   const { catalog } = useCatalog();
   const rulesText = useRulesText();
-  const one: Model | undefined = selected.size === 1 ? state.models[[...selected][0]] : undefined;
-  const powers = knownPowers(catalog, one);
+  const powers = powersOf(catalog, m);
   const [picked, setPicked] = useState('');
-  const [castWill, setCastWill] = useState(1);
-  const [resistWill, setResistWill] = useState(1);
+  const [aim, setAim] = useState('');
+  const [will, setWill] = useState(1);
   const power = powers.find(x => x.name === picked) ?? powers[0];
-  const spectator = role === 'spectator';
-  const will = one?.will ?? 0;
-
-  const lastCast = [...state.log].reverse().find(r => r.label.startsWith('Cast '));
-  const lastResist = lastCast && [...state.log].reverse().find(r => r.label.startsWith('Resist ') && r.at >= lastCast.at);
-  const castBest = lastCast ? Math.max(...lastCast.dice) : 0;
-  const castOk = lastCast ? castBest >= (lastCast.target ?? 7) : false;
-  // The caster can't resist its own power; the roll names it even when it belongs to the other player.
-  const isCaster = !!one && (one.id === lastCast?.model || !!lastCast?.label.endsWith(` by ${one.name}`));
-  const canResist = castOk && !lastResist && one && !isCaster && will > 0;
-
-  const spend = (n: number) => {
-    if (one) dispatch({ type: 'updateModel', id: one.id, patch: { will: Math.max(0, one.will - n) } });
-  };
-  const cast = () => {
-    if (!one || !power) return;
-    const n = Math.min(castWill, will);
-    dispatch({ type: 'roll', count: n, target: power.cv, label: `Cast ${power.name} (${power.cv}+) by ${one.name}`, model: one.id });
-    spend(n);
-  };
-  const resist = () => {
-    if (!one) return;
-    const n = Math.min(resistWill, will);
-    dispatch({ type: 'roll', count: n, target: castBest, label: `Resist ${lastCast?.label.slice(5).replace(/ \(\d\+\).*/, '')} (${castBest}+) by ${one.name}`, model: one.id });
-    spend(n);
-  };
-  const ref = one?.profileId ? catalog?.units[one.profileId]?.ruleRefs?.[power?.name ?? ''] : undefined;
-  const effect = power?.info?.effect ?? (ref ? rulesText[ref] : undefined);
-
-  if (!powers.length && !lastCast) return null;
+  if (!power || role !== m.owner || !state.flow.started || state.phase !== 'move') return null;
+  const targets = castTargets(state, m, power.range);
+  const target = targets.find(t => t.id === aim) ?? targets[0];
+  const n = Math.max(1, Math.min(will, m.will));
+  const { info, effect } = powerEffect(catalog, rulesText, m, power.name);
+  const ready = canCast(state, m, seat => canActivate(state, seat));
+  const why = state.flow.cast?.includes(m.id)
+    ? `${m.name} has cast a power this turn.`
+    : m.will < 1
+      ? `${m.name} has no Will left.`
+      : state.flow.spell
+        ? 'Another power is waiting to be resisted.'
+        : !ready
+          ? 'Powers are cast during your own move.'
+          : !target
+            ? 'No target in range that it can see.'
+            : null;
   return (
-    <div className="magic">
-      <h4>Magic</h4>
-      {power && one ? (
-        <>
+    <div className="magic cast-box">
+      <div className="row wrap">
+        <label>
+          Cast
+          <select value={power.name} onChange={e => setPicked(e.target.value)}>
+            {powers.map(x => (
+              <option key={x.name} value={x.name}>
+                {x.name} ({x.cv}+)
+              </option>
+            ))}
+          </select>
+        </label>
+        {power.range > 0 && (
           <label>
-            Power
-            <select value={power.name} onChange={e => setPicked(e.target.value)}>
-              {powers.map(x => (
-                <option key={x.name} value={x.name}>
-                  {x.name} ({x.cv}+)
+            at
+            <select value={target?.id ?? ''} onChange={e => setAim(e.target.value)} disabled={!targets.length}>
+              {targets.map(t => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                  {t.owner === m.owner ? ' (friend)' : ''}, {formatInches(distanceBetween(m, t))}
                 </option>
               ))}
             </select>
           </label>
-          <p className="power-card">
-            <span className="muted">
-              {power.range} · casts on {power.cv}+{power.info ? ` · ${power.info.duration}` : ''}
-            </span>
-            {effect && (
-              <>
-                <br />
-                {effect}
-              </>
-            )}
-          </p>
-          <div className="row wrap">
-            <Num label="Will to spend" value={Math.min(castWill, Math.max(1, will))} min={1} max={Math.max(1, will)} onChange={setCastWill} />
-            <span className="muted">
-              {one.name} has {will} Will.
-            </span>
-          </div>
-          <button className="primary" disabled={spectator || will < 1} onClick={cast}>
-            {will < 1 ? 'No Will left' : `Cast with ${Math.min(castWill, will)} ${Math.min(castWill, will) === 1 ? 'die' : 'dice'}`}
-          </button>
-        </>
+        )}
+      </div>
+      <p className="power-card muted small">
+        {power.range > 0 ? `${power.range}"` : 'Self'} · casts on {power.cv}+{info ? ` · ${info.duration}` : ''}
+        {effect && (
+          <>
+            <br />
+            {effect}
+          </>
+        )}
+      </p>
+      {why ? (
+        <p className="muted small">{why}</p>
       ) : (
-        <p className="muted">Select a model with magical powers to cast.</p>
-      )}
-      {lastCast && (
-        <div className="rules-result">
-          <ol className="log">
-            <RollRow r={lastCast} state={state} role={role} dispatch={dispatch} />
-            {lastResist && <RollRow r={lastResist} state={state} role={role} dispatch={dispatch} />}
-          </ol>
-          <p className="table-result">
-            {!castOk
-              ? 'The power fails.'
-              : lastResist
-                ? lastResist.dice.some(d => d >= castBest)
-                  ? 'Resisted: the power has no effect.'
-                  : 'Not resisted: the power takes effect.'
-                : `Cast on a ${castBest}. The target can resist by rolling a ${castBest} or more.`}
-          </p>
-          {castOk && !lastResist && !canResist && <p className="muted">Select the target to resist with its Will.</p>}
-          {canResist && (
-            <div className="row wrap">
-              <Num label={`${one.name}'s Will`} value={Math.min(resistWill, will)} min={1} max={will} onChange={setResistWill} />
-              <button disabled={spectator} onClick={resist}>
-                Resist
-              </button>
-            </div>
-          )}
+        <div className="row wrap">
+          <Num label="Will" value={n} min={1} max={Math.max(1, m.will)} onChange={setWill} />
+          <button className="primary" onClick={() => dispatch({ type: 'cast', model: m.id, target: target!.id, power: power.name, cv: power.cv, will: n })}>
+            Cast with {n} {n === 1 ? 'die' : 'dice'}
+          </button>
         </div>
       )}
+    </div>
+  );
+}
+
+/** The latest power cast and how it went; casting itself is on the caster's card. */
+export function MagicPanel({ state, dispatch, role }: { state: GameState; dispatch: (a: Action) => void; role: Role; selected?: Set<string> }) {
+  const lastCast = [...state.log].reverse().find(r => r.label.startsWith('Cast '));
+  if (!lastCast) return null;
+  const lastResist = [...state.log].reverse().find(r => r.label.startsWith('Resist ') && r.at >= lastCast.at);
+  return (
+    <div className="magic">
+      <h4>Magic</h4>
+      <p className="muted">Heroes cast their powers from their card in the Move phase. The game rolls, spends the Will and asks the target's player about resisting.</p>
+      <div className="rules-result">
+        <ol className="log">
+          <RollRow r={lastCast} state={state} role={role} dispatch={dispatch} />
+          {lastResist && <RollRow r={lastResist} state={state} role={role} dispatch={dispatch} />}
+        </ol>
+      </div>
     </div>
   );
 }
