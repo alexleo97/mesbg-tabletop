@@ -46,7 +46,7 @@ Build your army in the [MESBG List Builder](https://v2024.mesbg-list-builder.com
 
 ## Community
 
-Come and find opponents, report bugs or suggest features on [Discord](https://discord.gg/YfCCgbKDv).
+Come and find opponents, report bugs or suggest features on [Discord](https://discord.gg/epNRWMxGws).
 
 ## Running it
 
