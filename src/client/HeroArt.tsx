@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { STARTER_BOARDS, starterTerrain } from '../shared/boards.ts';
 import { pictureUrl } from '../shared/catalog.ts';
 import { mmToIn } from '../shared/geometry.ts';
+import { EVIL, GOOD, type Token } from './heroBattle.ts';
 import { TerrainArt, TerrainDefs } from './TerrainArt.tsx';
 import { MATERIALS, textures } from './textures.ts';
 
@@ -11,34 +12,13 @@ import { MATERIALS, textures } from './textures.ts';
 const BOARD = STARTER_BOARDS.find(b => b.id === 'river-crossing')!;
 const LAYER = (k: string) => (k === 'road' ? 0 : k === 'water' ? 1 : k === 'bridge' ? 3 : 2);
 
-interface Token {
-  origin: string;
-  name: string;
-  mm: number;
-  x: number;
-  y: number;
-  hero?: boolean;
-}
-
-/** A rank of the same unit: `n` bases side by side from `x`. */
-const rank = (origin: string, name: string, x: number, y: number, n: number, mm = 25): Token[] =>
-  Array.from({ length: n }, (_, i) => ({ origin, name, mm, x: x + i * (mmToIn(mm) + 0.12), y }));
-
-const GOOD: Token[] = [
-  { origin: 'Gondor', name: 'Aragorn, King Elessar', mm: 25, x: 36.2, y: 26.9, hero: true },
-  { origin: 'Gondor', name: 'Boromir, Captain of the White Tower', mm: 25, x: 37.4, y: 26.9, hero: true },
-  ...rank('Gondor', 'Knight of Minas Tirith', 32.4, 27.4, 2, 40),
-  ...rank('Gondor', 'Warrior of Minas Tirith', 34.2, 28.0, 6),
-  ...rank('Gondor', 'Citadel Guard', 34.8, 29.1, 5),
-  ...rank('Gondor', 'Ranger of Gondor', 41.4, 28.0, 3),
-];
-const EVIL: Token[] = [
-  { origin: 'Mordor', name: 'Gothmog', mm: 25, x: 36.6, y: 21.7, hero: true },
-  { origin: 'Mordor', name: 'Mordor Troll', mm: 60, x: 33.0, y: 20.4 },
-  ...rank('Mordor', 'Mordor Orc Warrior', 34.6, 20.6, 6),
-  ...rank('Mordor', 'Mordor Uruk-Hai', 35.2, 19.5, 5),
-  ...rank('Mordor', 'Mordor Warg Rider', 41.4, 20.4, 2, 40),
-];
+const initials = (name: string) =>
+  name
+    .split(/[\s,]+/)
+    .filter(w => /^[A-Z]/.test(w))
+    .slice(0, 2)
+    .map(w => w[0])
+    .join('');
 
 function PhotoToken({ t, side, i }: { t: Token; side: 'p1' | 'p2'; i: number }) {
   const r = mmToIn(t.mm) / 2;
@@ -49,6 +29,9 @@ function PhotoToken({ t, side, i }: { t: Token; side: 'p1' | 'p2'; i: number }) 
         <circle r={r} />
       </clipPath>
       <circle className="hero-base" r={r} />
+      <text className="hero-initials" textAnchor="middle" dominantBaseline="central" style={{ fontSize: r * 0.8 }}>
+        {initials(t.name)}
+      </text>
       <image href={pictureUrl(t)} x={-r} y={-r} width={2 * r} height={2 * r} preserveAspectRatio="xMidYMid slice" clipPath={`url(#${id})`} onError={e => (e.currentTarget.style.display = 'none')} />
       <circle className="hero-ring" r={r} />
     </g>
@@ -62,7 +45,7 @@ export function HeroArt() {
     return starterTerrain(BOARD, () => `hero-${n++}`).sort((a, b) => LAYER(a.kind) - LAYER(b.kind));
   }, []);
   return (
-    <svg className="hero-art" viewBox="15.5 18.7 32.5 11.7" preserveAspectRatio="xMaxYMid slice" aria-hidden>
+    <svg className="hero-art" viewBox="6 19.8 26.5 9.6" preserveAspectRatio="xMaxYMid slice" aria-hidden>
       <defs>
         <TerrainDefs />
         {MATERIALS.map(m => (
