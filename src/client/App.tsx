@@ -16,6 +16,8 @@ import { distanceBetween, formatInches } from '../shared/geometry.ts';
 import { scenarioById, vpTotal } from '../shared/scenarios.ts';
 import { useSettings, type Settings } from './settings.ts';
 import { Tutorial } from './Tutorial.tsx';
+import { AccountButton, ProfilePage } from './Account.tsx';
+import { useAuth } from './auth.ts';
 
 const DISCORD_INVITE = 'https://discord.gg/epNRWMxGws';
 
@@ -75,6 +77,7 @@ function Lobby({ settings, updateSettings }: { settings: Settings; updateSetting
   };
   return (
     <div className="lobby">
+      <AccountButton />
       <h1>MESBG Tabletop</h1>
       <p>Play the Middle-earth Strategy Battle Game in your browser, on a computer or phone.</p>
       <button className="primary big" onClick={() => go(randomRoom())}>Start a new game</button>
@@ -173,6 +176,12 @@ export function Game({ room, settings, updateSettings, practice, overlay }: Game
   useEffect(() => setAimAt(null), [single?.id, state.phase]);
 
   const dispatch = conn.dispatch.bind(conn);
+  // Signed-in players sit down under their profile name unless they've already typed one.
+  const { profile } = useAuth();
+  const seat = role === 'p1' || role === 'p2' ? role : null;
+  useEffect(() => {
+    if (!practice && seat && profile && players.includes(seat) && !state.names[seat]) dispatch({ type: 'setName', seat, name: profile.username });
+  }, [seat, profile?.username, players.includes(seat as Seat), !state.names[seat as Seat]]);
   const leave = () => {
     location.search = '';
   };
@@ -477,6 +486,7 @@ export function App() {
   const params = new URLSearchParams(location.search);
   const room = cleanRoom(params.get('room') ?? '');
   const [settings, updateSettings] = useSettings();
+  if (params.has('profile')) return <ProfilePage onHome={() => (location.search = '')} />;
   if (params.has('learn'))
     return <Tutorial settings={settings} updateSettings={updateSettings} onExit={() => (location.search = '')} onPlay={() => (location.search = `?room=${randomRoom()}`)} />;
   return room.length >= 3 ? <Game room={room} settings={settings} updateSettings={updateSettings} /> : <Lobby settings={settings} updateSettings={updateSettings} />;

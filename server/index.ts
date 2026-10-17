@@ -205,6 +205,12 @@ const server = createServer((req, res) => {
     res.writeHead(200, { 'content-type': 'text/plain' }).end('ok');
     return;
   }
+  if (url.pathname === '/api/config') {
+    // Both values are public by design: the browser needs them to offer Discord sign-in.
+    const config = { supabaseUrl: process.env.SUPABASE_URL ?? null, supabaseAnonKey: process.env.SUPABASE_ANON_KEY ?? null };
+    res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(config));
+    return;
+  }
   if (url.pathname === '/api/rooms') {
     res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(openRooms()));
     return;
