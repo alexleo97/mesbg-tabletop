@@ -93,6 +93,21 @@ describe('Discord voice rooms', () => {
     expect(deleted).toEqual([`https://discord.com/api/v10/channels/${old}`]);
   });
 
+  it('posts as the bot in #find-a-game when there is no webhook', async () => {
+    const fetch = setup((url, init) => {
+      if (url.endsWith('/guilds/42/channels') && init.method === 'GET') return [{ id: '3', name: 'find-a-game', type: 0 }];
+      return {};
+    });
+    vi.stubEnv('DISCORD_WEBHOOK_URL', '');
+    const { announceGame } = await import('../server/discord.ts');
+    await announceGame('dale-1', 'Sam', undefined);
+    const post = (fetch.mock.calls as unknown as [string, RequestInit][]).find(([u]) => u.endsWith('/channels/3/messages'))!;
+    expect(JSON.parse(post[1].body as string)).toEqual({
+      content: '⚔️ **Sam** opened a game and needs an opponent: https://mesbg-tabletop.onrender.com/?room=dale-1',
+      allowed_mentions: { parse: [] },
+    });
+  });
+
   it('does nothing without a bot token', async () => {
     const fetch = vi.fn();
     vi.stubGlobal('fetch', fetch);
