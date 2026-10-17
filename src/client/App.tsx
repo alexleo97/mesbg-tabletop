@@ -70,7 +70,7 @@ function useOpenGames() {
 
 /** The community card: an invite for newcomers, a shortcut back in for members. */
 function DiscordCard() {
-  const { signedIn, discordMember, discordGuild } = useAuth();
+  const { discordMember, discordGuild } = useAuth();
   // Members go straight to the server; the invite would only ask them to accept it again.
   const href = discordMember && discordGuild ? `https://discord.com/channels/${discordGuild}` : DISCORD_INVITE;
   return (
@@ -86,7 +86,6 @@ function DiscordCard() {
       <a className="discord-link" href={href} target="_blank" rel="noreferrer">
         {discordMember ? 'Open Discord' : 'Join our Discord'}
       </a>
-      {!signedIn && !discordMember && <small className="muted">Already a member? Sign in with Discord and we'll remember.</small>}
     </section>
   );
 }
