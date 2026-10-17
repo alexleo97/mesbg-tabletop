@@ -4,7 +4,7 @@ import { botRoster, playableArmies } from '../src/shared/botList.ts';
 import { entryPoints } from '../src/shared/catalog.ts';
 import { duelChance, fightOdds, woundChance } from '../src/shared/odds.ts';
 import { initialState, reduce } from '../src/shared/reducer.ts';
-import type { Model } from '../src/shared/types.ts';
+import { BOT_NAME, type Model } from '../src/shared/types.ts';
 import { catalog, play, seeded, setup } from './botsim.ts';
 
 const base = { shape: 'round' as const, w: 25, h: 25 };
@@ -52,7 +52,7 @@ describe('the computer player', () => {
     const s = reduce(initialState(), { type: 'setBot', seat: 'p2' });
     expect(s.bot).toBe('p2');
     expect(s.listed).toBe(false);
-    expect(s.names.p2).toBe('Computer');
+    expect(s.names.p2).toBe(BOT_NAME);
     expect(reduce(s, { type: 'setBot', seat: null }).bot).toBeUndefined();
   });
 
@@ -91,4 +91,21 @@ describe('the computer player', () => {
       expect(lost).toBeGreaterThan(0);
     }
   }, 60_000);
+});
+
+describe('premade armies', () => {
+  it('are playable armies that fit the points', async () => {
+    const { PREMADE, premadeRoster } = await import('../src/shared/premade.ts');
+    const armies = playableArmies(catalog);
+    for (const p of PREMADE) {
+      expect(armies, p.name).toContain(p.army);
+      for (const points of [300, 500, 800]) {
+        const r = premadeRoster(catalog, p.id, points)!;
+        const pts = r.entries.reduce((n, e) => n + entryPoints(catalog.units[e.unitId], e.optionIds, e.count), 0);
+        expect(pts, p.name).toBeLessThanOrEqual(points);
+        expect(r.entries.length, p.name).toBeGreaterThan(1);
+      }
+      expect(premadeRoster(catalog, p.id, 500)).toEqual(premadeRoster(catalog, p.id, 500));
+    }
+  });
 });

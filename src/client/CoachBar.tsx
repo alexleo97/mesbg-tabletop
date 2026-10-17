@@ -163,12 +163,14 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
   if (!flow.started) {
     const count = (s: Seat) => Object.values(state.models).filter(m => m.owner === s).length;
     const scenario = scenarioById(state.scenario);
+    // Both armies must be on the table first; a solo battle is always fought over a scenario.
+    const waiting = state.bot && !scenario ? 'Pick a scenario first.' : !count('p1') || !count('p2') ? 'Deploy both armies first.' : '';
     title = 'Set up the battle';
     body = (
       <>
         <ol className="setup-steps">
           <li className={scenario ? 'ok' : ''}>
-            <span>{scenario ? scenario.name : 'Pick a scenario, or play without one'}</span>
+            <span>{scenario ? scenario.name : state.bot ? 'Pick a scenario' : 'Pick a scenario, or play without one'}</span>
             <button onClick={() => openTab('table')}>Scenario</button>
           </li>
           <li className={Object.keys(state.terrain).length ? 'ok' : ''}>
@@ -185,8 +187,9 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
             <span>Deploy each army in its zone{scenario ? ' (shown on the board)' : ''}.</span>
           </li>
         </ol>
+        {me && waiting && <p className="hint">{waiting}</p>}
         {me && (
-          <button className="primary go" onClick={() => dispatch({ type: 'startGame' })}>
+          <button className="primary go" disabled={!!waiting} onClick={() => dispatch({ type: 'startGame' })}>
             Start the battle
           </button>
         )}

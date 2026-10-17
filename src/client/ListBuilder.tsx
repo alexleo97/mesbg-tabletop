@@ -77,7 +77,7 @@ export function Portrait({ unit, size = 40 }: { unit: Pick<CatalogUnit, 'origin'
 }
 
 /** Your saved lists, each ready to deploy in one tap, or one warband at a time. */
-export function SavedLists({ onDeploy, onBuild }: { onDeploy: (entries: ListEntry[], name: string) => void; onBuild: () => void }) {
+export function SavedLists({ onDeploy, onBuild }: { onDeploy: (entries: ListEntry[], name: string, warband?: boolean) => void; onBuild: () => void }) {
   const { catalog, error } = useCatalog();
   const { profile } = useAuth();
   const [lists, setLists] = useState<Roster[]>(loadSaved);
@@ -135,7 +135,7 @@ export function SavedLists({ onDeploy, onBuild }: { onDeploy: (entries: ListEntr
                             className="shrink"
                             disabled={sent.has(key)}
                             onClick={() => {
-                              onDeploy(g.entries, g.label);
+                              onDeploy(g.entries, g.label, true);
                               setSent(prev => new Set(prev).add(key));
                             }}
                           >
