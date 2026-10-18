@@ -380,12 +380,13 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
       if (!gesture.moved && Math.hypot(dx, dy) * view.s < TAP_SLOP_PX) return;
       if (!gesture.moved) setGesture({ ...gesture, moved: true });
       const pos: Record<string, Point> = {};
+      const moving = new Set(Object.keys(gesture.origin));
       for (const [id, o] of Object.entries(gesture.origin)) {
         const m = state.models[id];
         const to = { x: o.x + dx, y: o.y + dy };
         // Once the battle is under way a model stops at the edge of its allowance, as the server would hold it there anyway.
         const allowance = m && moveAllowance(state, m);
-        pos[id] = m && allowance != null ? limitMove(state, moveStart(state, m), to, allowance, m.owner) : to;
+        pos[id] = m && allowance != null ? limitMove(state, moveStart(state, m), to, allowance, m.owner, m, moving) : to;
       }
       // Before the battle, models stop at the edge of their deployment zone, as the server would hold them there.
       if (!state.flow.started) for (const mv of holdInZones(state, Object.entries(pos).map(([id, p]) => ({ id, ...p })))) if (pos[mv.id]) pos[mv.id] = { x: mv.x, y: mv.y };
