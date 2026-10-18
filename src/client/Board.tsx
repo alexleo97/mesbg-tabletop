@@ -12,6 +12,8 @@ import { holdInZones } from '../shared/deployment.ts';
 import { limitMove, moveAllowance, moveStart, movesLimited, settleMove } from '../shared/movement.ts';
 import { inDifficult, standingAt, insidePolygon, inTheWay, isDifficult, moveCost, outline, shadowPath, sightTo, VINES_REACH } from '../shared/sight.ts';
 import { effectsOn } from '../shared/powers.ts';
+import { carried, drive, riders } from '../shared/warBeasts.ts';
+import { mounted, mountProfile } from '../shared/cavalry.ts';
 
 export type Tool = 'move' | 'select' | 'measure' | 'mark';
 
@@ -119,6 +121,9 @@ function MoveZones({ state, models }: { state: GameState; models: Model[] }) {
   );
 }
 
+/** Whether a model moves by charging now: a war beast or chariot in the Move phase, which the game drives (see warBeasts.ts). */
+const chargesNow = (state: GameState, m: Model) => state.flow.started && state.phase === 'move' && !state.flow.trampled?.includes(m.id) && (m.beast !== undefined || (mounted(m) && !!mountProfile(m.mount)?.chariot));
+
 function BaseShape({ m, className = 'base', grow = 0 }: { m: Model; className?: string; grow?: number }) {
   const { rx: bx, ry: by } = halfExtents(m.base);
   const rx = bx + grow, ry = by + grow;
@@ -159,11 +164,14 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
     if (tool !== 'measure') setRuler(null);
   }, [tool]);
   const pointers = useRef(new Map<number, Point>());
+  // A war beast or chariot being pointed where to charge, and the spot it's pointed at.
+  const charging = useRef<{ id: string; toward: Point } | null>(null);
   const lastSend = useRef(0);
   const fitted = useRef(false);
 
   // Models that left the table over an edge are off it.
-  const models = useMemo(() => Object.values(state.models).filter(m => !m.dead && !m.escaped && !m.waiting), [state.models]);
+  // (Those riding a war beast are drawn on top of it.)
+  const models = useMemo(() => Object.values(state.models).filter(m => !m.dead && !m.escaped && !m.waiting).sort((a, b) => Number(!!a.aboard) - Number(!!b.aboard)), [state.models]);
   // Roads and water lie on the ground, under everything else; bridges sit on top of the water.
   const terrain = useMemo(() => {
     const layer = (k: string) => (k === 'road' ? 0 : k === 'water' ? 1 : k === 'bridge' ? 3 : 2);
@@ -319,7 +327,12 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
       if (!wasSelected) setSelected(group);
       setSelectedTerrain(null);
       const origin: Record<string, Point> = {};
-      for (const id of group) if (state.models[id]) origin[id] = { x: state.models[id].x, y: state.models[id].y };
+      // Dragging someone riding a war beast drives the beast.
+      const ridden = (id: string) => {
+        const beast = state.models[state.models[id]?.aboard ?? ''];
+        return beast && !beast.dead ? beast.id : id;
+      };
+      for (const id of [...group].map(ridden)) if (state.models[id]) origin[id] = { x: state.models[id].x, y: state.models[id].y };
       setGesture({ kind: 'drag', start: p, origin, moved: false, tapId: hit.id, multi, wasSelected });
       return;
     }
@@ -379,6 +392,18 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
       const dy = p.y - gesture.start.y;
       if (!gesture.moved && Math.hypot(dx, dy) * view.s < TAP_SLOP_PX) return;
       if (!gesture.moved) setGesture({ ...gesture, moved: true });
+      // A war beast Tramples and a chariot makes its Chariot Charge: drag to point it, and it shows where it would get to.
+      const lone = Object.keys(gesture.origin).length === 1 ? state.models[Object.keys(gesture.origin)[0]] : undefined;
+      if (lone && chargesNow(state, lone)) {
+        const toward = { x: gesture.origin[lone.id].x + dx, y: gesture.origin[lone.id].y + dy };
+        charging.current = { id: lone.id, toward };
+        const run = drive(state, null, lone, toward, { d6: () => 6, uid: () => '', now: 0, by: lone.owner, group: '', skipHits: true, stampede: !!lone.stampede });
+        // Those riding it go with it.
+        const aboard = Object.fromEntries(riders(state, lone).map(r => [r.id, carried(lone, run.at, r) as Point]));
+        setDragPos({ ...aboard, [lone.id]: { x: run.at.x, y: run.at.y, rot: run.at.rot } as Point });
+        return;
+      }
+      charging.current = null;
       const pos: Record<string, Point> = {};
       const moving = new Set(Object.keys(gesture.origin));
       for (const [id, o] of Object.entries(gesture.origin)) {
@@ -416,7 +441,10 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
     }
     const p = toBoard(e.clientX, e.clientY);
     if (gesture.kind === 'drag') {
-      if (gesture.moved && dragPos) {
+      const charge = charging.current;
+      charging.current = null;
+      if (gesture.moved && charge) dispatch({ type: 'trample', id: charge.id, x: charge.toward.x, y: charge.toward.y });
+      else if (gesture.moved && dragPos) {
         // A model dropped just short of an enemy is charging it: finish the move into base contact.
         const settled: Record<string, Point> = {};
         for (const [id, at] of Object.entries(dragPos)) settled[id] = state.models[id] ? settleMove(state, state.models[id], at) : at;

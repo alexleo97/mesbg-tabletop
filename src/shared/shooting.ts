@@ -1,6 +1,7 @@
 // Who may shoot whom, and how hard the shot is: the rules for a Shooting Attack, applied alike by the server, the
 // model card and the computer player.
 import { modelStats, type Catalog } from './catalog.ts';
+import { mounted, mountOf } from './cavalry.ts';
 import { CONTACT_SLACK, combats } from './flow.ts';
 import { gearOf, sideOf } from './gear.ts';
 import { distanceBetween, type Point } from './geometry.ts';
@@ -9,13 +10,16 @@ import { engaged, limitMove, moveAllowance, moveStart } from './movement.ts';
 import { cannotAct, shotNeed } from './powers.ts';
 import { missileWeapon, MISSILE_WEAPONS } from './rules.ts';
 import { distanceToTerrain, heightOf, obstructions, sightTo, type Obstruction } from './sight.ts';
+import { howdahFor } from './warBeasts.ts';
 import { cloaked, hasRule, poisonedShot, shotDefence, stalks, stones } from './wargear.ts';
 import type { GameState, Model } from './types.ts';
 
 export type Weapon = (typeof MISSILE_WEAPONS)[number];
 
 /** The missile weapon a model carries, from its profile and options. */
-export const weaponFor = (catalog: Catalog | null | undefined, m: Model): Weapon | undefined => missileWeapon(gearOf(catalog, m));
+export const weaponFor = (catalog: Catalog | null | undefined, m: Model): Weapon | undefined => (howdahArchers(m) ? MISSILE_WEAPONS.find(w => w.name === 'Orc Bow') : missileWeapon(gearOf(catalog, m)));
+/** A Great Beast's Howdah full of Orc archers: as many shots as it has Wounds left, at its own Shoot Value, however far the beast moved. */
+export const howdahArchers = (m: Model) => (m.beast === 'war' && (m.howdahWounds ?? 0) > 0 ? howdahFor(m.name)?.sv : undefined);
 export const isThrowing = (w: Weapon) => /^throwing/i.test(w.name);
 const isCrossbow = (w: Weapon) => /crossbow/i.test(w.name);
 const isSling = (w: Weapon) => /^sling/i.test(w.name);
@@ -56,6 +60,11 @@ export function shooterBlocked(state: GameState, m: Model, weapon: Weapon, charg
   if (m.prone) return 'is Prone';
   if (cannotAct(state, m)) return 'is held and can’t act';
   if (engaged(state, m)) return 'is in a fight';
+  // A war beast's Commander is busy steering it.
+  if (m.aboard && /commander/i.test(m.name)) return 'commands its war beast, and can’t shoot';
+  // A chariot shoots however far it drove, and so do a Great Beast's archers.
+  if (howdahArchers(m)) return charge ? 'can only shoot in the Shoot phase' : undefined;
+  if (m.beast === 'chariot' || (mounted(m) && mountOf(m)?.chariot)) return charge ? 'can only throw a throwing weapon as it charges' : undefined;
   if (charge) return state.phase === 'move' && isThrowing(weapon) ? undefined : 'can only throw a throwing weapon as it charges';
   if (isCrossbow(weapon) && moved) return 'moved, and a crossbow can’t be shot after moving';
   if (!isThrowing(weapon) && state.flow.farMoved?.includes(m.id)) return 'moved more than half its Move';
@@ -74,11 +83,13 @@ export function planShot(
   opts: { charge?: boolean; fallback?: { weapon?: Weapon; shoot?: number } } = {},
 ): ShotPlan {
   const started = !!state.flow.started;
-  const moved = started && !opts.charge && !!state.flow.moved?.includes(shooter.id);
+  // (A chariot shoots on the move without penalty.)
+  const archers = howdahArchers(shooter);
+  const moved = started && !opts.charge && !!state.flow.moved?.includes(shooter.id) && shooter.beast !== 'chariot' && !archers && !(mounted(shooter) && mountOf(shooter)?.chariot);
   // Thrown stones, for a model that has nothing better and didn't move.
   const rocks = !opts.charge ? stones(catalog, shooter) : undefined;
   const weapon = weaponFor(catalog, shooter) ?? (rocks && !moved ? rocks : undefined) ?? opts.fallback?.weapon;
-  const printed = modelStats(catalog, shooter)?.Sv ?? opts.fallback?.shoot ?? 4;
+  const printed = archers ?? modelStats(catalog, shooter)?.Sv ?? opts.fallback?.shoot ?? 4;
   const dist = distanceBetween(shooter, target);
   const plan: ShotPlan = { weapon, printed, need: printed, moved, shots: 1, dist, inWay: [], rerolls: false };
   const no = (why: string) => ({ ...plan, why });
@@ -87,7 +98,7 @@ export function planShot(
   if (target.dead || target.escaped || target.waiting) return no('has nothing there to shoot at');
   const blocked = shooterBlocked(state, shooter, weapon, opts.charge);
   if (blocked) return no(blocked);
-  plan.shots = isSling(weapon) && started && !moved && !opts.charge ? 2 : 1;
+  plan.shots = archers ? shooter.howdahWounds! : isSling(weapon) && started && !moved && !opts.charge ? 2 : 1;
   // An Elven cloak makes a model on foot 1 harder to hit.
   plan.need = Math.min(6, shotNeed(state, shooter, target, printed + (moved ? 1 : 0) + (cloaked(catalog, target) ? 1 : 0)));
   if (dist > weapon.range + 0.01) return no(`is out of range (${weapon.range}")`);
@@ -107,7 +118,9 @@ export function planShot(
     if (!t || !(LOW_COVER.has(t.kind) || (t.kind !== 'wood' && heightOf(t) <= 1))) return false;
     return [shooter, ...shoulders].some(m => distanceToTerrain(m, t) <= CONTACT_SLACK);
   };
-  let inWay = obstructions(state, shooter, target).filter(o => !leanOn(o) && !(o.model && shoulders.some(f => f.id === o.model)));
+  // Those riding a war beast are up on it, never in the way; nor is the beast in the way of a shot at its own riders.
+  const onBeast = (id: string) => !!state.models[id]?.aboard || id === target.aboard;
+  let inWay = obstructions(state, shooter, target).filter(o => !leanOn(o) && !(o.model && (shoulders.some(f => f.id === o.model) || onBeast(o.model))));
 
   const fight = engaged(state, target) ? combats(state).find(c => c.p1.includes(target.id) || c.p2.includes(target.id)) : undefined;
   const side = sideOf(catalog, shooter);

@@ -9,6 +9,8 @@ import { DICE_REQUESTS, resolveRequest } from '../src/shared/resolve.ts';
 import { mayDeclare, phaseAllows } from '../src/shared/heroics.ts';
 import { brokenSideToTest, brokenTests, terrorAhead, terrorTest, willOfEvilDue, willOfEvilToll } from '../src/shared/courage.ts';
 import { mountName, mountProfile, riderTests, riderTestsDue } from '../src/shared/cavalry.ts';
+import { beastKind, beastTests, beastTestsDue } from '../src/shared/warBeasts.ts';
+import { chargeAim, chargesDue, straightOn, trample } from '../src/shared/trample.ts';
 import { settleSpell, spellReady } from '../src/shared/magic.ts';
 import { recoveryDue, recoveryRolls } from '../src/shared/powers.ts';
 import { arrivalsDue, rollArrivals } from '../src/shared/maelstrom.ts';
@@ -307,7 +309,10 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
     case 'shotPaused':
     case 'bannerRolled':
     case 'brutal':
+    case 'trampled':
       return null; // the server rolls for these and settles them
+    case 'board':
+      return mine(action.id) && (!action.beast || mine(action.beast)) ? action : null;
     case 'takeWound':
     case 'climb':
     case 'crawl':
@@ -452,6 +457,12 @@ function scheduleAnnouncement(room: Room) {
 
 function apply(room: Room, action: Action) {
   room.blank = false;
+  // A war beast or chariot must move if it can: one its side left standing goes straight on as the side ends its move.
+  if (action.type === 'endActivation' && (action.seat === 'p1' || action.seat === 'p2') && !room.state.flow.done.includes(action.seat))
+    for (const m of chargesDue(room.state, CATALOG, action.seat)) {
+      const out = trample(room.state, CATALOG, action.seat, { type: 'trample', id: m.id, ...(m.stampede ? straightOn(m) : chargeAim(room.state, CATALOG, m)) }, serverDice, serverId, Date.now());
+      for (const a of out ?? []) apply(room, a);
+    }
   // Models that fly, cross terrain specially, beat a war drum or ride a mount are marked as they come onto the table.
   if (action.type === 'addModels' && Array.isArray(action.models))
     action = {
@@ -462,7 +473,9 @@ function apply(room: Room, action: Action) {
         const drum = gearOf(CATALOG, m as Model).some(g => /war ?drum/.test(g));
         // A rider's mount, for lists deployed before mounts were recorded.
         const mount = m.mount || m.dismounted ? undefined : mountName(CATALOG.units[m.profileId], m.options ?? []);
-        return { ...m, ...(CATALOG.units[m.profileId].rules.some(r => /^Fly\b/.test(r)) ? { fly: true } : {}), ...(ground.length ? { ground } : {}), ...(drum ? { drum: true } : {}), ...(mount ? { mount, mountWounds: mountProfile(mount)?.w } : {}) };
+        // War beasts and chariots, for lists deployed before they were recorded.
+        const beast = m.beast ?? beastKind(CATALOG, m as Model);
+        return { ...m, ...(beast ? { beast } : {}), ...(CATALOG.units[m.profileId].rules.some(r => /^Fly\b/.test(r)) ? { fly: true } : {}), ...(ground.length ? { ground } : {}), ...(drum ? { drum: true } : {}), ...(mount ? { mount, mountWounds: mountProfile(mount)?.w } : {}) };
       }),
     };
   room.state = reduce(room.state, action);
@@ -479,6 +492,7 @@ function apply(room: Room, action: Action) {
   }
   settleSpells(room);
   rollRiderTests(room);
+  rollBeastTests(room);
   rollBrokenTests(room);
   rollReinforcements(room);
   rollGameEnd(room);
@@ -558,6 +572,18 @@ function rollRiderTests(room: Room) {
     for (const a of riderTests(room.state, CATALOG, serverDice, serverId)) apply(room, a);
   } finally {
     rollingRiders = false;
+  }
+}
+
+/** Rolls a wounded war beast's Stampede tests, and the falls of those riding a beast or Howdah that is destroyed. */
+let rollingBeasts = false;
+function rollBeastTests(room: Room) {
+  if (rollingBeasts || !beastTestsDue(room.state)) return;
+  rollingBeasts = true;
+  try {
+    for (const a of beastTests(room.state, CATALOG, serverDice, serverId)) apply(room, a);
+  } finally {
+    rollingBeasts = false;
   }
 }
 

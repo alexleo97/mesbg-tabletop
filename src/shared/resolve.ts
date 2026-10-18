@@ -1,5 +1,7 @@
 import { beside, mounted, mountLabel, mountOf, onFoot, separatedMount } from './cavalry.ts';
 import { brutalOptions, chargeEffects, hurl, knockedDown } from './monsters.ts';
+import { trample } from './trample.ts';
+import { biggerHolds, commanderOf, howdahFor, immovable } from './warBeasts.ts';
 import { distanceBetween } from './geometry.ts';
 import { backAway, pushBack, separate, type Retreat } from './backAway.ts';
 import { defence, touchingEnemies, wallBetween } from './barriers.ts';
@@ -21,7 +23,7 @@ import { MAX_DICE } from './reducer.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
 /** Dice requests a player sends, which only whoever holds the dice (the server, or the browser in practice games) can answer. */
-export const DICE_REQUESTS = new Set<Action['type']>(['roll', 'fight', 'strikes', 'shoot', 'shotOn', 'banner', 'dismount', 'cross', 'rollFate', 'rollPriority', 'uncover', 'cast', 'resist']);
+export const DICE_REQUESTS = new Set<Action['type']>(['roll', 'fight', 'strikes', 'shoot', 'shotOn', 'banner', 'dismount', 'trample', 'cross', 'rollFate', 'rollPriority', 'uncover', 'cast', 'resist']);
 
 export interface Resolved {
   /** Results everyone applies, in order. */
@@ -108,7 +110,8 @@ function prepareFight(state: GameState, catalog: Catalog | null, req: FightReque
       const { bonus, lance, notes: why } = chargeEffects(state, catalog, m, foes, held?.attacker === f.id);
       if (bonus) {
         f.charged = bonus;
-        f.a = Math.min(10, f.a + 1);
+        // (A war beast's Irresistible Force only knocks foes down.)
+        if (bonus !== 'beast') f.a = Math.min(10, f.a + 1);
       }
       if (lance) f.woundMod = (f.woundMod ?? 0) + 1;
       const notes = [...(f.notes ?? []), ...why];
@@ -216,7 +219,7 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       const brute = b && req.sides.flat().find(f => f.id === b.by && !f.support && f.monster);
       const bm = brute && state.models[brute.id];
       const foeSide = brute && req.sides.findIndex(side => !side.includes(brute)) as 0 | 1;
-      const hurled = b?.kind === 'hurl' && brute ? req.sides[foeSide as 0 | 1].find(f => f.id === b.target && !f.support && f.s < brute.s) : undefined;
+      const hurled = b?.kind === 'hurl' && brute ? req.sides[foeSide as 0 | 1].find(f => f.id === b.target && !f.support && f.s < brute.s && !!state.models[f.id] && !immovable(catalog, state.models[f.id])) : undefined;
       if (!b || !bm || !brutalOptions(state, catalog, bm).includes(b.kind) || (b.kind === 'hurl' && !hurled)) delete req.brutal;
       // A fight over a defended wall, ledge or doorway: strikes come before anyone backs away, so no one is trapped
       // (bar the Prone), the attacker's strikes must get past the defences, and only the attacker backs away.
@@ -226,7 +229,30 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       // A model being hurled goes nowhere until it's thrown.
       let retreat: Retreat | undefined;
       const trapped = new Set<string>();
-      const retreatFor = (winner: 0 | 1) => (retreat ??= held ? backAway(state, [held.attacker], [held.defender]) : backAway(state, ids((1 - winner) as 0 | 1).filter(id => !state.models[id].prone && id !== hurled?.id), ids(winner)));
+      // War beasts and chariots never back away: whoever beat them backs away from them instead (between two of them,
+      // the smaller one gives ground; see warBeasts.ts).
+      const fixed = (id: string) => !!state.models[id] && immovable(catalog, state.models[id]);
+      let standoff: DiceRoll | undefined;
+      const giving = (winner: 0 | 1): { movers: string[]; from: string[] } => {
+        const losing = ids((1 - winner) as 0 | 1);
+        const winning = ids(winner);
+        const movers = losing.filter(id => !state.models[id].prone && id !== hurled?.id && !fixed(id));
+        const big = losing.find(fixed);
+        if (!big) return { movers, from: winning };
+        const rival = winning.find(fixed);
+        if (rival) {
+          const r = biggerHolds(catalog, state.models[big], state.models[rival], d6);
+          if (r.roll) standoff = { id: `${group}-im`, by: seat, label: `Immovable Objects: 1-3 the Evil side gives way, 4-6 the Good`, dice: [r.roll], at: now, group };
+          if (r.backs === 'a') return { movers: [...movers, big], from: winning };
+        }
+        return { movers: [...movers, ...winning.filter(id => !fixed(id))], from: [...winning, ...losing] };
+      };
+      const retreatFor = (winner: 0 | 1) => {
+        if (retreat) return retreat;
+        if (held) return (retreat = backAway(state, [held.attacker], [held.defender]));
+        const g = giving(winner);
+        return (retreat = backAway(state, g.movers, g.from));
+      };
       // A charger that wins knocks foes to the ground before they're struck (so they're trapped).
       let knocked: { prone: string[]; flying: string[] } | undefined;
       const knocksFor = (winner: 0 | 1) => {
@@ -243,6 +269,8 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       const cornered = (winner: 0 | 1, target: string) => {
         // A Prone model that loses is always trapped.
         const k = knocksFor(winner);
+        // A war beast or chariot is never trapped.
+        if (fixed(target)) return false;
         const stuck = !!state.models[target]?.prone || k.prone.includes(target) || k.flying.includes(target) || (!held && retreatFor(winner).trapped.includes(target));
         if (stuck) trapped.add(target);
         return stuck;
@@ -251,7 +279,7 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       const loser = (1 - outcome.winner) as 0 | 1;
       const bargeOn = outcome.ended === 'barge';
       // A Barge pushes every foe (and their supporters) back 3", and any that can't go so far fall over.
-      const barge = bargeOn ? pushBack(state, [...ids(loser), ...helpers(loser)], ids(outcome.winner), 3) : undefined;
+      const barge = bargeOn ? pushBack(state, [...ids(loser), ...helpers(loser)].filter(id => !fixed(id)), ids(outcome.winner), 3) : undefined;
       const back = bargeOn ? { moves: barge!.moves, trapped: [], madeWay: [], falls: [] } : retreatFor(outcome.winner);
       const winners = ids(outcome.winner);
       // A Prone winner gets up instead of striking (unless Paralysed).
@@ -275,6 +303,7 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       if (!outcome.ended) moves.push(...separate(state, [...trapped].filter(id => !slain(id)), winners));
       // A loser pushed over the edge of a drop falls once the strikes are done, if it lived.
       const extra: DiceRoll[] = [];
+      if (standoff) extra.push(standoff);
       const push = (label: string, dice: number[], more: Partial<DiceRoll> = {}) => extra.push({ id: `${group}-fall${extra.length}`, by: seat, label: label.slice(0, 80), dice, at: now, group, ...more });
       const falls = back.falls.filter(f => !slain(f.id)).flatMap(f => {
         const m = state.models[f.id];
@@ -342,11 +371,17 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       // A rider can be hit, or its mount; a Sharpshooter picks which.
       const steed = mountOf(target);
       if (steed && steed.left > 0) {
-        req.target.mount = { name: mountLabel(steed.name), d: steed.d, ...(steed.monster ? { monster: true } : {}) };
+        req.target.mount = { name: mountLabel(steed.name), d: steed.d, ...(steed.monster ? { monster: true } : {}), ...(steed.chariot ? { chariot: true } : {}) };
         if (hasRule(catalog, shooter, 'Sharpshooter')) req.sharp = true;
         else delete req.atMount;
       } else delete req.atMount;
       req.inWay = plan.inWay.slice(0, 6).map(o => (o.model ? { name: o.name, id: o.model, d: dOf(o.model) } : { name: o.name }));
+      // A war beast's Howdah: it can be aimed at instead of the beast, and it's always in the way of those riding in it.
+      const howdah = howdahFor(target.beast === 'war' ? target.name : target.aboard ? state.models[target.aboard]?.name : undefined);
+      const carrier = target.aboard ? state.models[target.aboard] : target;
+      if (howdah && carrier?.howdahWounds && req.atHowdah && !target.aboard) req.target = { id: `${target.id}#howdah`, name: `${target.name}'s Howdah`, d: howdah.d };
+      else delete req.atHowdah;
+      if (howdah && carrier?.howdahWounds && target.aboard && commanderOf(state, carrier)?.id !== target.id) req.inWay = [{ name: 'the Howdah', id: `${carrier.id}#howdah`, d: howdah.d }, ...req.inWay].slice(0, 6);
       req.obstacles = req.inWay.length;
       const stray = plan.fight?.[0];
       if (stray) req.stray = { id: stray, name: state.models[stray].name, d: dOf(stray) };
@@ -386,6 +421,10 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
           ...(steed ? [{ type: 'addModels', models: [steed] } as Action, { type: 'crossed', id: steed.id, stop: true } as Action] : []),
         ],
       };
+    }
+    case 'trample': {
+      const out = trample(state, catalog, seat, action, d6, uid, now);
+      return out && { apply: out };
     }
     case 'shotOn': {
       // Carrying on with a shot that stopped for its hero to spend Might.
@@ -474,7 +513,9 @@ function shotActions(state: GameState, req: ShotRequest, shooter: Model, d6: () 
     ...rolled,
     ...shot.hits.flatMap(h =>
       // A shot that hit a rider's mount wounds the mount.
-      h.id.endsWith('#mount') ? woundAction(state, all.filter(r => r.against === h.id), h.id.slice(0, -6), h.wounds, [shooter.id], 'shoot', group).map(a => ({ ...a, mount: true }) as Action) : woundAction(state, all.filter(r => r.against === h.id), h.id, h.wounds, [shooter.id], 'shoot', group),
+      h.id.endsWith('#mount') ? woundAction(state, all.filter(r => r.against === h.id), h.id.slice(0, -6), h.wounds, [shooter.id], 'shoot', group).map(a => ({ ...a, mount: true }) as Action)
+      : h.id.endsWith('#howdah') ? woundAction(state, all.filter(r => r.against === h.id), h.id.slice(0, -7), h.wounds, [shooter.id], 'shoot', group).map(a => ({ ...a, howdah: true }) as Action)
+      : woundAction(state, all.filter(r => r.against === h.id), h.id, h.wounds, [shooter.id], 'shoot', group),
     ),
   ];
 }

@@ -38,7 +38,8 @@ export function wallBetween(state: GameState, a: Model, b: Model): Terrain | und
  * above the other than its own height), or both touching a wall from opposite sides.
  */
 export function touching(state: GameState, a: Model, b: Model): boolean {
-  if (!near(a, b, 5)) return false;
+  // Those riding a war beast are never in a fight: the beast fights.
+  if (a.aboard || b.aboard || !near(a, b, 5)) return false;
   if (distanceBetween(a, b) <= CONTACT_SLACK) {
     if (!a.floor && !b.floor && !hasHeight(state)) return true;
     const lift = levelOf(state, a) - levelOf(state, b);

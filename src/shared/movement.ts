@@ -93,7 +93,7 @@ export function blockMove(state: GameState, m: Model, from: Point, to: Point, sk
   if (d < 1e-6) return to;
   const at = (p: Point): Model => ({ ...m, x: p.x, y: p.y });
   const near = (e: Model) => e.x > Math.min(from.x, to.x) - 5 && e.x < Math.max(from.x, to.x) + 5 && e.y > Math.min(from.y, to.y) - 5 && e.y < Math.max(from.y, to.y) + 5;
-  const others = Object.values(state.models).filter(e => e.id !== m.id && !e.dead && !e.waiting && !e.escaped && !skip?.has(e.id) && near(e));
+  const others = Object.values(state.models).filter(e => e.id !== m.id && !e.dead && !e.waiting && !e.escaped && !e.aboard && !skip?.has(e.id) && near(e));
   const zonesApply = state.phase === 'move' || fightsAgain(state, m);
   const enemies = zonesApply ? others.filter(e => e.owner !== m.owner) : [];
   const zoned = enemies.filter(e => !e.prone && !engaged(state, e, m.id));

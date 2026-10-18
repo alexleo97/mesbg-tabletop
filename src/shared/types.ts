@@ -86,6 +86,15 @@ export interface Model {
   steed?: string;
   /** Which level it stands on inside a building with floors: 0 is the ground floor, the building's `floors` its roof. */
   floor?: number;
+  /** A war beast (it Tramples) or a chariot (it makes a Chariot Charge), marked as it comes onto the table (see warBeasts.ts). */
+  beast?: 'war' | 'chariot';
+  /** The war beast it rides: its Commander, or a warrior in its Howdah. */
+  aboard?: string;
+  /** A war beast's Howdah: the wounds it has left (0 once it is destroyed). */
+  howdahWounds?: number;
+  /** Wounds a war beast has taken that it still has to test for Stampede, and whether it failed one (it Stampedes as it next moves). */
+  stampedeTests?: number;
+  stampede?: boolean;
 }
 
 /** A power at work on a model: which one, who cast it and the turn it was cast. */
@@ -338,6 +347,8 @@ export interface Flow {
   /** Monsters that have made their one Brutal Power Attack this turn, and the models already hurled at. */
   brutal?: string[];
   hurledAt?: string[];
+  /** War beasts and chariots that have made their move this turn. */
+  trampled?: string[];
   /**
    * A monster that barged its foes aside: how far it may now move (and charge) this Fight phase, and how many fights
    * had been fought when it did (so it can fight once more).
@@ -468,6 +479,12 @@ export type Action =
   | { type: 'banner'; roll: string; die: number }
   /** A rider gets down from its mount during its move (the game rolls the Courage test of a mount that fights). */
   | { type: 'dismount'; id: string }
+  /** A war beast Tramples, or a chariot makes its Chariot Charge, towards a point; `pivot` turns a chariot on the spot instead. */
+  | { type: 'trample'; id: string; x: number; y: number; pivot?: boolean }
+  /** The game's record that a war beast or chariot has made its move this turn, and who it ended up charging. */
+  | { type: 'trampled'; id: string; from: [number, number]; target?: string }
+  /** Before the battle, a warrior climbs into its war beast's Howdah (or, with no beast, climbs out). */
+  | { type: 'board'; id: string; beast?: string }
   /** Server only: a monster made its Brutal Power Attack this turn (and barged, with a free move, or hurled at someone). */
   | { type: 'brutal'; id: string; barge?: number; hurledAt?: string }
   | { type: 'bannerRolled'; roll: string; die: number; value: number; by: string }
@@ -478,7 +495,7 @@ export type Action =
   /** A hero spends a Might point to raise one of its own dice by 1. `follow` picks the follow-up dice of a 6/4+ roll. */
   | { type: 'useMight'; roll: string; die: number; follow?: boolean; will?: boolean }
   /** Wounds dealt to a model. A hero with Fate holds them as pending until its player decides. */
-  | { type: 'wound'; id: string; count: number; by?: string[]; how?: 'fight' | 'shoot' | 'other'; group?: string; mount?: boolean }
+  | { type: 'wound'; id: string; count: number; by?: string[]; how?: 'fight' | 'shoot' | 'other'; group?: string; mount?: boolean; howdah?: boolean }
   /** A model picks up a marker it is touching, turns a face-down marker over, or drops what it carries. */
   | { type: 'pickUp'; model: string; marker: string }
   | { type: 'flip'; model: string; marker: string }

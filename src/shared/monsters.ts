@@ -8,15 +8,13 @@ import { distanceBetween, halfExtents } from './geometry.ts';
 import { declared } from './heroics.ts';
 import { under } from './powers.ts';
 import { inDifficult, sightTo } from './sight.ts';
+import { immovable, isChariot, isWarBeast } from './warBeasts.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
 const unitOf = (catalog: Catalog | null | undefined, m: Model) => (m.profileId ? catalog?.units[m.profileId] : undefined);
 const rules = (catalog: Catalog | null | undefined, m: Model) => unitOf(catalog, m)?.rules ?? [];
 
-/** A war beast (a Mûmak, a Troll Brute): one that tramples. */
-export const isWarBeast = (catalog: Catalog | null | undefined, m: Model) => rules(catalog, m).includes('Trample');
-/** A chariot: one that makes a Chariot Charge. */
-export const isChariot = (catalog: Catalog | null | undefined, m: Model) => rules(catalog, m).includes('Chariot Charge');
+export { isChariot, isWarBeast };
 
 // Our data has no Monster keyword. Monsters are the models with Monstrous Charge, and the great creatures that count
 // as several models (Dominant 3 or more): trolls, Ents, dragons, the Balrog. Spirits and Sauron count as many, but
@@ -28,7 +26,7 @@ export function isMonster(catalog: Catalog | null | undefined, m: Model): boolea
   if (m.steed) return /fell beast|great eagle/i.test(m.steed);
   if (mountOf(m)?.monster) return true;
   const unit = unitOf(catalog, m);
-  if (!unit || isWarBeast(catalog, m) || isChariot(catalog, m) || unit.type === 'Siege Engine') return false;
+  if (!unit || isWarBeast(catalog, m) || isChariot(catalog, m) || m.aboard || unit.type === 'Siege Engine') return false;
   if (unit.rules.includes('Monstrous Charge')) return true;
   const dominant = unit.rules.map(r => /^Dominant ?\((\d+)\)/.exec(r)).find(Boolean);
   return !!dominant && Number(dominant[1]) >= 3 && !NOT_MONSTER.test(unit.name);
@@ -49,8 +47,13 @@ export const hasLance = (catalog: Catalog | null | undefined, m: Model) => {
  * of difficult terrain and not Transfixed, or across a defended wall; 'monster' for one with Monstrous Charge that
  * charged. Undefined if it gets none.
  */
-export function chargeBonus(state: GameState, catalog: Catalog | null | undefined, m: Model, foes: Model[], overWall: boolean): 'cavalry' | 'monster' | undefined {
-  if (!state.flow.charges?.[m.id] || overWall || under(state, m, 'Transfix') || inDifficult(state, m, m.owner)) return undefined;
+export function chargeBonus(state: GameState, catalog: Catalog | null | undefined, m: Model, foes: Model[], overWall: boolean): 'cavalry' | 'monster' | 'chariot' | 'beast' | undefined {
+  if (!state.flow.charges?.[m.id] || overWall) return undefined;
+  // A chariot that charged (+1 Attack, knocks down those it beats); a war beast that ended its Trample in the fight
+  // (it knocks down the weaker foes it beats).
+  if (isChariot(catalog, m)) return 'chariot';
+  if (isWarBeast(catalog, m)) return state.flow.trampled?.includes(m.id) ? 'beast' : undefined;
+  if (under(state, m, 'Transfix') || inDifficult(state, m, m.owner)) return undefined;
   if (mounted(m)) return foes.length && foes.every(f => isInfantry(catalog, f)) ? 'cavalry' : undefined;
   return rules(catalog, m).includes('Monstrous Charge') ? 'monster' : undefined;
 }
@@ -60,11 +63,18 @@ export function chargeBonus(state: GameState, catalog: Catalog | null | undefine
  * Monstrous Charge, and +1 to wound for a rider's lance (not in difficult ground, nor against a defended wall); with
  * the notes for the fight card.
  */
-export function chargeEffects(state: GameState, catalog: Catalog | null | undefined, m: Model, foes: Model[], overWall: boolean): { bonus?: 'cavalry' | 'monster'; lance: boolean; notes: string[] } {
+const CHARGE_NOTES = {
+  cavalry: 'Cavalry charge: +1 Attack, knocks infantry down',
+  monster: 'Monstrous Charge: +1 Attack, knocks weaker foes down',
+  chariot: 'Chariot charge: +1 Attack, knocks infantry and cavalry down',
+  beast: 'Irresistible Force: knocks down foes no stronger than it',
+};
+
+export function chargeEffects(state: GameState, catalog: Catalog | null | undefined, m: Model, foes: Model[], overWall: boolean): { bonus?: 'cavalry' | 'monster' | 'chariot' | 'beast'; lance: boolean; notes: string[] } {
   const bonus = chargeBonus(state, catalog, m, foes, overWall);
-  const lance = mounted(m) && !!state.flow.charges?.[m.id] && !overWall && !inDifficult(state, m, m.owner) && hasLance(catalog, m);
+  const lance = mounted(m) && !isChariot(catalog, m) && !!state.flow.charges?.[m.id] && !overWall && !inDifficult(state, m, m.owner) && hasLance(catalog, m);
   const notes = [
-    ...(bonus ? [bonus === 'cavalry' ? 'Cavalry charge: +1 Attack, knocks infantry down' : 'Monstrous Charge: +1 Attack, knocks weaker foes down'] : []),
+    ...(bonus ? [CHARGE_NOTES[bonus]] : []),
     ...(lance ? ['Lance: +1 to wound on the charge'] : []),
   ];
   return { ...(bonus ? { bonus } : {}), lance, notes };
@@ -75,15 +85,18 @@ export function chargeEffects(state: GameState, catalog: Catalog | null | undefi
  * Strength 6 or more; a Monstrous Charge fells those of lower Strength, and throws riders from their mounts.
  * Returns the ids knocked Prone and the riders knocked flying.
  */
-export function knockedDown(catalog: Catalog | null | undefined, kind: 'cavalry' | 'monster', strength: number, losers: Model[]): { prone: string[]; flying: string[] } {
+export function knockedDown(catalog: Catalog | null | undefined, kind: 'cavalry' | 'monster' | 'chariot' | 'beast', strength: number, losers: Model[]): { prone: string[]; flying: string[] } {
   const prone: string[] = [];
   const flying: string[] = [];
   for (const l of losers) {
-    if (l.dead || isWarBeast(catalog, l)) continue;
+    // War beasts and chariots are never knocked down.
+    if (l.dead || immovable(catalog, l)) continue;
     const s = modelStats(catalog, l)?.S ?? 3;
     if (kind === 'cavalry') {
       if (isInfantry(catalog, l) && !isMonster(catalog, l) && s < 6) prone.push(l.id);
-    } else if (s < strength) (mounted(l) ? flying : prone).push(l.id);
+    } else if (kind === 'chariot') {
+      if (!isMonster(catalog, l)) (mounted(l) ? flying : prone).push(l.id);
+    } else if (kind === 'beast' ? s <= strength : s < strength) (mounted(l) ? flying : prone).push(l.id);
   }
   return { prone, flying };
 }

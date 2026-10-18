@@ -79,10 +79,11 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
     };
   };
 
-  // What a winner can strike: each enemy, and a rider's mount as well as the rider.
+  // What a winner can strike: each enemy, and a rider's mount as well as the rider (only the chariot, for a chariot's crew).
   const strikable = (s: Seat) =>
     sides[s].flatMap(m => {
       const p = mountOf(m);
+      if (p?.chariot && p.left > 0) return [{ id: `${m.id}#mount`, label: `${tag(m)}'s chariot` }];
       return [{ id: m.id, label: tag(m) }, ...(p && p.left > 0 ? [{ id: `${m.id}#mount`, label: `${tag(m)}'s ${mountLabel(p.name).toLowerCase()}` }] : [])];
     });
 

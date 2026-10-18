@@ -18,7 +18,7 @@ import { catalog, seeded } from './botsim.ts';
 
 const [scenario, seedArg, armyA = 'Minas Tirith', armyB = 'Mordor'] = process.argv.slice(2);
 const rand = seeded(Number(seedArg ?? 1));
-const room = `FG${Date.now() % 100000}`;
+const room = `FG${Date.now() % 100000}${seedArg ?? ''}`;
 const ws = new WebSocket(`ws://localhost:${process.env.PORT ?? 8789}/ws?room=${room}`);
 let state: GameState = initialState();
 let changed = Date.now();
@@ -60,7 +60,11 @@ ws.on('open', async () => {
   }
   await sleep(300);
   for (const [seat, army] of [['p1', armyA], ['p2', armyB]] as const) {
-    const entries = listEntries(botRoster(catalog, army, 500, rand), catalog).flatMap(g => g.entries);
+    // FORCE=unit-id,unit-id adds those units (where the army has them) to the computer's list, to try them out.
+    const roster = botRoster(catalog, army, 500, rand);
+    const force = (process.env.FORCE ?? '').split(',').filter(id => catalog.armies[army]?.units.includes(id));
+    roster.entries.push(...force.map((unitId, i) => ({ key: `f${i}`, unitId, count: unitId.includes('chariot') || unitId.includes('charioteer') ? 2 : 1, optionIds: [] })));
+    const entries = listEntries(roster, catalog).flatMap(g => g.entries);
     send({ type: 'addModels', models: deployList(entries, seat, state, sc ?? undefined) });
     await sleep(400);
   }

@@ -1,5 +1,6 @@
 import { bookBase, round } from './bases.ts';
 import { mounted, mountProfile } from './cavalry.ts';
+import { boardCommanders, carried, howdahFor, howdahSpot } from './warBeasts.ts';
 import { holdInZones } from './deployment.ts';
 import { heroicInfo, heroicNow, heroicQueue, mayActivate, shoutedFor, SHOUT_RANGE } from './heroics.ts';
 import { pendingSpell } from './magic.ts';
@@ -78,7 +79,7 @@ function goToPhase(state: GameState, phase: Phase, turn: number, newTurn: boolea
       done: [],
       resolved: newTurn ? [] : state.flow.resolved,
       heroics: newTurn ? [] : state.flow.heroics,
-      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], moved: [], cast: [], spell: undefined, held: [], stood: [], climbed: {}, compel: undefined, supported: [], strikeBonus: {}, charges: {}, brutal: [], hurledAt: [] } : {}),
+      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], moved: [], cast: [], spell: undefined, held: [], stood: [], climbed: {}, compel: undefined, supported: [], strikeBonus: {}, charges: {}, brutal: [], hurledAt: [], trampled: [] } : {}),
       ...(phase !== state.phase ? { compel: undefined, mustCharge: undefined } : {}),
       // The fights are paired off as the Fight phase begins, and stay that way until it ends.
       ...(phase !== state.phase ? { pairs: phase === 'fight' && state.flow.started ? pairOff(livingModels(state), { ...state, phase: 'move' }, state.flow.pairChoices).map(c => c.key) : undefined, pairChoices: undefined } : {}),
@@ -199,6 +200,15 @@ export function cleanModel(m: Partial<Model>, prev?: Model): Model | null {
   if (steed) out.steed = steed;
   const floor = 'floor' in m ? int(m.floor, 0, 9, 0) : base.floor;
   if (floor) out.floor = floor;
+  const beast = 'beast' in m ? (m.beast === 'war' || m.beast === 'chariot' ? m.beast : undefined) : base.beast;
+  if (beast) out.beast = beast;
+  const aboard = 'aboard' in m ? (m.aboard ? id(m.aboard) : undefined) : base.aboard;
+  if (aboard && !out.dead) out.aboard = aboard;
+  const howdahWounds = 'howdahWounds' in m ? (m.howdahWounds === undefined ? undefined : int(m.howdahWounds, 0, 20, 0)) : base.howdahWounds;
+  if (beast === 'war' && howdahWounds !== undefined) out.howdahWounds = howdahWounds;
+  const stampedeTests = 'stampedeTests' in m ? int(m.stampedeTests, 0, 30, 0) : base.stampedeTests;
+  if (beast === 'war' && stampedeTests) out.stampedeTests = stampedeTests;
+  if (beast === 'war' && ('stampede' in m ? m.stampede === true : base.stampede)) out.stampede = true;
   return out.id ? out : null;
 }
 
@@ -461,7 +471,9 @@ function step(state: GameState, action: Action): GameState {
         const m = cleanModel(raw ?? {});
         if (m) models[m.id] = m;
       }
-      return { ...state, models };
+      // A war beast's Commander rides on it.
+      const added = action.models.map(raw => (raw && typeof raw === 'object' ? String(raw.id) : '')).filter(i => models[i]);
+      return { ...state, models: boardCommanders(models, added) };
     }
     case 'moveModels': {
       if (!Array.isArray(action.moves)) return state;
@@ -479,6 +491,11 @@ function step(state: GameState, action: Action): GameState {
       for (const mv of moves) {
         const prev = mv && models[mv.id];
         if (!prev || prev.escaped || prev.waiting) continue;
+        // Riders go where their war beast takes them.
+        if (prev.aboard && models[prev.aboard] && !models[prev.aboard].dead) continue;
+        // In the Move phase a war beast only Tramples, and a chariot only makes its Chariot Charge (see warBeasts.ts),
+        // and a side with a war beast about to Stampede must let it go first.
+        if (state.flow.started && state.phase === 'move' && (prev.beast || (mounted(prev) && mountProfile(prev.mount)?.chariot) || Object.values(models).some(b => b.owner === prev.owner && b.stampede && !b.dead && !state.flow.trampled?.includes(b.id)))) continue;
         const asked = { x: num(mv.x, -24, 200, prev.x), y: num(mv.y, -24, 200, prev.y) };
         // A model whose move has ended this phase stays where it is.
         if (state.flow.started && state.phase === 'move' && state.flow.stopped?.includes(prev.id) && (asked.x !== prev.x || asked.y !== prev.y)) continue;
@@ -539,12 +556,51 @@ function step(state: GameState, action: Action): GameState {
           if (foe) charges = { ...charges, [prev.id]: foe.id };
         }
         models[prev.id] = next;
+        // Its Commander and any in its Howdah ride along.
+        if (prev.beast === 'war' && (next.x !== prev.x || next.y !== prev.y || next.rot !== prev.rot))
+          for (const r of Object.values(models)) if (r.aboard === prev.id && !r.dead) models[r.id] = { ...r, ...carried(prev, next, r) };
       }
       const flow =
         starts !== state.flow.starts || stood !== state.flow.stood || climbed !== state.flow.climbed || blocked !== state.flow.blocked || charges !== state.flow.charges || heroicStarted !== state.flow.heroicNow
           ? { flow: { ...state.flow, starts, ...(stood ? { stood } : {}), ...(climbed ? { climbed } : {}), ...(blocked ? { blocked } : {}), ...(charges ? { charges } : {}), ...(heroicStarted ? { heroicNow: heroicStarted } : {}) } }
           : {};
       return { ...state, models, ...flow };
+    }
+    case 'trampled': {
+      // A war beast or chariot has made its move (the game drove it; see warBeasts.ts): it moves no more this phase.
+      const m = state.models[action.id];
+      if (!m || !Array.isArray(action.from)) return state;
+      const from: [number, number] = [num(action.from[0], -24, 200, m.x), num(action.from[1], -24, 200, m.y)];
+      const target = action.target && state.models[action.target] ? action.target : undefined;
+      const flow = {
+        ...state.flow,
+        starts: state.flow.starts?.[m.id] ? state.flow.starts : { ...state.flow.starts, [m.id]: from },
+        trampled: [...new Set([...(state.flow.trampled ?? []), m.id])],
+        stopped: [...new Set([...(state.flow.stopped ?? []), m.id])],
+        ...(target ? { charges: { ...state.flow.charges, [m.id]: target } } : {}),
+      };
+      // A Stampede is over once it has run.
+      if (!m.stampede) return { ...state, flow };
+      const { stampede: _, ...calm } = m;
+      return { ...state, flow, models: { ...state.models, [m.id]: calm } };
+    }
+    case 'board': {
+      // Before the battle, a warrior climbs into a war beast's Howdah, or climbs out again beside it.
+      const m = state.models[action.id];
+      if (!m || m.dead || state.flow.started) return state;
+      if (!action.beast) {
+        const beast = m.aboard ? state.models[m.aboard] : undefined;
+        if (!beast || /commander/i.test(m.name)) return state;
+        const out = { ...m, x: beast.x, y: beast.y + (beast.owner === 'p1' ? 1 : -1) * (beast.base.h / 50.8 + 0.6) };
+        delete out.aboard;
+        return { ...state, models: { ...state.models, [m.id]: out } };
+      }
+      const beast = state.models[action.beast];
+      if (!beast || beast.beast !== 'war' || beast.owner !== m.owner || m.aboard || m.beast) return state;
+      const howdah = howdahFor(beast.name);
+      const spot = howdahSpot(state, beast);
+      if (!spot || !howdah?.capacity || !howdah.who?.test(m.name) || Object.values(state.models).filter(r => r.aboard === beast.id && !/commander/i.test(r.name)).length >= howdah.capacity) return state;
+      return { ...state, models: { ...state.models, [m.id]: { ...m, ...spot, rot: beast.rot, aboard: beast.id } } };
     }
     case 'climb': {
       // A model climbs between the floors of the building it's in, spending the height from its Move once the battle's on.
@@ -891,14 +947,30 @@ function step(state: GameState, action: Action): GameState {
       if (action.mount === true) {
         if (!mounted(m) || !m.mount || (group && woundsTaken(state.flow.applied, group, `${m.id}#mount`))) return state;
         const left = Math.max(0, (m.mountWounds ?? mountProfile(m.mount)?.w ?? 1) - n);
-        const rider: Model = { ...m, mountWounds: left, ...(left ? {} : { throwPending: 'test' as const }) };
+        // A hero whose chariot is wrecked is knocked flying from it.
+        const rider: Model = { ...m, mountWounds: left, ...(left ? {} : { throwPending: mountProfile(m.mount)?.chariot ? ('flying' as const) : ('test' as const) }) };
         const flow = group ? { ...state.flow, applied: [...(state.flow.applied ?? []), `${group}>${m.id}#mount`].slice(-80) } : state.flow;
         return { ...state, flow, models: { ...state.models, [m.id]: rider } };
       }
+      // A war beast's Howdah takes its own wounds; when it's destroyed, those in it fall (the game rolls it).
+      if (action.howdah === true) {
+        if (m.beast !== 'war' || !m.howdahWounds || (group && woundsTaken(state.flow.applied, group, `${m.id}#howdah`))) return state;
+        const flow = group ? { ...state.flow, applied: [...(state.flow.applied ?? []), `${group}>${m.id}#howdah`].slice(-80) } : state.flow;
+        return { ...state, flow, models: { ...state.models, [m.id]: { ...m, howdahWounds: Math.max(0, m.howdahWounds - n) } } };
+      }
       if (group && woundsTaken(state.flow.applied, group, m.id)) return state;
+      // Plenty of Orcs: a Great Beast's Commander that would fall is replaced from the Howdah, which takes the wound.
+      const ridden = m.aboard ? state.models[m.aboard] : undefined;
+      if (ridden && /great beast/i.test(ridden.name) && /commander/i.test(m.name) && n >= m.wounds && ridden.howdahWounds) {
+        const flow = group ? { ...state.flow, applied: [...(state.flow.applied ?? []), `${group}>${m.id}`].slice(-80) } : state.flow;
+        const keep = Math.max(1, m.wounds - n + 1);
+        return { ...state, flow, models: { ...state.models, [m.id]: { ...m, wounds: keep }, [ridden.id]: { ...ridden, howdahWounds: Math.max(0, ridden.howdahWounds - (n - m.wounds + 1)) } } };
+      }
       const by = Array.isArray(action.by) ? action.by.filter(i => typeof i === 'string' && state.models[i]) : [];
       const struck = { ...m, ...(by.length ? { lastHit: cleanHit({ ids: by, how: action.how }) } : { lastHit: undefined }) };
-      const hit = m.hero && m.fate > 0 ? { ...struck, pending: (m.pending ?? 0) + n } : takeWounds(struck, n);
+      const taken = m.hero && m.fate > 0 ? { ...struck, pending: (m.pending ?? 0) + n } : takeWounds(struck, n);
+      // A war beast tests for Stampede for every wound it takes (the game rolls it).
+      const hit = m.beast === 'war' ? { ...taken, stampedeTests: (m.stampedeTests ?? 0) + Math.min(n, m.wounds) } : taken;
       // A fight's strikes can wound several models, so each one's share is ticked off separately.
       const flow = group ? { ...state.flow, applied: [...(state.flow.applied ?? []), `${group}>${m.id}`].slice(-80) } : state.flow;
       return { ...state, flow, models: { ...state.models, [m.id]: hit } };
@@ -1195,6 +1267,7 @@ export function loadState(raw: unknown): GameState {
         ...(f.charges && typeof f.charges === 'object' ? { charges: Object.fromEntries(Object.entries(f.charges).slice(0, 400).map(([k, v]) => [str(k, 80), str(v, 80)])) } : {}),
         ...(Array.isArray(f.brutal) ? { brutal: f.brutal.slice(0, 100).map(x => str(x, 80)) } : {}),
         ...(Array.isArray(f.hurledAt) ? { hurledAt: f.hurledAt.slice(0, 100).map(x => str(x, 80)) } : {}),
+        ...(Array.isArray(f.trampled) ? { trampled: f.trampled.slice(0, 100).map(x => str(x, 80)) } : {}),
         ...(f.barged && typeof f.barged === 'object' ? { barged: Object.fromEntries(Object.entries(f.barged).slice(0, 20).filter(([, v]) => Array.isArray(v)).map(([k, v]) => [str(k, 80), [num((v as unknown[])[0], 0, 12, 0), int((v as unknown[])[1], 0, 999, 0)] as [number, number]])) } : {}),
         ...(f.retreat && typeof f.retreat === 'object' ? { retreat: Object.fromEntries(Object.entries(f.retreat).slice(0, 100).filter(([, v]) => Array.isArray(v)).map(([k, v]) => [str(k, 80), [num((v as unknown[])[0], -24, 200, 0), num((v as unknown[])[1], -24, 200, 0)] as [number, number]])) } : {}),
         ...(f.mustCharge && typeof f.mustCharge === 'object' ? { mustCharge: { model: str(f.mustCharge.model, 80), target: str(f.mustCharge.target, 80) } } : {}),
