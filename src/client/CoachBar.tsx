@@ -7,6 +7,9 @@ import { canDeclare, heroicInfo, heroicsSettled, heroicTurn, HEROICS, orderRollL
 import { RollRow } from './Panels.tsx';
 import { useDraggable } from './useDraggable.tsx';
 import { pendingSpell } from '../shared/magic.ts';
+import { freeResistDice, isAreaPower, isLinePower } from '../shared/powers.ts';
+import { formatInches } from '../shared/geometry.ts';
+import { useCatalog } from './ListBuilder.tsx';
 import { isMaelstrom, waitingWarbands, warbandName } from '../shared/maelstrom.ts';
 import { scenarioById } from '../shared/scenarios.ts';
 import { scoreLines, vpTotals } from '../shared/scoring.ts';
@@ -32,9 +35,11 @@ type Dispatch = (a: Action) => void;
 /** A power cast and waiting: its target's player chooses whether to resist, or its caster whether to spend Might. */
 function SpellStep({ state, dispatch, role, name }: { state: GameState; dispatch: Dispatch; role: Role; name: (s: Seat) => string }) {
   const p = pendingSpell(state);
+  const { catalog } = useCatalog();
   const [will, setWill] = useState(1);
   if (!p) return null;
   const { caster, target } = p;
+  if (p.ready) return <p className="spell-step">{p.power} works: the game is putting it into play.</p>;
   if (!p.cast)
     return (
       <div className="spell-step">
@@ -49,27 +54,59 @@ function SpellStep({ state, dispatch, role, name }: { state: GameState; dispatch
       </div>
     );
   const n = Math.max(1, Math.min(will, target.will));
+  // Free dice (Fortify Spirit, Resistant to Magic, Heroic Resolve) are always rolled, and cost nothing.
+  const free = freeResistDice(state, catalog, target);
+  const freeText = free ? ` plus ${free} free ${free === 1 ? 'die' : 'dice'}` : '';
+  const all = isAreaPower(p.power) || isLinePower(p.power);
   return (
     <div className="spell-step">
       <p>
-        {caster.name} cast <b>{p.power}</b> at {target.name} on a {p.best}.{' '}
+        {caster.name} cast <b>{p.power}</b> on a {p.best}{all ? `; ${target.name} resists for all it hits` : ` at ${target.name}`}.{' '}
         {target.owner === role
-          ? `Resist by spending Will: each point is a die, and any ${p.best === 6 ? '6' : `${p.best} or more`} stops it. ${target.name} has ${target.will} Will.`
+          ? `Resist by spending Will: each point is a die, and any ${p.best === 6 ? '6' : `${p.best} or more`} stops it. ${target.name} has ${target.will} Will${freeText}.`
           : `Waiting for ${name(target.owner)} to choose whether ${target.name} resists.`}
       </p>
       {target.owner === role && (
         <div className="row wrap">
-          <label className="stepper">
-            <span>Will</span>
-            <button onClick={() => setWill(Math.max(1, n - 1))} aria-label="Less Will">−</button>
-            <b>{n}</b>
-            <button onClick={() => setWill(Math.min(target.will, n + 1))} aria-label="More Will">+</button>
-          </label>
-          <button className="primary" onClick={() => dispatch({ type: 'resist', will: n })}>
-            Resist with {n} {n === 1 ? 'die' : 'dice'}
+          {target.will > 0 && (
+            <>
+              <label className="stepper">
+                <span>Will</span>
+                <button onClick={() => setWill(Math.max(1, n - 1))} aria-label="Less Will">−</button>
+                <b>{n}</b>
+                <button onClick={() => setWill(Math.min(target.will, n + 1))} aria-label="More Will">+</button>
+              </label>
+              <button className="primary" onClick={() => dispatch({ type: 'resist', will: n })}>
+                Resist with {n + free} {n + free === 1 ? 'die' : 'dice'}
+              </button>
+            </>
+          )}
+          <button className={target.will > 0 ? '' : 'primary'} onClick={() => dispatch({ type: 'resist', will: 0 })}>
+            {free ? `Roll only the free ${free === 1 ? 'die' : 'dice'}` : "Don't resist"}
           </button>
-          <button onClick={() => dispatch({ type: 'resist', will: 0 })}>Don't resist</button>
         </div>
+      )}
+    </div>
+  );
+}
+
+/** A Compel that worked: its caster's player drags the enemy model, then says they're done. */
+function CompelStep({ state, dispatch, role }: { state: GameState; dispatch: Dispatch; role: Role }) {
+  const c = state.flow.compel;
+  const t = c && state.models[c.model];
+  const caster = c && state.models[c.caster];
+  if (!c || !t || !caster) return null;
+  return (
+    <div className="spell-step">
+      <p>
+        {caster.owner === role
+          ? `Drag ${t.name} up to ${formatInches(c.max)} (you can charge with it, but not take it out of a fight). It can't move again this turn.`
+          : `${caster.name} has Compelled ${t.name}: the other player moves it up to ${formatInches(c.max)}.`}
+      </p>
+      {caster.owner === role && (
+        <button className="primary" onClick={() => dispatch({ type: 'compel', compel: null })}>
+          Done moving {t.name}
+        </button>
       )}
     </div>
   );
@@ -455,6 +492,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
       {!small && (
         <div className="coach-body">
           {flow.started && <SpellStep state={state} dispatch={dispatch} role={role} name={name} />}
+          {flow.started && <CompelStep state={state} dispatch={dispatch} role={role} />}
           {flow.started && <FateStep state={state} dispatch={dispatch} role={role} name={name} />}
           {flow.started && <Reinforcements state={state} name={name} />}
           {state.result && <ResultReport state={state} role={role} dispatch={dispatch} />}

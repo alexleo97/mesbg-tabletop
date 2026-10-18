@@ -4,6 +4,8 @@ import { cleanFight, cleanShot, resolveDuel, resolveShot, resolveStrikes, type F
 import { combatFromKey, priorityChooser } from './flow.ts';
 import { fightDone, foughtThisTurn } from './movement.ts';
 import { rollCast, rollResist } from './magic.ts';
+import { cannotAct, intelligenceWorse, noStrikes, shotNeed, under, witheredStrength } from './powers.ts';
+import type { Catalog } from './catalog.ts';
 import { touching } from './objects.ts';
 import { MAX_DICE } from './reducer.ts';
 import type { Action, DiceRoll, GameState, Seat } from './types.ts';
@@ -42,10 +44,31 @@ function freshFighters(state: GameState, req: FightRequest | null): FightRequest
 }
 
 /**
- * Rolls the dice for a player's request and returns the results to apply, or null if the request isn't allowed.
- * `d6` rolls one die and `uid` makes a unique id.
+ * What the powers on each fighter do to it, worked out here whatever the player sent: Wither and Enrage Beast change
+ * its numbers, Bladewrath makes its strikes Strength 6, Enchant Blades re-rolls its misses, a Paralysed model adds
+ * nothing, and a Transfixed, Prone or thrown one makes no strikes.
  */
-export function resolveRequest(state: GameState, seat: Seat, action: Action, d6: () => number, uid: () => string, now = Date.now()): Resolved | null {
+export function adjustFight(state: GameState, req: FightRequest): FightRequest {
+  const adjust = (f: Fighter): Fighter => {
+    const m = state.models[f.id];
+    if (!m) return f;
+    const out: Fighter = { ...f, s: witheredStrength(m, f.s) };
+    if (under(state, m, 'Enrage Beast')) Object.assign(out, { f: Math.min(10, out.f + 2), s: Math.min(10, out.s + 2), a: Math.min(10, out.a + 2) });
+    if (under(state, m, 'Bladewrath')) out.s = 6;
+    if (under(state, m, 'Enchant Blades')) out.reroll = true;
+    if (under(state, m, 'Paralyse')) out.still = true;
+    const why = noStrikes(state, m);
+    if (why) out.noStrike = why;
+    return out;
+  };
+  return { ...req, sides: [req.sides[0].map(adjust), req.sides[1].map(adjust)] };
+}
+
+/**
+ * Rolls the dice for a player's request and returns the results to apply, or null if the request isn't allowed.
+ * `d6` rolls one die and `uid` makes a unique id; `catalog` gives the profiles some powers need.
+ */
+export function resolveRequest(state: GameState, seat: Seat, action: Action, d6: () => number, uid: () => string, now = Date.now(), catalog: Catalog | null = null): Resolved | null {
   const mine = (id: unknown) => typeof id === 'string' && state.models[id]?.owner === seat;
   switch (action.type) {
     case 'roll': {
@@ -73,12 +96,14 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       };
     }
     case 'fight': {
-      const req = freshFighters(state, cleanFight(action.fight));
+      const fresh = freshFighters(state, cleanFight(action.fight));
+      const req = fresh && adjustFight(state, fresh);
       if (!req || (state.flow.started && req.combat && fightDone(state, combatFromKey(state, req.combat) ?? { key: req.combat, p1: [], p2: [] })) || duelOpen(state, req.sides.flat().map(f => f.id))) return null;
       return { apply: resolveDuel(req, d6, seat, `f-${uid()}`, now).map(roll => ({ type: 'rolled', roll })) };
     }
     case 'strikes': {
-      const req = freshFighters(state, cleanFight(action.fight));
+      const fresh = freshFighters(state, cleanFight(action.fight));
+      const req = fresh && adjustFight(state, fresh);
       const group = String(action.group ?? '');
       const rolls = state.log.filter(r => r.group === group);
       // Strikes follow a duel that's still in the log, once.
@@ -88,15 +113,19 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       const ids = (side: 0 | 1) => req.sides[side].map(f => f.id).filter(id => state.models[id]);
       const cornered = (winner: 0 | 1, target: string) => {
         retreat = backAway(state, ids((1 - winner) as 0 | 1), ids(winner));
-        return retreat.trapped.includes(target);
+        // A Prone model that loses is always trapped.
+        return retreat.trapped.includes(target) || !!state.models[target]?.prone;
       };
       const { rolls: strikes, outcome } = resolveStrikes(req, rolls, d6, seat, group, now, cornered);
+      // A Prone winner gets up instead of striking (unless Paralysed).
+      const rise = ids(outcome.winner).filter(id => state.models[id].prone && !under(state, state.models[id], 'Paralyse'));
       // Wounds go first, so a loser they slay stays where it fell rather than backing away.
       return {
         apply: [
           ...strikes.map((roll): Action => ({ type: 'rolled', roll })),
           ...woundAction(state, strikes, outcome.target?.id, outcome.wounds, ids(outcome.winner), 'fight', group),
           ...(retreat?.moves.length ? [{ type: 'backAway', moves: retreat.moves } as Action] : []),
+          ...rise.map((id): Action => ({ type: 'affect', id, patch: { prone: false } })),
         ],
         ...(req.combat ? { record: { type: 'resolveCombat', key: req.combat } } : {}),
       };
@@ -107,7 +136,12 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       // The game counts what's in the way itself, from the table.
       const shooter = state.models[req.shooter.id];
       const target = state.models[req.target.id];
-      if (shooter && target) req.obstacles = Math.min(5, inTheWay(state, shooter, target).length);
+      // Prone models never shoot, and nor do ones held by a power.
+      if (shooter && state.flow.started && (shooter.prone || cannotAct(state, shooter))) return null;
+      if (shooter && target) {
+        req.obstacles = Math.min(5, inTheWay(state, shooter, target).length);
+        req.shooter.shoot = shotNeed(state, shooter, target, req.shooter.shoot);
+      }
       const group = `s-${uid()}`;
       const shot = resolveShot(req, d6, seat, group, now);
       return {
@@ -115,11 +149,11 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       };
     }
     case 'cast': {
-      const out = rollCast(state, seat, action, d6, uid, now);
+      const out = rollCast(state, seat, action, d6, uid, now, catalog);
       return out && { apply: out };
     }
     case 'resist': {
-      const out = rollResist(state, seat, action.will, d6, uid, now);
+      const out = rollResist(state, seat, action.will, d6, uid, now, catalog);
       return out && { apply: out };
     }
     case 'rollFate': {
@@ -134,7 +168,8 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       const t = state.terrain[String(action.marker)];
       if (!m || m.owner !== seat || m.dead || m.escaped || m.base.h > m.base.w) return null;
       if (!t || t.object !== 'artefact' || !t.hidden || t.gone || t.tried?.[seat] === state.turn || !touching(m, t)) return null;
-      const sum = Math.max(2, Math.min(12, Math.round(Number(action.intelligence)) || 7));
+      // An enemy Fog of Disarray makes the test 1 harder.
+      const sum = Math.max(2, Math.min(12, (Math.round(Number(action.intelligence)) || 7) + intelligenceWorse(state, m)));
       const roll = { id: `r-${uid()}`, by: seat, label: `Uncover the Artefact: ${m.name}`.slice(0, 80), dice: [d6(), d6()], sum, at: now };
       return { apply: [{ type: 'uncovered', model: m.id, marker: t.id, roll }] };
     }

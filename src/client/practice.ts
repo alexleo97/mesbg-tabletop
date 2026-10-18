@@ -2,6 +2,9 @@ import { activeSeat } from '../shared/flow.ts';
 import { heroicTurn } from '../shared/heroics.ts';
 import { reduce } from '../shared/reducer.ts';
 import { DICE_REQUESTS, resolveRequest } from '../shared/resolve.ts';
+import { loadCatalog, type Catalog } from '../shared/catalog.ts';
+import { settleSpell } from '../shared/magic.ts';
+import { recoveryDue, recoveryRolls } from '../shared/powers.ts';
 import { cleanMark } from '../shared/marks.ts';
 import type { Action, GameState, Mark, Role } from '../shared/types.ts';
 import { showMark, turnMarks, type Connection, type Snapshot } from './net.ts';
@@ -9,6 +12,8 @@ import { showMark, turnMarks, type Connection, type Snapshot } from './net.ts';
 const d6 = () => 1 + Math.floor(Math.random() * 6);
 let n = 0;
 const uid = () => `${Date.now().toString(36)}-${(n++).toString(36)}`;
+let catalog: Catalog | null = null;
+void loadCatalog().then(c => (catalog = c), () => {});
 
 /**
  * A game played entirely in this browser, for the training. You play player 1; player 2 is a
@@ -31,10 +36,13 @@ export class PracticeGame implements Connection {
   dispatch(action: Action) {
     let state = this.snap.state;
     if (DICE_REQUESTS.has(action.type)) {
-      const out = resolveRequest(state, 'p1', action, d6, uid);
+      const out = resolveRequest(state, 'p1', action, d6, uid, Date.now(), catalog);
       if (!out) return;
       for (const a of [...out.apply, ...(out.record ? [out.record] : [])]) state = reduce(state, a);
     } else if (action.type !== 'undo') state = reduce(state, action);
+    // What the server would do by itself: put a lifted cast into play, and roll Paralysed models' recovery.
+    for (const a of settleSpell(state, catalog, d6, uid)) state = reduce(state, a);
+    if (recoveryDue(state)) for (const a of recoveryRolls(state, d6, uid)) state = reduce(state, a);
     this.set(this.opponent(state));
   }
 

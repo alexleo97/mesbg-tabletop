@@ -47,7 +47,8 @@ describe('magic', () => {
   it("takes effect straight away on a target with no Will, and fails below the casting value", () => {
     const s = ask(game(), 'p1', cast('orc', 1), [6])!;
     expect(s.flow.spell).toBeUndefined();
-    expect(s.log.at(-1)?.note).toMatch(/no Will to resist/);
+    expect(s.log.find(r => r.label.startsWith('Cast'))?.note).toMatch(/no Will to resist/);
+    expect(s.log.at(-1)?.note).toMatch(/can't move, shoot/);
     const miss = ask(game(3, 2), 'p1', cast('captain', 1), [2])!;
     expect(miss.flow.spell).toBeUndefined();
     expect(miss.log.at(-1)?.note).toBe('The power fails.');

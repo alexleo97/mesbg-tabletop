@@ -5,6 +5,8 @@ import type { Combat } from '../shared/flow.ts';
 import { fightDone } from '../shared/movement.ts';
 import { heroicInfo, phaseAllows } from '../shared/heroics.ts';
 import { carriedBy, markerActions, OBJECT_NAMES } from '../shared/objects.ts';
+import { causesTerror } from '../shared/courage.ts';
+import { effectNotes, heldBy, shotNeed } from '../shared/powers.ts';
 import { groundAt, inTheWay, sightTo } from '../shared/sight.ts';
 import RULES from '../data/special-rules.json';
 import { CastBox } from './MagicPanel.tsx';
@@ -98,31 +100,37 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
   // In the Move phase, charging an enemy with Terror within reach needs a Courage test first.
   const terrifying =
     state.phase === 'move' && mine && state.flow.started
-      ? Object.values(state.models).filter(e => e.owner !== m.owner && !e.dead && distanceBetween(m, e) <= m.move + 1 && rulesOf(e, catalog).some(r => /^Terror\b/.test(r)))
+      ? Object.values(state.models).filter(e => e.owner !== m.owner && !e.dead && distanceBetween(m, e) <= m.move + 1 && causesTerror(catalog, e, state))
       : [];
   const heroics = state.flow.heroics.filter(h => h.model === m.id);
   // This model's own latest roll, while it's still recent, so a hero can spend Might on it here.
   const recent = state.log.slice(-6).reverse().find(r => r.model === m.id);
   const rules = rulesOf(m, catalog);
+  const effects = state.flow.started ? effectNotes(state, catalog, m) : [];
+  const held = state.flow.started && state.phase === 'move' ? heldBy(state, m) : null;
 
   let action: React.ReactNode = null;
   if (state.phase === 'shoot' && mine && weapon && state.flow.started) {
     const hasShot = !!state.flow.shot?.includes(m.id);
     const tooFar = !!state.flow.farMoved?.includes(m.id);
-    if (tooFar) action = <p className="hint">{m.name} moved more than half its Move this turn, so it can't shoot.</p>;
+    const held = heldBy(state, m) ?? (m.prone ? 'Prone' : null);
+    if (held) action = <p className="hint">{m.name} is {held === 'Thrown from its mount' ? 'thrown from its mount' : held}, so it can't shoot this turn.</p>;
+    else if (tooFar) action = <p className="hint">{m.name} moved more than half its Move this turn, so it can't shoot.</p>;
     else if (!target)
       action = hasShot ? <p className="hint">{m.name} has shot this turn. Each model shoots once a turn.</p> : <p className="hint">Tap an enemy model to aim the {weapon.name.toLowerCase()} ({weapon.range}", S{weapon.s}).</p>;
     else {
       const dist = distanceBetween(m, target);
       const tStats = modelStats(catalog, target);
       const d = tStats?.D ?? 4;
-      const shoot = stats?.Sv ?? 4;
+      const printedShoot = stats?.Sv ?? 4;
+      // Blinding Light and Protection of the Valar make the shot harder; the game applies it too.
+      const shoot = shotNeed(state, m, target, printedShoot);
       const need = woundNeed(weapon.s, d);
       const inRange = dist <= weapon.range;
       action = (
         <div className="aim-card">
           <p>
-            At <b>{target.name}</b>: {formatInches(dist)} of {weapon.range}"{inRange ? '' : ', out of range'}. Hits on {shoot}+, wounds on {formatNeed(need)}.
+            At <b>{target.name}</b>: {formatInches(dist)} of {weapon.range}"{inRange ? '' : ', out of range'}. Hits on {shoot}+{shoot !== printedShoot ? ' (a power makes it harder)' : ''}, wounds on {formatNeed(need)}.
           </p>
           {seen === 'hidden' && <p className="warn">Terrain seems to hide {target.name} completely. Check from the model's eye level.</p>}
           <p className="muted small">
@@ -138,7 +146,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
               onClick={() =>
                 dispatch({
                   type: 'shoot',
-                  shot: { shooter: { id: m.id, name: m.name, weapon: weapon.name, shoot, s: weapon.s, shots: 1 }, target: { id: target.id, name: target.name, d }, obstacles },
+                  shot: { shooter: { id: m.id, name: m.name, weapon: weapon.name, shoot: printedShoot, s: weapon.s, shots: 1 }, target: { id: target.id, name: target.name, d }, obstacles },
                 })
               }
             >
@@ -210,6 +218,13 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
           ))}
         </div>
       )}
+      {effects.length > 0 && (
+        <ul className="effects">
+          {effects.map(e => (
+            <li key={e}>✦ {e}</li>
+          ))}
+        </ul>
+      )}
       {rules.length > 0 && (
         <div className="rule-chips">
           {rules.map(r => {
@@ -223,7 +238,13 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
           {openRule && <p className="rule-text">{explain(openRule) ?? (Object.keys(rulesText).length ? 'We have no explanation for this rule yet.' : 'Loading…')}</p>}
         </div>
       )}
-      {state.flow.courage?.[m.id] === false && state.phase === 'move' ? (
+      {held ? (
+        <p className="warn">{m.name} is {held === 'Thrown from its mount' ? 'thrown from its mount' : held}, so it can't move or act this turn.</p>
+      ) : state.flow.compel?.model === m.id ? (
+        <p className="warn">{m.name} is Compelled: {state.models[state.flow.compel.caster]?.name ?? 'the caster'}'s player moves it up to {formatInches(state.flow.compel.max)}.</p>
+      ) : state.flow.held?.includes(m.id) && state.phase === 'move' ? (
+        <p className="warn">{m.name} was Compelled, so it can't move again this turn.</p>
+      ) : state.flow.courage?.[m.id] === false && state.phase === 'move' ? (
         <p className="warn">{m.name} failed its Courage test, so it can't move this turn.</p>
       ) : (
         terrifying.length > 0 &&

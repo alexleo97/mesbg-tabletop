@@ -4,11 +4,24 @@ import { duelLeader, strikeWounds, type Fighter } from '../shared/fight.ts';
 import { declared, phaseAllows } from '../shared/heroics.ts';
 import { waitingOnMight } from '../shared/bot.ts';
 import { foughtThisTurn } from '../shared/movement.ts';
+import { noStrikes, under } from '../shared/powers.ts';
 import { BOT_NAME, type Action, type GameState, type Model, type Role, type Seat } from '../shared/types.ts';
 import { useCatalog } from './ListBuilder.tsx';
 import { RollRow } from './Panels.tsx';
 
 type Dispatch = (a: Action) => void;
+
+/** What the powers on a model do in a fight, for its row (the game applies them as it rolls). */
+function fightEffects(state: GameState, m: Model): string[] {
+  const out: string[] = [];
+  if (under(state, m, 'Paralyse')) out.push('Paralysed: adds nothing');
+  else if (noStrikes(state, m)) out.push(`${noStrikes(state, m)}: no strikes${m.prone ? ', trapped if it loses' : ''}`);
+  if (under(state, m, 'Bladewrath')) out.push('Bladewrath: strikes at S6');
+  if (under(state, m, 'Enchant Blades')) out.push('Enchant Blades: re-rolls To Wound');
+  if (under(state, m, 'Enrage Beast')) out.push('Enraged: +2 F, S and A');
+  if (m.withered) out.push(`Withered: S -${m.withered}`);
+  return out;
+}
 type Stat = 'f' | 'a' | 's' | 'd';
 const STATS: [Stat, string][] = [['f', 'F'], ['a', 'A'], ['s', 'S'], ['d', 'D']];
 
@@ -104,6 +117,11 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
                       {f.defence && <small className="heroic-tag">Heroic Defence</small>}
                       {declared(state, m.id, 'Heroic Strength') && <small className="heroic-tag">Heroic Strength</small>}
                       {fought.has(m.id) && <small className="heroic-tag">Fought this turn: sits this one out</small>}
+                      {fightEffects(state, m).map(t => (
+                        <small key={t} className="heroic-tag spell-tag">
+                          {t}
+                        </small>
+                      ))}
                     </span>
                     {STATS.map(([k, label]) => (
                       <label key={k} className="mini-stat">

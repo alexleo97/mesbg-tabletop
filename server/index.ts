@@ -8,6 +8,8 @@ import type { Account, Action, ClientMessage, GameState, Revert, Role, RoomSumma
 import { DICE_REQUESTS, resolveRequest } from '../src/shared/resolve.ts';
 import { phaseAllows } from '../src/shared/heroics.ts';
 import { brokenSideToTest, brokenTests, terrorAhead, terrorTest } from '../src/shared/courage.ts';
+import { settleSpell, spellReady } from '../src/shared/magic.ts';
+import { recoveryDue, recoveryRolls } from '../src/shared/powers.ts';
 import { arrivalsDue, rollArrivals } from '../src/shared/maelstrom.ts';
 import { cleanMark } from '../src/shared/marks.ts';
 import { scenarioById } from '../src/shared/scenarios.ts';
@@ -143,6 +145,8 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
     case 'arrive':
     case 'spendWill':
     case 'spellPending':
+    case 'affect':
+    case 'recovered':
     case 'revert':
     case 'undo':
     case 'priorityRolled':
@@ -181,6 +185,9 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
       return action.seat === client.role ? action : null;
     case 'setBotSpeed':
       return action;
+    case 'compel':
+      // The game starts a Compel; the caster's player says when they've finished moving the model.
+      return action.compel === null && state.flow.compel && state.models[state.flow.compel.caster]?.owner === client.role ? action : null;
     case 'letSpellFail':
       return state.flow.spell && state.models[state.flow.spell.caster]?.owner === client.role ? action : null;
     case 'setBot':
@@ -199,7 +206,15 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
       // Once the battle is under way, each player moves only their own models (and the Palantír's, in a solo game,
       // so they can back its models away after a fight).
       if (!state.flow.started || !Array.isArray(action.moves)) return action;
-      return { ...action, moves: action.moves.filter(mv => mine(mv?.id) || (!!state.bot && state.models[mv?.id]?.owner === state.bot)) };
+      return {
+        ...action,
+        moves: action.moves.filter(mv => {
+          // A Compelled model is moved by the caster's player, not its own.
+          const compel = state.flow.compel;
+          if (compel && mv?.id === compel.model) return state.models[compel.caster]?.owner === client.role || (!!state.bot && state.models[compel.caster]?.owner === state.bot);
+          return mine(mv?.id) || (!!state.bot && state.models[mv?.id]?.owner === state.bot);
+        }),
+      };
     case 'loadState':
       // A loaded save keeps its board, but not its dice history or a result, so neither can be forged.
       return { type: 'loadState', state: { ...loadState(action.state), log: [], accounts: state.accounts, result: undefined, private: state.private, listed: state.private ? false : loadState(action.state).listed } };
@@ -257,9 +272,11 @@ function apply(room: Room, action: Action) {
       if (room.state !== before) broadcast(room, { type: 'action', action: { type: 'gameOver', winner } });
     }
   }
+  settleSpells(room);
   rollBrokenTests(room);
   rollReinforcements(room);
   rollGameEnd(room);
+  rollRecovery(room);
   scheduleAdvance(room);
   scheduleBot(room);
   updateVoice(room);
@@ -325,6 +342,18 @@ function rollBrokenTests(room: Room) {
   }
 }
 
+/** Puts into play a cast that Might lifted and nobody can resist. */
+function settleSpells(room: Room) {
+  if (!spellReady(room.state)) return;
+  for (const a of settleSpell(room.state, CATALOG, serverDice, serverId)) apply(room, a);
+}
+
+/** In the End phase, Paralysed models roll to recover. */
+function rollRecovery(room: Room) {
+  if (!recoveryDue(room.state)) return;
+  for (const a of recoveryRolls(room.state, serverDice, serverId)) apply(room, a);
+}
+
 /** As a Maelstrom side starts to move, rolls for its warbands still off the table and brings on those that arrive. */
 let rollingArrivals = false;
 function rollReinforcements(room: Room) {
@@ -341,7 +370,7 @@ function rollReinforcements(room: Room) {
 /** In a scenario where a Broken army can end the game, rolls the D6 for it as the End phase begins. */
 function rollGameEnd(room: Room) {
   if (!endRollDue(room.state)) return;
-  const out = resolveRequest(room.state, room.state.priority ?? 'p1', { type: 'roll', count: 1, label: endRollLabel(room.state.turn) }, serverDice, serverId);
+  const out = resolveRequest(room.state, room.state.priority ?? 'p1', { type: 'roll', count: 1, label: endRollLabel(room.state.turn) }, serverDice, serverId, Date.now(), CATALOG);
   for (const a of out?.apply ?? []) apply(room, a);
 }
 
@@ -372,7 +401,7 @@ function testTerror(room: Room, action: Action): Action | null {
     const to = m && reduce(room.state, { type: 'moveModels', moves: [mv] }).models[m.id];
     const enemy = m && to && terrorAhead(room.state, m, to, CATALOG);
     if (!m || !enemy) return true;
-    const test = terrorTest(m, enemy, CATALOG, serverDice, serverId);
+    const test = terrorTest(m, enemy, CATALOG, serverDice, serverId, Date.now(), room.state);
     for (const a of test.actions) apply(room, a);
     return test.pass;
   });
@@ -416,7 +445,7 @@ function runBot(room: Room) {
   try {
     const action = step.action;
     if (action && DICE_REQUESTS.has(action.type)) {
-      const out = resolveRequest(room.state, seat, action, () => randomInt(1, 7), () => `${Date.now().toString(36)}-${randomInt(1e9).toString(36)}`);
+      const out = resolveRequest(room.state, seat, action, () => randomInt(1, 7), () => `${Date.now().toString(36)}-${randomInt(1e9).toString(36)}`, Date.now(), CATALOG);
       for (const a of [...(out?.apply ?? []), ...(out?.record ? [out.record] : [])]) apply(room, a);
     } else if (action) {
       const moved = testTerror(room, action);
@@ -663,7 +692,7 @@ wss.on('connection', (ws, req) => {
     }
     if (DICE_REQUESTS.has(msg.action?.type)) {
       if (client.role === 'spectator' || !phaseAllows(room.state, client.role, msg.action)) return;
-      const out = resolveRequest(room.state, client.role, msg.action, () => randomInt(1, 7), () => `${Date.now().toString(36)}-${randomInt(1e9).toString(36)}`);
+      const out = resolveRequest(room.state, client.role, msg.action, () => randomInt(1, 7), () => `${Date.now().toString(36)}-${randomInt(1e9).toString(36)}`, Date.now(), CATALOG);
       if (!out) return;
       for (const a of out.apply) apply(room, a);
       if (out.record) record(room, client.role, out.record);

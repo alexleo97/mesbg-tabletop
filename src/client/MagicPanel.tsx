@@ -4,7 +4,8 @@ import type { Action, GameState, Model, Role } from '../shared/types.ts';
 import type { Catalog } from '../shared/catalog.ts';
 import { distanceBetween, formatInches } from '../shared/geometry.ts';
 import { canActivate } from '../shared/heroics.ts';
-import { canCast, castTargets, powersOf } from '../shared/magic.ts';
+import { canCast, castTargets, powersOf, untargeted } from '../shared/magic.ts';
+import { cannotAct, isAreaPower, isLinePower } from '../shared/powers.ts';
 import { useCatalog, useRulesText } from './ListBuilder.tsx';
 import { RollRow } from './Panels.tsx';
 
@@ -48,21 +49,23 @@ export function CastBox({ state, dispatch, role, model: m }: { state: GameState;
   const [will, setWill] = useState(1);
   const power = powers.find(x => x.name === picked) ?? powers[0];
   if (!power || role !== m.owner || !state.flow.started || state.phase !== 'move') return null;
-  const targets = castTargets(state, m, power.range);
+  const targets = castTargets(state, m, power.range, power.name, catalog);
   const target = targets.find(t => t.id === aim) ?? targets[0];
   const n = Math.max(1, Math.min(will, m.will));
   const { info, effect } = powerEffect(catalog, rulesText, m, power.name);
   const ready = canCast(state, m, seat => canActivate(state, seat));
   const why = state.flow.cast?.includes(m.id)
     ? `${m.name} has cast a power this turn.`
-    : m.will < 1
+    : cannotAct(state, m) || m.prone
+      ? `${m.name} can't cast while ${m.prone && !cannotAct(state, m) ? 'Prone' : 'held by a power'}.`
+      : m.will < 1
       ? `${m.name} has no Will left.`
       : state.flow.spell
         ? 'Another power is waiting to be resisted.'
         : !ready
           ? 'Powers are cast during your own move.'
           : !target
-            ? 'No target in range that it can see.'
+            ? 'No target in range that it can see and the power suits.'
             : null;
   return (
     <div className="magic cast-box">
@@ -77,9 +80,9 @@ export function CastBox({ state, dispatch, role, model: m }: { state: GameState;
             ))}
           </select>
         </label>
-        {power.range > 0 && (
+        {!untargeted(power.name, power.range) && (
           <label>
-            at
+            {isLinePower(power.name) ? 'towards' : 'at'}
             <select value={target?.id ?? ''} onChange={e => setAim(e.target.value)} disabled={!targets.length}>
               {targets.map(t => (
                 <option key={t.id} value={t.id}>
@@ -92,7 +95,7 @@ export function CastBox({ state, dispatch, role, model: m }: { state: GameState;
         )}
       </div>
       <p className="power-card muted small">
-        {power.range > 0 ? `${power.range}"` : 'Self'} · casts on {power.cv}+{info ? ` · ${info.duration}` : ''}
+        {isLinePower(power.name) ? 'A D3+3" line' : isAreaPower(power.name) ? `Every enemy within ${power.range}"` : power.range > 0 ? `${power.range}"` : 'Self'} · casts on {power.cv}+{info ? ` · ${info.duration}` : ''}
         {effect && (
           <>
             <br />
@@ -122,7 +125,7 @@ export function MagicPanel({ state, dispatch, role }: { state: GameState; dispat
   return (
     <div className="magic">
       <h4>Magic</h4>
-      <p className="muted">Heroes cast their powers from their card in the Move phase. The game rolls, spends the Will and asks the target's player about resisting.</p>
+      <p className="muted">Heroes cast their powers from their card in the Move phase. The game rolls, spends the Will, asks the target's player about resisting and then puts the power into play.</p>
       <div className="rules-result">
         <ol className="log">
           <RollRow r={lastCast} state={state} role={role} dispatch={dispatch} />

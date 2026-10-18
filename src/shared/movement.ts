@@ -2,7 +2,8 @@ import { distanceBetween, type Point } from './geometry.ts';
 import { moveCost } from './sight.ts';
 import { combatFromKey, type Combat } from './flow.ts';
 import { canActivate, phaseHeroics } from './heroics.ts';
-import type { GameState, Model } from './types.ts';
+import { cannotAct } from './powers.ts';
+import type { GameState, Model, Seat } from './types.ts';
 
 /**
  * How far a model may go this phase, from where it began the phase, once the battle is under way: its Move in the
@@ -12,7 +13,11 @@ import type { GameState, Model } from './types.ts';
  */
 export function moveAllowance(state: GameState, m: Model): number | null {
   if (!state.flow.started || m.dead) return null;
-  if (state.phase === 'move') return canActivate(state, m.owner) && state.flow.courage?.[m.id] !== false ? m.move : 0;
+  if (state.phase === 'move') {
+    // A model held by a power or a Compel stays put; one getting up from Prone has half its Move left.
+    if (!canActivate(state, m.owner) || state.flow.courage?.[m.id] === false || cannotAct(state, m) || state.flow.held?.includes(m.id)) return 0;
+    return m.prone || state.flow.stood?.includes(m.id) ? m.move / 2 : m.move;
+  }
   if (state.phase === 'fight') return heroicCombatWon(state, m) ? m.move : 1;
   return 0;
 }
@@ -59,7 +64,7 @@ export function movedTooFar(state: GameState): string[] {
   return Object.entries(state.flow.starts ?? {})
     .filter(([id, [x, y]]) => {
       const m = state.models[id];
-      return m && !m.dead && moveCost(state, { x, y }, m).cost > m.move / 2 + 0.05;
+      return m && !m.dead && moveCost(state, { x, y }, m, m.owner).cost > m.move / 2 + 0.05;
     })
     .map(([id]) => id);
 }
@@ -74,14 +79,14 @@ export function moveStart(state: GameState, m: Model): Point {
  * The furthest a model can get towards `to` from where it started this phase, spending at most `move` inches
  * (difficult terrain counts double). Returns `to` itself when it's in reach.
  */
-export function limitMove(state: GameState, from: Point, to: Point, move: number): Point {
-  if (moveCost(state, from, to).cost <= move + 1e-6) return to;
+export function limitMove(state: GameState, from: Point, to: Point, move: number, seat?: Seat): Point {
+  if (moveCost(state, from, to, seat).cost <= move + 1e-6) return to;
   let lo = 0;
   let hi = 1;
   for (let i = 0; i < 20; i++) {
     const t = (lo + hi) / 2;
     const p = { x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t };
-    if (moveCost(state, from, p).cost <= move) lo = t;
+    if (moveCost(state, from, p, seat).cost <= move) lo = t;
     else hi = t;
   }
   return { x: from.x + (to.x - from.x) * lo, y: from.y + (to.y - from.y) * lo };
@@ -96,7 +101,8 @@ export function settleMove(state: GameState, m: Model, at: Point): Point {
   const here = { ...m, ...at };
   let best: { e: Model; d: number } | null = null;
   for (const e of Object.values(state.models)) {
-    if (e.owner === m.owner || e.dead) continue;
+    // A Prone enemy has no Control Zone.
+    if (e.owner === m.owner || e.dead || e.prone) continue;
     const d = distanceBetween(here, e);
     if (d < 1 && (!best || d < best.d)) best = { e, d };
   }
@@ -113,6 +119,6 @@ export function settleMove(state: GameState, m: Model, at: Point): Point {
     else hi = t;
   }
   const contact = { x: at.x + (dx / len) * hi, y: at.y + (dy / len) * hi };
-  const reach = limitMove(state, moveStart(state, m), contact, m.move);
+  const reach = limitMove(state, moveStart(state, m), contact, moveAllowance(state, m) ?? m.move, m.owner);
   return Math.hypot(reach.x - contact.x, reach.y - contact.y) < 1e-3 ? contact : at;
 }
