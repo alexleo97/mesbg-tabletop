@@ -58,6 +58,27 @@ export interface Model {
   pending?: number;
   /** The hero's last failed Fate roll for the current wound, which Might could still turn into a save. */
   fateRoll?: string;
+  /** Magical powers working on it now (see powers.ts). */
+  effects?: ModelEffect[];
+  /** Knocked to the ground: it must stand up (half its Move) before moving on, can't shoot and is trapped if it loses a fight. */
+  prone?: boolean;
+  /** The turn it was thrown from its mount (Knocked Flying), so it can do nothing more that turn. */
+  stunned?: number;
+  /** How many times Drain Courage has worsened its Courage, and Wither its Strength. */
+  drained?: number;
+  withered?: number;
+  /** Wargear it has lost, such as a broken Staff of Power. */
+  lostGear?: string[];
+  /** Its mount has fled or it was thrown, so it fights on foot. */
+  dismounted?: boolean;
+}
+
+/** A power at work on a model: which one, who cast it and the turn it was cast. */
+export interface ModelEffect {
+  power: string;
+  by: string;
+  turn: number;
+  duration: 'Temporary' | 'Exhaustion';
 }
 
 export const TERRAIN_KINDS = ['wood', 'rock', 'building', 'water', 'hill', 'wall', 'ruin', 'cliff', 'field', 'objective', 'bridge', 'road'] as const;
@@ -88,8 +109,10 @@ export interface Terrain {
   height?: number;
   /** A scenario marker that means something: an artefact to dig up, a relic, a supply to guard, a wounded ally. */
   object?: MarkerObject;
-  /** The side a relic, supply or wounded ally belongs to. */
+  /** The side a relic, supply or wounded ally belongs to; for Writhing Vines, the side whose caster summoned them. */
   side?: Seat;
+  /** Writhing Vines: difficult ground for the other side until the End phase. */
+  vines?: boolean;
   /** Face down (an unrevealed heirloom marker) or still buried (an artefact not yet uncovered). */
   hidden?: boolean;
   /** The model carrying it. */
@@ -210,6 +233,13 @@ export interface SpellPending {
   target: string;
   power: string;
   cv: number;
+  /** Cast, and nobody can resist it any more: the game puts its effect into play next. */
+  ready?: boolean;
+  /** Tremor: how long its line runs, and the model it was aimed towards (`target` is whoever resists for those it hits). */
+  reach?: number;
+  aim?: string;
+  /** Whether an enemy it hits can resist it (decided as it is cast). */
+  resistable?: boolean;
 }
 
 export interface Flow {
@@ -250,6 +280,14 @@ export interface Flow {
   spell?: SpellPending;
   /** Duels rolled this turn, by group, so the same one isn't rolled twice. */
   duels?: string[];
+  /** A Compel that worked: the caster's player moves the target up to `max` from where it stood. */
+  compel?: { model: string; caster: string; max: number; from: [number, number] };
+  /** Models that can't move again this turn (moved by Compel). */
+  held?: string[];
+  /** Models that stood up from Prone this turn, which costs half their Move. */
+  stood?: string[];
+  /** The turn Paralysed models last rolled to recover. */
+  recovered?: number;
   starts?: Record<string, [number, number]>;
   /** Each hero's Fate at the start of the game, so Fate spent can be counted. */
   startFate?: Record<string, number>;
@@ -279,6 +317,12 @@ export type Action =
   | { type: 'spellPending'; spell: SpellPending | null }
   /** The caster's player lets a cast that fell short fail rather than spend Might on it. */
   | { type: 'letSpellFail' }
+  /** A power's effect on a model, worked out by the game (never sent by a player). */
+  | { type: 'affect'; id: string; patch: Partial<Omit<Model, 'id'>> }
+  /** A Compel that worked (from the game), or (null) its caster's player has finished moving the model. */
+  | { type: 'compel'; compel: Flow['compel'] | null }
+  /** Paralysed models have rolled to recover this End phase (never sent by a player). */
+  | { type: 'recovered' }
   | { type: 'arrive'; seat: Seat; moves: { id: string; x: number; y: number; rot: number }[] }
   /** Courage test results, worked out with the dice (never sent by a player). Models of a Broken side that fail flee. */
   | { type: 'courageTaken'; results: Record<string, boolean>; broken?: Seat }

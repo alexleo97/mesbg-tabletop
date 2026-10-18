@@ -2,10 +2,11 @@ import { bookBase, round } from './bases.ts';
 import { holdInZones } from './deployment.ts';
 import { heroicInfo } from './heroics.ts';
 import { pendingSpell } from './magic.ts';
+import { basePower, cannotAct, effectActive } from './powers.ts';
 import { limitMove, moveAllowance, movedTooFar, moveStart } from './movement.ts';
 import { canPickUp, markerUpkeep, syncCarried, touching, canEscape } from './objects.ts';
 import { endPhaseUpkeep } from './scoring.ts';
-import { BOT_NAME, BOT_SPEEDS, MARKER_OBJECTS, MATS, PHASES, PICK_KEYS, TERRAIN_KINDS, type Action, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type Phase, type Picks, type Seat, type Terrain } from './types.ts';
+import { BOT_NAME, BOT_SPEEDS, MARKER_OBJECTS, MATS, PHASES, PICK_KEYS, TERRAIN_KINDS, type Action, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type ModelEffect, type Phase, type Picks, type Seat, type SpellPending, type Terrain } from './types.ts';
 
 export const MAX_MODELS = 600;
 export const MAX_TERRAIN = 200;
@@ -39,9 +40,24 @@ function goTo(state: GameState, phase: Phase, turn: number): GameState {
   const upkeep = ending ? endPhaseUpkeep(state) : {};
   // Leaving the Move phase, note who went too far to shoot.
   const farMoved = state.phase === 'move' && phase !== 'move' && !newTurn && state.flow.started ? { farMoved: movedTooFar(state) } : {};
+  // Enrage Beast wears off in the End phase, and takes a Wound from the beast as it does.
+  const enraged = ending ? Object.values(state.models).filter(m => !m.dead && m.effects?.some(e => basePower(e.power) === 'Enrage Beast' && effectActive(state, e))) : [];
+  const next = goToPhase(state, phase, turn, newTurn, ending, upkeep, farMoved);
+  return enraged.reduce((s, m) => reduce(s, { type: 'wound', id: m.id, count: 1, how: 'other' }), next);
+}
+
+function goToPhase(state: GameState, phase: Phase, turn: number, newTurn: boolean, ending: boolean, upkeep: Partial<Flow>, farMoved: Partial<Flow>): GameState {
+  // Writhing Vines are pulled up in the End phase.
+  const terrain = ending ? Object.fromEntries(Object.entries(markerUpkeep(state)).filter(([, t]) => !t.vines)) : state.terrain;
+  const after = { ...state, phase, turn };
+  // A new turn drops effects that have worn off, so they don't pile up.
+  const models = newTurn
+    ? Object.fromEntries(Object.entries(state.models).map(([k, m]) => [k, m.effects ? { ...m, effects: m.effects.filter(e => effectActive(after, e)) } : m]))
+    : state.models;
   return {
     ...state,
-    ...(ending ? { terrain: markerUpkeep(state) } : {}),
+    terrain,
+    models,
     phase,
     turn,
     priority: newTurn && state.flow.started ? null : state.priority,
@@ -50,7 +66,8 @@ function goTo(state: GameState, phase: Phase, turn: number): GameState {
       done: [],
       resolved: newTurn ? [] : state.flow.resolved,
       heroics: newTurn ? [] : state.flow.heroics,
-      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], cast: [], spell: undefined } : {}),
+      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], cast: [], spell: undefined, held: [], stood: [], compel: undefined } : {}),
+      ...(phase !== state.phase ? { compel: undefined } : {}),
       passed: [],
       lastHeroic: null,
       starts: {},
@@ -141,7 +158,44 @@ export function cleanModel(m: Partial<Model>, prev?: Model): Model | null {
   if (pending && out.hero && !out.dead) out.pending = pending;
   const fateRoll = 'fateRoll' in m ? (m.fateRoll ? id(m.fateRoll) : undefined) : base.fateRoll;
   if (fateRoll && out.pending) out.fateRoll = fateRoll;
+  const effects = 'effects' in m ? cleanEffects(m.effects) : base.effects;
+  if (effects?.length && !out.dead) out.effects = effects;
+  if (('prone' in m ? m.prone === true : base.prone) && !out.dead) out.prone = true;
+  const stunned = 'stunned' in m ? int(m.stunned, 0, 99, 0) : base.stunned;
+  if (stunned) out.stunned = stunned;
+  for (const k of ['drained', 'withered'] as const) {
+    const v = k in m ? int(m[k], 0, 9, 0) : base[k];
+    if (v) out[k] = v;
+  }
+  const lostGear = 'lostGear' in m ? (Array.isArray(m.lostGear) ? [...new Set(m.lostGear.slice(0, 8).map(g => str(g, 60)))] : undefined) : base.lostGear;
+  if (lostGear?.length) out.lostGear = lostGear;
+  if ('dismounted' in m ? m.dismounted === true : base.dismounted) out.dismounted = true;
   return out.id ? out : null;
+}
+
+/** Powers at work on a model, from untrusted JSON. */
+function cleanEffects(v: unknown): ModelEffect[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  return v
+    .filter(e => e && typeof e === 'object')
+    .slice(0, 12)
+    .map(e => ({ power: str(e.power, 60), by: id(e.by), turn: int(e.turn, 0, 99, 0), duration: e.duration === 'Temporary' ? ('Temporary' as const) : ('Exhaustion' as const) }))
+    .filter(e => e.power && e.by);
+}
+
+/** A cast waiting on someone, from untrusted JSON. */
+function cleanSpell(s: Partial<SpellPending>): SpellPending {
+  return {
+    roll: id(s.roll),
+    caster: id(s.caster),
+    target: id(s.target),
+    power: str(s.power, 60),
+    cv: int(s.cv, 1, 6, 4),
+    ...(s.ready === true ? { ready: true } : {}),
+    ...(s.reach !== undefined ? { reach: int(s.reach, 1, 9, 4) } : {}),
+    ...(s.aim ? { aim: id(s.aim) } : {}),
+    ...(typeof s.resistable === 'boolean' ? { resistable: s.resistable } : {}),
+  };
 }
 
 /** Who struck a model, from untrusted JSON. */
@@ -200,6 +254,10 @@ function cleanTerrain(t: Partial<Terrain>, prev?: Terrain): Terrain | null {
     : base.path);
   if (path) out.path = path;
   cleanObject(t, base, out);
+  if ('vines' in t ? t.vines === true : base.vines) {
+    const side = 'side' in t ? t.side : base.side;
+    if (isSeat(side)) Object.assign(out, { vines: true, side });
+  }
   return out.id ? out : null;
 }
 
@@ -266,9 +324,10 @@ function cleanRoll(r: unknown): DiceRoll | null {
 function afterMight(state: GameState, rollId: string): GameState {
   const p = pendingSpell(state);
   if (!p || p.roll !== rollId || !p.cast) return state;
-  const resistable = p.target.owner !== p.caster.owner && p.target.will > 0;
-  const note = resistable ? `Cast on a ${p.best}. ${p.target.name} may resist with Will, needing a ${p.best} or more.` : 'The power takes effect.';
-  return { ...state, log: state.log.map(r => (r.id === rollId ? { ...r, note } : r)), flow: { ...state.flow, spell: resistable ? state.flow.spell : undefined } };
+  const resistable = state.flow.spell!.resistable ?? (p.target.owner !== p.caster.owner && p.target.will > 0);
+  const note = resistable ? `Cast on a ${p.best}. ${p.target.name} may resist, needing a ${p.best} or more.` : 'The power takes effect.';
+  // One nobody can resist waits for the game (which holds the dice its effect may need) to put it into play.
+  return { ...state, log: state.log.map(r => (r.id === rollId ? { ...r, note } : r)), flow: { ...state.flow, spell: { ...state.flow.spell!, ...(resistable ? {} : { ready: true }) } } };
 }
 
 /** Takes wounds off a model, removing it as a casualty when none are left. */
@@ -324,21 +383,34 @@ function step(state: GameState, action: Action): GameState {
       let starts = state.flow.starts;
       // Before the battle, models stay in their deployment zones (and a warband switching zones comes along whole).
       const moves = state.flow.started ? action.moves : holdInZones(state, action.moves.filter(mv => mv && models[mv.id]).map(mv => ({ id: String(mv.id), x: num(mv.x, -24, 200, models[mv.id].x), y: num(mv.y, -24, 200, models[mv.id].y), rot: mv.rot })));
+      let stood = state.flow.stood;
       for (const mv of moves) {
         const prev = mv && models[mv.id];
         if (!prev || prev.escaped || prev.waiting) continue;
         let to = { x: num(mv.x, -24, 200, prev.x), y: num(mv.y, -24, 200, prev.y) };
+        const moving = to.x !== prev.x || to.y !== prev.y;
+        const compel = state.flow.compel?.model === prev.id ? state.flow.compel : undefined;
+        // A Compelled model goes where the caster's player takes it, up to half its Move from where it stood.
+        if (compel && moving) to = limitMove(state, { x: compel.from[0], y: compel.from[1] }, to, compel.max, prev.owner);
         // Once the battle is under way a model goes no further than its allowance from where it began the phase:
         // its Move in the Move phase, 1" in the Fight phase, and nowhere in the others.
-        const allowance = moveAllowance(state, prev);
-        if (allowance !== null && (to.x !== prev.x || to.y !== prev.y)) {
+        const allowance = compel ? null : moveAllowance(state, prev);
+        if (allowance !== null && moving) {
           const from = moveStart(state, prev);
-          to = limitMove(state, from, to, allowance);
+          to = limitMove(state, from, to, allowance, prev.owner);
           if (!starts?.[prev.id]) starts = { ...starts, [prev.id]: [from.x, from.y] };
         }
-        models[prev.id] = { ...prev, ...to, rot: mv.rot === undefined ? prev.rot : num(mv.rot, -360, 720, prev.rot) % 360 };
+        let next: Model = { ...prev, ...to, rot: mv.rot === undefined ? prev.rot : num(mv.rot, -360, 720, prev.rot) % 360 };
+        // A Prone model that moves stands up first, which costs it half its Move this turn.
+        if (prev.prone && allowance && moving && (to.x !== prev.x || to.y !== prev.y)) {
+          next = { ...next, prone: undefined };
+          delete next.prone;
+          stood = [...new Set([...(stood ?? []), prev.id])];
+        }
+        models[prev.id] = next;
       }
-      return { ...state, models, ...(starts !== state.flow.starts ? { flow: { ...state.flow, starts } } : {}) };
+      const flow = starts !== state.flow.starts || stood !== state.flow.stood ? { flow: { ...state.flow, starts, ...(stood ? { stood } : {}) } } : {};
+      return { ...state, models, ...flow };
     }
     case 'arrive': {
       // Waiting models come onto the table; the side has rolled for its arrivals this turn either way.
@@ -441,7 +513,9 @@ function step(state: GameState, action: Action): GameState {
       const done = [...state.flow.done, action.seat];
       // Once both players have activated in the Move or Shoot phase, play moves on.
       if (done.length === 2 && (state.phase === 'move' || state.phase === 'shoot')) return goTo(state, state.phase === 'move' ? 'shoot' : 'fight', state.turn);
-      return { ...state, flow: { ...state.flow, done } };
+      // A Compel ends with its caster's side's move.
+      const compel = state.flow.compel && state.models[state.flow.compel.caster]?.owner === action.seat ? undefined : state.flow.compel;
+      return { ...state, flow: { ...state.flow, done, compel } };
     }
     case 'resolveCombat': {
       const key = str(action.key, 2000);
@@ -451,7 +525,7 @@ function step(state: GameState, action: Action): GameState {
     case 'declareHeroic': {
       const m = state.models[action.model];
       const info = heroicInfo(str(action.action, 40));
-      if (!m || !m.hero || m.dead || m.might < 1 || !info || info.phase !== state.phase) return state;
+      if (!m || !m.hero || m.dead || m.might < 1 || !info || info.phase !== state.phase || cannotAct(state, m)) return state;
       if (state.flow.heroics.some(h => h.model === m.id && h.phase === state.phase)) return state;
       const other: Seat = m.owner === 'p1' ? 'p2' : 'p1';
       return {
@@ -478,8 +552,28 @@ function step(state: GameState, action: Action): GameState {
       const s = action.spell;
       if (!s) return { ...state, flow: { ...state.flow, spell: undefined } };
       if (!state.models[s.caster] || !state.models[s.target]) return state;
-      return { ...state, flow: { ...state.flow, spell: { roll: id(s.roll), caster: id(s.caster), target: id(s.target), power: str(s.power, 60), cv: int(s.cv, 1, 6, 4) } } };
+      return { ...state, flow: { ...state.flow, spell: cleanSpell(s) } };
     }
+    case 'affect': {
+      const prev = state.models[action.id];
+      if (!prev || !action.patch || typeof action.patch !== 'object') return state;
+      const m = cleanModel(action.patch, prev);
+      return m ? { ...state, models: { ...state.models, [m.id]: m } } : state;
+    }
+    case 'compel': {
+      const c = action.compel;
+      if (!c) {
+        if (!state.flow.compel) return state;
+        return { ...state, flow: { ...state.flow, compel: undefined } };
+      }
+      const t = state.models[id(c.model)];
+      if (!t || !state.models[id(c.caster)] || !Array.isArray(c.from)) return state;
+      const compel = { model: t.id, caster: id(c.caster), max: num(c.max, 0, 12, 0), from: [num(c.from[0], -24, 200, t.x), num(c.from[1], -24, 200, t.y)] as [number, number] };
+      // Once Compelled it can't move again this turn, whatever happens.
+      return { ...state, flow: { ...state.flow, compel, held: [...new Set([...(state.flow.held ?? []), t.id])] } };
+    }
+    case 'recovered':
+      return { ...state, flow: { ...state.flow, recovered: state.turn } };
     case 'letSpellFail': {
       const p = pendingSpell(state);
       if (!p || p.cast) return state;
@@ -762,7 +856,10 @@ export function loadState(raw: unknown): GameState {
         ...(f.arrived ? { arrived: seats(f.arrived) } : {}),
         ...(Array.isArray(f.shot) ? { shot: f.shot.slice(0, 400).map(x => String(x).slice(0, 80)) } : {}),
         ...(Array.isArray(f.cast) ? { cast: f.cast.slice(0, 200).map(x => String(x).slice(0, 80)) } : {}),
-        ...(f.spell && typeof f.spell === 'object' ? { spell: { roll: id(f.spell.roll), caster: id(f.spell.caster), target: id(f.spell.target), power: str(f.spell.power, 60), cv: int(f.spell.cv, 1, 6, 4) } } : {}),
+        ...(f.spell && typeof f.spell === 'object' ? { spell: cleanSpell(f.spell) } : {}),
+        ...(Array.isArray(f.held) ? { held: f.held.slice(0, 200).map(x => String(x).slice(0, 80)) } : {}),
+        ...(Array.isArray(f.stood) ? { stood: f.stood.slice(0, 400).map(x => String(x).slice(0, 80)) } : {}),
+        ...(Number.isFinite(f.recovered) ? { recovered: int(f.recovered, 0, 99, 0) } : {}),
         ...(Array.isArray(f.farMoved) ? { farMoved: f.farMoved.slice(0, 400).map(x => String(x).slice(0, 80)) } : {}),
         ...(Array.isArray(f.duels) ? { duels: f.duels.slice(0, 200).map(x => String(x).slice(0, 80)) } : {}),
         ...(f.startFate && typeof f.startFate === 'object' ? { startFate: cleanCounts(f.startFate, 9) } : {}),

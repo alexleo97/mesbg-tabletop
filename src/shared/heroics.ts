@@ -1,4 +1,5 @@
 import { activeSeat } from './flow.ts';
+import { cannotAct } from './powers.ts';
 import type { GameState, Model, Phase, Seat } from './types.ts';
 
 export interface HeroicInfo {
@@ -38,7 +39,8 @@ export const declared = (state: GameState, model: string, action: string) => sta
 export function canDeclare(state: GameState, seat: Seat): Model[] {
   if (state.phase !== 'move' && state.phase !== 'shoot' && state.phase !== 'fight') return [];
   const done = new Set(phaseHeroics(state).map(h => h.model));
-  return Object.values(state.models).filter(m => m.owner === seat && m.hero && !m.dead && m.might > 0 && !done.has(m.id));
+  // A hero held by a power (Transfix, Paralyse) can't call one.
+  return Object.values(state.models).filter(m => m.owner === seat && m.hero && !m.dead && m.might > 0 && !done.has(m.id) && !cannotAct(state, m));
 }
 
 /** Both players have declared what they want (or have no one who could), so models can activate. */

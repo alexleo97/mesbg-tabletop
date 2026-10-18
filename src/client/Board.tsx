@@ -10,7 +10,8 @@ import { MATERIALS, textures } from './textures.ts';
 import { TERRAIN_INFO, terrainRules } from '../shared/terrain.ts';
 import { holdInZones } from '../shared/deployment.ts';
 import { limitMove, moveAllowance, moveStart, movesLimited, settleMove } from '../shared/movement.ts';
-import { groundAt, inDifficult, insidePolygon, inTheWay, isDifficult, moveCost, outline, shadowPath, sightTo } from '../shared/sight.ts';
+import { groundAt, inDifficult, insidePolygon, inTheWay, isDifficult, moveCost, outline, shadowPath, sightTo, VINES_REACH } from '../shared/sight.ts';
+import { effectsOn } from '../shared/powers.ts';
 
 export type Tool = 'move' | 'select' | 'measure' | 'mark';
 
@@ -104,7 +105,7 @@ function MoveZones({ state, models }: { state: GameState; models: Model[] }) {
       <g mask="url(#move-zones-inside)">{zones('zone-move')}</g>
       {starts.map(({ m, s }) => (
         <g key={`z-${m.id}`}>
-          {inDifficult(state, s) && (
+          {inDifficult(state, s, m.owner) && (
             <g transform={`translate(${s.x} ${s.y}) rotate(${s.rot})`}>
               <ZoneShape m={m} pad={(moveAllowance(state, m) ?? m.move) / 2} className="zone-move slow" />
             </g>
@@ -384,7 +385,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
         const to = { x: o.x + dx, y: o.y + dy };
         // Once the battle is under way a model stops at the edge of its allowance, as the server would hold it there anyway.
         const allowance = m && moveAllowance(state, m);
-        pos[id] = m && allowance != null ? limitMove(state, moveStart(state, m), to, allowance) : to;
+        pos[id] = m && allowance != null ? limitMove(state, moveStart(state, m), to, allowance, m.owner) : to;
       }
       // Before the battle, models stop at the edge of their deployment zone, as the server would hold them there.
       if (!state.flow.started) for (const mv of holdInZones(state, Object.entries(pos).map(([id, p]) => ({ id, ...p })))) if (pos[mv.id]) pos[mv.id] = { x: mv.x, y: mv.y };
@@ -517,15 +518,23 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
           <rect className="mat" width={state.board.w} height={state.board.h} fill={`url(#tex-${state.board.mat})`} />
           {showGrid && gridLines}
           <g clipPath="url(#board-clip)">
-          {terrain.map(t => (
-            <g
-              key={t.id}
-              transform={`translate(${t.x} ${t.y}) rotate(${t.rot})`}
-              className={`terrain ${t.kind} ${t.locked ? 'locked' : ''} ${selectedTerrain === t.id ? 'selected' : ''}`}
-            >
-              <TerrainArt t={t} mat={state.board.mat} />
-            </g>
-          ))}
+          {terrain.map(t =>
+            t.vines ? (
+              // Writhing Vines: the marker, and the ground around it that is difficult for the other side.
+              <g key={t.id} transform={`translate(${t.x} ${t.y})`} className={`vines ${t.side}`} pointerEvents="none">
+                <circle className="vines-reach" r={VINES_REACH + t.w / 2} />
+                <circle className="vines-marker" r={t.w / 2} />
+              </g>
+            ) : (
+              <g
+                key={t.id}
+                transform={`translate(${t.x} ${t.y}) rotate(${t.rot})`}
+                className={`terrain ${t.kind} ${t.locked ? 'locked' : ''} ${selectedTerrain === t.id ? 'selected' : ''}`}
+              >
+                <TerrainArt t={t} mat={state.board.mat} />
+              </g>
+            ),
+          )}
           </g>
           <g clipPath="url(#board-clip)">
             {terrain.filter(isDifficult).map(t => (
@@ -554,7 +563,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
               if (!m || !now) return null;
               const d = Math.hypot(now.x - o.x, now.y - o.y);
               // Difficult terrain costs double and climbing costs the height, so the move is judged on what it costs.
-              const { cost, difficult } = moveCost(state, o, now);
+              const { cost, difficult } = moveCost(state, o, now, m.owner);
               const allowance = moveAllowance(state, m) ?? m.move;
               const over = cost > allowance + 1e-6;
               return (
@@ -620,6 +629,13 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
                   </text>
                 )}
                 {sight?.seen.has(m.id) && <ZoneShape m={m} pad={0.12} className="sight-ring" />}
+                {/* A power at work on it, and whether it lies Prone. */}
+                {state.flow.started && effectsOn(state, m).length > 0 && <ZoneShape m={m} pad={0.07} className="spell-ring" />}
+                {m.prone && (
+                  <text className="prone-mark" textAnchor="middle" transform={`rotate(${-m.rot}) translate(${-rx * 0.8} ${-ry * 0.7})`} style={{ fontSize: 0.28 }}>
+                    P
+                  </text>
+                )}
                 {heroicIds.has(m.id) && (
                   <text className="heroic-mark" textAnchor="middle" transform={`rotate(${-m.rot}) translate(${rx * 0.8} ${-ry * 0.7})`} style={{ fontSize: 0.32 }}>
                     ⚡
@@ -636,7 +652,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
 
           {showNames &&
             terrain
-              .filter(t => t.kind !== 'objective')
+              .filter(t => t.kind !== 'objective' && !t.vines)
               .map(t => (
                 <text key={`tn-${t.id}`} className="terrain-name" x={t.x} y={t.y} textAnchor="middle" dominantBaseline="middle" pointerEvents="none">
                   {TERRAIN_INFO[t.kind].name}

@@ -4,7 +4,8 @@ import { activeSeat, combats, CONTACT_SLACK, other, type Combat } from './flow.t
 import { distanceBetween, halfExtents, mmToIn, type Point } from './geometry.ts';
 import { canDeclare, declared, heroicInfo, heroicTurn, heroicsSettled, orderRollLabel, orderRollNeeded, phaseHeroics } from './heroics.ts';
 import { pendingSpell } from './magic.ts';
-import { fightDone, limitMove } from './movement.ts';
+import { fightDone, limitMove, moveAllowance } from './movement.ts';
+import { cannotAct } from './powers.ts';
 import { carriedBy, exitEdges, markerActions, onTable, sanctuary } from './objects.ts';
 import { chance, fightOdds, woundChance, type Side } from './odds.ts';
 import { PICKS, pickOptions } from './picks.ts';
@@ -33,6 +34,8 @@ export interface BotMemo {
   /** A step waiting on its result: a model's shot, Courage test or what it does with markers after moving. */
   pending?: { kind: 'shot' | 'courage' | 'marker'; model: string; tries?: number };
   steps: number;
+  /** The last enemy it moved with a Compel. */
+  compelled?: string;
 }
 
 export const newMemo = (): BotMemo => ({ key: '', turn: 0, since: 0, acted: [], moved: {}, courage: {}, steps: 0 });
@@ -144,7 +147,7 @@ export function botStep(state: GameState, seat: Seat, catalog: Catalog | null, m
   const picks = picksStep(ctx);
   if (picks) return picks;
   if (!state.flow.started) return null;
-  const spell = spellStep(ctx);
+  const spell = spellStep(ctx) ?? compelStep(ctx);
   if (spell) return spell;
   if (++memo.steps > MAX_STEPS) return finish(ctx);
   return fateStep(ctx) ?? phaseStep(ctx);
@@ -309,7 +312,8 @@ function moveStep(ctx: Ctx): BotStep {
     .sort((a, b) => Number(reach(b)) - Number(reach(a)) || (reach(a) ? nearest(a) - nearest(b) : nearest(b) - nearest(a)));
   const goals = assignGoals(ctx);
   for (const m of queue) {
-    if (engagedWith(state, m).length) {
+    // Engaged, or held where it is by a power or a Compel.
+    if (engagedWith(state, m).length || moveAllowance(state, m) === 0) {
       memo.acted.push(m.id);
       continue;
     }
@@ -436,12 +440,14 @@ function planMove(ctx: Ctx, m: Model, goal: Goal | undefined): Plan | null {
   const p = profile(ctx, m);
   const from = { x: m.x, y: m.y };
   const enemies = side(state, other(seat));
+  // A Prone model has half its Move left once it stands up.
+  const mv = Math.min(p.mv, moveAllowance(state, m) ?? p.mv);
 
   const spots: { at: Point; charge?: Model }[] = [{ at: from }];
-  const reach = (to: Point) => limitMove(state, from, to, p.mv);
+  const reach = (to: Point) => limitMove(state, from, to, mv, seat);
   for (let i = 0; i < 16; i++) {
     const a = (i * Math.PI) / 8;
-    for (const f of [1, 0.5]) spots.push({ at: reach({ x: from.x + Math.sin(a) * p.mv * f, y: from.y - Math.cos(a) * p.mv * f }) });
+    for (const f of [1, 0.5]) spots.push({ at: reach({ x: from.x + Math.sin(a) * mv * f, y: from.y - Math.cos(a) * mv * f }) });
   }
   if (goal) {
     const d = centre(from, goal.at);
@@ -454,7 +460,7 @@ function planMove(ctx: Ctx, m: Model, goal: Goal | undefined): Plan | null {
   // Charges: into base contact with each enemy in reach, from a spread of angles so others can join the fight.
   const terrorFailed = ctx.memo.courage[m.id] === false;
   for (const e of enemies) {
-    if (distanceBetween(m, e) > p.mv + 0.5 || (terrorFailed && profile(ctx, e).terror)) continue;
+    if (distanceBetween(m, e) > mv + 0.5 || (terrorFailed && profile(ctx, e).terror)) continue;
     const r = radius(m) + radius(e) + 0.02;
     const base = Math.atan2(m.x - e.x, -(m.y - e.y));
     for (const off of [0, 0.45, -0.45, 0.9, -0.9, 1.4, -1.4, 2, -2, Math.PI]) {
@@ -608,8 +614,26 @@ function spellStep(ctx: Ctx): BotStep | null {
   const p = pendingSpell(ctx.state);
   if (!p) return null;
   if (!p.cast && p.caster.owner === ctx.seat) return { action: { type: 'letSpellFail' }, delay: THINK_PAUSE };
-  if (!p.cast || p.target.owner !== ctx.seat) return null;
+  if (!p.cast || p.target.owner !== ctx.seat || p.ready) return null;
   return { action: { type: 'resist', will: Math.min(p.target.will, p.target.will > 2 ? 2 : 1) }, delay: THINK_PAUSE };
+}
+
+/**
+ * A Compel the computer cast: it walks the enemy as far as it may towards the nearest of its own models (into a fight,
+ * if it reaches), then lets it go.
+ */
+function compelStep(ctx: Ctx): BotStep | null {
+  const { state, seat, memo } = ctx;
+  const c = state.flow.compel;
+  if (!c || state.models[c.caster]?.owner !== seat) return null;
+  if (memo.compelled === c.model) return { action: { type: 'compel', compel: null }, delay: THINK_PAUSE };
+  memo.compelled = c.model;
+  const t = state.models[c.model];
+  const near = side(state, seat).sort((a, b) => distanceBetween(t, a) - distanceBetween(t, b))[0];
+  if (!t || !near) return { action: { type: 'compel', compel: null }, delay: THINK_PAUSE };
+  const d = centre(t, near);
+  const k = Math.max(0, (d - radius(t) - radius(near) - 0.02) / (d || 1));
+  return { action: { type: 'moveModels', moves: [{ id: t.id, x: t.x + (near.x - t.x) * k, y: t.y + (near.y - t.y) * k }] }, delay: MOVE_PAUSE };
 }
 
 function shootStep(ctx: Ctx): BotStep {
@@ -630,7 +654,7 @@ function shootStep(ctx: Ctx): BotStep {
     if (memo.acted.includes(m.id)) continue;
     memo.acted.push(m.id);
     const p = profile(ctx, m);
-    if (!p.weapon || engagedWith(state, m).length || (memo.moved[m.id] ?? 0) > p.mv / 2 + 0.05) continue;
+    if (!p.weapon || engagedWith(state, m).length || (memo.moved[m.id] ?? 0) > p.mv / 2 + 0.05 || m.prone || cannotAct(state, m)) continue;
     if (memo.courage[m.id] === false && armyStatus(state, seat).broken) continue;
     const shot = bestShot(ctx, m);
     if (!shot || shot.value < 0.02) continue;

@@ -1,5 +1,5 @@
 import { basePerimeter, halfExtents, type Point } from './geometry.ts';
-import type { GameState, Model, Terrain, TerrainKind } from './types.ts';
+import type { GameState, Model, Seat, Terrain, TerrainKind } from './types.ts';
 
 // A top-down board can only approximate true line of sight, so these are guides, not rulings.
 
@@ -158,11 +158,21 @@ export function inTheWay(state: GameState, from: Model, to: Model): string[] {
   return out;
 }
 
-/** How far a move from a to b really costs, counting the part through difficult terrain double. */
-export function moveCost(state: GameState, a: Point, b: Point): { cost: number; difficult: boolean } {
+/** The ground Writhing Vines make difficult for the other side: 3" around the marker. */
+export const VINES_REACH = 3;
+const vinesArea = (t: Terrain) => outline({ ...t, shape: 'circle', w: t.w + VINES_REACH * 2, h: t.h + VINES_REACH * 2 });
+
+/** Difficult ground for a model of `seat` (any side's, when no side is given): difficult terrain and enemy Writhing Vines. */
+function slowGround(state: GameState, seat?: Seat): Point[][] {
+  const all = Object.values(state.terrain);
+  return [...all.filter(t => !t.vines && isDifficult(t)).map(t => outline(t)), ...all.filter(t => t.vines && seat && t.side !== seat).map(vinesArea)];
+}
+
+/** How far a move from a to b really costs for a model of `seat`, counting the part through difficult terrain double. */
+export function moveCost(state: GameState, a: Point, b: Point, seat?: Seat): { cost: number; difficult: boolean } {
   const d = Math.hypot(b.x - a.x, b.y - a.y);
   const climb = climbCost(state, a, b);
-  const slow = Object.values(state.terrain).filter(isDifficult).map(t => outline(t));
+  const slow = slowGround(state, seat);
   if (!slow.length || d === 0) return { cost: d + climb, difficult: false };
   // Bridges carry models over rivers at full speed.
   const bridges = Object.values(state.terrain).filter(t => t.kind === 'bridge').map(t => outline(t));
@@ -196,10 +206,10 @@ function climbCost(state: GameState, a: Point, b: Point): number {
   return total;
 }
 
-/** Whether a point is in difficult terrain. */
-export const inDifficult = (state: GameState, p: Point) => {
+/** Whether a point is in difficult terrain (for a model of `seat`, counting enemy Writhing Vines). */
+export const inDifficult = (state: GameState, p: Point, seat?: Seat) => {
   const all = Object.values(state.terrain);
-  return all.some(t => isDifficult(t) && insidePolygon(outline(t), p)) && !all.some(t => t.kind === 'bridge' && insidePolygon(outline(t), p));
+  return slowGround(state, seat).some(poly => insidePolygon(poly, p)) && !all.some(t => t.kind === 'bridge' && insidePolygon(outline(t), p));
 };
 
 /**

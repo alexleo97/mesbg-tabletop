@@ -14,6 +14,13 @@ export interface Fighter {
   strike?: boolean;
   /** Heroic Defence: only wounded on natural 6s. */
   defence?: boolean;
+  // Set by the game from the powers on the model (see adjustFight), never taken from a player's request:
+  /** Paralysed: rolls no dice and adds no Fight to the duel. */
+  still?: boolean;
+  /** Makes no strikes if its side wins (Transfixed, Prone and so on): the reason. */
+  noStrike?: string;
+  /** Enchant Blades: re-rolls failed To Wound rolls on its strikes. */
+  reroll?: boolean;
 }
 
 export interface FightRequest {
@@ -86,6 +93,8 @@ export function resolveDuel(req: FightRequest, d6: D6, by: Role, group: string, 
     rolls.push({ id: `${group}-${rolls.length}`, by, label: label.slice(0, 80), dice, at: now, group, ...extra });
   req.sides.forEach((side, i) => {
     for (const f of side) {
+      // A Paralysed model adds nothing to the duel; a side of nothing else loses it.
+      if (f.still) continue;
       let fv = f.f;
       if (f.strike) {
         const bonus = Math.ceil(d6() / 2);
@@ -132,20 +141,27 @@ export function resolveStrikes(req: FightRequest, duel: DiceRoll[], d6: D6, by: 
   const losers = req.sides[1 - winner];
   const target = losers.find(f => f.id === req.targets[winner]) ?? losers[0];
   const trapped = req.trapped || !!cornered?.(winner, target.id);
+  const idle: string[] = [];
   for (const f of req.sides[winner]) {
+    if (f.noStrike) {
+      idle.push(`${f.name} (${f.noStrike})`);
+      continue;
+    }
     const base = woundNeed(f.s, target.d);
     // Heroic Defence: only natural 6s wound (both dice for 6/4+ style results).
     const need = base && target.defence ? { target: 6, ...(base.then ? { then: 6 } : {}) } : base;
     if (!need) continue;
-    const dice = Array.from({ length: f.a * (trapped ? 2 : 1) }, d6);
-    const follow = need.then ? dice.filter(d => d >= need.target).map(d6) : undefined;
-    push(`${f.name} strikes ${target.name}${trapped ? ', trapped,' : ''} (${formatNeed(need)})`, dice, { target: need.target, against: target.id, model: f.id, ...(need.then ? { then: need.then, follow } : {}) });
+    let dice = Array.from({ length: f.a * (trapped ? 2 : 1) }, d6);
+    if (f.reroll) dice = dice.map(d => (d >= need.target ? d : d6()));
+    const follow = need.then ? dice.filter(d => d >= need.target).map(d6).map(d => (f.reroll && d < need.then! ? d6() : d)) : undefined;
+    const label = `${f.name} strikes ${target.name}${trapped ? ', trapped,' : ''}${f.reroll ? ', re-rolling misses,' : ''} (${formatNeed(need)})`;
+    push(label, dice, { target: need.target, against: target.id, model: f.id, ...(need.then ? { then: need.then, follow } : {}) });
   }
   const wounds = strikeWounds(rolls);
   const why = how === 'dice' ? 'higher roll' : how === 'fight' ? 'higher Fight' : 'roll-off';
-  const note = `${names(req.sides[winner])} wins the duel (${why})`;
-  if (rolls.length) rolls[rolls.length - 1].note = note;
-  else push(`${names(req.sides[winner])} can't wound ${target.name}`, [], { note });
+  const note = `${names(req.sides[winner])} wins the duel (${why})${idle.length ? `. No strikes from ${idle.join(', ')}` : ''}`;
+  if (rolls.length) rolls[rolls.length - 1].note = note.slice(0, 200);
+  else push(idle.length ? `${names(req.sides[winner])} makes no strikes` : `${names(req.sides[winner])} can't wound ${target.name}`, [], { note });
   return { rolls, outcome: { winner, how, target, wounds } };
 }
 

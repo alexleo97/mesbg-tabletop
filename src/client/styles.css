@@ -290,6 +290,13 @@ small.muted, p.small { font-size: 0.8rem; }
 @media (max-width: 700px) { .sight-hint { font-size: 0.8rem; padding: 4px 10px; top: 6px; max-width: calc(100% - 80px); border-radius: 12px; } }
 .sight-hint .clear { color: var(--ok); } .sight-hint .partial { color: var(--gold); } .sight-hint .hidden { color: #ff6b5e; }
 .heroic-mark { fill: var(--gold); paint-order: stroke; stroke: #000; stroke-width: 0.05; }
+/* Powers at work: a violet ring round the base, a P for Prone, and Writhing Vines' marker with the ground it slows. */
+.spell-ring { fill: none; stroke: #b48cff; stroke-width: 0.06; stroke-dasharray: 0.14 0.08; pointer-events: none; }
+.prone-mark { fill: #fff; font-weight: 700; paint-order: stroke; stroke: #000; stroke-width: 0.06; pointer-events: none; }
+.vines-reach { fill: rgba(70, 140, 50, 0.18); stroke: #4f8f3a; stroke-width: 0.05; stroke-dasharray: 0.3 0.15; }
+.vines-marker { fill: #3d7a2a; stroke: #1d3d14; stroke-width: 0.04; }
+.model-card .effects { list-style: none; margin: 4px 0; padding: 0; font-size: 0.85em; color: #cdb8ff; }
+.model-card .effects li { margin: 2px 0; }
 
 /* Training */
 .lobby .learn { border-color: var(--gold); background: transparent; line-height: 1.3; }
