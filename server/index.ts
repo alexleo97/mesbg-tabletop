@@ -284,7 +284,14 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
       return mine(action.model) ? action : null;
     case 'takeWound':
     case 'climb':
+    case 'crawl':
+    case 'lieDown':
       return mine(action.id) ? action : null;
+    case 'crossed': {
+      // A player may only wade into a stream it was stopped at (passing the other tests is the server's to say).
+      const b = state.flow.blocked?.[String(action.id)];
+      return mine(action.id) && b?.test === 'Leap' && !action.stop ? { type: 'crossed', id: action.id, terrain: b.terrain } : null;
+    }
     case 'pickUp':
     case 'flip':
     case 'escape':

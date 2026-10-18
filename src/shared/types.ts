@@ -287,6 +287,16 @@ export interface Flow {
   farMoved?: string[];
   /** Models that moved at all this turn, so shoot 1 worse (and can't shoot a crossbow). */
   moved?: string[];
+  /** Terrain each model has passed a Jump, Climb or Leap test for this Move phase (or waded into), so may cross. */
+  crossed?: Record<string, string[]>;
+  /** A model stopped at terrain it needs a test to cross: what test, where it stands and where it would land. */
+  blocked?: Record<string, { terrain: string; test: 'Jump' | 'Climb' | 'Climb down' | 'Leap'; stop: [number, number]; landing: [number, number]; drop: number }>;
+  /** Models whose move has ended this phase (a failed test, or a test passed on 2-5). */
+  stopped?: string[];
+  /** Prone models crawling this Move phase (up to 1", staying Prone) instead of standing up. */
+  crawling?: string[];
+  /** Models that lay down this Move phase, so can't stand up again in it. */
+  lay?: string[];
   /** A model that threw a weapon as it charged: unless its target fell, it must go on and charge that target. */
   mustCharge?: { model: string; target: string };
   /** Models that have cast a power this turn; each casts at most once. */
@@ -350,6 +360,14 @@ export type Action =
   | { type: 'pairOff'; id: string; with: string }
   /** A model climbs to another floor of the building it is in. */
   | { type: 'climb'; id: string; floor: number }
+  /** Take the Jump, Climb or Leap test for the terrain a model was stopped at. */
+  | { type: 'cross'; id: string }
+  /** The result of a test (the server's), or wading into a stream rather than leaping it: may cross `terrain`; `stop` ends its move. */
+  | { type: 'crossed'; id: string; terrain?: string; stop?: boolean }
+  /** A Prone model crawls (up to 1", staying Prone) instead of standing up. */
+  | { type: 'crawl'; id: string }
+  /** A standing model lies down, for half its Move. */
+  | { type: 'lieDown'; id: string }
   /** Paralysed models have rolled to recover this End phase (never sent by a player). */
   | { type: 'recovered' }
   | { type: 'arrive'; seat: Seat; moves: { id: string; x: number; y: number; rot: number }[] }

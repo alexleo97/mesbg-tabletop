@@ -39,8 +39,17 @@ export function standingAt(state: GameState, m: Model): number {
   const t = m.floor ? flooredAt(state, m) : undefined;
   return Math.max(groundAt(state, m), t ? floorHeight(t, m.floor!) : 0);
 }
-/** A model's eye level: where it stands plus its own height (taller on a horse). */
-export const eyeOf = (state: GameState, m: Model) => standingAt(state, m) + (m.base.h > m.base.w ? 1.6 : 1);
+/**
+ * How tall a model is, in inches, judged from its base: a Hobbit or Dwarf on a small base is shorter than a Man, a
+ * rider is taller, and a monster on a big base taller still.
+ */
+export function heightOfModel(m: Pick<Model, 'base'>): number {
+  if (m.base.h > m.base.w) return 1.6;
+  const size = Math.max(m.base.w, m.base.h);
+  return size >= 60 ? 3 : size >= 40 ? 2 : size >= 25 ? 1.1 : 0.8;
+}
+/** A model's eye level: where it stands plus its own height (half that while it lies Prone). */
+export const eyeOf = (state: GameState, m: Model) => standingAt(state, m) + heightOfModel(m) / (m.prone ? 2 : 1);
 /** The name of a floor, for the model card. */
 export const floorName = (t: Terrain, level: number) => (level >= (t.floors ?? 0) ? 'Roof' : level === 0 ? 'Ground floor' : `Floor ${level}`);
 
@@ -212,26 +221,37 @@ function slowGround(state: GameState, seat?: Seat): Point[][] {
   return [...all.filter(t => !t.vines && isDifficult(t)).map(t => outline(t)), ...all.filter(t => t.vines && seat && t.side !== seat).map(vinesArea)];
 }
 
-/** How far a move from a to b really costs for a model of `seat`, counting the part through difficult terrain double. */
-export function moveCost(state: GameState, a: Point, b: Point, seat?: Seat): { cost: number; difficult: boolean } {
+/**
+ * How far a move from a to b really costs for a model of `seat`: the part through difficult terrain counts double
+ * (while any of the base is in it, given the base's radius `r`), and climbing up rocks, cliffs and buildings counts
+ * double the height, as does climbing down more than the model's own height (`tall`).
+ */
+export function moveCost(state: GameState, a: Point, b: Point, seat?: Seat, r = 0, tall = 1.1): { cost: number; difficult: boolean } {
   const d = Math.hypot(b.x - a.x, b.y - a.y);
-  const climb = climbCost(state, a, b);
+  const climb = climbCost(state, a, b, tall);
   const slow = slowGround(state, seat);
   if (!slow.length || d === 0) return { cost: d + climb, difficult: false };
   // Bridges carry models over rivers at full speed.
   const bridges = Object.values(state.terrain).filter(t => t.kind === 'bridge').map(t => outline(t));
   const steps = Math.max(8, Math.ceil(d * 8));
   let inside = 0;
+  const touches = (poly: Point[], p: Point) => insidePolygon(poly, p) || (r > 0 && poly.some((q, j) => distanceToSegment(p, poly[(j || poly.length) - 1], q) < r));
   for (let i = 0; i < steps; i++) {
     const t = (i + 0.5) / steps;
     const p = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
-    if (slow.some(poly => insidePolygon(poly, p)) && !bridges.some(poly => insidePolygon(poly, p))) inside++;
+    if (slow.some(poly => touches(poly, p)) && !bridges.some(poly => insidePolygon(poly, p))) inside++;
   }
   return { cost: d + (d * inside) / steps + climb, difficult: inside > 0 };
 }
 
-/** Inches spent climbing up and down rocks, buildings and cliffs along a straight move. */
-function climbCost(state: GameState, a: Point, b: Point): number {
+/** The height of the rocks, cliffs and buildings (without floors) at a point: what a model there has climbed. */
+export function climbedLevel(state: GameState, p: Point): number {
+  let h = 0;
+  for (const t of Object.values(state.terrain)) if (CLIMBED.has(t.kind) && !hasFloors(t) && heightOf(t) > h && insidePolygon(outline(t), p)) h = heightOf(t);
+  return h;
+}
+
+function climbCost(state: GameState, a: Point, b: Point, tall: number): number {
   // A piece with floors is walked into at ground level; climbing inside it is done floor by floor.
   const pieces = Object.values(state.terrain).filter(t => CLIMBED.has(t.kind) && !hasFloors(t) && heightOf(t) > 0);
   const d = Math.hypot(b.x - a.x, b.y - a.y);
@@ -245,13 +265,13 @@ function climbCost(state: GameState, a: Point, b: Point): number {
   for (let i = 1; i <= steps; i++) {
     const f = i / steps;
     const h = level({ x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f });
-    total += Math.abs(h - prev);
+    // Climbing counts as difficult terrain; a drop no more than the model's own height is free.
+    if (h > prev) total += (h - prev) * 2;
+    else if (prev - h > tall + 1e-6) total += (prev - h) * 2;
     prev = h;
   }
   return total;
 }
-
-/** Whether a point is in difficult terrain (for a model of `seat`, counting enemy Writhing Vines). */
 export const inDifficult = (state: GameState, p: Point, seat?: Seat) => {
   const all = Object.values(state.terrain);
   return slowGround(state, seat).some(poly => insidePolygon(poly, p)) && !all.some(t => t.kind === 'bridge' && insidePolygon(outline(t), p));

@@ -15,7 +15,7 @@ describe('height', () => {
     const s = board(piece('hill', 24, 24, 8, 8));
     expect(sightTo(s, mk('p1', 24, 34), mk('p2', 24, 14))).toBe('hidden');
     const onTop = mk('p1', 24, 24);
-    expect(eyeOf(s, onTop)).toBe(3);
+    expect(eyeOf(s, onTop)).toBeCloseTo(3.1, 5);
     expect(sightTo(s, onTop, mk('p2', 24, 14))).toBe('clear');
   });
 
@@ -34,9 +34,9 @@ describe('height', () => {
     expect(inTheWay(high, mk('p1', 24, 36), mk('p2', 24, 23))).toEqual(['wall']);
   });
 
-  it('counts climbing up and down a rock as part of the move', () => {
+  it('counts climbing up and down a rock as part of the move, doubled as difficult ground', () => {
     const s = board(piece('rock', 24, 24, 4, 4, { height: 2 }));
-    expect(moveCost(s, { x: 24, y: 30 }, { x: 24, y: 18 }).cost).toBeCloseTo(16, 0);
+    expect(moveCost(s, { x: 24, y: 30 }, { x: 24, y: 18 }).cost).toBeCloseTo(20, 0);
     // Hills are slopes, not climbs.
     expect(moveCost(board(piece('hill', 24, 24, 4, 4)), { x: 24, y: 30 }, { x: 24, y: 18 }).cost).toBeCloseTo(12, 5);
   });

@@ -3,6 +3,7 @@ import { canActivate } from './heroics.ts';
 import { modelStats, type Catalog } from './catalog.ts';
 import { missileWeapon } from './rules.ts';
 import { planShot, throwingPoint } from './shooting.ts';
+import { resolveCross } from './terrainTests.ts';
 import { cleanFight, cleanShot, duelSettled, resolveDuel, resolveShot, resolveStrikes, type DrawRule, type Fighter, type FightRequest } from './fight.ts';
 import { combatFromKey, priorityChooser } from './flow.ts';
 import { hasElvenWeapon, sideOf } from './gear.ts';
@@ -15,7 +16,7 @@ import { MAX_DICE } from './reducer.ts';
 import type { Action, DiceRoll, GameState, Seat } from './types.ts';
 
 /** Dice requests a player sends, which only whoever holds the dice (the server, or the browser in practice games) can answer. */
-export const DICE_REQUESTS = new Set<Action['type']>(['roll', 'fight', 'strikes', 'shoot', 'rollFate', 'rollPriority', 'uncover', 'cast', 'resist']);
+export const DICE_REQUESTS = new Set<Action['type']>(['roll', 'fight', 'strikes', 'shoot', 'cross', 'rollFate', 'rollPriority', 'uncover', 'cast', 'resist']);
 
 export interface Resolved {
   /** Results everyone applies, in order. */
@@ -206,6 +207,10 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
           ...shot.hits.flatMap(h => woundAction(state, shot.rolls.filter(r => r.against === h.id), h.id, h.wounds, [shooter.id], 'shoot', group)),
         ],
       };
+    }
+    case 'cross': {
+      const out = resolveCross(state, seat, String(action.id), d6, uid, now, catalog);
+      return out && { apply: out };
     }
     case 'cast': {
       const out = rollCast(state, seat, action, d6, uid, now, catalog);
