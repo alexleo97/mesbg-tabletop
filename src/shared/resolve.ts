@@ -369,7 +369,8 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       // A heavy shot across an Iron Hills Ballista's line is caught by it on a 5+.
       if (plan.weapon.s >= 7 && acrossCable(state, shooter, target)) {
         const d = d6();
-        if (d >= 5) return { apply: [{ type: 'rolled', roll: { id: `s-${uid()}-0`, by: seat, label: `${shooter.name}'s shot crosses the line (5+ stops it)`.slice(0, 80), dice: [d], target: 5, model: shooter.id, at: now, group: `s-${uid()}`, note: 'The line catches the shot.' } }] };
+        const group = `s-${uid()}`;
+        if (d >= 5) return { apply: [{ type: 'rolled', roll: { id: `${group}-0`, by: seat, label: `${shooter.name}'s shot crosses the line (5+ stops it)`.slice(0, 80), dice: [d], target: 5, model: shooter.id, at: now, group, note: 'The line catches the shot.' } }] };
       }
       if (shooter.siege && !bolts) {
         if (state.flow.shotPause) return null;

@@ -581,6 +581,19 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
           {showDeployment && scenarioById(state.scenario) && <ScenarioZones s={scenarioById(state.scenario)!} w={state.board.w} h={state.board.h} />}
 
           {showZones && <MoveZones state={state} models={models.filter(m => selected.has(m.id))} />}
+          {/* A selected siege engine's 45° Arc of Sight, and the Iron Hills Ballista's lines across the table. */}
+          <g pointerEvents="none" clipPath="url(#board-clip)">
+            {models
+              .filter(m => m.siege && !m.dead && selected.has(m.id))
+              .map(m => {
+                const r = 96;
+                const a = (k: number) => ((m.rot + k) * Math.PI) / 180;
+                return <path key={`arc-${m.id}`} className="engine-arc" d={`M${m.x},${m.y} L${m.x + Math.sin(a(-22.5)) * r},${m.y - Math.cos(a(-22.5)) * r} L${m.x + Math.sin(a(22.5)) * r},${m.y - Math.cos(a(22.5)) * r} Z`} />;
+              })}
+            {(state.flow.cables ?? []).map(([x1, y1, x2, y2], i) => (
+              <line key={`cable-${i}`} className="cable" x1={x1} y1={y1} x2={x2} y2={y2} />
+            ))}
+          </g>
 
           {dragPos &&
             gesture?.kind === 'drag' &&
