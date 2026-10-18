@@ -38,7 +38,9 @@ export function breachBlocked(state: GameState, catalog: Catalog | null, how: Br
   if (how === 'push') {
     if (state.phase !== 'move' || !canActivate(state, m.owner)) return 'Only in your Move phase';
     if (t.object !== 'ladder' || !t.raised || t.gone || t.side === m.owner) return 'Not an enemy ladder against the walls';
-    if (!touchingMarker(m, t)) return 'Must be touching the ladder';
+    // On the walls: touching the ladder, or the wall just behind where it's propped.
+    const wall = state.terrain[t.raised];
+    if (!touchingMarker(m, t) && !(wall && distanceToTerrain(m, wall) <= 0.25 && Math.hypot(m.x - t.x, m.y - t.y) <= Math.min(wall.w, wall.h) + 1)) return 'Must be on the walls by the ladder';
     if (m.prone || engaged(state, m) || state.flow.stopped?.includes(m.id) || m.siege) return 'Not free to act';
     return undefined;
   }

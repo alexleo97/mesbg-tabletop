@@ -161,7 +161,7 @@ describe('siege ladders', () => {
 
   it('can be pushed down by a defender on the walls, and those on it fall', () => {
     const ladder = piece('lad', 'objective', 15, 24.5, 1, 1, { object: 'ladder', side: 'p2', raised: 'wl' });
-    let s = begin([mk('a', 'p2', 15, 25.49), mk('d', 'p1', 15, 23.51, '[rohan] warrior'), mk('d2', 'p1', 15.98, 23.51, '[rohan] warrior')], [...WALLS, ladder]);
+    let s = begin([mk('a', 'p2', 15, 25.49), mk('d', 'p1', 15, 23.01, '[rohan] warrior'), mk('d2', 'p1', 15.98, 23.01, '[rohan] warrior')], [...WALLS, ladder]);
     s = { ...s, priority: 'p1' };
     expect(breachOptions(s, catalog, s.models.d).map(o => o.how)).toEqual(['push']);
     // A 3, +1 for the friend beside it, -1 for the Uruk on the ladder: 3, not enough.

@@ -16,7 +16,7 @@ export const TERRAIN_INFO: Record<TerrainKind, { name: string; type: string; not
   hill: { name: 'Hill', type: 'Elevation', note: 'Open ground that gives height: models up here can see over low terrain. It does not slow movement.' },
   objective: { name: 'Objective', type: 'Marker', note: 'A scenario objective. It does not block movement or sight.' },
   road: { name: 'Road', type: 'Open ground', note: 'A dirt track or street. Open ground: it does not slow models or block sight.' },
-  gate: { name: 'Gate', type: 'Barrier', note: 'A gate or door in a fortress. Its own side goes through; the enemy has to break it down first.' },
+  gate: { name: 'Gate', type: 'Barrier', note: 'A gate or door set in a fortress wall. Set its kind and who holds it below.' },
   bridge: { name: 'Bridge', type: 'Crossing', note: 'Carries models over water at full speed. Narrow, so it makes a natural choke point.' },
 };
 
