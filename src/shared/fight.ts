@@ -59,9 +59,9 @@ export interface Fighter {
   notes?: string[];
   // Cavalry and monsters (see cavalry.ts and monsters.ts):
   /** A rider's mount, which an enemy that wins may strike instead of the rider (aiming at `<id>#mount`). */
-  mount?: { name: string; d: number; s: number };
+  mount?: { name: string; d: number; s: number; chariot?: boolean };
   /** It charged, and gets the bonus for it: +1 Attack, and the foes it beats are knocked down. */
-  charged?: 'cavalry' | 'monster';
+  charged?: 'cavalry' | 'monster' | 'chariot' | 'beast';
   /** A monster: each enemy its strikes slay earns a free strike on every model that was supporting it. */
   monster?: boolean;
   /** Wounds it has left, so a monster can tell when a strike slays it. */
@@ -103,10 +103,12 @@ export interface FightRequest {
 
 export interface ShotRequest {
   shooter: { id: string; name: string; weapon: string; shoot: number; s: number; shots: number };
-  target: { id: string; name: string; d: number; mount?: { name: string; d: number; monster?: boolean } };
+  target: { id: string; name: string; d: number; mount?: { name: string; d: number; monster?: boolean; chariot?: boolean } };
   /** Sharpshooter: hits go to the part of a rider and mount aimed at (`atMount`), with no roll for which is hit. */
   sharp?: boolean;
   atMount?: boolean;
+  /** Aimed at a war beast's Howdah rather than the beast. */
+  atHowdah?: boolean;
   /** Things in the way (models or terrain): each needs a 4+ for the shot to get past. */
   obstacles: number;
   /** A throwing weapon thrown in the Move phase as the shooter charges its target. */
@@ -271,10 +273,15 @@ export function resolveStrikes(req: FightRequest, duel: DiceRoll[], d6: D6, by: 
     winner = r[0] > r[1] ? 0 : 1;
   }
 
-  // Supporting models aren't in the fight, so they can't be struck; a rider's mount can be, instead of the rider.
+  // Supporting models aren't in the fight, so they can't be struck; a rider's mount can be, instead of the rider (and
+  // a hero's chariot must be: the hero can't be struck apart from it).
   const losers = req.sides[1 - winner].filter(f => !f.support);
-  const pool = losers.flatMap(l => (l.mount ? [l, { id: `${l.id}#mount`, name: `${l.name}'s ${l.mount.name}`, f: 1, a: 1, s: l.mount.s, d: l.mount.d }] : [l]));
-  const main = pool.find(f => f.id === req.targets[winner]) ?? losers[0];
+  const pool = losers.flatMap(l => {
+    if (!l.mount) return [l];
+    const steed = { id: `${l.id}#mount`, name: `${l.name}'s ${l.mount.name}`, f: 1, a: 1, s: l.mount.s, d: l.mount.d };
+    return l.mount.chariot ? [steed] : [l, steed];
+  });
+  const main = pool.find(f => f.id === req.targets[winner]) ?? pool[0];
   const trappedFor = new Map<string, boolean>();
   const isTrapped = (t: Fighter) => {
     const id = t.id.replace(/#mount$/, '');
@@ -382,6 +389,7 @@ export function cleanShot(raw: unknown): ShotRequest | null {
     obstacles: clamp(o.obstacles, 0, 5, 0),
     ...(o.charge === true ? { charge: true } : {}),
     ...(o.atMount === true ? { atMount: true } : {}),
+    ...(o.atHowdah === true ? { atHowdah: true } : {}),
   };
 }
 
@@ -403,7 +411,7 @@ export function cleanPausedShot(raw: unknown): ShotRequest | null {
     ...(o.ones === true ? { ones: true } : {}),
     ...(o.bane === true ? { bane: true } : {}),
     ...(o.sharp === true ? { sharp: true } : {}),
-    ...(o.target?.mount && typeof o.target.mount === 'object' ? { target: { ...base.target, mount: { name: str(o.target.mount.name, 40), d: clamp(o.target.mount.d, 1, 10, 4), ...(o.target.mount.monster === true ? { monster: true } : {}) } } } : {}),
+    ...(o.target?.mount && typeof o.target.mount === 'object' ? { target: { ...base.target, mount: { name: str(o.target.mount.name, 40), d: clamp(o.target.mount.d, 1, 10, 4), ...(o.target.mount.monster === true ? { monster: true } : {}), ...(o.target.mount.chariot === true ? { chariot: true } : {}) } } } : {}),
   };
 }
 
@@ -485,7 +493,11 @@ export function resolveShot(req: ShotRequest, d6: D6, by: Role, group: string, n
   const mount = target.mount;
   if (mount && flying > 0) {
     const steed = { id: `${target.id}#mount`, name: `${target.name}'s ${mount.name}` };
-    if (req.sharp) {
+    // A hero's chariot takes every hit: the hero can't be shot apart from it.
+    if (mount.chariot) {
+      strike(steed.id, steed.name, mount.d, flying);
+      flying = 0;
+    } else if (req.sharp) {
       if (req.atMount) {
         strike(steed.id, steed.name, mount.d, flying);
         flying = 0;

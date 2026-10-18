@@ -127,12 +127,13 @@ export function fighterOf(state: GameState, catalog: Catalog | null | undefined,
   const mount = mountOf(m);
   if (mount) {
     const label = mountLabel(mount.name);
-    const better = [mount.f > f.f && 'F', mount.s > strength && 'S', mount.a > f.a && 'A'].filter(Boolean);
+    // A hero's chariot adds its Attacks to the hero's.
+    const better = [mount.f > f.f && 'F', mount.s > strength && 'S', mount.chariot ? mount.a > 0 && `+${mount.a} A` : mount.a > f.a && 'A'].filter(Boolean);
     f.f = Math.max(f.f, mount.f);
-    f.a = Math.max(f.a, mount.a);
+    f.a = mount.chariot ? Math.min(10, f.a + mount.a) : Math.max(f.a, mount.a);
     if (mount.s > strength) f.s = declared(state, m.id, 'Heroic Strength') ? Math.min(10, mount.s * 2) : mount.s;
     if (better.length) notes.push(`${label}: its ${better.join(', ')}`);
-    if (mount.left > 0) f.mount = { name: label, d: mount.d, s: mount.s };
+    if (mount.left > 0) f.mount = { name: label, d: mount.d, s: mount.s, ...(mount.chariot ? { chariot: true } : {}) };
   }
   if (isMonster(catalog, m)) f.monster = true;
   // A hero's Fate might yet save it, so only a model without Fate is known to be slain by its last wound.

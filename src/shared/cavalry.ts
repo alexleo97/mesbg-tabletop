@@ -19,12 +19,17 @@ export interface MountProfile {
   i: number;
   /** A monster ridden into battle (a Fell Beast or Great Eagle): shots at it hit the mount on 1-4. */
   monster?: boolean;
+  /** A chariot a hero rides (see warBeasts.ts): it adds its Attacks to the hero's, and only it can be shot or struck. */
+  chariot?: boolean;
 }
 
 const P = (mv: number, f: number, s: number, d: number, a: number, w: number, c: number, i: number, monster = false): MountProfile => ({ mv, f, s, d, a, w, c, i, ...(monster ? { monster } : {}) });
+const CHARIOT = (mv: number, f: number, s: number, d: number, a: number, w: number, c: number, i: number): MountProfile => ({ ...P(mv, f, s, d, a, w, c, i), chariot: true });
 
 /** The mounts in the army lists, from their profiles; any other steed is a horse. */
 const PROFILES: [RegExp, MountProfile][] = [
+  [/khandish chariot/i, CHARIOT(10, 4, 3, 7, 1, 3, 7, 7)],
+  [/iron hills chariot/i, CHARIOT(8, 4, 4, 8, 2, 4, 6, 6)],
   [/armoured fell beast/i, P(12, 5, 6, 7, 2, 3, 7, 8, true)],
   [/fell beast/i, P(12, 5, 6, 6, 2, 3, 7, 8, true)],
   [/great eagle/i, P(12, 7, 6, 8, 2, 3, 4, 4, true)],
@@ -44,13 +49,13 @@ const PROFILES: [RegExp, MountProfile][] = [
   [/camel/i, P(10, 2, 4, 4, 0, 1, 8, 8)],
   [/horse|steed|snowmane|ashere/i, P(10, 2, 3, 4, 0, 1, 7, 7)],
 ];
-/** Chariots, carts, sleighs and war beasts are one model, not a rider on a mount. */
-const NOT_A_MOUNT = /chariot|cart|sleigh|troll brute/i;
+/** Carts, sleighs and war beasts are one model, not a rider on a mount (a hero's chariot is ridden; see CHARIOT). */
+const NOT_A_MOUNT = /\bcart\b|sleigh|troll brute/i;
 const MOUNT_WARGEAR = /^(armoured )?(horse|steed|warg|pony|goat|war goat|camel|elk|boar|horses)$/i;
 /** The parts of an option that are the mount (an option can carry more, as in "Armoured horse and lance"). */
 export const MOUNT_OPTION = /\b(horse|steed|warg|pony|goat|camel|elk|boar|fell beast|great eagle|shadowfax|asfaloth|brego|snowmane|firefoot|ashere|fela)/i;
 
-/** A mount's profile from its name; undefined for a chariot or anything else that isn't ridden. */
+/** A mount's profile from its name; undefined for a cart or anything else that isn't ridden. */
 export function mountProfile(name: string | undefined): MountProfile | undefined {
   if (!name || NOT_A_MOUNT.test(name)) return undefined;
   const hit = PROFILES.find(([re]) => re.test(name));
@@ -70,7 +75,7 @@ export function mountName(unit: CatalogUnit, chosen: string[]): string | undefin
  * Whether a model is a rider on its mount. Models saved before mounts were recorded are told by their old
  * rider-shaped bases.
  */
-export const mounted = (m: Model) => !m.dismounted && !m.steed && (!!m.mount || m.base.h > m.base.w);
+export const mounted = (m: Model) => !m.dismounted && !m.steed && m.beast !== 'war' && !m.aboard && (!!m.mount || (m.base.h > m.base.w && m.base.h < 100));
 
 /** A rider's mount as it is now, with the wounds it has left; undefined on foot, or for a mount we have no profile for. */
 export function mountOf(m: Model): (MountProfile & { name: string; left: number }) | undefined {
@@ -86,7 +91,7 @@ export const mountLabel = (name: string) => {
 };
 
 /** How much difficult ground costs: four times for cavalry (Shadowfax just twice), twice for anyone else. */
-export const difficultTimes = (m: Model) => (mounted(m) && !/shadowfax/i.test(m.mount ?? '') ? 4 : 2);
+export const difficultTimes = (m: Model) => (mounted(m) && !/shadowfax/i.test(m.mount ?? '') && !mountOf(m)?.chariot ? 4 : 2);
 
 /** The numbers of a mount that has lost its rider and fights on by itself. */
 export function steedStats(name: string): Partial<Record<StatName, number>> | null {
@@ -161,7 +166,8 @@ export function thrownRider(state: GameState, catalog: Catalog | null | undefine
  */
 export function separatedMount(m: Model, d6: D6, uid: () => string, now: number, at: { x: number; y: number }): { actions: Action[]; steed?: Model } {
   const p = mountOf({ ...m, dismounted: false });
-  if (!p || !m.mount || p.a < 1 || (m.mountWounds ?? p.w) < 1) return { actions: [] };
+  // (A chariot doesn't drive on without its hero.)
+  if (!p || !m.mount || p.a < 1 || p.chariot || (m.mountWounds ?? p.w) < 1) return { actions: [] };
   const dice = [d6(), d6()];
   const stays = dice[0] + dice[1] >= p.c;
   const name = mountLabel(m.mount);

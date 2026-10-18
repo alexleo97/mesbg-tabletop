@@ -6,6 +6,7 @@ import { loadCatalog, type Catalog } from '../shared/catalog.ts';
 import { settleSpell } from '../shared/magic.ts';
 import { recoveryDue, recoveryRolls } from '../shared/powers.ts';
 import { riderTests, riderTestsDue } from '../shared/cavalry.ts';
+import { beastTests, beastTestsDue } from '../shared/warBeasts.ts';
 import { cleanMark } from '../shared/marks.ts';
 import type { Action, GameState, Mark, Role } from '../shared/types.ts';
 import { showMark, turnMarks, type Connection, type Snapshot } from './net.ts';
@@ -45,6 +46,7 @@ export class PracticeGame implements Connection {
     for (const a of settleSpell(state, catalog, d6, uid)) state = reduce(state, a);
     if (recoveryDue(state)) for (const a of recoveryRolls(state, d6, uid)) state = reduce(state, a);
     if (riderTestsDue(state)) for (const a of riderTests(state, catalog, d6, uid)) state = reduce(state, a);
+    if (beastTestsDue(state)) for (const a of beastTests(state, catalog, d6, uid)) state = reduce(state, a);
     this.set(this.opponent(state));
   }
 

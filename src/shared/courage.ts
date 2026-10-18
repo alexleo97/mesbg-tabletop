@@ -9,6 +9,7 @@ import { engaged } from './movement.ts';
 import { sightTo } from './sight.ts';
 import { armyStatus } from './status.ts';
 import { courageBonus } from './wargear.ts';
+import { isChariot } from './warBeasts.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
 /** How close a hero's friends must be to share its Stand Fast! or Heroic Resolve. */
@@ -65,7 +66,8 @@ function rescue(catalog: Catalog | null, m: Model, d: DiceRoll): { roll: DiceRol
 export function brokenTests(state: GameState, seat: Seat, catalog: Catalog | null, d6: () => number, uid: () => string, now = Date.now()): Action[] {
   const r: Roller = { d6, uid, now, by: seat };
   const resolute = new Set(phaseHeroics(state).filter(h => h.action === 'Heroic Resolve').map(h => h.model));
-  const models = Object.values(state.models).filter(m => m.owner === seat && !m.dead && !m.escaped && !m.waiting && !cannotAct(state, m) && (!engaged(state, m) || resolute.has(m.id)));
+  // War beasts, those riding them and chariots stand firm in a Broken army without a test.
+  const models = Object.values(state.models).filter(m => m.owner === seat && !m.dead && !m.escaped && !m.waiting && !m.beast && !m.aboard && !isChariot(catalog, m) && !cannotAct(state, m) && (!engaged(state, m) || resolute.has(m.id)));
   const rolls: DiceRoll[] = [];
   const spent: Action[] = [];
   const results: Record<string, boolean> = {};

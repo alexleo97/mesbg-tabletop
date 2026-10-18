@@ -11,6 +11,8 @@ import { effectNotes, heldBy } from '../shared/powers.ts';
 import { isThrowing, planShot, shooterBlocked, throwingPoint, weaponFor } from '../shared/shooting.ts';
 import { cloaked, stones } from '../shared/wargear.ts';
 import { mounted, mountLabel, mountOf } from '../shared/cavalry.ts';
+import { howdahFor } from '../shared/warBeasts.ts';
+import { BeastPanel } from './BeastPanel.tsx';
 import { flooredAt, floorHeight, floorName, sightTo, standingAt } from '../shared/sight.ts';
 import RULES from '../data/special-rules.json';
 import { CastBox } from './MagicPanel.tsx';
@@ -164,6 +166,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
   const [openRule, setOpenRule] = useState<string | null>(null);
   /** A Sharpshooter's pick: aim at a rider's mount rather than the rider. */
   const [atMount, setAtMount] = useState(false);
+  const [atHowdah, setAtHowdah] = useState(false);
   const seen = target ? sightTo(state, m, target) : null;
   const up = Math.round(standingAt(state, m) * 10) / 10;
   // Inside a building with floors, the model's player picks which level it stands on (climbing costs Move in the battle).
@@ -238,6 +241,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
       const stray = plan.fight?.[0] ? state.models[plan.fight[0]] : undefined;
       const steed = mountOf(target);
       const sharp = !!steed && steed.left > 0 && !!(m.profileId && catalog?.units[m.profileId]?.rules.includes('Sharpshooter'));
+      const howdah = target.beast === 'war' && target.howdahWounds ? howdahFor(target.name) : undefined;
       action = (
         <div className="aim-card">
           <p>
@@ -267,7 +271,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
               onClick={() =>
                 dispatch({
                   type: 'shoot',
-                  shot: { shooter: { id: m.id, name: m.name, weapon: weapon.name, shoot: plan.printed, s: weapon.s, shots: plan.shots }, target: { id: target.id, name: target.name, d }, obstacles: plan.inWay.length, ...(charge ? { charge: true } : {}), ...(sharp && atMount ? { atMount: true } : {}) },
+                  shot: { shooter: { id: m.id, name: m.name, weapon: weapon.name, shoot: plan.printed, s: weapon.s, shots: plan.shots }, target: { id: target.id, name: target.name, d }, obstacles: plan.inWay.length, ...(charge ? { charge: true } : {}), ...(sharp && atMount ? { atMount: true } : {}), ...(howdah && atHowdah ? { atHowdah: true } : {}) },
                 })
               }
             >
@@ -279,16 +283,23 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
                 <input type="checkbox" checked={atMount} onChange={e => setAtMount(e.target.checked)} /> Sharpshooter: aim at the {mountLabel(steed!.name).toLowerCase()}
               </label>
             )}
+            {howdah && (
+              <label className="check small">
+                <input type="checkbox" checked={atHowdah} onChange={e => setAtHowdah(e.target.checked)} /> Aim at the Howdah (Defence {howdah.d}, {target.howdahWounds} wounds left)
+              </label>
+            )}
           </div>
           {lastShot && !woundsTaken(state.flow.applied, lastShot.group ?? '', lastShot.against!) && (() => {
             // A hit on a rider's mount wounds the mount.
+            // A hit on a rider's mount wounds the mount, and one on a Howdah wounds the Howdah.
             const atMount = lastShot.against!.endsWith('#mount');
-            const victim = state.models[atMount ? lastShot.against!.slice(0, -6) : lastShot.against!];
+            const atHowdahHit = lastShot.against!.endsWith('#howdah');
+            const victim = state.models[atMount ? lastShot.against!.slice(0, -6) : atHowdahHit ? lastShot.against!.slice(0, -7) : lastShot.against!];
             const wounds = strikeWounds(shotRolls.filter(r => r.against === lastShot.against));
             return victim && !victim.dead && wounds > 0 ? (
-              <button onClick={() => dispatch({ type: 'wound', id: victim.id, count: wounds, by: [m.id], how: 'shoot', group: lastShot.group, ...(atMount ? { mount: true } : {}) })}>
-                Wound {atMount ? `${victim.name}'s mount` : victim.name} {wounds} time{wounds === 1 ? '' : 's'}
-                {atMount ? '' : victim.hero && victim.fate > 0 ? ' (Fate can be rolled)' : victim.wounds - wounds <= 0 ? ' (slain)' : ''}
+              <button onClick={() => dispatch({ type: 'wound', id: victim.id, count: wounds, by: [m.id], how: 'shoot', group: lastShot.group, ...(atMount ? { mount: true } : {}), ...(atHowdahHit ? { howdah: true } : {}) })}>
+                Wound {atMount ? `${victim.name}'s mount` : atHowdahHit ? `${victim.name}'s Howdah` : victim.name} {wounds} time{wounds === 1 ? '' : 's'}
+                {atMount || atHowdahHit ? '' : victim.hero && victim.fate > 0 ? ' (Fate can be rolled)' : victim.wounds - wounds <= 0 ? ' (slain)' : ''}
               </button>
             ) : null;
           })()}
@@ -414,6 +425,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
         )
       )}
       {action}
+      <BeastPanel state={state} catalog={catalog} dispatch={dispatch} role={role} m={m} />
       {mine && state.phase === 'move' && state.flow.started && !held && <TerrainMoves state={state} dispatch={dispatch} m={m} />}
       {mine && state.phase === 'fight' && state.flow.started && !m.dead && <BackAwayPicker state={state} dispatch={dispatch} m={m} />}
       {mine && state.phase === 'move' && <CastBox state={state} dispatch={dispatch} role={role} model={m} />}

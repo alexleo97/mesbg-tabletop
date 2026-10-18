@@ -16,6 +16,7 @@ import { scoreLines } from './scoring.ts';
 import { planShot, weaponFor } from './shooting.ts';
 import { atCrossing, crossBlocked, fallingHits } from './terrainTests.ts';
 import { armyStatus } from './status.ts';
+import { chargesDue, straightOn } from './trample.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
 // The computer player. Each call looks at the game and picks the one thing it would do next, so the server can play
@@ -323,6 +324,14 @@ function moveStep(ctx: Ctx): BotStep {
   const broken = armyStatus(state, seat).broken;
   const enemies = side(state, other(seat));
   const nearest = (m: Model) => Math.min(...enemies.map(e => centre(m, e)), 999);
+  // War beasts and chariots go first, at the nearest enemy (a Stampede of its own bolts where a die sends it).
+  for (const m of chargesDue(state, ctx.catalog, seat)) {
+    if (memo.acted.includes(m.id)) continue;
+    memo.acted.push(m.id);
+    const foe = enemies.filter(e => !e.aboard).sort((a, b) => centre(m, a) - centre(m, b))[0];
+    const to = m.stampede || !foe ? straightOn(m) : { x: foe.x, y: foe.y };
+    return { action: { type: 'trample', id: m.id, x: to.x, y: to.y }, delay: DICE_PAUSE };
+  }
   // Models that can charge go first, nearest the enemy leading, so others can join their fights; then the rest
   // from the back forward, so the line closes up rather than strings out.
   const reach = (m: Model) => nearest(m) <= m.move + 2;

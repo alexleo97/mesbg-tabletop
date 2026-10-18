@@ -1,5 +1,6 @@
 import { mountBase } from './bases.ts';
 import { mountName, mountProfile, steedStats } from './cavalry.ts';
+import { commanderStats, howdahFor } from './warBeasts.ts';
 import { guessBase, type ListEntry } from './importList.ts';
 import type { Base } from './types.ts';
 
@@ -99,11 +100,14 @@ export function statsWithOptions(unit: CatalogUnit, optionIds: string[]): string
 export type StatName = (typeof STAT_NAMES)[number];
 
 /** A model's printed stats as numbers ("4+" becomes 4), with its options applied, when the unit is known. */
-export function modelStats(catalog: Catalog | null | undefined, m: { profileId?: string; options?: string[]; steed?: string } | undefined): Partial<Record<StatName, number>> | null {
+export function modelStats(catalog: Catalog | null | undefined, m: { profileId?: string; options?: string[]; steed?: string; name?: string } | undefined): Partial<Record<StatName, number>> | null {
   // A mount fighting on without its rider has the mount's own numbers.
   if (m?.steed) return steedStats(m.steed);
   const unit = m?.profileId ? catalog?.units[m.profileId] : undefined;
   if (!unit) return null;
+  // A war beast's Commander has a profile of its own.
+  const commander = unit.rules.includes('Trample') ? commanderStats(unit.name, m!.name) : undefined;
+  if (commander) return { ...commander };
   const stats = statsWithOptions(unit, unit.options.filter(o => m!.options?.includes(o.name)).map(o => o.id));
   if (!stats) return null;
   const out: Partial<Record<StatName, number>> = {};
@@ -144,15 +148,24 @@ export function entriesFor(id: string, unit: CatalogUnit, optionIds: string[], c
   const base = mount ? mountBase(mount.name) : guessBase(unit.name);
   const move = mount?.mv ?? (Number.isFinite(mv) ? mv : undefined);
   const hero = isHeroType(unit.type);
-  const parts = unit.mwfw?.length ? unit.mwfw : [['', '']];
+  // A war beast's Howdah isn't a model: its wounds go with the beast.
+  const tramples = unit.rules.includes('Trample');
+  const howdahRow = tramples ? unit.mwfw?.find(([n]) => /howdah/i.test(n)) : undefined;
+  const howdah = howdahRow ? parseInt(howdahRow[1].split(':')[3], 10) || howdahFor(unit.name)?.w : howdahFor(unit.name)?.w;
+  const parts = (unit.mwfw?.length ? unit.mwfw : [['', '']]).filter(p => p !== howdahRow);
 
   return parts.map(([subName, mwfw]) => {
     const [might, will, fate, wounds] = (mwfw || '').split(':').map(v => parseInt(v, 10));
+    // The beast itself, not its Commander: it isn't a hero, and it Tramples.
+    const beast = tramples && !/commander/i.test(subName) ? ('war' as const) : unit.rules.includes('Chariot Charge') ? ('chariot' as const) : undefined;
+    const commander = tramples && /commander/i.test(subName) ? commanderStats(unit.name, subName) : undefined;
     return {
       name: subName || unit.name,
       count,
-      hero,
-      move,
+      hero: hero && !(beast === 'war' && !(might || will || fate)),
+      move: commander?.Mv ?? move,
+      ...(beast ? { beast } : {}),
+      ...(beast === 'war' && howdah ? { howdahWounds: howdah } : {}),
       wounds: Number.isFinite(wounds) && wounds > 0 ? wounds : Number.isFinite(statW) ? statW : 1,
       might: Number.isFinite(might) ? might : 0,
       will: Number.isFinite(will) ? will : 0,

@@ -1,6 +1,7 @@
 // Who may shoot whom, and how hard the shot is: the rules for a Shooting Attack, applied alike by the server, the
 // model card and the computer player.
 import { modelStats, type Catalog } from './catalog.ts';
+import { mounted, mountOf } from './cavalry.ts';
 import { CONTACT_SLACK, combats } from './flow.ts';
 import { gearOf, sideOf } from './gear.ts';
 import { distanceBetween, type Point } from './geometry.ts';
@@ -56,6 +57,10 @@ export function shooterBlocked(state: GameState, m: Model, weapon: Weapon, charg
   if (m.prone) return 'is Prone';
   if (cannotAct(state, m)) return 'is held and can’t act';
   if (engaged(state, m)) return 'is in a fight';
+  // A war beast's Commander is busy steering it.
+  if (m.aboard && /commander/i.test(m.name)) return 'commands its war beast, and can’t shoot';
+  // A chariot shoots however far it drove.
+  if (m.beast === 'chariot' || (mounted(m) && mountOf(m)?.chariot)) return charge ? 'can only throw a throwing weapon as it charges' : undefined;
   if (charge) return state.phase === 'move' && isThrowing(weapon) ? undefined : 'can only throw a throwing weapon as it charges';
   if (isCrossbow(weapon) && moved) return 'moved, and a crossbow can’t be shot after moving';
   if (!isThrowing(weapon) && state.flow.farMoved?.includes(m.id)) return 'moved more than half its Move';
@@ -74,7 +79,8 @@ export function planShot(
   opts: { charge?: boolean; fallback?: { weapon?: Weapon; shoot?: number } } = {},
 ): ShotPlan {
   const started = !!state.flow.started;
-  const moved = started && !opts.charge && !!state.flow.moved?.includes(shooter.id);
+  // (A chariot shoots on the move without penalty.)
+  const moved = started && !opts.charge && !!state.flow.moved?.includes(shooter.id) && shooter.beast !== 'chariot' && !(mounted(shooter) && mountOf(shooter)?.chariot);
   // Thrown stones, for a model that has nothing better and didn't move.
   const rocks = !opts.charge ? stones(catalog, shooter) : undefined;
   const weapon = weaponFor(catalog, shooter) ?? (rocks && !moved ? rocks : undefined) ?? opts.fallback?.weapon;
