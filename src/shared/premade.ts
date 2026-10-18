@@ -2,7 +2,7 @@ import { botRoster } from './botList.ts';
 import type { Catalog } from './catalog.ts';
 import type { WarbandEntry } from './warbands.ts';
 
-/** Ready-made armies for the solo opponent: the same list every time for a given size. */
+/** Ready-made armies for players and the solo opponent (Good ones seeded below 20): the same list every time for a given size. */
 export const PREMADE: { id: string; name: string; army: string; seed: number }[] = [
   { id: 'white-tower', name: 'The White Tower', army: 'Minas Tirith', seed: 11 },
   { id: 'riders-of-the-mark', name: 'Riders of the Mark', army: 'Kingdom of Rohan', seed: 12 },

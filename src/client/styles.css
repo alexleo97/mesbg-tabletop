@@ -440,6 +440,7 @@ table.vp tr.total td:first-child { text-align: left; }
 .fighter-name { flex: 1 1 100%; font-size: 0.9rem; }
 .mini-stat { flex-direction: row; align-items: center; gap: 4px; font-size: 0.8rem; }
 .mini-stat input { width: 48px; min-height: 34px; padding: 2px 6px; }
+.mini-stat input.points { width: 72px; }
 .strike-at { flex-direction: row; align-items: center; gap: 8px; font-size: 0.85rem; }
 .roll-note { margin-top: 6px; font-weight: 600; color: var(--gold); }
 .power-card { margin: 0; padding: 8px; border-radius: 8px; background: var(--panel-2); font-size: 0.9rem; }
@@ -947,4 +948,7 @@ table.vp tr.auto .vp-cell b { color: var(--gold); }
 .no-anim *, .no-anim *::before, .no-anim *::after { animation: none !important; transition: none !important; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+select.ready-made {
+  width: 100%;
 }
