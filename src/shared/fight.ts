@@ -57,6 +57,24 @@ export interface Fighter {
   vs?: Record<string, { d: number; wound: number; ones: boolean }>;
   /** What its wargear and rules do, for the fight card. */
   notes?: string[];
+  // Cavalry and monsters (see cavalry.ts and monsters.ts):
+  /** A rider's mount, which an enemy that wins may strike instead of the rider (aiming at `<id>#mount`). */
+  mount?: { name: string; d: number; s: number };
+  /** It charged, and gets the bonus for it: +1 Attack, and the foes it beats are knocked down. */
+  charged?: 'cavalry' | 'monster';
+  /** A monster: each enemy its strikes slay earns a free strike on every model that was supporting it. */
+  monster?: boolean;
+  /** Wounds it has left, so a monster can tell when a strike slays it. */
+  left?: number;
+}
+
+/** A Brutal Power Attack a winning monster makes instead of its strikes (see monsters.ts). */
+export interface BrutalAttack {
+  by: string;
+  kind: 'rend' | 'barge' | 'hurl';
+  /** The enemy it rends or hurls; for a hurl, `at` is the enemy it would like to throw it at. */
+  target?: string;
+  at?: string;
 }
 
 /** How a fight tied on dice and Fight is settled: which side is Good, and which sides fight with Elven weapons. */
@@ -77,11 +95,18 @@ export interface FightRequest {
   aims?: Record<string, string[]>;
   /** Set by the game when the two sides are Good and Evil (never taken from a player's request). */
   draw?: DrawRule;
+  /** A winning monster's Brutal Power Attack, chosen by its player before the strikes. */
+  brutal?: BrutalAttack;
+  /** Set by the game: who supports whom on each side, for a monster's free strikes. */
+  backing?: Record<string, string[]>;
 }
 
 export interface ShotRequest {
   shooter: { id: string; name: string; weapon: string; shoot: number; s: number; shots: number };
-  target: { id: string; name: string; d: number };
+  target: { id: string; name: string; d: number; mount?: { name: string; d: number; monster?: boolean } };
+  /** Sharpshooter: hits go to the part of a rider and mount aimed at (`atMount`), with no roll for which is hit. */
+  sharp?: boolean;
+  atMount?: boolean;
   /** Things in the way (models or terrain): each needs a 4+ for the shot to get past. */
   obstacles: number;
   /** A throwing weapon thrown in the Move phase as the shooter charges its target. */
@@ -104,8 +129,10 @@ export interface FightOutcome {
   /** The first model struck, and the wounds caused to it. */
   target: Fighter | undefined;
   wounds: number;
-  /** Every model struck and the wounds each takes. */
+  /** Every model struck and the wounds each takes (a rider's mount as `<id>#mount`). */
   hits: { target: Fighter; wounds: number }[];
+  /** The winning monster barged or hurled, so the fight ended without strikes. */
+  ended?: 'barge' | 'hurl';
 }
 
 type D6 = () => number;
@@ -139,8 +166,10 @@ export function cleanFight(raw: unknown): FightRequest | null {
   const combat = typeof o.combat === 'string' ? o.combat.slice(0, 2000) : undefined;
   const aims: Record<string, string[]> = {};
   if (o.aims && typeof o.aims === 'object')
-    for (const [k, v] of Object.entries(o.aims).slice(0, 20)) if (Array.isArray(v)) aims[String(k).slice(0, 64)] = v.slice(0, 10).map(x => String(x).slice(0, 64));
-  return { sides, targets: [String(t[0] ?? ''), String(t[1] ?? '')], trapped: o.trapped === true, ...(combat ? { combat } : {}), ...(Object.keys(aims).length ? { aims } : {}) };
+    for (const [k, v] of Object.entries(o.aims).slice(0, 20)) if (Array.isArray(v)) aims[String(k).slice(0, 64)] = v.slice(0, 10).map(x => String(x).slice(0, 72));
+  const b = o.brutal;
+  const brutal = b && typeof b === 'object' && ['rend', 'barge', 'hurl'].includes(String(b.kind)) ? { by: String(b.by ?? '').slice(0, 64), kind: b.kind, ...(b.target ? { target: String(b.target).slice(0, 72) } : {}), ...(b.at ? { at: String(b.at).slice(0, 64) } : {}) } : undefined;
+  return { sides, targets: [String(t[0] ?? ''), String(t[1] ?? '')], trapped: o.trapped === true, ...(combat ? { combat } : {}), ...(Object.keys(aims).length ? { aims } : {}), ...(brutal ? { brutal } : {}) };
 }
 
 const names = (side: Fighter[]) => {
@@ -242,64 +271,92 @@ export function resolveStrikes(req: FightRequest, duel: DiceRoll[], d6: D6, by: 
     winner = r[0] > r[1] ? 0 : 1;
   }
 
-  // Supporting models aren't in the fight, so they can't be struck.
+  // Supporting models aren't in the fight, so they can't be struck; a rider's mount can be, instead of the rider.
   const losers = req.sides[1 - winner].filter(f => !f.support);
-  const main = losers.find(f => f.id === req.targets[winner]) ?? losers[0];
+  const pool = losers.flatMap(l => (l.mount ? [l, { id: `${l.id}#mount`, name: `${l.name}'s ${l.mount.name}`, f: 1, a: 1, s: l.mount.s, d: l.mount.d }] : [l]));
+  const main = pool.find(f => f.id === req.targets[winner]) ?? losers[0];
   const trappedFor = new Map<string, boolean>();
   const isTrapped = (t: Fighter) => {
-    if (!trappedFor.has(t.id)) trappedFor.set(t.id, req.trapped || !!cornered?.(winner, t.id));
-    return trappedFor.get(t.id)!;
+    const id = t.id.replace(/#mount$/, '');
+    if (!trappedFor.has(id)) trappedFor.set(id, req.trapped || !!cornered?.(winner, id));
+    return trappedFor.get(id)!;
   };
   const idle: string[] = [];
-  for (const f of req.sides[winner]) {
+  // A winning monster's Barge or Hurl ends the fight there: nobody strikes.
+  const brute = req.brutal && req.sides[winner].find(f => f.id === req.brutal!.by && f.monster && !f.support);
+  const ended = brute && req.brutal!.kind !== 'rend' ? req.brutal!.kind : undefined;
+  /** One batch of strikes by `f` at `target`, rolled and logged; the wounds they do. */
+  const strike = (f: Fighter, target: Fighter, n: number, free = false) => {
+    const trapped = isTrapped(target);
+    // Its wargear and rules against this enemy (two-handed weapons, Hatred and so on), a Heroic Challenge's rival,
+    // and Backstabbers against a trapped enemy.
+    const vs = f.vs?.[target.id] ?? { d: target.d, wound: f.woundMod ?? 0, ones: !!f.ones };
+    const plain = woundNeed(f.s, vs.d);
+    const bonus = vs.wound + (f.rival === target.id ? 1 : 0) + (f.backstab && trapped ? 1 : 0);
+    const base = plain && shiftNeed(plain, bonus);
+    // Heroic Defence: only natural 6s wound (both dice for 6/4+ style results).
+    const need = base && target.defence ? { target: 6, ...(base.then ? { then: 6 } : {}) } : base;
+    if (!need) return 0;
+    let strikes = n * (trapped ? 2 : 1);
+    if (defended && defended.attackers === winner) {
+      // Striking over the defences: only those that get past them can wound.
+      const past = Array.from({ length: strikes }, d6);
+      const through = past.filter(d => d >= 4).length;
+      push(`In the Way: ${f.name} strikes over ${defended.name} (4+ gets past)`, past, { target: 4, model: f.id, ...(through ? {} : { note: `${defended.name[0].toUpperCase()}${defended.name.slice(1)} stops ${f.name}'s strikes` }) });
+      strikes = through;
+      if (!strikes) return 0;
+    }
+    // Misses are re-rolled (Enchant Blades, Bane of Kings), or else just 1s (Poisoned Attacks, Ancient Enemies).
+    const again = (d: number, at: number) => (f.reroll ? (d >= at ? d : d6()) : vs.ones && d === 1 ? d6() : d);
+    const dice = Array.from({ length: strikes }, d6).map(d => again(d, need.target));
+    const follow = need.then ? dice.filter(d => d >= need.target).map(d6).map(d => again(d, need.then!)) : undefined;
+    const how = [free && 'a free strike', trapped && 'trapped', f.reroll ? 're-rolling misses' : vs.ones && 're-rolling 1s', bonus > 0 && `+${bonus} to wound`, bonus < 0 && `${bonus} to wound`, f.mighty && '2 wounds each'].filter(Boolean).join(', ');
+    const label = `${f.name} strikes ${target.name}${how ? `, ${how},` : ''} (${formatNeed(need)})`;
+    push(label, dice, { target: need.target, against: target.id, model: f.id, ...(need.then ? { then: need.then, follow } : {}), ...(f.mighty ? { per: 2 } : {}) });
+    return strikeWounds([rolls[rolls.length - 1]]);
+  };
+  for (const f of ended ? [] : req.sides[winner]) {
     if (f.noStrike) {
       idle.push(`${f.name} (${f.noStrike})`);
       continue;
     }
+    if (f === brute) {
+      // Rend: as many To Wound rolls as it has Attacks, against the victim's Strength rather than its Defence.
+      const victim = pool.find(t => t.id === req.brutal!.target) ?? main;
+      const need = woundNeed(f.s, victim.s);
+      if (need) {
+        const dice = Array.from({ length: f.a }, d6);
+        const follow = need.then ? dice.filter(d => d >= need.target).map(d6) : undefined;
+        push(`Rend: ${f.name} tears at ${victim.name}, S${f.s} vs its S${victim.s} (${formatNeed(need)})`, dice, { target: need.target, against: victim.id, model: f.id, ...(need.then ? { then: need.then, follow } : {}) });
+      }
+      continue;
+    }
     // Its strikes, each at the model it chose (any not aimed go at the main target).
     const count = f.support ? 1 : f.a;
-    const aimed = (req.aims?.[f.id] ?? []).map(id => losers.find(l => l.id === id)).filter((t): t is Fighter => !!t);
+    const aimed = (req.aims?.[f.id] ?? []).map(id => pool.find(l => l.id === id)).filter((t): t is Fighter => !!t);
     const at = Array.from({ length: count }, (_, i) => aimed[i] ?? main);
     for (const target of [...new Set(at)]) {
-      const n = at.filter(t => t === target).length;
-      const trapped = isTrapped(target);
-      // Its wargear and rules against this enemy (two-handed weapons, Hatred and so on), a Heroic Challenge's rival,
-      // and Backstabbers against a trapped enemy.
-      const vs = f.vs?.[target.id] ?? { d: target.d, wound: f.woundMod ?? 0, ones: !!f.ones };
-      const plain = woundNeed(f.s, vs.d);
-      const bonus = vs.wound + (f.rival === target.id ? 1 : 0) + (f.backstab && trapped ? 1 : 0);
-      const base = plain && shiftNeed(plain, bonus);
-      // Heroic Defence: only natural 6s wound (both dice for 6/4+ style results).
-      const need = base && target.defence ? { target: 6, ...(base.then ? { then: 6 } : {}) } : base;
-      if (!need) continue;
-      let strikes = n * (trapped ? 2 : 1);
-      if (defended && defended.attackers === winner) {
-        // Striking over the defences: only those that get past them can wound.
-        const past = Array.from({ length: strikes }, d6);
-        const through = past.filter(d => d >= 4).length;
-        push(`In the Way: ${f.name} strikes over ${defended.name} (4+ gets past)`, past, { target: 4, model: f.id, ...(through ? {} : { note: `${defended.name[0].toUpperCase()}${defended.name.slice(1)} stops ${f.name}'s strikes` }) });
-        strikes = through;
-        if (!strikes) continue;
-      }
-      // Misses are re-rolled (Enchant Blades, Bane of Kings), or else just 1s (Poisoned Attacks, Ancient Enemies).
-      const again = (d: number, at: number) => (f.reroll ? (d >= at ? d : d6()) : vs.ones && d === 1 ? d6() : d);
-      const dice = Array.from({ length: strikes }, d6).map(d => again(d, need.target));
-      const follow = need.then ? dice.filter(d => d >= need.target).map(d6).map(d => again(d, need.then!)) : undefined;
-      const how = [trapped && 'trapped', f.reroll ? 're-rolling misses' : vs.ones && 're-rolling 1s', bonus > 0 && `+${bonus} to wound`, bonus < 0 && `${bonus} to wound`, f.mighty && '2 wounds each'].filter(Boolean).join(', ');
-      const label = `${f.name} strikes ${target.name}${how ? `, ${how},` : ''} (${formatNeed(need)})`;
-      push(label, dice, { target: need.target, against: target.id, model: f.id, ...(need.then ? { then: need.then, follow } : {}), ...(f.mighty ? { per: 2 } : {}) });
+      const wounds = strike(f, target, at.filter(t => t === target).length);
+      // A monster that slays a model gets a free strike on each model that was supporting it.
+      if (f.monster && target.left !== undefined && wounds >= target.left)
+        for (const id of req.backing?.[target.id] ?? []) {
+          const helper = req.sides[1 - winner].find(x => x.id === id && x.support);
+          if (helper) strike(f, helper, 1, true);
+        }
     }
   }
-  const hits = losers.map(t => ({ target: t, wounds: strikeWounds(rolls.filter(r => r.against === t.id)) })).filter(h => rolls.some(r => r.against === h.target.id));
+  if (ended && brute) push(`${brute.name} ${ended === 'barge' ? 'barges its foes aside' : 'hurls one of its foes'}: no strikes this fight`, []);
+  const struckAt = [...pool, ...req.sides[1 - winner].filter(f => f.support)];
+  const hits = struckAt.map(t => ({ target: t, wounds: strikeWounds(rolls.filter(r => r.against === t.id)) })).filter(h => rolls.some(r => r.against === h.target.id));
   const why = how === 'dice' ? 'higher roll' : how === 'fight' ? 'higher Fight' : req.draw ? 'drawn fight' : 'roll-off';
   const note = `${names(req.sides[winner])} wins the duel (${why})${idle.length ? `. No strikes from ${idle.join(', ')}` : ''}`;
-  if (rolls.some(r => r.against || r.label.startsWith('In the Way'))) {
+  if (rolls.some(r => r.against || r.label.startsWith('In the Way')) || ended) {
     const last = rolls[rolls.length - 1];
     last.note = (last.note ? `${note}. ${last.note}` : note).slice(0, 200);
   }
   else push(idle.length ? `${names(req.sides[winner])} makes no strikes` : `${names(req.sides[winner])} can't wound ${main.name}`, [], { note });
   const first = hits[0];
-  return { rolls, outcome: { winner, how, target: first?.target ?? main, wounds: first?.wounds ?? 0, hits } };
+  return { rolls, outcome: { winner, how, target: first?.target ?? main, wounds: first?.wounds ?? 0, hits, ...(ended ? { ended } : {}) } };
 }
 
 /** Rolls a whole fight in one go: the duel, any roll-off and the strikes. */
@@ -324,6 +381,7 @@ export function cleanShot(raw: unknown): ShotRequest | null {
     target: { id: String(o.target.id ?? '').slice(0, 64), name: String(o.target.name ?? 'Model').slice(0, 40), d: clamp(o.target.d, 1, 10, 4) },
     obstacles: clamp(o.obstacles, 0, 5, 0),
     ...(o.charge === true ? { charge: true } : {}),
+    ...(o.atMount === true ? { atMount: true } : {}),
   };
 }
 
@@ -344,6 +402,8 @@ export function cleanPausedShot(raw: unknown): ShotRequest | null {
     ...(o.rerolls === true ? { rerolls: true } : {}),
     ...(o.ones === true ? { ones: true } : {}),
     ...(o.bane === true ? { bane: true } : {}),
+    ...(o.sharp === true ? { sharp: true } : {}),
+    ...(o.target?.mount && typeof o.target.mount === 'object' ? { target: { ...base.target, mount: { name: str(o.target.mount.name, 40), d: clamp(o.target.mount.d, 1, 10, 4), ...(o.target.mount.monster === true ? { monster: true } : {}) } } } : {}),
   };
 }
 
@@ -419,6 +479,24 @@ export function resolveShot(req: ShotRequest, d6: D6, by: Role, group: string, n
     const past = test(`Into the fight: 4+ hits ${target.name}, else ${req.stray.name}`);
     strike(req.stray.id, req.stray.name, req.stray.d, flying - past);
     flying = past;
+  }
+  // A hit on a rider may strike its mount instead: 1-3 hits the mount (1-4 for a monster), unless a Sharpshooter
+  // picked which to hit.
+  const mount = target.mount;
+  if (mount && flying > 0) {
+    const steed = { id: `${target.id}#mount`, name: `${target.name}'s ${mount.name}` };
+    if (req.sharp) {
+      if (req.atMount) {
+        strike(steed.id, steed.name, mount.d, flying);
+        flying = 0;
+      }
+    } else {
+      const need = mount.monster ? 5 : 4;
+      const part = take(`Rider or mount: ${need}+ hits ${target.name}, else the ${mount.name}`, flying, { target: need, model: shooter.id }).dice;
+      const rider = part.filter(d => d >= need).length;
+      strike(steed.id, steed.name, mount.d, flying - rider);
+      flying = rider;
+    }
   }
   strike(target.id, target.name, target.d, flying);
   const hits: { id: string; wounds: number }[] = [];

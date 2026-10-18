@@ -1,3 +1,4 @@
+import { mounted } from '../shared/cavalry.ts';
 import { useState } from 'react';
 import { modelStats } from '../shared/catalog.ts';
 import { D6_TABLES, formatNeed, HEROIC_ACTIONS, MISSILE_WEAPONS, TURN_SUMMARY, woundNeed } from '../shared/rules.ts';
@@ -40,7 +41,7 @@ export function RulesPanel({ state, dispatch, role, selected }: { state: GameSta
   const spectator = role === 'spectator';
   const who = one ? ` (${one.name})` : '';
   // Thrown Rider only matters to a model on a mount.
-  const tables = D6_TABLES.filter(t => t.name !== 'Thrown Rider' || !one || one.base.h > one.base.w);
+  const tables = D6_TABLES.filter(t => t.name !== 'Thrown Rider' || !one || mounted(one));
 
   const roll = (count: number, label: string, target?: number, then?: number, sum?: number) => {
     dispatch({ type: 'roll', count, target, then, label, ...(sum ? { sum } : {}), ...(one ? { model: one.id } : {}) });

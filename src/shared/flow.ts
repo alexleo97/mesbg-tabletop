@@ -1,6 +1,6 @@
 // The turn sequence as the app runs it: who acts now, who rolls for priority, and which fights are on.
 import { touching } from './barriers.ts';
-import { heroicCombatWon } from './movement.ts';
+import { fightsAgain } from './movement.ts';
 import { heroicNow } from './heroics.ts';
 import type { GameState, Model, Seat } from './types.ts';
 
@@ -135,8 +135,8 @@ export function combats(state: GameState): Combat[] {
   return [...fixed, ...pairOff(alive.filter(m => !busy.has(m.id)), state)];
 }
 
-/** Whether a model won a Heroic Combat this Fight phase and may fight again (see movement.ts heroicCombatWon). */
-const freedByHeroicCombat = (state: GameState, id: string) => !!state.models[id] && heroicCombatWon(state, state.models[id]);
+/** Whether a model won a Heroic Combat (or barged) this Fight phase and may fight again (see movement.ts fightsAgain). */
+const freedByHeroicCombat = (state: GameState, id: string) => !!state.models[id] && fightsAgain(state, state.models[id]);
 
 /** A fight rebuilt from its key, for when its models are no longer touching (the losers backed away). */
 export function combatFromKey(state: GameState, key: string): Combat | undefined {

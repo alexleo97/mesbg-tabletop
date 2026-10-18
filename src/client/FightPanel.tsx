@@ -9,6 +9,8 @@ import { waitingOnMight } from '../shared/bot.ts';
 import { foughtThisTurn } from '../shared/movement.ts';
 import { noStrikes, under } from '../shared/powers.ts';
 import { cantShield, fighterOf, twoHandedChoice } from '../shared/wargear.ts';
+import { mountLabel, mountOf } from '../shared/cavalry.ts';
+import { brutalOptions, chargeEffects } from '../shared/monsters.ts';
 import { BOT_NAME, type Action, type GameState, type Model, type Role, type Seat } from '../shared/types.ts';
 import { useCatalog } from './ListBuilder.tsx';
 import { RollRow } from './Panels.tsx';
@@ -43,6 +45,8 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
   const [aims, setAims] = useState<Record<string, string[]>>({});
   /** Spear and pike models the player chose to keep out of this fight. */
   const [benched, setBenched] = useState<Set<string>>(new Set());
+  /** A winning monster's Brutal Power Attack: '' to strike as normal, or 'rend:<id>', 'barge', 'hurl:<id>'. */
+  const [brutal, setBrutal] = useState('');
 
   const choices = state.flow.choices ?? {};
   const chosen = ids.map(id => state.models[id]).filter((m): m is Model => !!m && !m.dead);
@@ -75,6 +79,13 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
     };
   };
 
+  // What a winner can strike: each enemy, and a rider's mount as well as the rider.
+  const strikable = (s: Seat) =>
+    sides[s].flatMap(m => {
+      const p = mountOf(m);
+      return [{ id: m.id, label: tag(m) }, ...(p && p.left > 0 ? [{ id: `${m.id}#mount`, label: `${tag(m)}'s ${mountLabel(p.name).toLowerCase()}` }] : [])];
+    });
+
   // The latest fight rolled between these models, if any.
   const idSet = new Set(ids);
   const lastGroup = [...state.log]
@@ -84,7 +95,9 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
   const struck = lastRolls.some(duelSettled);
   const leader = lastGroup && !struck ? duelLeader(lastRolls) : null;
   // Each model struck, and the wounds it takes.
-  const victims = struck ? [...new Set(lastRolls.filter(r => r.against).map(r => r.against!))].map(id => ({ m: state.models[id], wounds: strikeWounds(lastRolls.filter(r => r.against === id)) })).filter(v => v.m) : [];
+  const victims = struck
+    ? [...new Set(lastRolls.filter(r => r.against).map(r => r.against!))].map(id => ({ id, m: state.models[id.replace(/#mount$/, '')], mount: id.endsWith('#mount'), wounds: strikeWounds(lastRolls.filter(r => r.against === id)) })).filter(v => v.m)
+    : [];
 
   // Spears and pikes behind the front rank: offered before the duel, and the ones that rolled in it after.
   const offered = sides.p1.length && sides.p2.length ? supporters(state, catalog, { key: combat ?? '', p1: sides.p1.map(m => m.id), p2: sides.p2.map(m => m.id) }) : { p1: [], p2: [] };
@@ -112,17 +125,33 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
   const choose = (m: Model, pick: { shielding?: boolean; twoHanded?: boolean }) => dispatch({ type: 'fightChoice', id: m.id, ...choices[m.id], ...pick });
   const side = (s: Seat) => [...sides[s].map(fighter), ...(shieldingSide(s) ? [] : helping(s).map(m => ({ ...fighter(m), a: 1, support: true, shielding: undefined, noStrike: undefined })))];
   const request = () => {
-    const target = (s: Seat) => (sides[s].some(m => m.id === targets[s]) ? targets[s] : sides[s][0].id);
-    return { sides: [side('p1'), side('p2')] as [Fighter[], Fighter[]], targets: [target('p2'), target('p1')] as [string, string], trapped, aims, ...(combat ? { combat } : {}) };
+    const target = (s: Seat) => (strikable(s).some(t => t.id === targets[s]) ? targets[s] : sides[s][0].id);
+    const [kind, victim] = brutal.split(':');
+    const brute = brutalBy();
+    return {
+      sides: [side('p1'), side('p2')] as [Fighter[], Fighter[]],
+      targets: [target('p2'), target('p1')] as [string, string],
+      trapped,
+      aims,
+      ...(combat ? { combat } : {}),
+      ...(brute && kind ? { brutal: { by: brute.id, kind: kind as 'rend' | 'barge' | 'hurl', ...(victim ? { target: victim } : {}) } } : {}),
+    };
   };
   const duel = () => dispatch({ type: 'fight', fight: request() });
   const strikes = () => lastGroup && dispatch({ type: 'strikes', fight: request(), group: lastGroup });
-  const applyWounds = (victim: Model, wounds: number) => {
+  const applyWounds = (victim: Model, wounds: number, mount = false) => {
     if (!lastGroup) return;
     // Whoever struck the blows gets the credit, for scenarios that count kills.
-    const by = [...new Set(lastRolls.filter(r => r.against === victim.id && r.model).map(r => r.model!))];
-    dispatch({ type: 'wound', id: victim.id, count: wounds, by, how: 'fight', group: lastGroup });
+    const at = mount ? `${victim.id}#mount` : victim.id;
+    const by = [...new Set(lastRolls.filter(r => r.against === at && r.model).map(r => r.model!))];
+    dispatch({ type: 'wound', id: victim.id, count: wounds, by, how: 'fight', group: lastGroup, ...(mount ? { mount: true } : {}) });
   };
+  /** The monster on the winning side that may make a Brutal Power Attack, when it's this player's to choose. */
+  function brutalBy(): Model | undefined {
+    if (!leader || role === 'spectator') return undefined;
+    const seat: Seat = leader.winner === 0 ? 'p1' : 'p2';
+    return seat === role ? sides[seat].find(m => brutalOptions(state, catalog, m).length && !noStrikes(state, m)) : undefined;
+  }
   // Models in this fight touching enemies in another one: the player with Priority can say who they fight, before any duel.
   const choosing = state.flow.started && state.phase === 'fight' && role === state.priority && !state.flow.duels?.length && !state.flow.resolved.length;
   const others = choosing ? chosen.map(m => ({ m, foes: enemiesTouching(state, m.id).filter(id => !idSet.has(id)) })).filter(x => x.foes.length) : [];
@@ -158,7 +187,7 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
                       {f.defence && <small className="heroic-tag">Heroic Defence</small>}
                       {declared(state, m.id, 'Heroic Strength') && <small className="heroic-tag">Heroic Strength</small>}
                       {fought.has(m.id) && <small className="heroic-tag">Fought this turn: sits this one out</small>}
-                      {f.notes?.map(t => (
+                      {[...(f.notes ?? []), ...chargeEffects(state, catalog, m, sides[foe], held?.attacker === m.id).notes].map(t => (
                         <small key={t} className="heroic-tag gear-tag">
                           {t}
                         </small>
@@ -214,25 +243,41 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
                   ) : null}
                 </div>
               ))}
-              {sides[foe].length > 1 && leader?.winner !== (seat === 'p1' ? 0 : 1) && (
+              {strikable(foe).length > 1 && leader?.winner !== (seat === 'p1' ? 0 : 1) && (
                 <label className="strike-at">
                   Strikes at
                   <select value={targets[seat]} onChange={e => setTargets(t => ({ ...t, [seat]: e.target.value }))}>
-                    {sides[foe].map(m => (
-                      <option key={m.id} value={m.id}>
-                        {tag(m)}
+                    {strikable(foe).map(t => (
+                      <option key={t.id} value={t.id}>
+                        {t.label}
                       </option>
                     ))}
                   </select>
                 </label>
               )}
-              {sides[foe].length > 1 && leader?.winner === (seat === 'p1' ? 0 : 1) &&
+              {brutalBy()?.owner === seat && (() => {
+                const brute = brutalBy()!;
+                const kinds = brutalOptions(state, catalog, brute);
+                const s = fighter(brute).s;
+                return (
+                  <label className="strike-at">
+                    {tag(brute)} wins:
+                    <select value={brutal} onChange={e => setBrutal(e.target.value)} aria-label="Brutal Power Attack">
+                      <option value="">Strike as normal</option>
+                      {kinds.includes('rend') && strikable(foe).map(t => <option key={`rend:${t.id}`} value={`rend:${t.id}`}>Rend {t.label}: To Wound against its Strength</option>)}
+                      {kinds.includes('barge') && <option value="barge">Barge: every foe back 3", then move again</option>}
+                      {kinds.includes('hurl') && sides[foe].filter(t => fighter(t).s < s).map(t => <option key={`hurl:${t.id}`} value={`hurl:${t.id}`}>Hurl {tag(t)} at another enemy</option>)}
+                    </select>
+                  </label>
+                );
+              })()}
+              {strikable(foe).length > 1 && leader?.winner === (seat === 'p1' ? 0 : 1) && !(brutal && brutalBy()?.owner === seat) &&
                 [...sides[seat], ...helping(seat)]
                   .filter(m => !noStrikes(state, m))
                   .map(m => {
                     const f = fighter(m);
                     const count = helping(seat).includes(m) ? 1 : f.a;
-                    const def = sides[foe].some(x => x.id === targets[seat]) ? targets[seat] : sides[foe][0].id;
+                    const def = strikable(foe).some(x => x.id === targets[seat]) ? targets[seat] : sides[foe][0].id;
                     return (
                       <div key={m.id} className="strike-at">
                         {tag(m)}'s strike{count === 1 ? '' : 's'}:
@@ -249,9 +294,9 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
                               })
                             }
                           >
-                            {sides[foe].map(t => (
+                            {strikable(foe).map(t => (
                               <option key={t.id} value={t.id}>
-                                {tag(t)}
+                                {t.label}
                               </option>
                             ))}
                           </select>
@@ -333,11 +378,11 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
           {struck &&
             role !== 'spectator' &&
             victims
-              .filter(({ m, wounds }) => wounds > 0 && !m.dead && !woundsTaken(state.flow.applied, lastGroup!, m.id))
-              .map(({ m, wounds }) => (
-                <button key={m.id} onClick={() => applyWounds(m, wounds)}>
-                  Wound {m.name} {wounds} time{wounds === 1 ? '' : 's'}
-                  {m.hero && m.fate > 0 ? ' (Fate can be rolled)' : m.wounds - wounds <= 0 ? ' (slain)' : ''}
+              .filter(({ id, m, wounds }) => wounds > 0 && !m.dead && !woundsTaken(state.flow.applied, lastGroup!, id))
+              .map(({ id, m, mount, wounds }) => (
+                <button key={id} onClick={() => applyWounds(m, wounds, mount)}>
+                  Wound {mount ? `${m.name}'s mount` : m.name} {wounds} time{wounds === 1 ? '' : 's'}
+                  {mount ? '' : m.hero && m.fate > 0 ? ' (Fate can be rolled)' : m.wounds - wounds <= 0 ? ' (slain)' : ''}
                 </button>
               ))}
         </div>

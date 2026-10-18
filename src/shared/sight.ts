@@ -225,11 +225,11 @@ function slowGround(state: GameState, seat?: Seat, ground: string[] = []): Point
 }
 
 /**
- * How far a move from a to b really costs for a model of `seat`: the part through difficult terrain counts double
+ * How far a move from a to b really costs for a model of `seat`: the part through difficult terrain counts double (`times` over: four for cavalry)
  * (while any of the base is in it, given the base's radius `r`), and climbing up rocks, cliffs and buildings counts
  * double the height, as does climbing down more than the model's own height (`tall`).
  */
-export function moveCost(state: GameState, a: Point, b: Point, seat?: Seat, r = 0, tall = 1.1, ground?: string[]): { cost: number; difficult: boolean } {
+export function moveCost(state: GameState, a: Point, b: Point, seat?: Seat, r = 0, tall = 1.1, ground?: string[], times = 2): { cost: number; difficult: boolean } {
   const d = Math.hypot(b.x - a.x, b.y - a.y);
   const climb = climbCost(state, a, b, tall);
   const slow = slowGround(state, seat, ground);
@@ -244,7 +244,7 @@ export function moveCost(state: GameState, a: Point, b: Point, seat?: Seat, r = 
     const p = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
     if (slow.some(poly => touches(poly, p)) && !bridges.some(poly => insidePolygon(poly, p))) inside++;
   }
-  return { cost: d + (d * inside) / steps + climb, difficult: inside > 0 };
+  return { cost: d + ((times - 1) * d * inside) / steps + climb, difficult: inside > 0 };
 }
 
 /** The height of the rocks, cliffs and buildings (without floors) at a point: what a model there has climbed. */

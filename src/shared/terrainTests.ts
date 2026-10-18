@@ -1,5 +1,6 @@
 // Getting over terrain: the Jump, Climb and Leap tests a model needs to cross walls, rocks, cliffs and streams, and
 // the falls when they go wrong.
+import { hitModel, mounted, mountOf } from './cavalry.ts';
 import { modelStats, type Catalog } from './catalog.ts';
 import { distanceBetween, halfExtents, type Point } from './geometry.ts';
 import { canActivate } from './heroics.ts';
@@ -21,7 +22,7 @@ export interface Crossing {
 }
 
 const radius = (m: Model) => Math.max(halfExtents(m.base).rx, halfExtents(m.base).ry);
-const isCavalryBase = (m: Model) => m.base.h > m.base.w;
+const isCavalryBase = (m: Model) => mounted(m);
 
 /** Distance from a point to the nearest edge of a polygon. */
 function edgeDistance(poly: Point[], p: Point): number {
@@ -114,7 +115,8 @@ export function crossingAhead(state: GameState, m: Model, from: Point, to: Point
  * far side; a climb takes whatever Move is left (the climb itself is counted double, as difficult ground).
  */
 export function crossBlocked(state: GameState, m: Model, c: Crossing): string | undefined {
-  if ((c.test === 'Climb' || c.test === 'Climb down') && isCavalryBase(m)) return 'Cavalry can’t climb';
+  // Cavalry can't climb, though it can ride down a drop (its mount taking the knocks).
+  if (c.test === 'Climb' && isCavalryBase(m)) return 'Cavalry can’t climb';
   if (m.prone) return 'A Prone model can’t jump, leap or climb';
   if (engaged(state, m)) return 'It is in a fight';
   // An enemy defending a wall stops anyone crossing it within its reach (1"), unless it's already in a fight.
@@ -166,6 +168,16 @@ export function resolveCross(state: GameState, seat: Seat, id: string, d6: () =>
   const group = `x-${uid()}`;
   const rolls: DiceRoll[] = [];
   const push = (label: string, dice: number[], extra: Partial<DiceRoll> = {}) => rolls.push({ id: `${group}-${rolls.length}`, by: seat, label: label.slice(0, 80), dice, at: now, group, ...extra });
+  // A rider goes down a drop taller than itself without a test: its mount takes a Strength 3 hit, and another for
+  // each inch beyond its height, and if it lives it carries on.
+  const steed = isCavalryBase(m) ? mountOf(m) : undefined;
+  if (c.test === 'Climb down' && isCavalryBase(m)) {
+    const hits = Math.max(1, fallingHits(m, c.drop));
+    push(`${m.name} rides down the ${terrainName(t)}: ${hits} S3 hit${hits === 1 ? '' : 's'} on its mount`, []);
+    const out: Action[] = [{ type: 'crossed', id: m.id, terrain: c.terrain }, { type: 'affect', id: m.id, patch: { x: c.landing.x, y: c.landing.y } }];
+    for (let i = 0; i < hits && steed; i++) out.push(...hitModel(m, steed.d, 3, 'Riding down', d6, seat, `${group}-h${i}`, now, group, true).actions);
+    return [...rolls.map((r): Action => ({ type: 'rolled', roll: r })), ...out];
+  }
   // Spectral Walk always counts as a 6, as does Swift Movement over a wall or rock; Mountain Dwellers re-roll a
   // failure, and Cave Dwellers add 1.
   const ground = m.ground ?? [];
@@ -193,7 +205,11 @@ export function resolveCross(state: GameState, seat: Seat, id: string, d6: () =>
     }
     rolls[rolls.length - 1].note = c.test === 'Jump' ? `${m.name} stumbles at the ${terrainName(t)}` : `${m.name} falls and is Prone`;
     out.push({ type: 'crossed', id: m.id, stop: true });
-    if (c.test !== 'Jump') out.push({ type: 'affect', id: m.id, patch: { prone: true } });
+    // A rider that fails a jump or leap is thrown from its mount as well.
+    if (isCavalryBase(m) && (c.test === 'Jump' || c.test === 'Leap')) {
+      out.push({ type: 'affect', id: m.id, patch: { throwPending: 'flying' } });
+      rolls[rolls.length - 1].note += ', and is thrown from its mount';
+    } else if (c.test !== 'Jump') out.push({ type: 'affect', id: m.id, patch: { prone: true } });
     out.push(...fallDamage(catalog, m, fall, d6, push, group));
     return [...rolls.map((r): Action => ({ type: 'rolled', roll: r })), ...out];
   }

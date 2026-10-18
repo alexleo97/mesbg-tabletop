@@ -1,4 +1,5 @@
 import { mountBase } from './bases.ts';
+import { mountName, mountProfile, steedStats } from './cavalry.ts';
 import { guessBase, type ListEntry } from './importList.ts';
 import type { Base } from './types.ts';
 
@@ -98,7 +99,9 @@ export function statsWithOptions(unit: CatalogUnit, optionIds: string[]): string
 export type StatName = (typeof STAT_NAMES)[number];
 
 /** A model's printed stats as numbers ("4+" becomes 4), with its options applied, when the unit is known. */
-export function modelStats(catalog: Catalog | null | undefined, m: { profileId?: string; options?: string[] } | undefined): Partial<Record<StatName, number>> | null {
+export function modelStats(catalog: Catalog | null | undefined, m: { profileId?: string; options?: string[]; steed?: string } | undefined): Partial<Record<StatName, number>> | null {
+  // A mount fighting on without its rider has the mount's own numbers.
+  if (m?.steed) return steedStats(m.steed);
   const unit = m?.profileId ? catalog?.units[m.profileId] : undefined;
   if (!unit) return null;
   const stats = statsWithOptions(unit, unit.options.filter(o => m!.options?.includes(o.name)).map(o => o.id));
@@ -132,6 +135,8 @@ function wargearMount(unit: CatalogUnit): { name: string; mv: number } | undefin
 export function entriesFor(id: string, unit: CatalogUnit, optionIds: string[], count: number): ListEntry[] {
   const chosen = unit.options.filter(o => optionIds.includes(o.id) || o.included);
   const chosenMount = chosen.find(o => o.mount);
+  const riding = mountName(unit, chosen.map(o => o.name));
+  const mountFull = mountProfile(riding)?.w;
   const mount = chosenMount ? { name: chosenMount.name, mv: chosenMount.mountMv } : wargearMount(unit);
   const stats = statsWithOptions(unit, optionIds);
   const mv = stats ? parseFloat(stats[0]) : NaN;
@@ -156,6 +161,8 @@ export function entriesFor(id: string, unit: CatalogUnit, optionIds: string[], c
       base: subName && !subName.startsWith(unit.name) && !mount ? guessBase(subName) : base,
       profileId: id,
       options: chosen.map(o => o.name),
+      // A rider and its mount; a war machine's crew don't ride.
+      ...(riding && !(subName && !subName.startsWith(unit.name)) ? { mount: riding, mountWounds: mountFull } : {}),
     };
   });
 }

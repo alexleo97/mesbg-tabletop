@@ -77,6 +77,13 @@ export interface Model {
   lostGear?: string[];
   /** Its mount has fled or it was thrown, so it fights on foot. */
   dismounted?: boolean;
+  /** The mount it rides (see cavalry.ts), and the wounds the mount has left when it has taken some. */
+  mount?: string;
+  mountWounds?: number;
+  /** Its mount just fell (or it was knocked flying): the game rolls its Thrown Rider test. */
+  throwPending?: 'test' | 'flying';
+  /** A mount fighting on without its rider: the mount's name, for its profile. */
+  steed?: string;
   /** Which level it stands on inside a building with floors: 0 is the ground floor, the building's `floors` its roof. */
   floor?: number;
 }
@@ -328,6 +335,14 @@ export interface Flow {
   choices?: Record<string, { shielding?: boolean; twoHanded?: boolean }>;
   /** Who charged whom this turn (charger to the enemy it reached), so a fight over a wall knows who is defending. */
   charges?: Record<string, string>;
+  /** Monsters that have made their one Brutal Power Attack this turn, and the models already hurled at. */
+  brutal?: string[];
+  hurledAt?: string[];
+  /**
+   * A monster that barged its foes aside: how far it may now move (and charge) this Fight phase, and how many fights
+   * had been fought when it did (so it can fight once more).
+   */
+  barged?: Record<string, [number, number]>;
   /** Models that backed away after the last fight, and where from, so their player may pick another way. */
   retreat?: Record<string, [number, number]>;
   /** A model that threw a weapon as it charged: unless its target fell, it must go on and charge that target. */
@@ -451,6 +466,10 @@ export type Action =
   | { type: 'fightChoice'; id: string; shielding?: boolean; twoHanded?: boolean }
   /** Asks to re-roll one duel die with a friendly banner nearby (the server rolls it). */
   | { type: 'banner'; roll: string; die: number }
+  /** A rider gets down from its mount during its move (the game rolls the Courage test of a mount that fights). */
+  | { type: 'dismount'; id: string }
+  /** Server only: a monster made its Brutal Power Attack this turn (and barged, with a free move, or hurled at someone). */
+  | { type: 'brutal'; id: string; barge?: number; hurledAt?: string }
   | { type: 'bannerRolled'; roll: string; die: number; value: number; by: string }
   /** A shot stops for Might, or carries on (null), worked out by the game (never sent by a player). */
   | { type: 'shotPaused'; pause: { group: string; shot: ShotRequest } | null }
@@ -459,7 +478,7 @@ export type Action =
   /** A hero spends a Might point to raise one of its own dice by 1. `follow` picks the follow-up dice of a 6/4+ roll. */
   | { type: 'useMight'; roll: string; die: number; follow?: boolean; will?: boolean }
   /** Wounds dealt to a model. A hero with Fate holds them as pending until its player decides. */
-  | { type: 'wound'; id: string; count: number; by?: string[]; how?: 'fight' | 'shoot' | 'other'; group?: string }
+  | { type: 'wound'; id: string; count: number; by?: string[]; how?: 'fight' | 'shoot' | 'other'; group?: string; mount?: boolean }
   /** A model picks up a marker it is touching, turns a face-down marker over, or drops what it carries. */
   | { type: 'pickUp'; model: string; marker: string }
   | { type: 'flip'; model: string; marker: string }

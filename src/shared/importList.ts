@@ -27,6 +27,9 @@ export interface ListEntry {
   general?: boolean;
   points?: number;
   tier?: number;
+  /** The mount it rides, and the mount's wounds. */
+  mount?: string;
+  mountWounds?: number;
 }
 
 const NAME_KEYS = ['name', 'profile_origin', 'model_name', 'unit_name', 'title'];
@@ -347,6 +350,7 @@ function makeModel(m: Pending, owner: Seat, x: number, y: number): Model {
     ...(m.e.group && m.e.group !== 'loose' ? { warband: m.e.group } : {}),
     ...(m.e.points ? { points: m.e.points } : {}),
     ...(m.e.tier ? { tier: m.e.tier } : {}),
+    ...(m.e.mount ? { mount: m.e.mount, ...(m.e.mountWounds ? { mountWounds: m.e.mountWounds } : {}) } : {}),
   };
   return model;
 }

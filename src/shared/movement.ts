@@ -1,3 +1,4 @@
+import { difficultTimes, mounted } from './cavalry.ts';
 import { distanceBetween, halfExtents, mmToIn, type Point } from './geometry.ts';
 import { heightOfModel, moveCost, sightTo } from './sight.ts';
 import { overWallSpot, secondAttacker, touching, wallBetween } from './barriers.ts';
@@ -27,7 +28,7 @@ export function moveAllowance(state: GameState, m: Model): number | null {
     const climbed = state.flow.climbed?.[m.id] ?? 0;
     return Math.max(0, (m.prone || state.flow.stood?.includes(m.id) ? m.move / 2 : m.move) + marchBonus(state, m) - climbed);
   }
-  if (state.phase === 'fight') return heroicCombatWon(state, m) ? m.move : 1;
+  if (state.phase === 'fight') return heroicCombatWon(state, m) ? m.move : (bargeMove(state, m) ?? 1);
   return 0;
 }
 
@@ -42,7 +43,7 @@ export function engaged(state: GameState, m: Model, except?: string): boolean {
  */
 export function marchBonus(state: GameState, m: Model): number {
   if (state.phase !== 'move') return 0;
-  return marchedBy(state, m) ? (m.base.h > m.base.w || m.fly ? 5 : 3) : 0;
+  return marchedBy(state, m) ? (mounted(m) || m.fly ? 5 : 3) : 0;
 }
 
 /** How far a Heroic March's At the Double reaches, and how close friends must finish: 12" for a war drum's. */
@@ -93,7 +94,7 @@ export function blockMove(state: GameState, m: Model, from: Point, to: Point, sk
   const at = (p: Point): Model => ({ ...m, x: p.x, y: p.y });
   const near = (e: Model) => e.x > Math.min(from.x, to.x) - 5 && e.x < Math.max(from.x, to.x) + 5 && e.y > Math.min(from.y, to.y) - 5 && e.y < Math.max(from.y, to.y) + 5;
   const others = Object.values(state.models).filter(e => e.id !== m.id && !e.dead && !e.waiting && !e.escaped && !skip?.has(e.id) && near(e));
-  const zonesApply = state.phase === 'move' || heroicCombatWon(state, m);
+  const zonesApply = state.phase === 'move' || fightsAgain(state, m);
   const enemies = zonesApply ? others.filter(e => e.owner !== m.owner) : [];
   const zoned = enemies.filter(e => !e.prone && !engaged(state, e, m.id));
   const start = at(from);
@@ -133,6 +134,19 @@ export function blockMove(state: GameState, m: Model, from: Point, to: Point, sk
 }
 
 /**
+ * How far a monster that barged its foes aside may move this Fight phase (and charge into a new fight), until it has
+ * fought again; undefined for any other model.
+ */
+export function bargeMove(state: GameState, m: Model): number | undefined {
+  const b = state.phase === 'fight' && !m.dead ? state.flow.barged?.[m.id] : undefined;
+  if (!b || state.flow.resolved.slice(b[1]).some(k => k.split(',').includes(m.id))) return undefined;
+  return b[0];
+}
+
+/** Whether a model may move and fight again this Fight phase: it won a Heroic Combat, or barged its foes aside. */
+export const fightsAgain = (state: GameState, m: Model) => heroicCombatWon(state, m) || bargeMove(state, m) !== undefined;
+
+/**
  * Whether a model is free to move again in the Fight phase: its side's hero called a Heroic Combat, and the fight
  * they were both in is over with every enemy in it slain. The model can then move (and charge) as in the Move phase.
  */
@@ -162,7 +176,7 @@ export function fightDone(state: GameState, c: Combat): boolean {
 
 /** Models that have fought this turn and may not fight again (a Heroic Combat won lets its side fight again). */
 export function foughtThisTurn(state: GameState): Set<string> {
-  const ids = state.flow.resolved.flatMap(k => k.split(',')).filter(id => state.models[id] && !heroicCombatWon(state, state.models[id]));
+  const ids = state.flow.resolved.flatMap(k => k.split(',')).filter(id => state.models[id] && !fightsAgain(state, state.models[id]));
   return new Set(ids);
 }
 
@@ -180,8 +194,8 @@ export function movedTooFar(state: GameState): string[] {
     .concat(Object.entries(state.flow.climbed ?? {}).filter(([id, c]) => !state.flow.starts?.[id] && state.models[id] && c > state.models[id].move / 2 + 0.05).map(([id]) => id));
 }
 
-/** What a model's move from a to b costs: difficult ground under any of its base counts double, and so does climbing. */
-export const costOf = (state: GameState, m: Model, a: Point, b: Point) => moveCost(state, a, b, m.owner, Math.max(halfExtents(m.base).rx, halfExtents(m.base).ry), heightOfModel(m), m.ground).cost;
+/** What a model's move from a to b costs: difficult ground under any of its base counts double (four times for cavalry), and climbing double. */
+export const costOf = (state: GameState, m: Model, a: Point, b: Point) => moveCost(state, a, b, m.owner, Math.max(halfExtents(m.base).rx, halfExtents(m.base).ry), heightOfModel(m), m.ground, difficultTimes(m)).cost;
 
 /** Models that moved at all this Move phase, even a little or only between floors, so shoot 1 worse. */
 export function movedAtAll(state: GameState): string[] {
@@ -233,7 +247,7 @@ function reachable(state: GameState, from: Point, to: Point, move: number, seat?
  * rest of the way into base contact, as long as its Move still reaches. Returns where it should end up.
  */
 export function settleMove(state: GameState, m: Model, at: Point): Point {
-  if (!movesLimited(state, m) || !(state.phase === 'move' || heroicCombatWon(state, m))) return at;
+  if (!movesLimited(state, m) || !(state.phase === 'move' || fightsAgain(state, m))) return at;
   const here = { ...m, ...at };
   let best: { e: Model; d: number } | null = null;
   for (const e of Object.values(state.models)) {

@@ -10,6 +10,7 @@ import { causesTerror } from '../shared/courage.ts';
 import { effectNotes, heldBy } from '../shared/powers.ts';
 import { isThrowing, planShot, shooterBlocked, throwingPoint, weaponFor } from '../shared/shooting.ts';
 import { cloaked, stones } from '../shared/wargear.ts';
+import { mounted, mountLabel, mountOf } from '../shared/cavalry.ts';
 import { flooredAt, floorHeight, floorName, sightTo, standingAt } from '../shared/sight.ts';
 import RULES from '../data/special-rules.json';
 import { CastBox } from './MagicPanel.tsx';
@@ -109,6 +110,15 @@ function TerrainMoves({ state, dispatch, m }: { state: GameState; dispatch: (a: 
       </div>
     );
   if (m.prone && state.flow.crawling?.includes(m.id)) return <p className="hint">{m.name} is crawling: up to 1", staying Prone.</p>;
+  // A rider can get down at any point in its move, and go on on foot with what's left of its foot Move.
+  if (mounted(m) && left !== null)
+    return (
+      <div className="row wrap terrain-test">
+        <button className="small" title="The rider gets down and goes on on foot, less the distance already ridden. A horse runs off; a mount that fights takes a Courage test to stay." onClick={() => dispatch({ type: 'dismount', id: m.id })}>
+          Dismount
+        </button>
+      </div>
+    );
   if (!m.prone && left !== null && left + 1e-6 >= m.move / 2 && !state.flow.stood?.includes(m.id) && !engaged(state, m))
     return (
       <div className="row wrap terrain-test">
@@ -152,6 +162,8 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
   const drag = useDraggable('model-card');
   const [photoFailed, setPhotoFailed] = useState(false);
   const [openRule, setOpenRule] = useState<string | null>(null);
+  /** A Sharpshooter's pick: aim at a rider's mount rather than the rider. */
+  const [atMount, setAtMount] = useState(false);
   const seen = target ? sightTo(state, m, target) : null;
   const up = Math.round(standingAt(state, m) * 10) / 10;
   // Inside a building with floors, the model's player picks which level it stands on (climbing costs Move in the battle).
@@ -159,7 +171,9 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
   const left = building ? moveLeft(state, m) : null;
   const climbCost = (level: number) => (building ? Math.abs(floorHeight(building, level) - floorHeight(building, m.floor ?? 0)) : 0);
   const unit = m.profileId ? catalog?.units[m.profileId] : undefined;
-  const printed = unit && statsWithOptions(unit, unit.options.filter(o => m.options?.includes(o.name)).map(o => o.id));
+  const listed = unit && statsWithOptions(unit, unit.options.filter(o => m.options?.includes(o.name)).map(o => o.id));
+  // A rider moves at its mount's pace, so show the Move it actually has.
+  const printed = listed && mounted(m) ? [`${m.move}"`, ...listed.slice(1)] : listed;
   const stats = modelStats(catalog, m);
   const start = startingPoints(catalog, m);
   const [rulesText, setRulesText] = useState<Record<string, string>>({});
@@ -222,6 +236,8 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
       const cloak = cloaked(catalog, target);
       const harder = [plan.moved ? '1 worse for moving' : '', cloak ? '1 worse for its Elven cloak' : '', plan.need > plan.printed + (plan.moved ? 1 : 0) + (cloak ? 1 : 0) ? 'a power makes it harder' : ''].filter(Boolean).join(', ');
       const stray = plan.fight?.[0] ? state.models[plan.fight[0]] : undefined;
+      const steed = mountOf(target);
+      const sharp = !!steed && steed.left > 0 && !!(m.profileId && catalog?.units[m.profileId]?.rules.includes('Sharpshooter'));
       action = (
         <div className="aim-card">
           <p>
@@ -236,6 +252,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
                 ? `In the way: ${plan.inWay.map(o => o.name).join(', ')}. That's ${plan.inWay.length} In the Way roll${plan.inWay.length === 1 ? '' : 's'}, rolled for you; a model in the way that stops the shot is hit instead.`
                 : 'Nothing is in the way.'}
               {stray ? ` ${target.name} is in a fight: on a 1-3 the shot hits ${stray.name} instead.` : ''}
+              {steed && !sharp ? ` A hit on ${target.name} strikes its ${mountLabel(steed.name).toLowerCase()} instead on a 1-${steed.monster ? 4 : 3}.` : ''}
               {plan.rerolls ? ' Heroic Accuracy re-rolls failed In the Way rolls.' : ''}
               {plan.d !== undefined && plan.d > (tStats?.D ?? 4) ? ` ${target.name}'s light armour gives it D${plan.d} against shots.` : ''}
               {plan.bane ? ' Bane of Kings re-rolls every To Wound die that misses.' : plan.ones ? ' Poisoned: 1s to wound are re-rolled.' : ''}
@@ -250,21 +267,28 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
               onClick={() =>
                 dispatch({
                   type: 'shoot',
-                  shot: { shooter: { id: m.id, name: m.name, weapon: weapon.name, shoot: plan.printed, s: weapon.s, shots: plan.shots }, target: { id: target.id, name: target.name, d }, obstacles: plan.inWay.length, ...(charge ? { charge: true } : {}) },
+                  shot: { shooter: { id: m.id, name: m.name, weapon: weapon.name, shoot: plan.printed, s: weapon.s, shots: plan.shots }, target: { id: target.id, name: target.name, d }, obstacles: plan.inWay.length, ...(charge ? { charge: true } : {}), ...(sharp && atMount ? { atMount: true } : {}) },
                 })
               }
             >
               {hasShot ? 'Shot this turn' : charge ? 'Throw and charge' : 'Shoot'}
             </button>
             <button onClick={clearTarget}>Change target</button>
+            {sharp && (
+              <label className="check small">
+                <input type="checkbox" checked={atMount} onChange={e => setAtMount(e.target.checked)} /> Sharpshooter: aim at the {mountLabel(steed!.name).toLowerCase()}
+              </label>
+            )}
           </div>
           {lastShot && !woundsTaken(state.flow.applied, lastShot.group ?? '', lastShot.against!) && (() => {
-            const victim = state.models[lastShot.against!];
-            const wounds = strikeWounds(shotRolls.filter(r => r.against === victim?.id));
+            // A hit on a rider's mount wounds the mount.
+            const atMount = lastShot.against!.endsWith('#mount');
+            const victim = state.models[atMount ? lastShot.against!.slice(0, -6) : lastShot.against!];
+            const wounds = strikeWounds(shotRolls.filter(r => r.against === lastShot.against));
             return victim && !victim.dead && wounds > 0 ? (
-              <button onClick={() => dispatch({ type: 'wound', id: victim.id, count: wounds, by: [m.id], how: 'shoot', group: lastShot.group })}>
-                Wound {victim.name} {wounds} time{wounds === 1 ? '' : 's'}
-                {victim.hero && victim.fate > 0 ? ' (Fate can be rolled)' : victim.wounds - wounds <= 0 ? ' (slain)' : ''}
+              <button onClick={() => dispatch({ type: 'wound', id: victim.id, count: wounds, by: [m.id], how: 'shoot', group: lastShot.group, ...(atMount ? { mount: true } : {}) })}>
+                Wound {atMount ? `${victim.name}'s mount` : victim.name} {wounds} time{wounds === 1 ? '' : 's'}
+                {atMount ? '' : victim.hero && victim.fate > 0 ? ' (Fate can be rolled)' : victim.wounds - wounds <= 0 ? ' (slain)' : ''}
               </button>
             ) : null;
           })()}
@@ -334,6 +358,15 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
           )}
         </div>
       )}
+      {mountOf(m) && (() => {
+        const p = mountOf(m)!;
+        return (
+          <p className="muted small mount-line">
+            Riding a {mountLabel(p.name).toLowerCase()}: F{p.f} S{p.s} D{p.d} A{p.a}, {p.left} of {p.w} wound{p.w === 1 ? '' : 's'} left. It lends its F, S and A where better, and can be shot or struck instead of the rider.
+          </p>
+        );
+      })()}
+      {m.steed && <p className="muted small mount-line">A riderless mount, fighting on by itself.</p>}
       {up > 0 && <p className="muted high-ground">▲ Standing {up}" up: sees and shoots over lower terrain.</p>}
       {heroics.length > 0 && (
         <div className="row wrap">
