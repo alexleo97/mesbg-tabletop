@@ -175,10 +175,11 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
   // Roads and water lie on the ground, under everything else; bridges sit on top of the water.
   const terrain = useMemo(() => {
     const layer = (k: string) => (k === 'road' ? 0 : k === 'water' ? 1 : k === 'bridge' ? 3 : 2);
-    // Markers carried off, destroyed, rescued or turned over as decoys are gone; carried ones are drawn last.
+    // Markers carried off, destroyed, rescued or turned over as decoys are gone (a broken gate stays, in pieces);
+    // carried ones are drawn last.
     const layerOf = (t: Terrain) => (t.carrier ? 4 : layer(t.kind));
     return Object.values(state.terrain)
-      .filter(t => !t.gone)
+      .filter(t => !t.gone || t.kind === 'gate')
       .sort((a, b) => layerOf(a) - layerOf(b));
   }, [state.terrain]);
   const viewer = sightFrom ? state.models[sightFrom] : undefined;

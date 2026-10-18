@@ -108,4 +108,15 @@ describe('the computer and the newer rules', () => {
     const s = begin([rider, mk('o', 'p2', 5, 5, '[mordor] orc')], 'p1', [marker]);
     expect(first(s, 'dismount', 'p1')).toMatchObject({ type: 'dismount', id: 'r' });
   });
+
+  it('strikes at an enemy gate in the Fight phase, and pushes a ladder off the walls', () => {
+    const gate: Terrain = { id: 'gate', kind: 'gate', shape: 'rect', x: 24, y: 24, w: 4, h: 1, rot: 0, locked: false, door: 'castle', side: 'p1' };
+    let s = begin([mk('t', 'p2', 24, 24.5 + 0.49, '[mordor] troll'), mk('w', 'p1', 5, 5, '[gondor] warrior')], 'p2', [gate]);
+    s = run(s, { type: 'setPhase', phase: 'fight' }, { type: 'passHeroic', seat: 'p2' }, { type: 'passHeroic', seat: 'p1' });
+    expect(first(s, 'breach')).toEqual({ type: 'breach', how: 'strike', model: 't', target: 'gate' });
+    const wall: Terrain = { id: 'wl', kind: 'wall', shape: 'rect', x: 15, y: 24, w: 14, h: 1, rot: 0, locked: false, height: 3, sheer: true };
+    const ladder: Terrain = { id: 'lad', kind: 'objective', shape: 'circle', x: 15, y: 24.5, w: 1, h: 1, rot: 0, locked: false, object: 'ladder', side: 'p1', raised: 'wl' };
+    s = begin([mk('d', 'p2', 15, 23.51, '[mordor] orc'), mk('w', 'p1', 5, 40, '[gondor] warrior')], 'p2', [wall, ladder]);
+    expect(first(s, 'breach')).toEqual({ type: 'breach', how: 'push', model: 'd', target: 'lad' });
+  });
 });

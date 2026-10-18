@@ -277,6 +277,8 @@ export function terrainRules(catalog: Catalog | null | undefined, m: Model): str
   if (hasRule(catalog, m, 'Cave Dweller')) out.push('cave');
   if (hasRule(catalog, m, 'Spectral Walk')) out.push('spectral');
   if (hasRule(catalog, m, 'Swift Movement')) out.push('swift');
+  // (Not terrain, but carried the same way: a Burly model or a monster carries a Heavy Object at full speed.)
+  if (hasRule(catalog, m, 'Burly') || isMonster(catalog, m)) out.push('burly');
   return out;
 }
 

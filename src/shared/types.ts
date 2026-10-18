@@ -109,7 +109,7 @@ export interface ModelEffect {
   duration: 'Temporary' | 'Exhaustion';
 }
 
-export const TERRAIN_KINDS = ['wood', 'rock', 'building', 'water', 'hill', 'wall', 'ruin', 'cliff', 'field', 'objective', 'bridge', 'road'] as const;
+export const TERRAIN_KINDS = ['wood', 'rock', 'building', 'water', 'hill', 'wall', 'ruin', 'cliff', 'field', 'objective', 'bridge', 'road', 'gate'] as const;
 export type TerrainKind = (typeof TERRAIN_KINDS)[number];
 
 /** Battle mat surfaces. */
@@ -158,9 +158,19 @@ export interface Terrain {
   by?: Seat;
   /** The turn each side last tried to uncover it, as only one try per side per turn is allowed. */
   tried?: Partial<Record<Seat, number>>;
+  /** A gate or door: how stout it is (see fortress.ts), and the Wounds it has left. Its `side` holds it and walks through. */
+  door?: DoorType;
+  wounds?: number;
+  /** A purpose-built wall or rampart: too sheer to climb without a Siege Ladder (Swift Movement aside). */
+  sheer?: boolean;
+  /** A Siege Ladder raised against this piece of terrain. */
+  raised?: string;
 }
 
-export const MARKER_OBJECTS = ['artefact', 'relic', 'heirloom', 'decoy', 'supply', 'ally'] as const;
+export const DOOR_TYPES = ['castle', 'dwarven', 'heavyArmoured', 'armoured', 'heavy', 'external', 'internal'] as const;
+export type DoorType = (typeof DOOR_TYPES)[number];
+
+export const MARKER_OBJECTS = ['artefact', 'relic', 'heirloom', 'decoy', 'supply', 'ally', 'ladder', 'ram'] as const;
 export type MarkerObject = (typeof MARKER_OBJECTS)[number];
 
 /** Secret choices some scenarios ask each player to make, by model or terrain id. */
@@ -351,6 +361,8 @@ export interface Flow {
   /** Monsters that have made their one Brutal Power Attack this turn, and the models already hurled at. */
   brutal?: string[];
   hurledAt?: string[];
+  /** Models that have struck at a gate this turn, battering rams that have swung, and ladders pushed at. */
+  breached?: string[];
   /** War beasts and chariots that have made their move this turn. */
   trampled?: string[];
   /** Siege engines turned this turn, which shoot 1 worse. */
@@ -511,6 +523,13 @@ export type Action =
   | { type: 'drop'; marker: string }
   /** Request from a client: the server rolls the Intelligence test to uncover a buried artefact. */
   | { type: 'uncover'; model: string; marker: string; intelligence: number }
+  /**
+   * Request from a client: strike at a gate (in the Fight phase), swing a battering ram at it (from the ram), shoot at it
+   * (in the Shoot phase), or push a Siege Ladder down off the walls (in the Move phase). The server rolls it.
+   */
+  | { type: 'breach'; how: 'strike' | 'ram' | 'shoot' | 'push'; model: string; target: string }
+  /** Server only: a model, ram or ladder has had its go at a gate this turn. */
+  | { type: 'breached'; id: string }
   /** Server result of an uncover attempt. */
   | { type: 'uncovered'; model: string; marker: string; roll: DiceRoll }
   /** A model leaves the table over a board edge. */

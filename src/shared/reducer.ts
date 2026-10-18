@@ -15,8 +15,9 @@ import { distanceBetween } from './geometry.ts';
 import { touching as inContact, touchingEnemies } from './barriers.ts';
 import { canRetreatTo } from './backAway.ts';
 import { canPickUp, markerUpkeep, syncCarried, touching, canEscape } from './objects.ts';
+import { raiseLadders } from './fortress.ts';
 import { endPhaseUpkeep } from './scoring.ts';
-import { BOT_NAME, BOT_SPEEDS, MARKER_OBJECTS, MATS, PHASES, PICK_KEYS, TERRAIN_KINDS, type Action, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type ModelEffect, type Phase, type Picks, type Seat, type SpellPending, type Terrain } from './types.ts';
+import { BOT_NAME, BOT_SPEEDS, DOOR_TYPES, MARKER_OBJECTS, MATS, PHASES, PICK_KEYS, TERRAIN_KINDS, type Action, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type ModelEffect, type Phase, type Picks, type Seat, type SpellPending, type Terrain } from './types.ts';
 
 export const MAX_MODELS = 600;
 export const MAX_TERRAIN = 200;
@@ -41,7 +42,7 @@ export function initialState(): GameState {
 }
 
 /** The terrain rules a model can carry (see wargear.terrainRules). */
-const GROUND = ['wood', 'rock', 'cave', 'spectral', 'swift'];
+const GROUND = ['wood', 'rock', 'cave', 'spectral', 'swift', 'burly'];
 const newFlow = (): Flow => ({ started: false, chooser: null, chooserTurn: 0, roll: null, done: [], resolved: [], heroics: [], passed: [], lastHeroic: null });
 
 /** Moves to a phase (and turn), clearing who has finished; a new turn also clears fights and priority. */
@@ -80,7 +81,7 @@ function goToPhase(state: GameState, phase: Phase, turn: number, newTurn: boolea
       done: [],
       resolved: newTurn ? [] : state.flow.resolved,
       heroics: newTurn ? [] : state.flow.heroics,
-      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], moved: [], cast: [], spell: undefined, held: [], stood: [], climbed: {}, compel: undefined, supported: [], strikeBonus: {}, charges: {}, brutal: [], hurledAt: [], trampled: [], turned: [], cables: [] } : {}),
+      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], moved: [], cast: [], spell: undefined, held: [], stood: [], climbed: {}, compel: undefined, supported: [], strikeBonus: {}, charges: {}, brutal: [], hurledAt: [], breached: [], trampled: [], turned: [], cables: [] } : {}),
       ...(phase !== state.phase ? { compel: undefined, mustCharge: undefined } : {}),
       // The fights are paired off as the Fight phase begins, and stay that way until it ends.
       ...(phase !== state.phase ? { pairs: phase === 'fight' && state.flow.started ? pairOff(livingModels(state), { ...state, phase: 'move' }, state.flow.pairChoices).map(c => c.key) : undefined, pairChoices: undefined } : {}),
@@ -253,8 +254,28 @@ function cleanHit(v: unknown): Model['lastHit'] {
 /** The marker fields of a terrain piece: what it is and what has happened to it. */
 function cleanObject(t: Partial<Terrain>, base: Terrain, out: Terrain) {
   const pick = <K extends keyof Terrain>(k: K) => (k in t ? t[k] : base[k]);
+  if (out.kind === 'gate') {
+    // A gate or door: its kind, the side holding it, the Wounds it has left, and whether it's been broken down.
+    const door = pick('door');
+    out.door = DOOR_TYPES.includes(door as never) ? door : 'castle';
+    const side = pick('side');
+    if (isSeat(side)) out.side = side;
+    const wounds = pick('wounds');
+    if (wounds !== undefined && wounds !== null) out.wounds = int(wounds, 0, 20, 0);
+    const gone = pick('gone');
+    if (gone === 'destroyed') out.gone = gone;
+    const by = pick('by');
+    if (isSeat(by)) out.by = by;
+    return;
+  }
+  if (pick('sheer') === true && (out.kind === 'wall' || out.kind === 'building' || out.kind === 'rock' || out.kind === 'cliff')) out.sheer = true;
   const object = pick('object');
   if (out.kind !== 'objective' || !MARKER_OBJECTS.includes(object as never)) return;
+  // A ladder or ram can be broken, and a ladder raised against a piece of terrain.
+  const wounds = pick('wounds');
+  if ((object === 'ladder' || object === 'ram') && wounds !== undefined && wounds !== null) out.wounds = int(wounds, 0, 20, 0);
+  const raised = pick('raised');
+  if (object === 'ladder' && typeof raised === 'string' && raised) out.raised = id(raised);
   out.object = object;
   const side = pick('side');
   if (isSeat(side)) out.side = side;
@@ -481,8 +502,8 @@ function settle(m: Model): Model {
  * `roll` is a request only; the server replaces it with `rolled`, so here it is a no-op.
  */
 export function reduce(state: GameState, action: Action): GameState {
-  // Carried markers go wherever their carrier goes.
-  return syncCarried(challengesSettled(state, step(state, action)));
+  // Carried markers go wherever their carrier goes, and a Siege Ladder carried to a wall is raised against it.
+  return raiseLadders(syncCarried(challengesSettled(state, step(state, action))));
 }
 
 /**
@@ -911,6 +932,10 @@ function step(state: GameState, action: Action): GameState {
       log[i] = { ...r, dice, banner: true, label: `${r.label.replace(/ \(F.*$/, '')}: ${str(action.by, 30)}'s banner re-rolled a ${was}`.slice(0, 80) };
       return { ...state, log };
     }
+    case 'breached': {
+      if (!action.id || state.flow.breached?.includes(String(action.id))) return state;
+      return { ...state, flow: { ...state.flow, breached: [...(state.flow.breached ?? []), String(action.id).slice(0, 80)].slice(-200) } };
+    }
     case 'brutal': {
       // A monster's one Brutal Power Attack of the turn; a Barge lets it move again (and fight once more) this phase.
       const m = state.models[action.id];
@@ -1331,6 +1356,7 @@ export function loadState(raw: unknown): GameState {
         ...(Array.isArray(f.challenges) ? { challenges: f.challenges.slice(0, 20).filter(c => c && typeof c === 'object').map(c => ({ by: str(c.by, 80), target: str(c.target, 80), cap: int(c.cap, 0, 9, 3), ...(typeof c.accepted === 'boolean' ? { accepted: c.accepted } : {}) })) } : {}),
         ...(f.charges && typeof f.charges === 'object' ? { charges: Object.fromEntries(Object.entries(f.charges).slice(0, 400).map(([k, v]) => [str(k, 80), str(v, 80)])) } : {}),
         ...(Array.isArray(f.brutal) ? { brutal: f.brutal.slice(0, 100).map(x => str(x, 80)) } : {}),
+        ...(Array.isArray(f.breached) ? { breached: f.breached.slice(0, 200).map(x => str(x, 80)) } : {}),
         ...(Array.isArray(f.hurledAt) ? { hurledAt: f.hurledAt.slice(0, 100).map(x => str(x, 80)) } : {}),
         ...(Array.isArray(f.trampled) ? { trampled: f.trampled.slice(0, 100).map(x => str(x, 80)) } : {}),
         ...(Array.isArray(f.turned) ? { turned: f.turned.slice(0, 100).map(x => str(x, 80)) } : {}),

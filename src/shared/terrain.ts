@@ -1,3 +1,4 @@
+import { fortressNotes } from './fortress.ts';
 import { formatInches } from './geometry.ts';
 import { blocksSight, hasFloors, heightOf, isDifficult, slowsShots } from './sight.ts';
 import type { Terrain, TerrainKind } from './types.ts';
@@ -15,6 +16,7 @@ export const TERRAIN_INFO: Record<TerrainKind, { name: string; type: string; not
   hill: { name: 'Hill', type: 'Elevation', note: 'Open ground that gives height: models up here can see over low terrain. It does not slow movement.' },
   objective: { name: 'Objective', type: 'Marker', note: 'A scenario objective. It does not block movement or sight.' },
   road: { name: 'Road', type: 'Open ground', note: 'A dirt track or street. Open ground: it does not slow models or block sight.' },
+  gate: { name: 'Gate', type: 'Barrier', note: 'A gate or door set in a fortress wall. Set its kind and who holds it below.' },
   bridge: { name: 'Bridge', type: 'Crossing', note: 'Carries models over water at full speed. Narrow, so it makes a natural choke point.' },
 };
 
@@ -32,6 +34,8 @@ export function terrainRules(t: Terrain): string[] {
     out.push(`Walk in at ground level. ${n === 1 ? 'Climbing onto the roof' : `It has ${n} floors and a roof; each climb`} costs ${formatInches(heightOf(t) / n)} of a model's move. Models on different floors don't fight each other.`);
   } else if (t.kind === 'rock' || t.kind === 'building' || t.kind === 'cliff') out.push(`Climbing up or down it costs ${heightOf(t)}" of a model's move.`);
   if (slowsShots(t)) out.push('In the Way: shots through it need an In the Way roll.');
+  if (t.kind === 'gate') out.push(...fortressNotes(t));
+  if (t.sheer) out.push('Sheer: too tall and smooth to climb without a Siege Ladder (Swift Movement aside).');
   out.push(TERRAIN_INFO[t.kind].note);
   return out;
 }

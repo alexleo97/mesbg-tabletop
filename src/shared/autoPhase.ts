@@ -1,3 +1,4 @@
+import { breachesLeft } from './breach.ts';
 import { combats } from './flow.ts';
 import { heroicsSettled } from './heroics.ts';
 import { fightDone, fightsAgain } from './movement.ts';
@@ -20,7 +21,8 @@ export function phaseFinished(state: GameState): boolean {
   if (state.phase === 'fight') {
     if (!heroicsSettled(state) || combats(state).some(c => !fightDone(state, c))) return false;
     // A hero who won a Heroic Combat (or a monster that barged) may move and fight again: that's the player's call.
-    return !Object.values(state.models).some(m => fightsAgain(state, m));
+    // So may anyone still able to strike at a gate or swing a ram.
+    return !Object.values(state.models).some(m => fightsAgain(state, m)) && !breachesLeft(state);
   }
   if (state.phase === 'end') return !endRollDue(state) && !recoveryDue(state) && !gameEnded(state);
   return false;

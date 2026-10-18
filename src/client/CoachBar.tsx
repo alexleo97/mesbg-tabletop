@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ResultReport } from './ResultReport.tsx';
 import { activeSeat, other, type Combat } from '../shared/flow.ts';
 import { phaseFinished } from '../shared/autoPhase.ts';
+import { breachesLeft } from '../shared/breach.ts';
 import { fightDone } from '../shared/movement.ts';
 import { canDeclare, GOES_FIRST, heroicInfo, heroicNow, heroicsSettled, heroicTurn, HEROICS, mayDeclare, orderRollLabel, orderRollNeeded, phaseHeroics, shoutedFor } from '../shared/heroics.ts';
 import { distanceBetween } from '../shared/geometry.ts';
@@ -476,6 +477,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
       <>
         <HeroicStep state={state} dispatch={dispatch} role={role} name={name} />
         {combats.length === 0 && <p>{flow.resolved.length ? 'Every fight this turn has been fought, and the losers have backed away.' : 'No models are in base contact, so there are no fights this turn.'}</p>}
+        {breachesLeft(state) && <p>Models at an enemy gate that haven't fought can strike at it, and a battering ram against it can swing: pick one to see its options.</p>}
         {combats.length > 0 && (
           <div className="fight-list">
             {combats.map(c => (
