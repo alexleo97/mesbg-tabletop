@@ -2,10 +2,10 @@ import { modelStats, type Catalog } from './catalog.ts';
 import { duelLeader, strikeWounds, type Fighter, type FightRequest } from './fight.ts';
 import { activeSeat, combats, CONTACT_SLACK, other, type Combat } from './flow.ts';
 import { distanceBetween, halfExtents, mmToIn, type Point } from './geometry.ts';
-import { canDeclare, declared, heroicInfo, heroicTurn, heroicsSettled, orderRollLabel, orderRollNeeded, phaseHeroics } from './heroics.ts';
-import { pendingSpell } from './magic.ts';
+import { canActivate, canDeclare, declared, heroicInfo, heroicTurn, heroicsSettled, orderRollLabel, orderRollNeeded, phaseHeroics } from './heroics.ts';
+import { canCast, castTargets, pendingSpell, powersOf, untargeted, type KnownPower } from './magic.ts';
 import { fightDone, limitMove, moveAllowance } from './movement.ts';
-import { cannotAct } from './powers.ts';
+import { affected, basePower, cannotAct, effectsOn, isCavalry, isLinePower, under } from './powers.ts';
 import { carriedBy, exitEdges, markerActions, onTable, sanctuary } from './objects.ts';
 import { chance, fightOdds, woundChance, type Side } from './odds.ts';
 import { PICKS, pickOptions } from './picks.ts';
@@ -36,6 +36,8 @@ export interface BotMemo {
   steps: number;
   /** The last enemy it moved with a Compel. */
   compelled?: string;
+  /** Heroes that have thought about casting this phase. */
+  pondered?: string[];
 }
 
 export const newMemo = (): BotMemo => ({ key: '', turn: 0, since: 0, acted: [], moved: {}, courage: {}, steps: 0 });
@@ -131,7 +133,7 @@ function sync(memo: BotMemo, state: GameState, now: number) {
   const key = `${state.flow.startedAt ?? 0}:${state.turn}:${state.phase}`;
   if (memo.key === key) return;
   const newTurn = memo.turn !== state.turn || !memo.key.startsWith(`${state.flow.startedAt ?? 0}:`);
-  Object.assign(memo, { key, turn: state.turn, since: now - 50, acted: [], steps: 0, pending: undefined }, newTurn ? { moved: {}, courage: {} } : {});
+  Object.assign(memo, { key, turn: state.turn, since: now - 50, acted: [], steps: 0, pending: undefined, pondered: [] }, newTurn ? { moved: {}, courage: {} } : {});
 }
 
 /**
@@ -300,6 +302,9 @@ function moveStep(ctx: Ctx): BotStep {
       return { action: { type: 'updateModel', id: m.id, patch: { dead: true, wounds: 0 } }, delay: MOVE_PAUSE };
     }
   }
+
+  const cast = castStep(ctx);
+  if (cast) return cast;
 
   const broken = armyStatus(state, seat).broken;
   const enemies = side(state, other(seat));
@@ -616,6 +621,137 @@ function spellStep(ctx: Ctx): BotStep | null {
   if (!p.cast && p.caster.owner === ctx.seat) return { action: { type: 'letSpellFail' }, delay: THINK_PAUSE };
   if (!p.cast || p.target.owner !== ctx.seat || p.ready) return null;
   return { action: { type: 'resist', will: Math.min(p.target.will, p.target.will > 2 ? 2 : 1) }, delay: THINK_PAUSE };
+}
+
+/**
+ * Casting, as each side starts its move: every hero with a power and Will to spare weighs each power on each target it
+ * could cast it at, and casts the one worth most, if it's worth the Will. Each hero thinks about it once a turn.
+ */
+function castStep(ctx: Ctx): BotStep | null {
+  const { state, seat, memo, catalog } = ctx;
+  memo.pondered ??= [];
+  // One cast at a time: the next hero waits until this one is resisted or not.
+  if (state.flow.spell) return null;
+  for (const m of side(state, seat)) {
+    if (!m.hero || memo.pondered.includes(m.id) || !canCast(state, m, s => canActivate(state, s))) continue;
+    memo.pondered.push(m.id);
+    let best: { power: KnownPower; target: Model; score: number } | null = null;
+    for (const power of powersOf(catalog, m)) {
+      for (const t of castTargets(state, m, power.range, power.name, catalog)) {
+        const score = castWorth(ctx, m, power, t);
+        if (score > (best?.score ?? 0)) best = { power, target: t, score };
+      }
+    }
+    // Worth at least half a warrior, and the Will it costs (which also keeps its Exhaustion powers going).
+    if (!best || best.score < 0.6) continue;
+    const will = Math.max(1, Math.min(m.will - (m.will > 2 ? 1 : 0), best.power.cv >= 5 ? 2 : 1));
+    return { action: { type: 'cast', model: m.id, target: best.target.id, power: best.power.name, cv: best.power.cv, will }, delay: DICE_PAUSE };
+  }
+  return null;
+}
+
+/** Rough worth of casting a power at a model, in warrior-sized units, allowing for the cast failing or being resisted. */
+function castWorth(ctx: Ctx, caster: Model, power: KnownPower, t: Model): number {
+  const { state, seat, catalog } = ctx;
+  const name = basePower(power.name);
+  const enemies = side(state, other(seat));
+  const friends = side(state, seat);
+  const value = profile(ctx, t).value;
+  const engaged = (m: Model) => engagedWith(state, m).length > 0;
+  const nearFoe = (m: Model, d: number) => enemies.some(e => distanceBetween(m, e) <= d);
+  const hit = (s: number, m: Model) => woundChance(s, profile(ctx, m).d) * profile(ctx, m).value / Math.max(1, m.wounds) / (m.hero && m.fate ? 2 : 1);
+  const spell = { caster: caster.id, target: t.id, power: power.name, reach: 4, aim: t.id };
+  const many = untargeted(power.name, power.range) || isLinePower(power.name) ? affected(state, catalog, spell) : [t];
+  const foes = many.filter(x => x.owner !== seat);
+  let worth = 0;
+  switch (name) {
+    case 'Transfix':
+    case 'Paralyse':
+      // Best on a dangerous enemy about to fight or act; pointless on one already held.
+      if (under(state, t, 'Transfix') || under(state, t, 'Paralyse')) break;
+      worth = value * (engaged(t) || nearFoe(t, 8) ? 0.6 : 0.3) * (name === 'Paralyse' ? 1.3 : 1);
+      break;
+    case 'Black Dart':
+    case 'Flameburst':
+      worth = hit(6, t);
+      break;
+    case 'Sorcerous Blast':
+      worth = hit(5, t) + 0.1 * value;
+      break;
+    case 'Collapse Rocks':
+      worth = hit(7, t) + 0.1 * value;
+      break;
+    case 'Chill Soul':
+    case 'Banishment':
+      worth = value / Math.max(1, t.wounds) / (t.hero && t.fate ? 2 : 1);
+      break;
+    case 'Panic Steed':
+      worth = isCavalry(catalog, t) ? value * 0.6 : 0;
+      break;
+    case 'Wither':
+    case 'Drain Courage':
+    case 'Curse':
+      worth = value * (name === 'Curse' ? (t.fate ? 0.3 : 0) : 0.2);
+      break;
+    case 'Compel':
+      // Pulling an enemy hero or a lone model into our lines.
+      worth = friends.some(f => distanceBetween(f, t) <= t.move / 2 + 0.5) ? value * 0.4 : 0;
+      break;
+    case 'Your Staff is Broken':
+      worth = value * 0.3;
+      break;
+    case 'Foil Magic':
+      worth = Object.values(state.models).some(o => effectsOn(state, o).some(e => e.by === t.id && e.duration === 'Exhaustion')) ? 2 : 0;
+      break;
+    case 'Bladewrath':
+    case 'Enchant Blades':
+    case 'Enrage Beast':
+      // A friend about to fight.
+      worth = engaged(t) || nearFoe(t, t.move + 1) ? value * (name === 'Enrage Beast' ? 0.6 : 0.4) : 0;
+      break;
+    case 'Renew':
+      worth = t.wounds < t.maxWounds ? value / Math.max(1, t.maxWounds) : 0;
+      break;
+    case 'Strengthen Will':
+    case 'Blessing of the Valar':
+      worth = t.hero ? 0.4 : 0;
+      break;
+    case 'Protection of the Valar':
+    case 'Fortify Spirit':
+      worth = t.hero && nearFoe(t, 12) ? 0.3 * value / 4 : 0;
+      break;
+    case 'Aura of Command':
+    case 'Fury':
+      worth = armyStatus(state, seat).broken || nearFoe(caster, 8) ? friends.filter(f => distanceBetween(f, caster) <= 6).length * 0.15 : 0;
+      break;
+    case 'Aura of Dismay':
+    case 'Instil Fear':
+    case 'Terrifying Aura':
+      worth = enemies.filter(e => distanceBetween(e, caster) <= (name === 'Terrifying Aura' ? 10 : 8)).length * 0.12;
+      break;
+    case 'Blinding Light':
+      worth = enemies.some(e => profile(ctx, e).weapon && distanceBetween(e, caster) <= 24) ? 0.7 : 0;
+      break;
+    case 'Writhing Vines':
+    case 'Fog of Disarray':
+      worth = nearFoe(caster, 6) ? 0.3 : 0;
+      break;
+    case "Nature's Wrath":
+      worth = foes.reduce((n, e) => n + 0.25 * profile(ctx, e).value, 0);
+      break;
+    case 'Wrath of Bruinen':
+      worth = foes.reduce((n, e) => n + hit(2, e) + 0.2 * profile(ctx, e).value, 0);
+      break;
+    case 'Tremor':
+      // Friends on the line count against it.
+      worth = many.reduce((n, e) => n + (e.owner === seat ? -1.5 : 1) * (hit(4, e) + 0.2 * profile(ctx, e).value), 0);
+      break;
+  }
+  if (worth <= 0) return 0;
+  const n = Math.min(caster.will, power.cv >= 5 ? 2 : 1);
+  const works = 1 - ((power.cv - 1) / 6) ** n;
+  const resisted = foes.some(e => e.will > 0) ? 0.7 : 1;
+  return worth * works * resisted;
 }
 
 /**
