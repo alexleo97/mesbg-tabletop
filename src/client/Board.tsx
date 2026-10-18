@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { distanceBetween, distanceToBase, formatInches, halfExtents, type Point } from '../shared/geometry.ts';
-import type { Action, GameState, Mark, Model, Terrain } from '../shared/types.ts';
+import type { Action, GameState, Mark, Model, Seat, Terrain } from '../shared/types.ts';
 import { markerName, markerNotes } from '../shared/objects.ts';
 import { Effects } from './Effects.tsx';
 import { TerrainArt, TerrainDefs } from './TerrainArt.tsx';
@@ -19,6 +19,8 @@ export type Tool = 'move' | 'select' | 'measure' | 'mark';
 
 interface Props {
   state: GameState;
+  /** The viewer's seat, for pushing their siege tower once the battle is on. */
+  role?: Seat;
   tool: Tool;
   selected: Set<string>;
   setSelected: (s: Set<string>) => void;
@@ -151,12 +153,15 @@ function Arrow({ by, from, to, fontSize }: { by: string; from: Point; to: Point;
 
 const clipId = (m: Model) => `clip-${m.base.shape}-${m.base.w}-${m.base.h}`;
 
-export function Board({ state, tool, selected, setSelected, selectedTerrain, setSelectedTerrain, dispatch, showZones, showDeployment, showGrid, photoFor, onModelTap, links, fights, onFightTap, sightFrom, sightRange, showNames, marks, onMark, animate }: Props) {
+export function Board({ state, tool, selected, setSelected, selectedTerrain, setSelectedTerrain, dispatch, showZones, showDeployment, showGrid, photoFor, onModelTap, links, fights, onFightTap, sightFrom, sightRange, showNames, marks, onMark, animate, role }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const tex = useMemo(() => textures(), []);
   const [view, setView] = useState<View>({ x: 0, y: 0, s: 10 });
   const [gesture, setGesture] = useState<Gesture | null>(null);
   const [dragPos, setDragPos] = useState<Record<string, Point> | null>(null);
+  // A siege tower being pushed: shown where it is dragged, and only sent (as a push) when let go.
+  const [towerAt, setTowerAt] = useState<{ id: string } & Point | null>(null);
+  const pushing = (id: string) => !!role && state.flow.started && state.terrain[id]?.kind === 'tower';
   const [hover, setHover] = useState<{ id: string; x: number; y: number } | null>(null);
   const [pinned, setPinned] = useState<{ id: string; x: number; y: number } | null>(null);
   const [ruler, setRuler] = useState<{ start: Point; end: Point; from?: string } | null>(null);
@@ -179,7 +184,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
     // carried ones are drawn last.
     const layerOf = (t: Terrain) => (t.carrier ? 4 : layer(t.kind));
     return Object.values(state.terrain)
-      .filter(t => !t.gone || t.kind === 'gate')
+      .filter(t => !t.gone || t.kind === 'gate' || t.kind === 'tower' || !!t.barricade)
       .sort((a, b) => layerOf(a) - layerOf(b));
   }, [state.terrain]);
   const viewer = sightFrom ? state.models[sightFrom] : undefined;
@@ -424,7 +429,8 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
       if (!gesture.moved && Math.hypot(dx, dy) * view.s < TAP_SLOP_PX) return;
       setGesture({ ...gesture, moved: true });
       const now = performance.now();
-      if (now - lastSend.current >= SEND_EVERY_MS) {
+      if (pushing(gesture.id)) setTowerAt({ id: gesture.id, x: gesture.origin.x + dx, y: gesture.origin.y + dy });
+      else if (now - lastSend.current >= SEND_EVERY_MS) {
         lastSend.current = now;
         dispatch({ type: 'updateTerrain', id: gesture.id, patch: { x: gesture.origin.x + dx, y: gesture.origin.y + dy } });
       }
@@ -457,7 +463,9 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
       } else if (gesture.wasSelected) setSelected(new Set([gesture.tapId]));
       setDragPos(null);
     } else if (gesture.kind === 'terrain') {
-      if (gesture.moved)
+      setTowerAt(null);
+      if (gesture.moved && pushing(gesture.id)) dispatch({ type: 'pushTower', id: gesture.id, seat: role!, x: gesture.origin.x + p.x - gesture.start.x, y: gesture.origin.y + p.y - gesture.start.y });
+      else if (gesture.moved)
         dispatch({ type: 'updateTerrain', id: gesture.id, patch: { x: gesture.origin.x + p.x - gesture.start.x, y: gesture.origin.y + p.y - gesture.start.y } });
       else setPinned({ id: gesture.id, ...tipAt(e) });
     } else if (gesture.kind === 'pan') {
@@ -558,7 +566,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
             ) : (
               <g
                 key={t.id}
-                transform={`translate(${t.x} ${t.y}) rotate(${t.rot})`}
+                transform={`translate(${towerAt?.id === t.id ? towerAt.x : t.x} ${towerAt?.id === t.id ? towerAt.y : t.y}) rotate(${t.rot})`}
                 className={`terrain ${t.kind} ${t.locked ? 'locked' : ''} ${selectedTerrain === t.id ? 'selected' : ''}`}
               >
                 <TerrainArt t={t} mat={state.board.mat} />

@@ -1,5 +1,6 @@
 import { beside, mounted, mountLabel, mountOf, onFoot, separatedMount } from './cavalry.ts';
 import { resolveBreach } from './breach.ts';
+import { onLadder, resolveHurl } from './defenders.ts';
 import { brutalOptions, chargeEffects, hurl, knockedDown } from './monsters.ts';
 import { trample } from './trample.ts';
 import { biggerHolds, commanderOf, howdahFor, immovable } from './warBeasts.ts';
@@ -10,9 +11,10 @@ import { defence, touchingEnemies, wallBetween } from './barriers.ts';
 import { bannerFor, cantShield, fighterOf, hasRule, strikeAgainst } from './wargear.ts';
 import { canActivate, mayActivate, orderRoll, orderRollLabel, orderRollNeeded } from './heroics.ts';
 import { modelStats, type Catalog } from './catalog.ts';
-import { missileWeapon } from './rules.ts';
+import { missileWeapon, woundNeed } from './rules.ts';
 import { planShot, throwingPoint } from './shooting.ts';
 import { fallDamage, resolveCross } from './terrainTests.ts';
+import { heightOf } from './sight.ts';
 import { cleanFight, cleanShot, duelSettled, mightCouldHelp, resolveDuel, resolveShot, resolveStrikes, type DrawRule, type Fighter, type FightRequest, type ShotRequest } from './fight.ts';
 import { combatFromKey, CONTACT_SLACK, other, priorityChooser } from './flow.ts';
 import { hasElvenWeapon, sideOf } from './gear.ts';
@@ -25,7 +27,7 @@ import { MAX_DICE } from './reducer.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
 /** Dice requests a player sends, which only whoever holds the dice (the server, or the browser in practice games) can answer. */
-export const DICE_REQUESTS = new Set<Action['type']>(['roll', 'fight', 'strikes', 'shoot', 'shotOn', 'banner', 'dismount', 'trample', 'cross', 'rollFate', 'rollPriority', 'uncover', 'cast', 'resist', 'breach']);
+export const DICE_REQUESTS = new Set<Action['type']>(['roll', 'fight', 'strikes', 'shoot', 'shotOn', 'banner', 'dismount', 'trample', 'cross', 'rollFate', 'rollPriority', 'uncover', 'cast', 'resist', 'breach', 'hurl']);
 
 export interface Resolved {
   /** Results everyone applies, in order. */
@@ -312,6 +314,36 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
         const hurt = fallDamage(catalog, m, f.drop, d6, push, group);
         return [{ type: 'affect', id: f.id, patch: { prone: true } } as Action, ...hurt];
       });
+      // A loser fighting from a Siege Ladder doesn't back away: it falls off on a 1-3, and so may each friend below it.
+      const offLadder: Action[] = [];
+      if (!bargeOn) {
+        const climbers = ids(loser).map(id => state.models[id]).filter(l => !slain(l.id) && !l.prone && winners.some(w => { const wall = wallBetween(state, state.models[w], l); return !!wall && onLadder(state, l)?.raised === wall.id; }));
+        const ladders = new Set(climbers.map(l => onLadder(state, l)!.id));
+        const below = Object.values(state.models).filter(f => f.owner === state.models[ids(loser)[0]]?.owner && !f.dead && !climbers.includes(f) && !ids(loser).includes(f.id) && ladders.has(onLadder(state, f)?.id ?? ''));
+        for (const l of [...climbers, ...below]) {
+          const i = moves.findIndex(mv => mv.id === l.id);
+          if (i >= 0) moves.splice(i, 1);
+          const d = d6();
+          push(`${l.name} keeps its footing on the ladder (4+)`, [d], { target: 4, model: l.id, note: d <= 3 ? `${l.name} falls off the ladder.` : `${l.name} hangs on.` });
+          const wall = state.terrain[onLadder(state, l)!.raised!];
+          if (d <= 3) offLadder.push({ type: 'affect', id: l.id, patch: { prone: true } }, ...fallDamage(catalog, l, wall ? heightOf(wall) : 2, d6, push, group));
+        }
+      }
+      // Fighting over a Spiked Barricade, an attacker whose strike hits it instead is hurt by the spikes.
+      const spiked = held?.how === 'wall' ? wallBetween(state, state.models[held.attacker], state.models[held.defender]) : undefined;
+      if (spiked?.barricade === 'spiked') {
+        for (const r of strikes.filter(r => r.label.startsWith('In the Way') && r.model && state.models[r.model]))
+          for (let i = 0; i < r.dice.filter(d => d < 4).length; i++) {
+            const a = state.models[r.model!];
+            const need = woundNeed(3, modelStats(catalog, a)?.D ?? 4);
+            if (!need) continue;
+            const dice = [d6()];
+            const follow = need.then && dice[0] >= need.target ? [d6()] : undefined;
+            const hurt = need.then ? !!follow && follow[0] >= need.then : dice[0] >= need.target;
+            push(`Spikes: S3 hit on ${a.name}`, dice, { target: need.target, against: a.id, ...(need.then ? { then: need.then, follow } : {}), note: hurt ? `${a.name} is wounded.` : `${a.name} shrugs it off.` });
+            if (hurt) offLadder.push({ type: 'wound', id: a.id, count: 1, how: 'other', group });
+          }
+      }
       if (back.madeWay.length && strikes.length) {
         const last = strikes[strikes.length - 1];
         const note = back.madeWay.map(w => `${state.models[w.id].name} makes way for ${state.models[w.for].name}`).join('. ');
@@ -349,6 +381,7 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
           ...felled,
           ...extra.map((roll): Action => ({ type: 'rolled', roll })),
           ...falls,
+          ...offLadder,
           ...brutalDone,
           ...rise.map((id): Action => ({ type: 'affect', id, patch: { prone: false } })),
         ],
@@ -449,6 +482,11 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       const shooter = p && state.models[p.shot.shooter.id];
       if (!p || !shooter || p.group !== String(action.group) || shooter.owner !== seat) return null;
       return { apply: [{ type: 'shotPaused', pause: null }, ...shotActions(state, p.shot, shooter, d6, seat, p.group, now, state.log.filter(r => r.group === p.group))] };
+    }
+    case 'hurl': {
+      if (action.how !== 'rocks' && action.how !== 'oil') return null;
+      const out = resolveHurl(state, catalog, seat, action.how, String(action.model), String(action.item), String(action.target), d6, uid, now);
+      return out && { apply: out };
     }
     case 'breach': {
       const how = action.how;

@@ -21,7 +21,10 @@ export const DOORS: Record<DoorType, { name: string; d: number; w: number }> = {
 /** A Siege Ladder or battering ram lying on the ground can be broken too. */
 const GEAR: Partial<Record<string, { d: number; w: number }>> = { ladder: { d: 8, w: 2 }, ram: { d: 8, w: 3 } };
 
-export const HEAVY = new Set(['ally', 'ladder', 'ram']);
+export const HEAVY = new Set(['ally', 'ladder', 'ram', 'oil']);
+
+/** A siege tower: Defence 10 and 4 Wounds, pushed 6" by six models on foot (and one more for each model aboard). */
+export const TOWER = { d: 10, w: 4, move: 6, crew: 6 };
 
 export const isGate = (t: Terrain) => t.kind === 'gate';
 /** A gate or door still standing: one that's been broken down is open to everyone. */
@@ -29,13 +32,15 @@ export const gateStanding = (t: Terrain) => isGate(t) && !t.gone;
 /** A standing gate keeps out everyone but the side holding it, who open it and shut it behind them as they go. */
 export const shutTo = (t: Terrain, seat: Seat) => gateStanding(t) && t.side !== seat;
 
-/** What can be struck at, shot at or battered: a gate or door, or a ladder or ram not being carried. */
+/** What can be struck at, shot at or battered: a gate or door, a siege tower, a barricade, or a ladder or ram not being carried. */
 export function breakable(t: Terrain | undefined): { name: string; d: number; w: number; left: number; trapped: boolean } | undefined {
   if (!t || t.gone) return undefined;
   if (isGate(t)) {
     const kind = DOORS[t.door ?? 'castle'];
     return { name: kind.name, d: kind.d, w: kind.w, left: t.wounds ?? kind.w, trapped: true };
   }
+  if (t.kind === 'tower') return { name: 'Siege tower', d: TOWER.d, w: TOWER.w, left: t.wounds ?? TOWER.w, trapped: false };
+  if (t.kind === 'wall' && t.barricade) return { name: t.barricade === 'spiked' ? 'Spiked barricade' : 'Barricade', d: 7, w: 2, left: t.wounds ?? 2, trapped: false };
   const gear = t.kind === 'objective' && t.object ? GEAR[t.object] : undefined;
   if (!gear || t.carrier) return undefined;
   return { name: t.object === 'ram' ? 'Battering ram' : 'Siege Ladder', ...gear, left: t.wounds ?? gear.w, trapped: false };
@@ -109,7 +114,78 @@ export const ladderable = (t: Terrain) => !t.gone && (t.kind === 'wall' || t.kin
 export const laddersOn = (state: GameState, pieceId: string) => onTable(state).filter(t => t.object === 'ladder' && t.raised === pieceId);
 
 /** Whether a raised Siege Ladder against this piece is within 1" of a point, so a model there can climb it freely. */
-export const ladderAt = (state: GameState, pieceId: string, p: Point, r = 0) => laddersOn(state, pieceId).some(l => Math.hypot(l.x - p.x, l.y - p.y) <= 1 + r + l.w / 2);
+export const ladderAt = (state: GameState, pieceId: string, p: Point, r = 0) =>
+  laddersOn(state, pieceId).some(l => Math.hypot(l.x - p.x, l.y - p.y) <= 1 + r + l.w / 2) || towersOn(state, pieceId).some(t => fromPiece(t, p) <= 1 + r);
+
+/** Siege towers whose ramp is down on a piece of terrain: those aboard cross onto it freely. */
+export const towersOn = (state: GameState, pieceId: string) => Object.values(state.terrain).filter(t => t.kind === 'tower' && !t.gone && t.raised === pieceId);
+
+/** How far a point is from a piece (0 inside it). */
+export const fromPiece = (t: Terrain, p: Point) => {
+  const poly = outline(t);
+  return insidePolygon(poly, p) ? 0 : edgeDistance(poly, p);
+};
+
+/** The models in or on a siege tower: standing within its walls. */
+export const aboard = (state: GameState, tower: Terrain) => Object.values(state.models).filter(m => !m.dead && !m.waiting && !m.escaped && insidePolygon(outline(tower), m));
+
+/**
+ * The models able to push a siege tower: friends on foot touching it from outside, out of any fight and with their
+ * move not yet ended, and how many it needs (six, a monster counting as six, and one more for each model aboard).
+ */
+export function towerPushers(state: GameState, tower: Terrain, seat: Seat, inFight: (m: Model) => boolean): { by: Model[]; need: number; have: number } {
+  const riders = new Set(aboard(state, tower).map(m => m.id));
+  const by = Object.values(state.models).filter(m => m.owner === seat && !riders.has(m.id) && !m.dead && !m.waiting && !m.escaped && !m.siege && !m.prone && !mounted(m) && !state.flow.stopped?.includes(m.id) && distanceToTerrain(m, tower) <= 0.25 && !inFight(m));
+  // (A monster is marked as carrying heavy loads at full speed, and stands on a big base.)
+  const have = by.reduce((n, m) => n + (m.ground?.includes('burly') && m.base.w >= 40 ? TOWER.crew : 1), 0);
+  return { by, need: TOWER.crew + riders.size, have };
+}
+
+/**
+ * Where a siege tower pushed towards `to` ends up: at most 6", stopping short of the models and terrain in its way, and
+ * its ramp coming down on a wall it reaches. Null if it can't be pushed at all.
+ */
+export function towerMove(state: GameState, tower: Terrain, seat: Seat, to: Point, inFight: (m: Model) => boolean): { at: Point; onto?: string; carry: string[] } | null {
+  if (tower.gone || tower.raised || (tower.side && tower.side !== seat) || !state.flow.started || state.phase !== 'move' || state.flow.breached?.includes(tower.id)) return null;
+  const crew = towerPushers(state, tower, seat, inFight);
+  if (crew.have < crew.need) return null;
+  const riders = aboard(state, tower);
+  const skip = new Set([...riders, ...crew.by].map(m => m.id));
+  let d = Math.hypot(to.x - tower.x, to.y - tower.y);
+  if (d < 0.05) return null;
+  const ux = (to.x - tower.x) / d;
+  const uy = (to.y - tower.y) / d;
+  d = Math.min(d, TOWER.move);
+  const others = Object.values(state.models).filter(m => !skip.has(m.id) && !m.dead && !m.waiting && !m.escaped);
+  const solid = Object.values(state.terrain).filter(t => t.id !== tower.id && !t.gone && (ladderable(t) || t.kind === 'gate' || t.kind === 'tower' || t.kind === 'water'));
+  const blocked = (p: Point) => {
+    const moved = { ...tower, ...p };
+    const poly = outline(moved);
+    if (others.some(m => insidePolygon(poly, m) || edgeDistance(poly, m) < radius(m) - 0.05)) return true;
+    return solid.some(t => {
+      const q = outline(t);
+      return poly.some(c => insidePolygon(q, c)) || q.some(c => insidePolygon(poly, c)) || edgeSamples(poly).some(c => insidePolygon(q, c));
+    });
+  };
+  let at = { x: tower.x, y: tower.y };
+  for (let k = 0.05; k <= d + 1e-6; k += 0.05) {
+    const p = { x: tower.x + ux * k, y: tower.y + uy * k };
+    if (blocked(p)) break;
+    at = p;
+  }
+  if (Math.hypot(at.x - tower.x, at.y - tower.y) < 0.05) return null;
+  const moved = { ...tower, ...at };
+  const edge = edgeSamples(outline(moved));
+  const wall = Object.values(state.terrain).find(t => ladderable(t) && edge.some(c => fromPiece(t, c) <= 0.3));
+  return { at, onto: wall?.id, carry: [...riders, ...crew.by].map(m => m.id) };
+}
+
+/** Points along a polygon's edges, for overlap checks between pieces. */
+function edgeSamples(poly: Point[]): Point[] {
+  const out: Point[] = [];
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) for (let k = 1; k < 4; k++) out.push({ x: poly[j].x + ((poly[i].x - poly[j].x) * k) / 4, y: poly[j].y + ((poly[i].y - poly[j].y) * k) / 4 });
+  return out;
+}
 
 /**
  * Raises any Siege Ladder whose carrier has reached a wall: it's propped against the wall where the carrier touches
@@ -185,6 +261,19 @@ export function fortressNotes(t: Terrain): string[] {
     return t.raised
       ? ['Raised against the wall: models within 1" of it climb up or down without a test. A defender touching it on the walls may try to push it down (4+).']
       : ['A Heavy Object. Carry it into base contact with a wall to raise it there. Lying on the ground it has Defence 8 and 2 Wounds.'];
+  if (t.kind === 'tower') {
+    const b = breakable(t);
+    if (!b) return ['Wrecked.'];
+    return [
+      `Defence ${b.d}, ${b.left} of ${b.w} Wounds left. In its side's Move phase, models touching it can push it ${TOWER.move}" (they need 6 between them, plus one more for each model riding in it; a big creature counts as 6). Those pushing can't do anything else that turn.`,
+      t.raised ? 'Its ramp is down on the wall: models within 1" of it step onto the battlements without a climb test.' : 'Push it into contact with a wall to drop its ramp. If it is wrecked, everyone inside falls.',
+    ];
+  }
+  if (t.barricade) {
+    const b = breakable(t);
+    if (!b) return ['Broken down: models can walk through.'];
+    return [`Defence ${b.d}, ${b.left} of ${b.w} Wounds left. Models can strike at it in the Fight phase.`, ...(t.barricade === 'spiked' ? ['Spiked: an attacker whose strike hits the barricade instead takes a Strength 3 hit, and so does anyone jumping it who does not roll a 6.'] : [])];
+  }
   if (t.object === 'ram') return ['A Heavy Object carried by two or more. Touching an enemy gate in the Fight phase, it strikes once with the Strength of its strongest carrier +1 for each other one (up to 10), rolling To Wound twice. Defence 8, 3 Wounds.'];
   return [];
 }

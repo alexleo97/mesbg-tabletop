@@ -3,7 +3,7 @@ import { mounted, mountProfile } from './cavalry.ts';
 import { boardCommanders, carried, howdahFor, howdahSpot } from './warBeasts.ts';
 import { assignCrew, pushers } from './siege.ts';
 import { holdInZones, nearEdge } from './deployment.ts';
-import { heroicInfo, heroicNow, heroicQueue, mayActivate, shoutedFor, SHOUT_RANGE } from './heroics.ts';
+import { canActivate, heroicInfo, heroicNow, heroicQueue, mayActivate, shoutedFor, SHOUT_RANGE } from './heroics.ts';
 import { pendingSpell } from './magic.ts';
 import { basePower, cannotAct, effectActive } from './powers.ts';
 import { basesOverlap, engaged as engagedNow, finishCharge, fightsAgain, limitMove, marchedBy, marchRange, moveAllowance, movedAtAll, movedTooFar, moveLeft, moveStart } from './movement.ts';
@@ -15,7 +15,7 @@ import { distanceBetween } from './geometry.ts';
 import { touching as inContact, touchingEnemies } from './barriers.ts';
 import { canRetreatTo } from './backAway.ts';
 import { canPickUp, markerUpkeep, syncCarried, touching, canEscape } from './objects.ts';
-import { raiseLadders } from './fortress.ts';
+import { aboard, raiseLadders, towerMove } from './fortress.ts';
 import { endPhaseUpkeep } from './scoring.ts';
 import { BOT_NAME, BOT_SPEEDS, DOOR_TYPES, MARKER_OBJECTS, MATS, PHASES, PICK_KEYS, TERRAIN_KINDS, type Action, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type ModelEffect, type Phase, type Picks, type Seat, type SpellPending, type Terrain } from './types.ts';
 
@@ -264,6 +264,20 @@ function cleanObject(t: Partial<Terrain>, base: Terrain, out: Terrain) {
     if (wounds !== undefined && wounds !== null) out.wounds = int(wounds, 0, 20, 0);
     const gone = pick('gone');
     if (gone === 'destroyed') out.gone = gone;
+    const by = pick('by');
+    if (isSeat(by)) out.by = by;
+    return;
+  }
+  if (out.kind === 'tower' || (out.kind === 'wall' && (pick('barricade') === 'plain' || pick('barricade') === 'spiked'))) {
+    // A siege tower or a barricade: whose it is, the Wounds it has left, and (a tower) the wall its ramp is down on.
+    if (out.kind === 'wall') out.barricade = pick('barricade');
+    const side = pick('side');
+    if (isSeat(side)) out.side = side;
+    const wounds = pick('wounds');
+    if (wounds !== undefined && wounds !== null) out.wounds = int(wounds, 0, 20, 0);
+    const raised = pick('raised');
+    if (out.kind === 'tower' && typeof raised === 'string' && raised) out.raised = id(raised);
+    if (pick('gone') === 'destroyed') out.gone = 'destroyed';
     const by = pick('by');
     if (isSeat(by)) out.by = by;
     return;
@@ -931,6 +945,28 @@ function step(state: GameState, action: Action): GameState {
       // (Not a note: a note on a duel roll marks the duel settled.)
       log[i] = { ...r, dice, banner: true, label: `${r.label.replace(/ \(F.*$/, '')}: ${str(action.by, 30)}'s banner re-rolled a ${was}`.slice(0, 80) };
       return { ...state, log };
+    }
+    case 'pushTower': {
+      // Its pushers and those aboard go with it; the pushers' move ends, and those aboard haven't moved themselves.
+      const t = state.terrain[action.id];
+      if (!t || t.kind !== 'tower' || !isSeat(action.seat) || !canActivate(state, action.seat)) return state;
+      const go = towerMove(state, t, action.seat, { x: num(action.x, -24, 200, t.x), y: num(action.y, -24, 200, t.y) }, m => engagedNow(state, m));
+      if (!go) return state;
+      const dx = go.at.x - t.x;
+      const dy = go.at.y - t.y;
+      const riders = new Set(aboard(state, t).map(m => m.id));
+      const models = { ...state.models };
+      const starts = { ...state.flow.starts };
+      for (const mid of go.carry) {
+        const m = models[mid];
+        models[mid] = { ...m, x: m.x + dx, y: m.y + dy };
+        if (riders.has(mid) && starts[mid]) starts[mid] = [starts[mid][0] + dx, starts[mid][1] + dy];
+        else if (!riders.has(mid) && !starts[mid]) starts[mid] = [m.x, m.y];
+      }
+      const pushers = go.carry.filter(mid => !riders.has(mid));
+      const flow = { ...state.flow, starts, stopped: [...new Set([...(state.flow.stopped ?? []), ...pushers])], breached: [...(state.flow.breached ?? []), t.id].slice(-200) };
+      const moved: Terrain = { ...t, x: go.at.x, y: go.at.y, ...(go.onto ? { raised: go.onto } : {}) };
+      return { ...state, models, flow, terrain: { ...state.terrain, [t.id]: moved } };
     }
     case 'breached': {
       if (!action.id || state.flow.breached?.includes(String(action.id))) return state;

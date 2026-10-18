@@ -1,6 +1,6 @@
 import { modelStats, type Catalog } from './catalog.ts';
 import { mounted } from './cavalry.ts';
-import { breakable, enemyOf, gateStanding, isGate, ramCrew, ramGate } from './fortress.ts';
+import { aboard, breakable, enemyOf, gateStanding, isGate, ramCrew, ramGate } from './fortress.ts';
 import { distanceToTerrain, heightOf } from './sight.ts';
 import { canActivate, heroicsSettled } from './heroics.ts';
 import { isMonster } from './monsters.ts';
@@ -58,7 +58,7 @@ export function breachBlocked(state: GameState, catalog: Catalog | null, how: Br
     if (state.phase !== 'fight' || !heroicsSettled(state)) return 'Only in the Fight phase';
     if (m.siege || m.prone) return 'Can’t fight';
     if (busy(state, m)) return 'Has been in a fight this turn';
-    const near = isGate(t) ? distanceToTerrain(m, t) <= 0.25 : touchingMarker(m, t);
+    const near = t.kind === 'objective' ? touchingMarker(m, t) : distanceToTerrain(m, t) <= 0.25;
     if (!near) return 'Must be touching it';
     return undefined;
   }
@@ -83,7 +83,7 @@ export function breachBlocked(state: GameState, catalog: Catalog | null, how: Br
 export function breachOptions(state: GameState, catalog: Catalog | null, m: Model): { how: BreachHow; target: string; label: string }[] {
   if (!active(m) || !state.flow.started) return [];
   const out: { how: BreachHow; target: string; label: string }[] = [];
-  const near = Object.values(state.terrain).filter(t => !t.gone && Math.abs(t.x - m.x) < 100 && (isGate(t) || t.object === 'ladder' || t.object === 'ram'));
+  const near = Object.values(state.terrain).filter(t => !t.gone && Math.abs(t.x - m.x) < 100 && (isGate(t) || t.kind === 'tower' || t.barricade || t.object === 'ladder' || t.object === 'ram'));
   for (const t of near) {
     const b = breakable(t);
     const name = b?.name ?? (t.object === 'ram' ? 'Battering ram' : 'Siege Ladder');
@@ -171,7 +171,7 @@ export function resolveBreach(state: GameState, catalog: Catalog | null, seat: S
       const crew = firingCrew(state, catalog, m)!;
       const need = Math.min(6, crew.sv + (state.flow.turned?.includes(m.id) ? 1 : 0));
       const hit = d6();
-      const big = gate.door === 'castle' || gate.door === undefined;
+      const big = isGate(gate) && (gate.door ?? 'castle') === 'castle';
       push(`${m.name} shoots at the ${b.name.toLowerCase()} (${need}+)`, [hit], { target: need, model: m.id, note: hit >= need ? 'A hit.' : 'The shot misses.' });
       if (hit >= need) {
         const rules = unitOf(catalog, m)?.rules ?? [];
@@ -179,15 +179,15 @@ export function resolveBreach(state: GameState, catalog: Catalog | null, seat: S
         if (!big) {
           const sc = d6();
           on = sc === 6;
-          push(`Scatter: only a 6 lands on a door`, [sc], { model: m.id, note: on ? 'Dead on.' : 'It sails past.' });
+          push(`Scatter: only a 6 lands on it`, [sc], { model: m.id, note: on ? 'Dead on.' : 'It sails past.' });
         }
         // A Wall-breaker takes D3 Wounds off a Siege Target with each hit (and rolls twice To Wound, keeping the better).
         if (on) {
           const n = big && rules.includes('Wall-breaker') ? Math.ceil(d6() / 2) : 1;
           const before = left;
           wound(`To wound the ${b.name.toLowerCase()}`, w.s, 1, m, big && (!!m.options?.includes('Flaming Ammunition') || rules.includes('Wall-breaker')));
-          // Wounded at all, a Wall-breaker's hit takes its D3, and a door hit by an engine is smashed.
-          if (left < before) left = Math.max(0, before - (big ? n : b.w));
+          // Wounded at all, a Wall-breaker's hit takes its D3, and anything less tough than Defence 10 is smashed.
+          if (left < before) left = Math.max(0, before - (big ? n : b.d < 10 ? b.w : 1));
         }
       }
     } else {
@@ -199,6 +199,8 @@ export function resolveBreach(state: GameState, catalog: Catalog | null, seat: S
     }
   }
   if (left !== b.left) out.push({ type: 'updateTerrain', id: gate.id, patch: left > 0 ? { wounds: left } : { wounds: 0, gone: 'destroyed', by: seat } });
+  // A siege tower brought down takes everyone aboard down with it.
+  if (!left && gate.kind === 'tower') for (const r of aboard(state, gate)) out.push(...fallDamage(catalog, r, heightOf(gate), d6, push, group));
   return done();
 }
 

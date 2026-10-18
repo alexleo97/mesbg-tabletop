@@ -16,6 +16,9 @@ export const OBJECT_NAMES: Record<MarkerObject, string> = {
   ally: 'Wounded Ally',
   ladder: 'Siege Ladder',
   ram: 'Battering Ram',
+  rocks: 'Rocks',
+  oil: 'Boiling Oil',
+  rally: 'Rallying Point',
 };
 
 /** How far a model's base is from a marker's edge. */
@@ -138,7 +141,9 @@ export function markerActions(state: GameState, m: Model): MarkerAction[] {
 
 export function canPickUp(state: GameState, m: Model, t: Terrain): boolean {
   if (!t.object || t.gone || t.carrier || t.hidden || !touching(m, t) || m.dead || m.escaped) return false;
-  if (t.object === 'supply' || t.object === 'decoy') return false;
+  if (t.object === 'supply' || t.object === 'decoy' || t.object === 'rally') return false;
+  // Rocks and oil are only for the defenders who brought them.
+  if ((t.object === 'rocks' || t.object === 'oil') && t.side && t.side !== m.owner) return false;
   // Cavalry can't carry a Heavy Object; a raised ladder stays against its wall, and a ram takes two to lift.
   if (HEAVY.has(t.object) && isCavalry(m)) return false;
   if (t.object === 'ladder' && t.raised) return false;
@@ -194,6 +199,13 @@ export function markerUpkeep(state: GameState): GameState['terrain'] {
       const raider = models.find(m => m.owner !== t.side && touching(m, t) && !(m.hero && m.pending));
       if (raider) terrain = { ...terrain, [t.id]: { ...t, gone: 'destroyed', by: raider.owner } };
     }
+    // An enemy that only moved this turn (no shooting, casting or fighting, and under no power) pulls down a
+    // Rallying Point it ends the turn touching.
+    if (t.object === 'rally') {
+      const fought = new Set(state.flow.resolved.flatMap(k => k.split(',')));
+      const raider = models.find(m => m.owner !== t.side && touching(m, t) && !state.flow.shot?.includes(m.id) && !state.flow.cast?.includes(m.id) && !fought.has(m.id) && !m.effects?.length);
+      if (raider) terrain = { ...terrain, [t.id]: { ...t, gone: 'destroyed', by: raider.owner } };
+    }
     if (t.object === 'ally' && t.carrier) {
       const m = state.models[t.carrier];
       if (m && whollyIn(sanctuary(state, m.owner), m)) terrain = { ...terrain, [t.id]: { ...t, gone: 'rescued', by: m.owner } };
@@ -246,6 +258,12 @@ export function markerNotes(t: Terrain): string[] {
     case 'ladder':
     case 'ram':
       return fortressNotes(t);
+    case 'rocks':
+      return ['A light object for the defenders. A model touching it on the walls can drop it in the Shoot phase on an enemy within 1" of the walls or on a ladder, 8" away at most: 4+ to hit, then a Strength 6 hit.'];
+    case 'oil':
+      return ['A vat of boiling oil: a Heavy Object. Two defenders touching it on the walls pour it as a shot (4+ to hit): Strength 8 on the target and Strength 4 on everyone within 2". It runs dry on a 1 afterwards.'];
+    case 'rally':
+      return ['The defenders treat it as a banner, and their Courage tests within 6" get +1. An enemy that only moved this turn and ends it touching the Rallying Point pulls it down.'];
     default:
       return [];
   }

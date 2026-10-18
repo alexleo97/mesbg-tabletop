@@ -17,11 +17,12 @@ export const TERRAIN_INFO: Record<TerrainKind, { name: string; type: string; not
   objective: { name: 'Objective', type: 'Marker', note: 'A scenario objective. It does not block movement or sight.' },
   road: { name: 'Road', type: 'Open ground', note: 'A dirt track or street. Open ground: it does not slow models or block sight.' },
   gate: { name: 'Gate', type: 'Barrier', note: 'A gate or door set in a fortress wall. Set its kind and who holds it below.' },
+  tower: { name: 'Siege tower', type: 'Siege engine', note: 'A wheeled tower its crew push up to the walls. Once it touches them, its ramp drops and models climb from it straight onto the battlements.' },
   bridge: { name: 'Bridge', type: 'Crossing', note: 'Carries models over water at full speed. Narrow, so it makes a natural choke point.' },
 };
 
 /** The groups used to sort terrain in the Table panel, in the order shown. */
-export const TERRAIN_GROUPS = ['Area terrain', 'Obstacle', 'Barrier', 'Impassable', 'Water', 'Crossing', 'Elevation', 'Open ground', 'Marker'] as const;
+export const TERRAIN_GROUPS = ['Area terrain', 'Obstacle', 'Barrier', 'Impassable', 'Water', 'Crossing', 'Siege engine', 'Elevation', 'Open ground', 'Marker'] as const;
 
 /** How this piece plays here: what the board and turn guide use, plus the kind's note. */
 export function terrainRules(t: Terrain): string[] {
@@ -34,7 +35,7 @@ export function terrainRules(t: Terrain): string[] {
     out.push(`Walk in at ground level. ${n === 1 ? 'Climbing onto the roof' : `It has ${n} floors and a roof; each climb`} costs ${formatInches(heightOf(t) / n)} of a model's move. Models on different floors don't fight each other.`);
   } else if (t.kind === 'rock' || t.kind === 'building' || t.kind === 'cliff') out.push(`Climbing up or down it costs ${heightOf(t)}" of a model's move.`);
   if (slowsShots(t)) out.push('In the Way: shots through it need an In the Way roll.');
-  if (t.kind === 'gate') out.push(...fortressNotes(t));
+  if (t.kind === 'gate' || t.kind === 'tower' || t.barricade) out.push(...fortressNotes(t));
   if (t.sheer) out.push('Sheer: too tall and smooth to climb without a Siege Ladder (Swift Movement aside).');
   out.push(TERRAIN_INFO[t.kind].note);
   return out;

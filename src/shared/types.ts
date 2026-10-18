@@ -109,7 +109,7 @@ export interface ModelEffect {
   duration: 'Temporary' | 'Exhaustion';
 }
 
-export const TERRAIN_KINDS = ['wood', 'rock', 'building', 'water', 'hill', 'wall', 'ruin', 'cliff', 'field', 'objective', 'bridge', 'road', 'gate'] as const;
+export const TERRAIN_KINDS = ['wood', 'rock', 'building', 'water', 'hill', 'wall', 'ruin', 'cliff', 'field', 'objective', 'bridge', 'road', 'gate', 'tower'] as const;
 export type TerrainKind = (typeof TERRAIN_KINDS)[number];
 
 /** Battle mat surfaces. */
@@ -163,14 +163,16 @@ export interface Terrain {
   wounds?: number;
   /** A purpose-built wall or rampart: too sheer to climb without a Siege Ladder (Swift Movement aside). */
   sheer?: boolean;
-  /** A Siege Ladder raised against this piece of terrain. */
+  /** A Siege Ladder raised against this piece of terrain, or a siege tower's ramp lowered onto it. */
   raised?: string;
+  /** A wall that is a defender's Barricade (Defence 7, 2 Wounds), or a spiked one that hurts those crossing it. */
+  barricade?: 'plain' | 'spiked';
 }
 
 export const DOOR_TYPES = ['castle', 'dwarven', 'heavyArmoured', 'armoured', 'heavy', 'external', 'internal'] as const;
 export type DoorType = (typeof DOOR_TYPES)[number];
 
-export const MARKER_OBJECTS = ['artefact', 'relic', 'heirloom', 'decoy', 'supply', 'ally', 'ladder', 'ram'] as const;
+export const MARKER_OBJECTS = ['artefact', 'relic', 'heirloom', 'decoy', 'supply', 'ally', 'ladder', 'ram', 'rocks', 'oil', 'rally'] as const;
 export type MarkerObject = (typeof MARKER_OBJECTS)[number];
 
 /** Secret choices some scenarios ask each player to make, by model or terrain id. */
@@ -528,6 +530,10 @@ export type Action =
    * (in the Shoot phase), or push a Siege Ladder down off the walls (in the Move phase). The server rolls it.
    */
   | { type: 'breach'; how: 'strike' | 'ram' | 'shoot' | 'push'; model: string; target: string }
+  /** A side's models push their siege tower up to 6" (checked by the reducer: enough pushers, nothing in the way). */
+  | { type: 'pushTower'; id: string; seat: Seat; x: number; y: number }
+  /** Request from a client: a defender on the walls drops rocks or pours boiling oil on an attacker below. */
+  | { type: 'hurl'; how: 'rocks' | 'oil'; model: string; item: string; target: string }
   /** Server only: a model, ram or ladder has had its go at a gate this turn. */
   | { type: 'breached'; id: string }
   /** Server result of an uncover attempt. */
