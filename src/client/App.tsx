@@ -223,7 +223,7 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
   const [role, setRole] = useState<Role | null>(() => (practice || vsComputer ? 'p1' : ((storage.get(roleKey) as Role | null) ?? null)));
   // One connection per room; role changes are sent over it rather than reconnecting.
   const conn = useMemo<Connection>(() => practice ?? new RoomConnection(room, role ?? 'spectator'), [room, practice]);
-  const { state, status, players, undoDepth, invite, refused, marks } = useRoom(conn);
+  const { state, status, players, undoDepth, invite, refused, marks, wasOnline } = useRoom(conn);
   const [refusedNote, setRefusedNote] = useState<string | null>(null);
   // Asked for a seat in a private game without the invite: watch instead, and say why.
   useEffect(() => {
@@ -442,6 +442,11 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
       <main className={`main ${panelOpen ? 'panel-open' : ''}`}>
         <div className="table-area">
           {overlay}
+          {!practice && status === 'online' && seat && state.flow.started && !state.bot && !state.result && !players.includes(other(seat)) && (
+            <div className="link-banner" role="status" aria-live="polite">
+              {seatName(other(seat))} has lost their connection. The game will wait for them to come back.
+            </div>
+          )}
           <div className="stage">
             <Board
               state={state}
@@ -560,6 +565,17 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
           </div>
 
           {(!practice || setupCard || state.flow.started) && <CoachBar state={state} dispatch={dispatch} role={role} combats={fights} openTab={showTab} openFight={setFightKey} auto={!practice} />}
+          {!practice && status !== 'online' && (
+            // Covers the table while the link is down, so nothing is clicked into the void; it fades in after a moment
+            // so a quick reconnect doesn't flash it.
+            <div className="link-overlay" role="status" aria-live="polite">
+              <div className="link-card">
+                <span className="link-spinner" aria-hidden />
+                <b>{wasOnline ? 'Reconnecting…' : 'Connecting…'}</b>
+                {wasOnline && <small>Your connection dropped. The game picks up where it was as soon as you're back.</small>}
+              </div>
+            </div>
+          )}
         </div>
 
         {fight && (
