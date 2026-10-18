@@ -8,13 +8,14 @@ import { cannotAct, courageAuto, courageWorse, madeFearful, terrifying } from '.
 import { engaged } from './movement.ts';
 import { sightTo } from './sight.ts';
 import { armyStatus } from './status.ts';
+import { courageBonus } from './wargear.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
 /** How close a hero's friends must be to share its Stand Fast! or Heroic Resolve. */
 export const STAND_FAST_RANGE = 6;
 
-/** The 2D6 total a model needs to pass a Courage test, after powers such as Drain Courage and Aura of Dismay. */
-const courageOf = (state: GameState, catalog: Catalog | null, m: Model) => Math.min(13, (modelStats(catalog, m)?.C ?? 7) + courageWorse(state, m));
+/** The 2D6 total a model needs to pass a Courage test, after powers such as Drain Courage and Aura of Dismay, war horns and Harbingers of Evil. */
+const courageOf = (state: GameState, catalog: Catalog | null, m: Model) => Math.max(2, Math.min(13, (modelStats(catalog, m)?.C ?? 7) + courageWorse(state, m) - courageBonus(state, catalog, m)));
 const isHero = (m: Model) => m.hero;
 export const causesTerror = (catalog: Catalog | null, m: Model, state?: GameState) =>
   !!(m.profileId && catalog?.units[m.profileId]?.rules.some(r => /^Terror\b/.test(r))) || (!!state && terrifying(state, m));

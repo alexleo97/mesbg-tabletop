@@ -1,4 +1,5 @@
 import { modelStats, type Catalog } from './catalog.ts';
+import { fighterOf } from './wargear.ts';
 import { duelLeader, duelSettled, strikeWounds, woundsTaken, type Fighter, type FightRequest } from './fight.ts';
 import { supporters } from './support.ts';
 import { activeSeat, combats, CONTACT_SLACK, other, type Combat } from './flow.ts';
@@ -911,6 +912,8 @@ function humanCanRaise(state: GameState, human: Seat, rolls: DiceRoll[]): boolea
 function fighterFor(ctx: Ctx, m: Model): Fighter {
   const p = profile(ctx, m);
   const { state } = ctx;
+  // A model with a profile fights as its wargear and rules say (two-handed if it must), as the server works it out.
+  if (modelStats(ctx.catalog, m)) return fighterOf(state, ctx.catalog, m, state.flow.choices?.[m.id]);
   return {
     id: m.id,
     name: m.name,

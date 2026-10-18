@@ -216,9 +216,12 @@ export const VINES_REACH = 3;
 const vinesArea = (t: Terrain) => outline({ ...t, shape: 'circle', w: t.w + VINES_REACH * 2, h: t.h + VINES_REACH * 2 });
 
 /** Difficult ground for a model of `seat` (any side's, when no side is given): difficult terrain and enemy Writhing Vines. */
-function slowGround(state: GameState, seat?: Seat): Point[][] {
+function slowGround(state: GameState, seat?: Seat, ground: string[] = []): Point[][] {
+  if (ground.includes('spectral')) return [];
+  // Woodland Creatures walk through woods, Mountain Dwellers over rocky ground, and Swift Movement anything but water.
+  const free = (t: Terrain) => (ground.includes('swift') && t.kind !== 'water') || (ground.includes('wood') && t.kind === 'wood') || (ground.includes('rock') && (t.kind === 'ruin' || t.kind === 'rock' || t.kind === 'cliff'));
   const all = Object.values(state.terrain);
-  return [...all.filter(t => !t.vines && isDifficult(t)).map(t => outline(t)), ...all.filter(t => t.vines && seat && t.side !== seat).map(vinesArea)];
+  return [...all.filter(t => !t.vines && isDifficult(t) && !free(t)).map(t => outline(t)), ...all.filter(t => t.vines && seat && t.side !== seat).map(vinesArea)];
 }
 
 /**
@@ -226,10 +229,10 @@ function slowGround(state: GameState, seat?: Seat): Point[][] {
  * (while any of the base is in it, given the base's radius `r`), and climbing up rocks, cliffs and buildings counts
  * double the height, as does climbing down more than the model's own height (`tall`).
  */
-export function moveCost(state: GameState, a: Point, b: Point, seat?: Seat, r = 0, tall = 1.1): { cost: number; difficult: boolean } {
+export function moveCost(state: GameState, a: Point, b: Point, seat?: Seat, r = 0, tall = 1.1, ground?: string[]): { cost: number; difficult: boolean } {
   const d = Math.hypot(b.x - a.x, b.y - a.y);
   const climb = climbCost(state, a, b, tall);
-  const slow = slowGround(state, seat);
+  const slow = slowGround(state, seat, ground);
   if (!slow.length || d === 0) return { cost: d + climb, difficult: false };
   // Bridges carry models over rivers at full speed.
   const bridges = Object.values(state.terrain).filter(t => t.kind === 'bridge').map(t => outline(t));

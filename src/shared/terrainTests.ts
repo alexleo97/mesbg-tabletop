@@ -164,10 +164,19 @@ export function resolveCross(state: GameState, seat: Seat, id: string, d6: () =>
   if (crossBlocked(state, m, c)) return null;
   const t = state.terrain[c.terrain];
   const group = `x-${uid()}`;
-  const roll = d6();
   const rolls: DiceRoll[] = [];
   const push = (label: string, dice: number[], extra: Partial<DiceRoll> = {}) => rolls.push({ id: `${group}-${rolls.length}`, by: seat, label: label.slice(0, 80), dice, at: now, group, ...extra });
-  push(`${m.name}: ${c.test} test, ${terrainName(t)} (1 fails, 6 carries on)`, [roll], { model: m.id });
+  // Spectral Walk always counts as a 6, as does Swift Movement over a wall or rock; Mountain Dwellers re-roll a
+  // failure, and Cave Dwellers add 1.
+  const ground = m.ground ?? [];
+  const sure = ground.includes('spectral') ? 'Spectral Walk' : ground.includes('swift') && (c.test === 'Jump' || c.test === 'Climb') ? 'Swift Movement' : '';
+  let roll = sure ? 6 : d6();
+  push(`${m.name}: ${c.test} test, ${terrainName(t)} (1 fails, 6 carries on)${sure ? `: ${sure}` : ''}`, sure ? [] : [roll], { model: m.id });
+  if (roll === 1 && ground.includes('rock')) {
+    roll = d6();
+    push(`${m.name}: ${c.test} test re-rolled (Mountain Dweller)`, [roll], { model: m.id });
+  }
+  if (ground.includes('cave') && roll < 6) roll++;
   const out: Action[] = [];
   // The model is put where the test takes it (the Move it costs is counted from where it began the phase).
   const place = (p: Point): Action => ({ type: 'affect', id: m.id, patch: { x: p.x, y: p.y } });
@@ -182,14 +191,14 @@ export function resolveCross(state: GameState, seat: Seat, id: string, d6: () =>
       out.push(place({ x: (c.stop.x + c.landing.x) / 2, y: (c.stop.y + c.landing.y) / 2 }));
       fall = Math.max(0, climbedLevel(state, c.stop) - climbedLevel(state, c.landing));
     }
-    rolls[0].note = c.test === 'Jump' ? `${m.name} stumbles at the ${terrainName(t)}` : `${m.name} falls and is Prone`;
+    rolls[rolls.length - 1].note = c.test === 'Jump' ? `${m.name} stumbles at the ${terrainName(t)}` : `${m.name} falls and is Prone`;
     out.push({ type: 'crossed', id: m.id, stop: true });
     if (c.test !== 'Jump') out.push({ type: 'affect', id: m.id, patch: { prone: true } });
     out.push(...fallDamage(catalog, m, fall, d6, push, group));
     return [...rolls.map((r): Action => ({ type: 'rolled', roll: r })), ...out];
   }
   const way = c.test === 'Leap' ? 'across' : c.test === 'Climb' ? 'up' : c.test === 'Climb down' ? 'down' : 'over';
-  rolls[0].note = roll === 6 ? `${m.name} gets ${way} and may carry on` : `${m.name} gets ${way}; its move ends`;
+  rolls[rolls.length - 1].note = `${roll === 6 ? `${m.name} gets ${way} and may carry on` : `${m.name} gets ${way}; its move ends`}${ground.includes('cave') && !sure ? ' (Cave Dweller +1)' : ''}`;
   out.push({ type: 'crossed', id: m.id, terrain: c.terrain }, place(c.landing));
   // Landing within 1" of an enemy it can reach, it goes on to charge the nearest; otherwise a 2-5 ends its move.
   const after: GameState = { ...state, models: { ...state.models, [m.id]: { ...m, ...c.landing } }, flow: { ...state.flow, crossed: { ...state.flow.crossed, [m.id]: [...(state.flow.crossed?.[m.id] ?? []), c.terrain] } } };

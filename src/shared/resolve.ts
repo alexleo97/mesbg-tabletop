@@ -1,5 +1,6 @@
 import { backAway, separate, type Retreat } from './backAway.ts';
 import { defence, touchingEnemies, wallBetween } from './barriers.ts';
+import { bannerFor, cantShield, fighterOf, strikeAgainst } from './wargear.ts';
 import { canActivate, mayActivate, orderRoll, orderRollLabel, orderRollNeeded } from './heroics.ts';
 import { modelStats, type Catalog } from './catalog.ts';
 import { missileWeapon } from './rules.ts';
@@ -17,7 +18,7 @@ import { MAX_DICE } from './reducer.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
 /** Dice requests a player sends, which only whoever holds the dice (the server, or the browser in practice games) can answer. */
-export const DICE_REQUESTS = new Set<Action['type']>(['roll', 'fight', 'strikes', 'shoot', 'shotOn', 'cross', 'rollFate', 'rollPriority', 'uncover', 'cast', 'resist']);
+export const DICE_REQUESTS = new Set<Action['type']>(['roll', 'fight', 'strikes', 'shoot', 'shotOn', 'banner', 'cross', 'rollFate', 'rollPriority', 'uncover', 'cast', 'resist']);
 
 export interface Resolved {
   /** Results everyone applies, in order. */
@@ -60,22 +61,37 @@ function prepareFight(state: GameState, catalog: Catalog | null, req: FightReque
   const front = fresh.sides.map(side => side.filter(f => !f.support).map(f => f.id));
   if (!front[0].length || !front[1].length) return null;
   const offered = supporters(state, catalog, { key: '', p1: front[0], p2: front[1] });
+  // Shielding is all or nothing for a side: every model in the fight must be able to, and then none can be Supported.
+  const shields = fresh.sides.map(side => {
+    const main = side.filter(f => !f.support);
+    // The players' choices are kept in the game (either player may roll the fight); a model added by hand goes by the request.
+    const asked = (f: Fighter) => (state.models[f.id] && modelStats(catalog, state.models[f.id]) ? !!state.flow.choices?.[f.id]?.shielding : !!f.shielding);
+    return main.some(asked) && main.every(f => !state.models[f.id] || !cantShield(catalog, state.models[f.id]));
+  });
   const sides = fresh.sides.map((side, i) =>
     side
       .filter(f => {
         if (!f.support) return true;
+        if (shields[i]) return false;
         const m = state.models[f.id];
         if (!m || m.owner !== (i === 0 ? 'p1' : 'p2')) return false;
         return duel ? duel.some(r => r.support && r.model === f.id && r.side === i) : offered[m.owner].includes(f.id);
       })
-      .map(f => ({ ...f, ...(f.support ? { a: 1 } : {}), ...(f.strike && state.flow.strikeBonus?.[f.id] ? { strikeBonus: state.flow.strikeBonus[f.id] } : {}) })),
+      .map(f => {
+        // A model with a profile fights as its profile, wargear and rules say, whatever numbers were sent.
+        const m = state.models[f.id];
+        const built = m && modelStats(catalog, m) ? { ...fighterOf(state, catalog, m, { shielding: shields[i] && !f.support, twoHanded: state.flow.choices?.[f.id]?.twoHanded }), ...(f.support ? { support: true } : {}) } : { ...f, shielding: undefined, twoHanded: undefined };
+        if (f.support) Object.assign(built, { a: 1, shielding: undefined, noStrike: undefined });
+        return { ...built, ...(built.strike && state.flow.strikeBonus?.[f.id] ? { strikeBonus: state.flow.strikeBonus[f.id] } : {}) };
+      }),
   ) as [Fighter[], Fighter[]];
   const sideOfFight = (i: 0 | 1) => {
     const found = new Set(front[i].map(id => state.models[id] && sideOf(catalog, state.models[id])));
     return found.size === 1 ? [...found][0] : undefined;
   };
   const [a, b] = [sideOfFight(0), sideOfFight(1)];
-  const elven = [0, 1].map(i => front[i].some(id => state.models[id] && hasElvenWeapon(catalog, state.models[id]))) as [boolean, boolean];
+  // A Shielding model isn't using its weapon, Elven or not.
+  const elven = [0, 1].map(i => !shields[i] && front[i].some(id => state.models[id] && hasElvenWeapon(catalog, state.models[id]))) as [boolean, boolean];
   const draw: DrawRule | undefined = a && b && a !== b ? { good: a === 'Good' ? 0 : 1, elven } : undefined;
   return { ...fresh, sides, ...(draw ? { draw } : {}) };
 }
@@ -85,8 +101,8 @@ function prepareFight(state: GameState, catalog: Catalog | null, req: FightReque
  * its numbers, Bladewrath makes its strikes Strength 6, Enchant Blades re-rolls its misses, a Paralysed model adds
  * nothing, and a Transfixed, Prone or thrown one makes no strikes.
  */
-export function adjustFight(state: GameState, req: FightRequest): FightRequest {
-  const adjust = (f: Fighter): Fighter => {
+export function adjustFight(state: GameState, req: FightRequest, catalog: Catalog | null = null): FightRequest {
+  const adjust = (f: Fighter, i: number): Fighter => {
     const m = state.models[f.id];
     if (!m) return f;
     const out: Fighter = { ...f, s: witheredStrength(m, f.s) };
@@ -100,9 +116,11 @@ export function adjustFight(state: GameState, req: FightRequest): FightRequest {
     const foes = req.sides.flat().filter(x => !x.support && state.models[x.id] && state.models[x.id].owner !== m.owner).map(x => x.id);
     const rival = (state.flow.challenges ?? []).map(c => (c.by === m.id ? c.target : c.target === m.id && c.accepted ? c.by : undefined)).find(id => id && foes.includes(id));
     if (rival && !f.support) Object.assign(out, { a: Math.min(10, out.a + 1), rival });
+    // What its strikes need against each enemy it could strike (Hatred, Ancient Enemies, Blades of the Dead).
+    if (catalog) out.vs = Object.fromEntries(req.sides[1 - i].filter(t => !t.support).map(t => [t.id, strikeAgainst(catalog, state, out, t)]));
     return out;
   };
-  return { ...req, sides: [req.sides[0].map(adjust), req.sides[1].map(adjust)] };
+  return { ...req, sides: [req.sides[0].map(f => adjust(f, 0)), req.sides[1].map(f => adjust(f, 1))] };
 }
 
 /**
@@ -150,7 +168,7 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       // The player with Priority picks the order the fights are rolled in, so they start each one.
       if (state.flow.started && state.phase === 'fight' && state.priority && seat !== state.priority) return null;
       const fresh = prepareFight(state, catalog, cleanFight(action.fight));
-      const req = fresh && adjustFight(state, fresh);
+      const req = fresh && adjustFight(state, fresh, catalog);
       if (!req || (state.flow.started && req.combat && fightDone(state, combatFromKey(state, req.combat) ?? { key: req.combat, p1: [], p2: [] })) || duelOpen(state, req.sides.flat().map(f => f.id))) return null;
       return { apply: resolveDuel(req, d6, seat, `f-${uid()}`, now).map(roll => ({ type: 'rolled', roll })) };
     }
@@ -158,7 +176,7 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       const group = String(action.group ?? '');
       const rolls = state.log.filter(r => r.group === group);
       const fresh = prepareFight(state, catalog, cleanFight(action.fight), rolls);
-      const req = fresh && adjustFight(state, fresh);
+      const req = fresh && adjustFight(state, fresh, catalog);
       // Strikes follow a duel that's still in the log, once.
       if (!req || !group.startsWith('f-') || !rolls.some(r => r.side !== undefined) || rolls.some(r => duelSettled(r))) return null;
       // Supporting models aren't in the fight: they neither back away nor get up.
@@ -240,7 +258,9 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       const stats = modelStats(catalog, target);
       const dOf = (id: string) => modelStats(catalog, state.models[id])?.D ?? 4;
       req.shooter = { ...req.shooter, name: shooter.name, weapon: plan.weapon.name, shoot: plan.need, s: plan.weapon.s, shots: plan.shots };
-      req.target = { id: target.id, name: target.name, d: stats?.D ?? req.target.d };
+      req.target = { id: target.id, name: target.name, d: plan.d ?? stats?.D ?? req.target.d };
+      if (plan.ones) req.ones = true;
+      if (plan.bane) req.bane = true;
       req.inWay = plan.inWay.slice(0, 6).map(o => (o.model ? { name: o.name, id: o.model, d: dOf(o.model) } : { name: o.name }));
       req.obstacles = req.inWay.length;
       const stray = plan.fight?.[0];
@@ -257,6 +277,14 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       if (state.flow.shotPause) return null;
       const group = `s-${uid()}`;
       return { apply: [...before, ...shotActions(state, req, shooter, d6, seat, group, now, [])] };
+    }
+    case 'banner': {
+      // A banner nearby lets a side in a fight re-roll one of its duel dice.
+      const r = state.log.find(x => x.id === String(action.roll));
+      const k = Math.round(Number(action.die));
+      const flag = r && bannerFor(state, catalog, r, seat);
+      if (!r || !flag || !(k >= 0 && k < r.dice.length)) return null;
+      return { apply: [{ type: 'bannerRolled', roll: r.id, die: k, value: d6(), by: flag.name }] };
     }
     case 'shotOn': {
       // Carrying on with a shot that stopped for its hero to spend Might.

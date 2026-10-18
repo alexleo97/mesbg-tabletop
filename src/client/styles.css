@@ -256,6 +256,8 @@ label.check input { width: auto; min-height: 0; }
 .die-wrap { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; }
 button.might { min-height: 0; padding: 0 5px; font-size: 0.7rem; line-height: 1.4; border-color: var(--gold); color: var(--gold); border-radius: 6px; }
 button.might.will { border-color: var(--mark); color: var(--mark); margin-left: 2px; }
+button.might.banner { border-color: var(--ok); color: var(--ok); margin-left: 2px; }
+.gear-tag { border-color: var(--line); color: var(--muted); }
 .might-tag { color: var(--gold); font-size: 0.75rem; margin-left: auto; }
 .duel-lead { margin: 6px 0; }
 small.muted, p.small { font-size: 0.8rem; }

@@ -7,6 +7,7 @@ import { combats } from './flow.ts';
 import { basePerimeter, distanceBetween, distanceToBase, type Point } from './geometry.ts';
 import { formatNeed, woundNeed } from './rules.ts';
 import { insidePolygon, outline } from './sight.ts';
+import { guards } from './wargear.ts';
 import type { Action, DiceRoll, GameState, Model, ModelEffect, Seat, SpellPending } from './types.ts';
 
 interface PowerInfo {
@@ -132,7 +133,7 @@ export function courageAuto(state: GameState, catalog: Catalog | null, m: Model)
       distanceBetween(c, m) <= AURA_RANGE &&
       effectsOn(state, c).some(e => e.by === c.id && basePower(e.power) === 'Fury' && hasKeyword(catalog, m, e.power.match(/\((.*)\)/)?.[1] ?? '')),
   );
-  return fury ? 'Fury' : null;
+  return fury ? 'Fury' : guards(state, catalog, m);
 }
 
 /** How much worse than its profile a model's Courage is now: Drain Courage, and an enemy Aura of Dismay. */

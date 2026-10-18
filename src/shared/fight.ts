@@ -30,6 +30,33 @@ export interface Fighter {
    * at its own Fight and makes one strike if its side wins.
    */
   support?: boolean;
+  // Worked out by the game from the model's wargear and special rules (see wargear.fighterOf), bar the two choices:
+  /** Chosen: Shielding, so twice the Attacks and no strikes. */
+  shielding?: boolean;
+  /** Chosen (or forced): fighting with a two-handed weapon. */
+  twoHanded?: boolean;
+  /** Added to each of its duel dice (two-handed weapons, banners, unarmed); with `sixSafe` a natural 6 stays a 6. */
+  duelMod?: number;
+  sixSafe?: boolean;
+  /** Added to its To Wound rolls (two-handed weapons, unarmed). */
+  woundMod?: number;
+  /** Re-rolls natural 1s to wound (Poisoned Attacks). */
+  ones?: boolean;
+  /** Each strike that wounds does 2 (Mighty Blow). */
+  mighty?: boolean;
+  /** +1 to wound a trapped enemy (Backstabbers). */
+  backstab?: boolean;
+  /** Its strikes treat Defence as 10 minus the target's Courage (Blades of the Dead). */
+  blades?: boolean;
+  /** Kinds it hates (+1 to wound) and its ancient enemies (re-roll 1s to wound). */
+  hates?: string[];
+  ancient?: string[];
+  /** Its Courage, for an enemy with Blades of the Dead. */
+  c?: number;
+  /** Per enemy: the Defence its strikes roll against, the bonus to wound and whether 1s are re-rolled (see resolve.adjustFight). */
+  vs?: Record<string, { d: number; wound: number; ones: boolean }>;
+  /** What its wargear and rules do, for the fight card. */
+  notes?: string[];
 }
 
 /** How a fight tied on dice and Fight is settled: which side is Good, and which sides fight with Elven weapons. */
@@ -65,6 +92,9 @@ export interface ShotRequest {
   stray?: { id: string; name: string; d: number };
   /** Heroic Accuracy: failed In the Way tests are re-rolled. */
   rerolls?: boolean;
+  /** To wound, re-roll 1s (Poisoned Attacks) or every miss (Bane of Kings). */
+  ones?: boolean;
+  bane?: boolean;
 }
 
 export interface FightOutcome {
@@ -100,6 +130,8 @@ export function cleanFight(raw: unknown): FightRequest | null {
       ...(f?.strike === true ? { strike: true } : {}),
       ...(f?.defence === true ? { defence: true } : {}),
       ...(f?.support === true ? { support: true } : {}),
+      ...(f?.shielding === true ? { shielding: true } : {}),
+      ...(f?.twoHanded === true ? { twoHanded: true } : {}),
     }));
   const sides: [Fighter[], Fighter[]] = [side(o.sides[0]), side(o.sides[1])];
   if (!sides[0].length || !sides[1].length) return null;
@@ -127,7 +159,17 @@ export const woundsTaken = (applied: string[] | undefined, group: string, victim
 export function strikeWounds(rolls: DiceRoll[]): number {
   return rolls
     .filter(r => r.against && r.target)
-    .reduce((n, r) => n + (r.then && r.follow ? r.follow.filter(d => d >= r.then!).length : r.dice.filter(d => d >= r.target!).length), 0);
+    .reduce((n, r) => n + (r.then && r.follow ? r.follow.filter(d => d >= r.then!).length : r.dice.filter(d => d >= r.target!).length) * (r.per ?? 1), 0);
+}
+
+/** A die in a duel as it counts: with its model's modifier, though some keep a natural 6 a 6. */
+export const duelScore = (r: DiceRoll, d: number) => (r.mod && !(r.sixSafe && d === 6) ? Math.max(1, Math.min(6, d + r.mod)) : d);
+
+/** A To Wound need made easier (a positive bonus) or harder, on both dice of a 6/4+ need; never better than 2+ or worse than 6+. */
+export function shiftNeed(need: { target: number; then?: number }, bonus: number): { target: number; then?: number } {
+  if (!bonus) return need;
+  const at = (n: number) => Math.max(2, Math.min(6, n - bonus));
+  return need.then ? { target: at(need.target), then: at(need.then) } : { target: at(need.target) };
 }
 
 /** Rolls the duel: one roll per model so each hero can spend Might on its own dice. Heroic Strike's D3 comes first. */
@@ -146,7 +188,14 @@ export function resolveDuel(req: FightRequest, d6: D6, by: Role, group: string, 
         fv = Math.min(10, fv + bonus);
         if (f.strikeBonus === undefined) push(`Heroic Strike: ${f.name} +${bonus} Fight`, [bonus], { model: f.id });
       }
-      push(`${f.support ? 'Supporting' : 'Duel'}: ${f.name} (F${fv})`, Array.from({ length: f.support ? 1 : f.a }, d6), { model: f.id, f: fv, side: i as 0 | 1, ...(f.support ? { support: true } : {}) });
+      const mod = f.duelMod ? `, ${f.duelMod > 0 ? '+' : ''}${f.duelMod}${f.sixSafe ? ' bar 6s' : ''}` : '';
+      push(`${f.support ? 'Supporting' : f.shielding ? 'Shielding' : 'Duel'}: ${f.name} (F${fv}${mod})`, Array.from({ length: f.support ? 1 : f.a }, d6), {
+        model: f.id,
+        f: fv,
+        side: i as 0 | 1,
+        ...(f.support ? { support: true } : {}),
+        ...(f.duelMod ? { mod: f.duelMod, ...(f.sixSafe ? { sixSafe: true } : {}) } : {}),
+      });
     }
   });
   return rolls;
@@ -155,7 +204,7 @@ export function resolveDuel(req: FightRequest, d6: D6, by: Role, group: string, 
 /** Who is winning a duel from its rolls (after any Might): the highest die, then the highest Fight; null if it needs a roll-off. */
 export function duelLeader(rolls: DiceRoll[]): { winner: 0 | 1; how: 'dice' | 'fight' } | null {
   const duel = rolls.filter(r => r.side !== undefined && r.f !== undefined);
-  const best = [0, 1].map(s => Math.max(0, ...duel.filter(r => r.side === s).flatMap(r => r.dice)));
+  const best = [0, 1].map(s => Math.max(0, ...duel.filter(r => r.side === s).flatMap(r => r.dice.map(d => duelScore(r, d)))));
   const fight = [0, 1].map(s => Math.max(0, ...duel.filter(r => r.side === s).map(r => r.f!)));
   if (best[0] !== best[1]) return { winner: best[0] > best[1] ? 0 : 1, how: 'dice' };
   if (fight[0] !== fight[1]) return { winner: fight[0] > fight[1] ? 0 : 1, how: 'fight' };
@@ -213,13 +262,16 @@ export function resolveStrikes(req: FightRequest, duel: DiceRoll[], d6: D6, by: 
     const at = Array.from({ length: count }, (_, i) => aimed[i] ?? main);
     for (const target of [...new Set(at)]) {
       const n = at.filter(t => t === target).length;
-      const plain = woundNeed(f.s, target.d);
-      // A Heroic Challenge: +1 to wound the rival hero.
-      const base = plain && f.rival === target.id ? (plain.then ? { ...plain, then: Math.max(2, plain.then - 1) } : { target: Math.max(2, plain.target - 1) }) : plain;
+      const trapped = isTrapped(target);
+      // Its wargear and rules against this enemy (two-handed weapons, Hatred and so on), a Heroic Challenge's rival,
+      // and Backstabbers against a trapped enemy.
+      const vs = f.vs?.[target.id] ?? { d: target.d, wound: f.woundMod ?? 0, ones: !!f.ones };
+      const plain = woundNeed(f.s, vs.d);
+      const bonus = vs.wound + (f.rival === target.id ? 1 : 0) + (f.backstab && trapped ? 1 : 0);
+      const base = plain && shiftNeed(plain, bonus);
       // Heroic Defence: only natural 6s wound (both dice for 6/4+ style results).
       const need = base && target.defence ? { target: 6, ...(base.then ? { then: 6 } : {}) } : base;
       if (!need) continue;
-      const trapped = isTrapped(target);
       let strikes = n * (trapped ? 2 : 1);
       if (defended && defended.attackers === winner) {
         // Striking over the defences: only those that get past them can wound.
@@ -229,11 +281,13 @@ export function resolveStrikes(req: FightRequest, duel: DiceRoll[], d6: D6, by: 
         strikes = through;
         if (!strikes) continue;
       }
-      let dice = Array.from({ length: strikes }, d6);
-      if (f.reroll) dice = dice.map(d => (d >= need.target ? d : d6()));
-      const follow = need.then ? dice.filter(d => d >= need.target).map(d6).map(d => (f.reroll && d < need.then! ? d6() : d)) : undefined;
-      const label = `${f.name} strikes ${target.name}${trapped ? ', trapped,' : ''}${f.reroll ? ', re-rolling misses,' : ''} (${formatNeed(need)})`;
-      push(label, dice, { target: need.target, against: target.id, model: f.id, ...(need.then ? { then: need.then, follow } : {}) });
+      // Misses are re-rolled (Enchant Blades, Bane of Kings), or else just 1s (Poisoned Attacks, Ancient Enemies).
+      const again = (d: number, at: number) => (f.reroll ? (d >= at ? d : d6()) : vs.ones && d === 1 ? d6() : d);
+      const dice = Array.from({ length: strikes }, d6).map(d => again(d, need.target));
+      const follow = need.then ? dice.filter(d => d >= need.target).map(d6).map(d => again(d, need.then!)) : undefined;
+      const how = [trapped && 'trapped', f.reroll ? 're-rolling misses' : vs.ones && 're-rolling 1s', bonus > 0 && `+${bonus} to wound`, bonus < 0 && `${bonus} to wound`, f.mighty && '2 wounds each'].filter(Boolean).join(', ');
+      const label = `${f.name} strikes ${target.name}${how ? `, ${how},` : ''} (${formatNeed(need)})`;
+      push(label, dice, { target: need.target, against: target.id, model: f.id, ...(need.then ? { then: need.then, follow } : {}), ...(f.mighty ? { per: 2 } : {}) });
     }
   }
   const hits = losers.map(t => ({ target: t, wounds: strikeWounds(rolls.filter(r => r.against === t.id)) })).filter(h => rolls.some(r => r.against === h.target.id));
@@ -288,6 +342,8 @@ export function cleanPausedShot(raw: unknown): ShotRequest | null {
     ...(inWay ? { inWay, obstacles: inWay.length } : {}),
     ...(o.stray?.id ? { stray: { id: str(o.stray.id, 64), name: str(o.stray.name, 40), d: clamp(o.stray.d, 1, 10, 4) } } : {}),
     ...(o.rerolls === true ? { rerolls: true } : {}),
+    ...(o.ones === true ? { ones: true } : {}),
+    ...(o.bane === true ? { bane: true } : {}),
   };
 }
 
@@ -370,7 +426,11 @@ export function resolveShot(req: ShotRequest, d6: D6, by: Role, group: string, n
     const need = woundNeed(shooter.s, v.d);
     if (!need) continue;
     const r = take(`To wound ${v.name}: S${shooter.s} vs D${v.d} (${formatNeed(need)})`, v.count, { target: need.target, against: v.id, model: shooter.id }, need.then);
-    hits.push({ id: v.id, wounds: strikeWounds([r]) });
+    let wounds = strikeWounds([r]);
+    // Poisoned shots re-roll their 1s, Bane of Kings every die that didn't wound (the first die of a 6/4+ need).
+    const again = req.bane ? r.dice.filter(d => d < need.target).length : req.ones ? r.dice.filter(d => d === 1).length : 0;
+    if (again) wounds += strikeWounds([take(`To wound ${v.name} again: ${req.bane ? 'misses' : '1s'} re-rolled (${formatNeed(need)})`, again, { target: need.target, against: v.id, model: shooter.id }, need.then)]);
+    hits.push({ id: v.id, wounds });
   }
   const onTarget = hits.find(h => h.id === target.id)?.wounds ?? 0;
   const others = struck.filter(v => v.id !== target.id).map(v => v.name);

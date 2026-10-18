@@ -9,6 +9,7 @@ import { carriedBy, markerActions, OBJECT_NAMES } from '../shared/objects.ts';
 import { causesTerror } from '../shared/courage.ts';
 import { effectNotes, heldBy } from '../shared/powers.ts';
 import { isThrowing, planShot, shooterBlocked, throwingPoint, weaponFor } from '../shared/shooting.ts';
+import { cloaked, stones } from '../shared/wargear.ts';
 import { flooredAt, floorHeight, floorName, sightTo, standingAt } from '../shared/sight.ts';
 import RULES from '../data/special-rules.json';
 import { CastBox } from './MagicPanel.tsx';
@@ -35,7 +36,8 @@ interface Props {
 }
 
 /** What the gear of a model says it can shoot with, if anything. */
-export const weaponOf = (m: Model, catalog: Catalog | null) => weaponFor(catalog, m);
+/** Its missile weapon, or the stones it can throw (Throw Stones). */
+export const weaponOf = (m: Model, catalog: Catalog | null) => weaponFor(catalog, m) ?? stones(catalog, m);
 
 /** A hero's Might, Will or Fate as pips: filled for what's left, hollow for what's been spent. The game spends them. */
 function Points({ label, value, max }: { label: string; value: number; max: number }) {
@@ -212,12 +214,13 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
     else {
       const plan = planShot(state, catalog, m, target, { charge });
       const tStats = modelStats(catalog, target);
-      const d = tStats?.D ?? 4;
+      const d = plan.d ?? tStats?.D ?? 4;
       const need = woundNeed(weapon.s, d);
       const stand = charge ? throwingPoint(state, m, target) : null;
       const why = plan.why ?? (charge && !stand ? `can’t get within 1" of ${target.name} to throw` : undefined);
       const ok = !why && !!need && phaseAllows(state, role, { type: 'shoot', shot: { shooter: { id: m.id }, charge } });
-      const harder = [plan.moved ? '1 worse for moving' : '', plan.need > plan.printed + (plan.moved ? 1 : 0) ? 'a power makes it harder' : ''].filter(Boolean).join(', ');
+      const cloak = cloaked(catalog, target);
+      const harder = [plan.moved ? '1 worse for moving' : '', cloak ? '1 worse for its Elven cloak' : '', plan.need > plan.printed + (plan.moved ? 1 : 0) + (cloak ? 1 : 0) ? 'a power makes it harder' : ''].filter(Boolean).join(', ');
       const stray = plan.fight?.[0] ? state.models[plan.fight[0]] : undefined;
       action = (
         <div className="aim-card">
@@ -234,6 +237,8 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
                 : 'Nothing is in the way.'}
               {stray ? ` ${target.name} is in a fight: on a 1-3 the shot hits ${stray.name} instead.` : ''}
               {plan.rerolls ? ' Heroic Accuracy re-rolls failed In the Way rolls.' : ''}
+              {plan.d !== undefined && plan.d > (tStats?.D ?? 4) ? ` ${target.name}'s light armour gives it D${plan.d} against shots.` : ''}
+              {plan.bane ? ' Bane of Kings re-rolls every To Wound die that misses.' : plan.ones ? ' Poisoned: 1s to wound are re-rolled.' : ''}
               {charge ? ` ${m.name} stops 1" short to throw, then must charge ${target.name} unless the throw slays it.` : ''}
             </p>
           )}
