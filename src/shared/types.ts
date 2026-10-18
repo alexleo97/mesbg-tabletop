@@ -95,6 +95,10 @@ export interface Model {
   /** Wounds a war beast has taken that it still has to test for Stampede, and whether it failed one (it Stampedes as it next moves). */
   stampedeTests?: number;
   stampede?: boolean;
+  /** A siege engine, large or small (see siege.ts): it never moves or acts by itself. */
+  siege?: 'large' | 'small';
+  /** The siege engine whose crew it is. */
+  crewOf?: string;
 }
 
 /** A power at work on a model: which one, who cast it and the turn it was cast. */
@@ -349,6 +353,10 @@ export interface Flow {
   hurledAt?: string[];
   /** War beasts and chariots that have made their move this turn. */
   trampled?: string[];
+  /** Siege engines turned this turn, which shoot 1 worse. */
+  turned?: string[];
+  /** The Iron Hills Ballista's grapnel lines this turn, from the engine to where each bolt struck: shots can't cross them. */
+  cables?: [number, number, number, number][];
   /**
    * A monster that barged its foes aside: how far it may now move (and charge) this Fight phase, and how many fights
    * had been fought when it did (so it can fight once more).
@@ -485,6 +493,7 @@ export type Action =
   | { type: 'trampled'; id: string; from: [number, number]; target?: string }
   /** Before the battle, a warrior climbs into its war beast's Howdah (or, with no beast, climbs out). */
   | { type: 'board'; id: string; beast?: string }
+  | { type: 'cable'; from: [number, number]; to: [number, number] }
   /** Server only: a monster made its Brutal Power Attack this turn (and barged, with a free move, or hurled at someone). */
   | { type: 'brutal'; id: string; barge?: number; hurledAt?: string }
   | { type: 'bannerRolled'; roll: string; die: number; value: number; by: string }

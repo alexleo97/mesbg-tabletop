@@ -13,6 +13,8 @@ import { cloaked, stones } from '../shared/wargear.ts';
 import { mounted, mountLabel, mountOf } from '../shared/cavalry.ts';
 import { commanderStats, howdahFor, immovable } from '../shared/warBeasts.ts';
 import { BeastPanel } from './BeastPanel.tsx';
+import { SiegePanel } from './SiegePanel.tsx';
+import { rapidFire, siegeTarget } from '../shared/siege.ts';
 import { flooredAt, floorHeight, floorName, sightTo, standingAt } from '../shared/sight.ts';
 import RULES from '../data/special-rules.json';
 import { CastBox } from './MagicPanel.tsx';
@@ -121,7 +123,7 @@ function TerrainMoves({ state, dispatch, m }: { state: GameState; dispatch: (a: 
         </button>
       </div>
     );
-  if (!m.prone && !m.aboard && !immovable(null, m) && left !== null && left + 1e-6 >= m.move / 2 && !state.flow.stood?.includes(m.id) && !engaged(state, m))
+  if (!m.prone && !m.aboard && !m.siege && !immovable(null, m) && left !== null && left + 1e-6 >= m.move / 2 && !state.flow.stood?.includes(m.id) && !engaged(state, m))
     return (
       <div className="row wrap terrain-test">
         <button className="small" title={`Lying down costs half its Move and ends its move. Prone, it is half as tall for sight but has no Control Zone.`} onClick={() => dispatch({ type: 'lieDown', id: m.id })}>
@@ -167,6 +169,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
   /** A Sharpshooter's pick: aim at a rider's mount rather than the rider. */
   const [atMount, setAtMount] = useState(false);
   const [atHowdah, setAtHowdah] = useState(false);
+  const [heads, setHeads] = useState(false);
   const seen = target ? sightTo(state, m, target) : null;
   const up = Math.round(standingAt(state, m) * 10) / 10;
   // Inside a building with floors, the model's player picks which level it stands on (climbing costs Move in the battle).
@@ -248,6 +251,8 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
         <div className="aim-card">
           <p>
             {charge ? 'Throw at' : 'At'} <b>{target.name}</b>: {formatInches(plan.dist)} of {weapon.range}". Hits on {plan.need}+{harder ? ` (${harder})` : ''}, wounds on {formatNeed(need)}
+            {m.siege && rapidFire(catalog, m) ? ', D6 bolts (rolled when it shoots)' : ''}
+            {m.siege && !rapidFire(catalog, m) ? (siegeTarget(target) ? (rulesOf(m, catalog).includes('Wall-breaker') ? ', and Wall-breaker makes each wound D3' : '') : `, and a wound slays ${target.maxWounds >= 10 ? 'half its Wounds' : 'it outright'}`) : ''}
             {plan.shots > 1 ? (m.beast === 'war' ? `, ${plan.shots} shots (one for each Wound the Howdah has left)` : `, ${plan.shots} shots (it didn't move)`) : ''}.
           </p>
           {why && <p className="warn">{m.name} {why}.</p>}
@@ -262,6 +267,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
               {plan.rerolls ? ' Heroic Accuracy re-rolls failed In the Way rolls.' : ''}
               {plan.d !== undefined && plan.d > (tStats?.D ?? 4) ? ` ${target.name}'s light armour gives it D${plan.d} against shots.` : ''}
               {plan.bane ? ' Bane of Kings re-rolls every To Wound die that misses.' : plan.ones ? ' Poisoned: 1s to wound are re-rolled.' : ''}
+              {m.siege && !rapidFire(catalog, m) ? ` A miss veers off and is lost; ${rulesOf(m, catalog).includes('Accurate') ? 'a hit lands within 3"' : 'a hit scatters up to 6"'} and strikes whoever is there.${rulesOf(m, catalog).includes('Arcing Shot') ? ' Arcing Shot: it can fire over walls and at anyone a friend can see.' : ''}` : ''}
               {charge ? ` ${m.name} stops 1" short to throw, then must charge ${target.name} unless the throw slays it.` : ''}
             </p>
           )}
@@ -273,7 +279,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
               onClick={() =>
                 dispatch({
                   type: 'shoot',
-                  shot: { shooter: { id: m.id, name: m.name, weapon: weapon.name, shoot: plan.printed, s: weapon.s, shots: plan.shots }, target: { id: target.id, name: target.name, d }, obstacles: plan.inWay.length, ...(charge ? { charge: true } : {}), ...(sharp && atMount ? { atMount: true } : {}), ...(howdah && atHowdah ? { atHowdah: true } : {}) },
+                  shot: { shooter: { id: m.id, name: m.name, weapon: weapon.name, shoot: plan.printed, s: weapon.s, shots: plan.shots }, target: { id: target.id, name: target.name, d }, obstacles: plan.inWay.length, ...(charge ? { charge: true } : {}), ...(sharp && atMount ? { atMount: true } : {}), ...(howdah && atHowdah ? { atHowdah: true } : {}), ...(m.siege && heads && m.options?.includes('Severed Heads') ? { heads: true } : {}) },
                 })
               }
             >
@@ -283,6 +289,11 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
             {sharp && (
               <label className="check small">
                 <input type="checkbox" checked={atMount} onChange={e => setAtMount(e.target.checked)} /> Sharpshooter: aim at the {mountLabel(steed!.name).toLowerCase()}
+              </label>
+            )}
+            {m.siege && m.options?.includes('Severed Heads') && (
+              <label className="check small" title="No wound: the model hit and every enemy within 3&quot; of it test their Courage, and flee if they fail.">
+                <input type="checkbox" checked={heads} onChange={e => setHeads(e.target.checked)} /> Throw severed heads
               </label>
             )}
             {howdah && (
@@ -428,6 +439,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
       )}
       {action}
       <BeastPanel state={state} catalog={catalog} dispatch={dispatch} role={role} m={m} />
+      <SiegePanel state={state} catalog={catalog} dispatch={dispatch} role={role} m={m} />
       {mine && state.phase === 'move' && state.flow.started && !held && <TerrainMoves state={state} dispatch={dispatch} m={m} />}
       {mine && state.phase === 'fight' && state.flow.started && !m.dead && <BackAwayPicker state={state} dispatch={dispatch} m={m} />}
       {mine && state.phase === 'move' && <CastBox state={state} dispatch={dispatch} role={role} model={m} />}

@@ -33,6 +33,8 @@ export interface ListEntry {
   /** A war beast or chariot, and a war beast's Howdah's wounds (see warBeasts.ts). */
   beast?: 'war' | 'chariot';
   howdahWounds?: number;
+  /** A siege engine (see siege.ts). */
+  siege?: 'large' | 'small';
 }
 
 const NAME_KEYS = ['name', 'profile_origin', 'model_name', 'unit_name', 'title'];
@@ -356,6 +358,7 @@ function makeModel(m: Pending, owner: Seat, x: number, y: number): Model {
     ...(m.e.mount ? { mount: m.e.mount, ...(m.e.mountWounds ? { mountWounds: m.e.mountWounds } : {}) } : {}),
     ...(m.e.beast ? { beast: m.e.beast } : {}),
     ...(m.e.howdahWounds ? { howdahWounds: m.e.howdahWounds } : {}),
+    ...(m.e.siege ? { siege: m.e.siege, move: 0 } : {}),
   };
   return model;
 }

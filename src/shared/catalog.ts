@@ -1,6 +1,7 @@
 import { mountBase } from './bases.ts';
 import { mountName, mountProfile, steedStats } from './cavalry.ts';
 import { commanderStats, howdahFor } from './warBeasts.ts';
+import { crewList, crewStats, engineSize } from './siege.ts';
 import { guessBase, type ListEntry } from './importList.ts';
 import type { Base } from './types.ts';
 
@@ -108,6 +109,9 @@ export function modelStats(catalog: Catalog | null | undefined, m: { profileId?:
   // A war beast's Commander has a profile of its own.
   const commander = unit.rules.includes('Trample') ? commanderStats(unit.name, m!.name) : undefined;
   if (commander) return { ...commander };
+  // So do a siege engine's crew.
+  const crew = unit.type === 'Siege Engine' ? crewStats(unit.name, m!.name) : undefined;
+  if (crew) return { ...crew };
   const stats = statsWithOptions(unit, unit.options.filter(o => m!.options?.includes(o.name)).map(o => o.id));
   if (!stats) return null;
   const out: Partial<Record<StatName, number>> = {};
@@ -138,6 +142,21 @@ function wargearMount(unit: CatalogUnit): { name: string; mv: number } | undefin
  */
 export function entriesFor(id: string, unit: CatalogUnit, optionIds: string[], count: number): ListEntry[] {
   const chosen = unit.options.filter(o => optionIds.includes(o.id) || o.included);
+  // A siege engine comes with its crew: the engine itself, its Siege Veteran and the rest (see siege.ts).
+  const size = unit.type === 'Siege Engine' ? engineSize(unit.name) : undefined;
+  if (size) {
+    const w = parseInt(statsWithOptions(unit, optionIds)?.[6] ?? '3', 10) || 3;
+    const opts = chosen.map(o => o.name);
+    return [
+      { name: unit.name, count, hero: false, move: 0, wounds: w, might: 0, will: 0, fate: 0, base: guessBase(unit.name), profileId: id, options: opts, siege: size },
+      ...crewList(unit.name).reduce<ListEntry[]>((all, c) => {
+        const same = all.find(x => x.name === c.name);
+        if (same) same.count += count;
+        else all.push({ name: c.name, count, hero: c.hero, move: c.stats.Mv, wounds: c.stats.W ?? 1, might: c.hero ? 1 : 0, will: c.hero ? 1 : 0, fate: c.hero ? 1 : 0, base: { shape: 'round', w: c.base, h: c.base }, profileId: id, options: [] });
+        return all;
+      }, []),
+    ];
+  }
   const chosenMount = chosen.find(o => o.mount);
   const riding = mountName(unit, chosen.map(o => o.name));
   const mountFull = mountProfile(riding)?.w;

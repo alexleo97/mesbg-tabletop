@@ -36,7 +36,8 @@ export function castTargets(state: GameState, caster: Model, range: number, powe
   if (untargeted(power, range)) return [caster];
   const reach = isLinePower(power) ? 200 : range;
   return Object.values(state.models)
-    .filter(t => t.id !== caster.id && !t.dead && !t.waiting && !t.escaped && distanceBetween(caster, t) <= reach && (isLinePower(power) || sightTo(state, caster, t) !== 'hidden'))
+    // (A siege engine shrugs off every power.)
+    .filter(t => t.id !== caster.id && !t.dead && !t.waiting && !t.escaped && !t.siege && distanceBetween(caster, t) <= reach && (isLinePower(power) || sightTo(state, caster, t) !== 'hidden'))
     .filter(t => !power || fitsTarget(state, catalog, caster, power, t))
     .sort((a, b) => Number(a.owner === caster.owner) - Number(b.owner === caster.owner) || distanceBetween(caster, a) - distanceBetween(caster, b));
 }

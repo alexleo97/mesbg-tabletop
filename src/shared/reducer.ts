@@ -1,12 +1,13 @@
 import { bookBase, round } from './bases.ts';
 import { mounted, mountProfile } from './cavalry.ts';
 import { boardCommanders, carried, howdahFor, howdahSpot } from './warBeasts.ts';
+import { assignCrew, pushers } from './siege.ts';
 import { holdInZones } from './deployment.ts';
 import { heroicInfo, heroicNow, heroicQueue, mayActivate, shoutedFor, SHOUT_RANGE } from './heroics.ts';
 import { pendingSpell } from './magic.ts';
 import { basePower, cannotAct, effectActive } from './powers.ts';
-import { engaged as engagedNow, finishCharge, fightsAgain, limitMove, marchedBy, marchRange, moveAllowance, movedAtAll, movedTooFar, moveLeft, moveStart } from './movement.ts';
-import { FLOORED, floorHeight, flooredAt } from './sight.ts';
+import { basesOverlap, engaged as engagedNow, finishCharge, fightsAgain, limitMove, marchedBy, marchRange, moveAllowance, movedAtAll, movedTooFar, moveLeft, moveStart } from './movement.ts';
+import { FLOORED, floorHeight, flooredAt, insidePolygon, isDifficult, outline } from './sight.ts';
 import { cleanPausedShot, woundsTaken } from './fight.ts';
 import { pairOff } from './flow.ts';
 import { crossingAhead } from './terrainTests.ts';
@@ -79,7 +80,7 @@ function goToPhase(state: GameState, phase: Phase, turn: number, newTurn: boolea
       done: [],
       resolved: newTurn ? [] : state.flow.resolved,
       heroics: newTurn ? [] : state.flow.heroics,
-      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], moved: [], cast: [], spell: undefined, held: [], stood: [], climbed: {}, compel: undefined, supported: [], strikeBonus: {}, charges: {}, brutal: [], hurledAt: [], trampled: [] } : {}),
+      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], moved: [], cast: [], spell: undefined, held: [], stood: [], climbed: {}, compel: undefined, supported: [], strikeBonus: {}, charges: {}, brutal: [], hurledAt: [], trampled: [], turned: [], cables: [] } : {}),
       ...(phase !== state.phase ? { compel: undefined, mustCharge: undefined } : {}),
       // The fights are paired off as the Fight phase begins, and stay that way until it ends.
       ...(phase !== state.phase ? { pairs: phase === 'fight' && state.flow.started ? pairOff(livingModels(state), { ...state, phase: 'move' }, state.flow.pairChoices).map(c => c.key) : undefined, pairChoices: undefined } : {}),
@@ -209,6 +210,10 @@ export function cleanModel(m: Partial<Model>, prev?: Model): Model | null {
   const stampedeTests = 'stampedeTests' in m ? int(m.stampedeTests, 0, 30, 0) : base.stampedeTests;
   if (beast === 'war' && stampedeTests) out.stampedeTests = stampedeTests;
   if (beast === 'war' && ('stampede' in m ? m.stampede === true : base.stampede)) out.stampede = true;
+  const siege = 'siege' in m ? (m.siege === 'large' || m.siege === 'small' ? m.siege : undefined) : base.siege;
+  if (siege) out.siege = siege;
+  const crewOf = 'crewOf' in m ? (m.crewOf ? id(m.crewOf) : undefined) : base.crewOf;
+  if (crewOf) out.crewOf = crewOf;
   return out.id ? out : null;
 }
 
@@ -394,6 +399,46 @@ function followed(state: GameState, m: Model, heroic: string | undefined): Model
 }
 
 /** Where a move from `from` towards `to` has to stop to end within 6" of `leader`: `to`, or the last point along the way that is. */
+/**
+ * Pushes (or turns) a siege engine in the Move phase, with the friends beside it: up to the Move of the slowest of
+ * them, and never into difficult ground or over a barrier. Those pushing it go along with it.
+ */
+function pushEngine(state: GameState, engine: Model, mv: { x?: unknown; y?: unknown; rot?: unknown }): { models: Record<string, Model>; starts: Record<string, [number, number]>; turned: boolean } | null {
+  if (state.phase !== 'move') return null;
+  const asked = { x: num(mv.x, -24, 200, engine.x), y: num(mv.y, -24, 200, engine.y) };
+  const rot = mv.rot === undefined ? engine.rot : num(mv.rot, -360, 720, engine.rot) % 360;
+  const turned = Math.abs(rot - engine.rot) > 0.5;
+  if (!turned && asked.x === engine.x && asked.y === engine.y) return null;
+  const crew = pushers(state, engine);
+  if (!crew || !crew.by.every(m => mayActivate(state, m))) return null;
+  const from = state.flow.starts?.[engine.id] ? { x: state.flow.starts[engine.id][0], y: state.flow.starts[engine.id][1] } : { x: engine.x, y: engine.y };
+  const d = Math.hypot(asked.x - from.x, asked.y - from.y);
+  const k = d > crew.move ? crew.move / d : 1;
+  const want = { x: from.x + (asked.x - from.x) * k, y: from.y + (asked.y - from.y) * k };
+  // Step along from where it is now, stopping short of difficult ground, a barrier or another model.
+  const rough = Object.values(state.terrain).filter(t => !t.gone && (isDifficult(t) || t.kind === 'wall' || t.kind === 'building' || t.kind === 'rock' || t.kind === 'cliff' || t.kind === 'water')).map(t => outline(t));
+  const along = new Set(crew.by.map(m => m.id));
+  const others = Object.values(state.models).filter(o => o.id !== engine.id && !along.has(o.id) && !o.dead && !o.waiting && !o.escaped && !o.aboard);
+  const steps = Math.max(1, Math.ceil(Math.hypot(want.x - engine.x, want.y - engine.y) / 0.05));
+  let at = { x: engine.x, y: engine.y };
+  for (let i = 1; i <= steps; i++) {
+    const p = { x: engine.x + ((want.x - engine.x) * i) / steps, y: engine.y + ((want.y - engine.y) * i) / steps };
+    const body = { ...engine, ...p, rot };
+    if (rough.some(poly => insidePolygon(poly, p) && !insidePolygon(poly, engine)) || others.some(o => basesOverlap(body, o))) break;
+    at = p;
+  }
+  const dx = at.x - engine.x;
+  const dy = at.y - engine.y;
+  const models: Record<string, Model> = { [engine.id]: { ...engine, ...at, rot } };
+  const starts: Record<string, [number, number]> = {};
+  if (!state.flow.starts?.[engine.id]) starts[engine.id] = [engine.x, engine.y];
+  for (const m of crew.by) {
+    models[m.id] = { ...m, x: m.x + dx, y: m.y + dy };
+    if (!state.flow.starts?.[m.id]) starts[m.id] = [m.x, m.y];
+  }
+  return { models, starts, turned };
+}
+
 function keepNear(m: Model, from: { x: number; y: number }, to: { x: number; y: number }, leader: Model): { x: number; y: number } {
   const near = (p: { x: number; y: number }) => distanceBetween({ ...m, ...p }, leader) <= Math.max(SHOUT_RANGE, marchRange(leader)) + 1e-6;
   if (near(to)) return to;
@@ -473,7 +518,7 @@ function step(state: GameState, action: Action): GameState {
       }
       // A war beast's Commander rides on it.
       const added = action.models.map(raw => (raw && typeof raw === 'object' ? String(raw.id) : '')).filter(i => models[i]);
-      return { ...state, models: boardCommanders(models, added) };
+      return { ...state, models: assignCrew(boardCommanders(models, added), added) };
     }
     case 'moveModels': {
       if (!Array.isArray(action.moves)) return state;
@@ -486,6 +531,7 @@ function step(state: GameState, action: Action): GameState {
       let climbed = state.flow.climbed;
       let charges = state.flow.charges;
       let heroicStarted = state.flow.heroicNow;
+      let turned = state.flow.turned;
       // Models moved together don't block each other.
       const together = new Set(moves.map(mv => mv && String(mv.id)));
       for (const mv of moves) {
@@ -493,6 +539,15 @@ function step(state: GameState, action: Action): GameState {
         if (!prev || prev.escaped || prev.waiting) continue;
         // Riders go where their war beast takes them.
         if (prev.aboard && models[prev.aboard] && !models[prev.aboard].dead) continue;
+        // A siege engine is pushed by the friends beside it, and goes with them (see siege.ts).
+        if (prev.siege && state.flow.started) {
+          const pushed = pushEngine({ ...state, models }, prev, mv);
+          if (!pushed) continue;
+          Object.assign(models, pushed.models);
+          starts = { ...starts, ...pushed.starts };
+          if (pushed.turned) turned = [...new Set([...(turned ?? []), prev.id])];
+          continue;
+        }
         // In the Move phase a war beast only Tramples, and a chariot only makes its Chariot Charge (see warBeasts.ts),
         // and a side with a war beast about to Stampede must let it go first.
         if (state.flow.started && state.phase === 'move' && (prev.beast || (mounted(prev) && mountProfile(prev.mount)?.chariot) || Object.values(models).some(b => b.owner === prev.owner && b.stampede && !b.dead && !state.flow.trampled?.includes(b.id)))) continue;
@@ -519,6 +574,9 @@ function step(state: GameState, action: Action): GameState {
           // A friend going with a hero (With Me, or At the Double) must end within 6" of it.
           const leader = state.phase === 'move' ? followed(state, prev, heroicStarted) : undefined;
           if (leader && !together.has(leader.id)) to = keepNear(prev, from, to, leader);
+          // A siege crew never goes more than 6" from its engine while it stands.
+          const home = prev.crewOf ? models[prev.crewOf] : undefined;
+          if (home && !home.dead) to = keepNear(prev, from, to, home);
           // A model that threw a weapon as it charged goes on into contact with its target, unless the throw slew it.
           const must = state.flow.mustCharge?.model === prev.id ? state.models[state.flow.mustCharge.target] : undefined;
           if (must && !must.dead && !inContact(state, { ...prev, ...to }, must)) to = { x: prev.x, y: prev.y };
@@ -561,8 +619,8 @@ function step(state: GameState, action: Action): GameState {
           for (const r of Object.values(models)) if (r.aboard === prev.id && !r.dead) models[r.id] = { ...r, ...carried(prev, next, r) };
       }
       const flow =
-        starts !== state.flow.starts || stood !== state.flow.stood || climbed !== state.flow.climbed || blocked !== state.flow.blocked || charges !== state.flow.charges || heroicStarted !== state.flow.heroicNow
-          ? { flow: { ...state.flow, starts, ...(stood ? { stood } : {}), ...(climbed ? { climbed } : {}), ...(blocked ? { blocked } : {}), ...(charges ? { charges } : {}), ...(heroicStarted ? { heroicNow: heroicStarted } : {}) } }
+        starts !== state.flow.starts || stood !== state.flow.stood || climbed !== state.flow.climbed || blocked !== state.flow.blocked || charges !== state.flow.charges || heroicStarted !== state.flow.heroicNow || turned !== state.flow.turned
+          ? { flow: { ...state.flow, starts, ...(stood ? { stood } : {}), ...(climbed ? { climbed } : {}), ...(blocked ? { blocked } : {}), ...(charges ? { charges } : {}), ...(heroicStarted ? { heroicNow: heroicStarted } : {}), ...(turned ? { turned } : {}) } }
           : {};
       return { ...state, models, ...flow };
     }
@@ -583,6 +641,12 @@ function step(state: GameState, action: Action): GameState {
       if (!m.stampede) return { ...state, flow };
       const { stampede: _, ...calm } = m;
       return { ...state, flow, models: { ...state.models, [m.id]: calm } };
+    }
+    case 'cable': {
+      // An Iron Hills Ballista's bolt trails its line across the battlefield until the turn ends.
+      if (!Array.isArray(action.from) || !Array.isArray(action.to)) return state;
+      const c: [number, number, number, number] = [num(action.from[0], -24, 200, 0), num(action.from[1], -24, 200, 0), num(action.to[0], -24, 200, 0), num(action.to[1], -24, 200, 0)];
+      return { ...state, flow: { ...state.flow, cables: [...(state.flow.cables ?? []), c].slice(-20) } };
     }
     case 'board': {
       // Before the battle, a warrior climbs into a war beast's Howdah, or climbs out again beside it.
@@ -642,7 +706,7 @@ function step(state: GameState, action: Action): GameState {
       // A standing model lies down for half its Move, and its move ends.
       const m = state.models[action.id];
       // Cavalry can't lie down.
-      if (!m || m.dead || m.prone || mounted(m) || !state.flow.started || state.phase !== 'move' || state.flow.stood?.includes(m.id)) return state;
+      if (!m || m.dead || m.prone || m.siege || mounted(m) || !state.flow.started || state.phase !== 'move' || state.flow.stood?.includes(m.id)) return state;
       const left = moveLeft(state, m);
       if (left === null || left + 1e-6 < m.move / 2) return state;
       return {
@@ -1268,6 +1332,8 @@ export function loadState(raw: unknown): GameState {
         ...(Array.isArray(f.brutal) ? { brutal: f.brutal.slice(0, 100).map(x => str(x, 80)) } : {}),
         ...(Array.isArray(f.hurledAt) ? { hurledAt: f.hurledAt.slice(0, 100).map(x => str(x, 80)) } : {}),
         ...(Array.isArray(f.trampled) ? { trampled: f.trampled.slice(0, 100).map(x => str(x, 80)) } : {}),
+        ...(Array.isArray(f.turned) ? { turned: f.turned.slice(0, 100).map(x => str(x, 80)) } : {}),
+        ...(Array.isArray(f.cables) ? { cables: f.cables.slice(0, 20).filter(Array.isArray).map(c => [0, 1, 2, 3].map(i => num((c as unknown[])[i], -24, 200, 0)) as [number, number, number, number]) } : {}),
         ...(f.barged && typeof f.barged === 'object' ? { barged: Object.fromEntries(Object.entries(f.barged).slice(0, 20).filter(([, v]) => Array.isArray(v)).map(([k, v]) => [str(k, 80), [num((v as unknown[])[0], 0, 12, 0), int((v as unknown[])[1], 0, 999, 0)] as [number, number]])) } : {}),
         ...(f.retreat && typeof f.retreat === 'object' ? { retreat: Object.fromEntries(Object.entries(f.retreat).slice(0, 100).filter(([, v]) => Array.isArray(v)).map(([k, v]) => [str(k, 80), [num((v as unknown[])[0], -24, 200, 0), num((v as unknown[])[1], -24, 200, 0)] as [number, number]])) } : {}),
         ...(f.mustCharge && typeof f.mustCharge === 'object' ? { mustCharge: { model: str(f.mustCharge.model, 80), target: str(f.mustCharge.target, 80) } } : {}),

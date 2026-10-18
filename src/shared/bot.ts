@@ -334,8 +334,9 @@ function moveStep(ctx: Ctx): BotStep {
   // Models that can charge go first, nearest the enemy leading, so others can join their fights; then the rest
   // from the back forward, so the line closes up rather than strings out.
   const reach = (m: Model) => nearest(m) <= m.move + 2;
+  // A siege engine doesn't move itself, and its crew stay beside it to shoot it.
   const queue = side(state, seat)
-    .filter(m => !memo.acted.includes(m.id))
+    .filter(m => !memo.acted.includes(m.id) && !m.siege && !(m.crewOf && state.models[m.crewOf] && !state.models[m.crewOf].dead))
     .sort((a, b) => Number(reach(b)) - Number(reach(a)) || (reach(a) ? nearest(a) - nearest(b) : nearest(b) - nearest(a)));
   const goals = assignGoals(ctx);
   for (const m of queue) {

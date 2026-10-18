@@ -11,6 +11,7 @@ import { brokenSideToTest, brokenTests, terrorAhead, terrorTest, willOfEvilDue, 
 import { mountName, mountProfile, riderTests, riderTestsDue } from '../src/shared/cavalry.ts';
 import { beastKind, beastTests, beastTestsDue } from '../src/shared/warBeasts.ts';
 import { chargeAim, chargesDue, straightOn, trample } from '../src/shared/trample.ts';
+import { engineSize, sabotageActions } from '../src/shared/siege.ts';
 import { settleSpell, spellReady } from '../src/shared/magic.ts';
 import { recoveryDue, recoveryRolls } from '../src/shared/powers.ts';
 import { arrivalsDue, rollArrivals } from '../src/shared/maelstrom.ts';
@@ -475,7 +476,10 @@ function apply(room: Room, action: Action) {
         const mount = m.mount || m.dismounted ? undefined : mountName(CATALOG.units[m.profileId], m.options ?? []);
         // War beasts and chariots, for lists deployed before they were recorded.
         const beast = m.beast ?? beastKind(CATALOG, m as Model);
-        return { ...m, ...(beast ? { beast } : {}), ...(CATALOG.units[m.profileId].rules.some(r => /^Fly\b/.test(r)) ? { fly: true } : {}), ...(ground.length ? { ground } : {}), ...(drum ? { drum: true } : {}), ...(mount ? { mount, mountWounds: mountProfile(mount)?.w } : {}) };
+        // Siege engines too.
+        const unit = CATALOG.units[m.profileId];
+        const siege = m.siege ?? (unit.type === 'Siege Engine' && m.name === unit.name ? engineSize(unit.name) : undefined);
+        return { ...m, ...(beast ? { beast } : {}), ...(siege ? { siege } : {}), ...(CATALOG.units[m.profileId].rules.some(r => /^Fly\b/.test(r)) ? { fly: true } : {}), ...(ground.length ? { ground } : {}), ...(drum ? { drum: true } : {}), ...(mount ? { mount, mountWounds: mountProfile(mount)?.w } : {}) };
       }),
     };
   room.state = reduce(room.state, action);
@@ -493,6 +497,7 @@ function apply(room: Room, action: Action) {
   settleSpells(room);
   rollRiderTests(room);
   rollBeastTests(room);
+  sabotageEngines(room);
   rollBrokenTests(room);
   rollReinforcements(room);
   rollGameEnd(room);
@@ -584,6 +589,20 @@ function rollBeastTests(room: Room) {
     for (const a of beastTests(room.state, CATALOG, serverDice, serverId)) apply(room, a);
   } finally {
     rollingBeasts = false;
+  }
+}
+
+/** As the turn ends, an enemy that did nothing this turn but stand beside a siege engine disables it. */
+let sabotaging = false;
+function sabotageEngines(room: Room) {
+  if (sabotaging) return;
+  const out = sabotageActions(room.state, serverId);
+  if (!out.length) return;
+  sabotaging = true;
+  try {
+    for (const a of out) apply(room, a);
+  } finally {
+    sabotaging = false;
   }
 }
 

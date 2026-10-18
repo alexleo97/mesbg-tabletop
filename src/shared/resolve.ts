@@ -2,6 +2,7 @@ import { beside, mounted, mountLabel, mountOf, onFoot, separatedMount } from './
 import { brutalOptions, chargeEffects, hurl, knockedDown } from './monsters.ts';
 import { trample } from './trample.ts';
 import { biggerHolds, commanderOf, howdahFor, immovable } from './warBeasts.ts';
+import { acrossCable, boltCount, fireEngine, rapidFire } from './siege.ts';
 import { distanceBetween } from './geometry.ts';
 import { backAway, pushBack, separate, type Retreat } from './backAway.ts';
 import { defence, touchingEnemies, wallBetween } from './barriers.ts';
@@ -362,6 +363,20 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       const fallback = { weapon: missileWeapon([req.shooter.weapon]), shoot: req.shooter.shoot };
       const plan = planShot(state, catalog, shooter, target, { charge: req.charge, fallback });
       if (plan.why || !plan.weapon) return null;
+      // A siege engine's shot is worked out its own way (see siege.ts); the Avenger Bolt Thrower looses a D6 bolts
+      // like a bow.
+      const bolts = shooter.siege && rapidFire(catalog, shooter) ? boltCount(shooter, d6) : undefined;
+      // A heavy shot across an Iron Hills Ballista's line is caught by it on a 5+.
+      if (plan.weapon.s >= 7 && acrossCable(state, shooter, target)) {
+        const d = d6();
+        const group = `s-${uid()}`;
+        if (d >= 5) return { apply: [{ type: 'rolled', roll: { id: `${group}-0`, by: seat, label: `${shooter.name}'s shot crosses the line (5+ stops it)`.slice(0, 80), dice: [d], target: 5, model: shooter.id, at: now, group, note: 'The line catches the shot.' } }] };
+      }
+      if (shooter.siege && !bolts) {
+        if (state.flow.shotPause) return null;
+        return { apply: fireEngine(state, catalog, { engine: shooter, target, need: plan.need, heads: !!req.heads && !!shooter.options?.includes('Severed Heads') }, d6, seat, `s-${uid()}`, now, uid) };
+      }
+      if (bolts) plan.shots = bolts.n;
       const stats = modelStats(catalog, target);
       const dOf = (id: string) => modelStats(catalog, state.models[id])?.D ?? 4;
       req.shooter = { ...req.shooter, name: shooter.name, weapon: plan.weapon.name, shoot: plan.need, s: plan.weapon.s, shots: plan.shots };
@@ -396,6 +411,7 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       }
       if (state.flow.shotPause) return null;
       const group = `s-${uid()}`;
+      if (bolts) before.push({ type: 'rolled', roll: { id: `${group}-bolts`, by: seat, label: `${shooter.name} looses its bolts${bolts.dice.length > 1 ? ' (Swift Reload, best of two)' : ''}`, dice: bolts.dice, model: shooter.id, at: now, group, note: `${bolts.n} shot${bolts.n === 1 ? '' : 's'}.` } });
       return { apply: [...before, ...shotActions(state, req, shooter, d6, seat, group, now, [])] };
     }
     case 'banner': {
