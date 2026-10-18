@@ -34,7 +34,9 @@ export function moveAllowance(state: GameState, m: Model): number | null {
 
 /** Whether a model is in base contact with an enemy: Engaged in Combat. */
 export function engaged(state: GameState, m: Model, except?: string): boolean {
-  return Object.values(state.models).some(e => e.owner !== m.owner && e.id !== except && !e.dead && !e.waiting && !e.escaped && Math.abs(e.x - m.x) < 5 && Math.abs(e.y - m.y) < 5 && touching(state, m, e));
+  // A siege engine is never in a fight, and nobody fights one.
+  if (m.siege) return false;
+  return Object.values(state.models).some(e => e.owner !== m.owner && e.id !== except && !e.siege && !e.dead && !e.waiting && !e.escaped && Math.abs(e.x - m.x) < 5 && Math.abs(e.y - m.y) < 5 && touching(state, m, e));
 }
 
 /**
@@ -96,7 +98,8 @@ export function blockMove(state: GameState, m: Model, from: Point, to: Point, sk
   const others = Object.values(state.models).filter(e => e.id !== m.id && !e.dead && !e.waiting && !e.escaped && !e.aboard && !skip?.has(e.id) && near(e));
   const zonesApply = state.phase === 'move' || fightsAgain(state, m);
   const enemies = zonesApply ? others.filter(e => e.owner !== m.owner) : [];
-  const zoned = enemies.filter(e => !e.prone && !engaged(state, e, m.id));
+  // (A siege engine has no control zone.)
+  const zoned = enemies.filter(e => !e.prone && !e.siege && !engaged(state, e, m.id));
   const start = at(from);
   const startD = new Map(zoned.map(e => [e.id, distanceBetween(start, e)]));
   // The enemy being charged: the nearest one the move ends within 1" of, if this model may charge and could see it.
@@ -292,7 +295,7 @@ export function finishCharge(state: GameState, m: Model, from: Point, to: Point,
   const here = { ...m, ...to };
   const before = { ...m, ...from };
   const short = Object.values(state.models).some(e => {
-    if (e.owner === m.owner || e.dead || e.waiting || e.escaped || e.prone || engaged(state, e, m.id)) return false;
+    if (e.owner === m.owner || e.dead || e.waiting || e.escaped || e.prone || e.siege || engaged(state, e, m.id)) return false;
     const d = distanceBetween(here, e);
     return d > CONTACT_SLACK && d < 1 - 1e-3 && d < distanceBetween(before, e) - 1e-3 && !touching(state, here, e);
   });

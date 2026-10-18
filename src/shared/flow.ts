@@ -25,8 +25,9 @@ export interface Combat {
  */
 function contacts(models: Model[], state: GameState): Map<string, string[]> {
   const near = new Map<string, string[]>();
-  const p1 = models.filter(m => m.owner === 'p1');
-  const p2 = models.filter(m => m.owner === 'p2');
+  // A siege engine is never in a fight.
+  const p1 = models.filter(m => m.owner === 'p1' && !m.siege);
+  const p2 = models.filter(m => m.owner === 'p2' && !m.siege);
   for (const a of p1) {
     for (const b of p2) {
       // Cheap reject first: no base is wider than about 4".

@@ -54,7 +54,8 @@ export function touching(state: GameState, a: Model, b: Model): boolean {
 const hasHeight = (state: GameState) => Object.values(state.terrain).some(t => t.kind === 'rock' || t.kind === 'cliff' || t.kind === 'building');
 
 /** The living enemies a model is fighting: in base contact, or across a wall. */
-export const touchingEnemies = (state: GameState, m: Model) => Object.values(state.models).filter(e => e.owner !== m.owner && alive(e) && near(e, m, 5) && touching(state, m, e));
+/** Enemies in base contact with a model, that it is fighting (a siege engine fights no one). */
+export const touchingEnemies = (state: GameState, m: Model) => (m.siege ? [] : Object.values(state.models).filter(e => e.owner !== m.owner && !e.siege && alive(e) && near(e, m, 5) && touching(state, m, e)));
 
 export type DefenceKind = 'wall' | 'height' | 'doorway';
 export interface Defence {
