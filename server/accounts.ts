@@ -11,9 +11,25 @@ export const accountsEnabled = () => !!URL_ && !!KEY;
 
 const headers = (extra: Record<string, string> = {}) => ({ apikey: KEY, authorization: `Bearer ${KEY}`, 'content-type': 'application/json', ...extra });
 
+/** Sign-ins already checked, so a deploy that reconnects every player doesn't ask Supabase about each one again. */
+const checked = new Map<string, { account: Account; at: number }>();
+const CHECKED_MS = 1000 * 60 * 5;
+const MAX_CHECKED = 5000;
+
 /** The account behind a player's sign-in token, or null if it isn't valid. */
 export async function verifyToken(token: string): Promise<Account | null> {
   if (!accountsEnabled() || typeof token !== 'string' || token.length > 4096) return null;
+  const hit = checked.get(token);
+  if (hit && Date.now() - hit.at < CHECKED_MS) return hit.account;
+  const account = await askSupabase(token);
+  if (account) {
+    if (checked.size >= MAX_CHECKED) checked.delete(checked.keys().next().value!);
+    checked.set(token, { account, at: Date.now() });
+  }
+  return account;
+}
+
+async function askSupabase(token: string): Promise<Account | null> {
   try {
     const res = await fetch(`${URL_}/auth/v1/user`, { headers: { apikey: KEY, authorization: `Bearer ${token}` } });
     if (!res.ok) return null;
