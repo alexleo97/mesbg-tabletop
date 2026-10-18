@@ -6,8 +6,8 @@ import { WebSocket, WebSocketServer } from 'ws';
 import { initialState, loadState, reduce } from '../src/shared/reducer.ts';
 import type { Account, Action, ClientMessage, GameState, Revert, Role, RoomSummary, Seat, ServerMessage } from '../src/shared/types.ts';
 import { DICE_REQUESTS, resolveRequest } from '../src/shared/resolve.ts';
-import { phaseAllows } from '../src/shared/heroics.ts';
-import { brokenSideToTest, brokenTests, terrorAhead, terrorTest } from '../src/shared/courage.ts';
+import { mayDeclare, phaseAllows } from '../src/shared/heroics.ts';
+import { brokenSideToTest, brokenTests, terrorAhead, terrorTest, willOfEvilDue, willOfEvilToll } from '../src/shared/courage.ts';
 import { settleSpell, spellReady } from '../src/shared/magic.ts';
 import { recoveryDue, recoveryRolls } from '../src/shared/powers.ts';
 import { arrivalsDue, rollArrivals } from '../src/shared/maelstrom.ts';
@@ -20,8 +20,9 @@ import { endRollDue, phaseFinished } from '../src/shared/autoPhase.ts';
 import { endRollLabel, gameWinner } from '../src/shared/status.ts';
 import { diffForUndo, mergeReverts, UNDOABLE } from '../src/shared/undo.ts';
 import { botStep, newMemo, type BotMemo } from '../src/shared/bot.ts';
-import type { Catalog } from '../src/shared/catalog.ts';
+import { startingPoints, type Catalog } from '../src/shared/catalog.ts';
 import catalogJson from '../src/data/mesbg-data.json';
+import { tierOf } from '../src/shared/warbands.ts';
 
 const CATALOG = catalogJson as unknown as Catalog;
 
@@ -281,8 +282,25 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
       const owner = state.accounts?.[seat];
       return !owner || owner.id === client.account?.id ? action : null;
     }
-    case 'declareHeroic':
-      return mine(action.model) ? action : null;
+    case 'declareHeroic': {
+      // A hero may declare the universal heroic actions, and the others on its profile. A Heroic Challenge names an
+      // enemy hero of the same tier or higher, and the Might it can win back is capped at its starting Might.
+      const m = state.models[String(action.model)];
+      if (!m || !mine(m.id)) return null;
+      const unit = m.profileId ? CATALOG.units[m.profileId] : undefined;
+      if (state.flow.started && !mayDeclare(state, m, String(action.action), unit?.heroics)) return null;
+      if (action.action !== 'Heroic Challenge') return { type: 'declareHeroic', model: m.id, action: action.action };
+      const t = state.models[String(action.target)];
+      const theirs = t?.profileId ? CATALOG.units[t.profileId] : undefined;
+      if (!t || (unit && theirs && tierOf(theirs) < tierOf(unit))) return null;
+      return { type: 'declareHeroic', model: m.id, action: action.action, target: t.id, cap: startingPoints(CATALOG, m)?.might ?? m.might };
+    }
+    case 'answerChallenge':
+      return mine(action.target) ? action : null;
+    case 'heroicOrder':
+    case 'willOfEvil':
+    case 'shotPaused':
+      return null; // the server rolls for these and settles them
     case 'takeWound':
     case 'climb':
     case 'crawl':
@@ -427,6 +445,8 @@ function scheduleAnnouncement(room: Room) {
 
 function apply(room: Room, action: Action) {
   room.blank = false;
+  // Models that fly are marked as they come onto the table, so moves can allow for it.
+  if (action.type === 'addModels' && Array.isArray(action.models)) action = { ...action, models: action.models.map(m => (m?.profileId && CATALOG.units[m.profileId]?.rules.some(r => /^Fly\b/.test(r)) ? { ...m, fly: true } : m)) };
   room.state = reduce(room.state, action);
   broadcastAction(room, action);
   scheduleSave(room);
@@ -444,6 +464,7 @@ function apply(room: Room, action: Action) {
   rollReinforcements(room);
   rollGameEnd(room);
   rollRecovery(room);
+  takeWillOfEvil(room);
   scheduleAdvance(room);
   scheduleBot(room);
   updateVoice(room);
@@ -515,10 +536,28 @@ function settleSpells(room: Room) {
   for (const a of settleSpell(room.state, CATALOG, serverDice, serverId)) apply(room, a);
 }
 
+/** In the End phase, models with Will of Evil that fought give up a Will point. */
+let takingWill = false;
+function takeWillOfEvil(room: Room) {
+  if (takingWill || !willOfEvilDue(room.state)) return;
+  takingWill = true;
+  try {
+    for (const a of willOfEvilToll(room.state, CATALOG, serverId)) apply(room, a);
+  } finally {
+    takingWill = false;
+  }
+}
+
 /** In the End phase, Paralysed models roll to recover. */
+let recovering = false;
 function rollRecovery(room: Room) {
-  if (!recoveryDue(room.state)) return;
-  for (const a of recoveryRolls(room.state, serverDice, serverId)) apply(room, a);
+  if (recovering || !recoveryDue(room.state)) return;
+  recovering = true;
+  try {
+    for (const a of recoveryRolls(room.state, serverDice, serverId)) apply(room, a);
+  } finally {
+    recovering = false;
+  }
 }
 
 /** As a Maelstrom side starts to move, rolls for its warbands still off the table and brings on those that arrive. */

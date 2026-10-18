@@ -3,7 +3,7 @@ import { duelLeader, duelSettled, strikeWounds, woundsTaken, type Fighter, type 
 import { supporters } from './support.ts';
 import { activeSeat, combats, CONTACT_SLACK, other, type Combat } from './flow.ts';
 import { distanceBetween, halfExtents, mmToIn, type Point } from './geometry.ts';
-import { canActivate, canDeclare, declared, heroicInfo, heroicTurn, heroicsSettled, orderRollLabel, orderRollNeeded, phaseHeroics } from './heroics.ts';
+import { canActivate, canDeclare, declared, heroicInfo, heroicTurn, heroicsSettled, mayActivate, orderRollLabel, orderRollNeeded, phaseHeroics } from './heroics.ts';
 import { canCast, castTargets, pendingSpell, powersOf, untargeted, type KnownPower } from './magic.ts';
 import { fightDone, limitMove, moveAllowance } from './movement.ts';
 import { affected, basePower, cannotAct, effectsOn, isCavalry, isLinePower, under } from './powers.ts';
@@ -155,7 +155,7 @@ export function botStep(state: GameState, seat: Seat, catalog: Catalog | null, m
   const spell = spellStep(ctx) ?? compelStep(ctx);
   if (spell) return spell;
   if (++memo.steps > MAX_STEPS) return finish(ctx);
-  return fateStep(ctx) ?? phaseStep(ctx);
+  return fateStep(ctx) ?? challengeStep(ctx) ?? (state.flow.shotPause ? pausedShot(ctx) : null) ?? phaseStep(ctx);
 }
 
 function phaseStep(ctx: Ctx): BotStep | null {
@@ -329,6 +329,8 @@ function moveStep(ctx: Ctx): BotStep {
     .sort((a, b) => Number(reach(b)) - Number(reach(a)) || (reach(a) ? nearest(a) - nearest(b) : nearest(b) - nearest(a)));
   const goals = assignGoals(ctx);
   for (const m of queue) {
+    // Not now: waiting for a hero's heroic activation to finish (or gone with one already).
+    if (!mayActivate(state, m)) continue;
     // Engaged, or held where it is by a power or a Compel.
     if (engagedWith(state, m).length || moveAllowance(state, m) === 0) {
       memo.acted.push(m.id);
@@ -789,6 +791,8 @@ function compelStep(ctx: Ctx): BotStep | null {
 
 function shootStep(ctx: Ctx): BotStep {
   const { state, seat, memo } = ctx;
+  const paused = pausedShot(ctx);
+  if (paused) return paused;
   if (memo.pending?.kind === 'shot') {
     const shooter = memo.pending.model;
     const group = [...state.log].reverse().find(r => r.group?.startsWith('s-') && r.model === shooter && r.at >= memo.since)?.group;
@@ -802,7 +806,8 @@ function shootStep(ctx: Ctx): BotStep {
     if (apply) return apply;
   }
   for (const m of side(state, seat)) {
-    if (memo.acted.includes(m.id)) continue;
+    // Not now: waiting for a hero's heroic activation to finish (or gone with one already).
+    if (memo.acted.includes(m.id) || !mayActivate(state, m)) continue;
     memo.acted.push(m.id);
     const p = profile(ctx, m);
     if (!p.weapon || engagedWith(state, m).length || m.prone || cannotAct(state, m)) continue;
@@ -820,6 +825,31 @@ function shootStep(ctx: Ctx): BotStep {
     };
   }
   return { action: { type: 'endActivation', seat }, delay: THINK_PAUSE };
+}
+
+/**
+ * A hero's shot that stopped for Might: the computer raises a die that missed by 1 (keeping a point back unless it's
+ * the last roll to wound), then carries on.
+ */
+function pausedShot({ state, seat }: Ctx): BotStep | null {
+  const p = state.flow.shotPause;
+  const hero = p && state.models[p.shot.shooter.id];
+  if (!p || !hero || hero.owner !== seat) return null;
+  const r = state.log.filter(x => x.group === p.group).at(-1);
+  const k = r?.target !== undefined ? r.dice.findIndex(d => d === r.target! - 1) : -1;
+  if (r && k >= 0 && hero.might > (r.against ? 0 : 1)) return { action: { type: 'useMight', roll: r.id, die: k }, delay: DICE_PAUSE };
+  return { action: { type: 'shotOn', group: p.group }, delay: DICE_PAUSE };
+}
+
+/** A challenge to one of the computer's heroes: taken up unless the challenger is clearly the better fighter. */
+function challengeStep(ctx: Ctx): BotStep | null {
+  const { state, seat } = ctx;
+  const c = (state.flow.challenges ?? []).find(x => x.accepted === undefined && state.models[x.target]?.owner === seat);
+  if (!c) return null;
+  const by = state.models[c.by];
+  const me = state.models[c.target];
+  const accept = !by || profile(ctx, me).f + me.wounds + me.might >= profile(ctx, by).f + by.wounds + by.might - 1;
+  return { action: { type: 'answerChallenge', target: c.target, accept }, delay: THINK_PAUSE };
 }
 
 /** Takes the wounds off for a fight or shot the computer's models won, once for each model struck. */

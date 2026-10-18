@@ -3,7 +3,10 @@ import { ResultReport } from './ResultReport.tsx';
 import { activeSeat, other, type Combat } from '../shared/flow.ts';
 import { phaseFinished } from '../shared/autoPhase.ts';
 import { fightDone } from '../shared/movement.ts';
-import { canDeclare, heroicInfo, heroicsSettled, heroicTurn, HEROICS, orderRollLabel, orderRollNeeded, phaseHeroics } from '../shared/heroics.ts';
+import { canDeclare, GOES_FIRST, heroicInfo, heroicNow, heroicsSettled, heroicTurn, HEROICS, mayDeclare, orderRollLabel, orderRollNeeded, phaseHeroics, shoutedFor } from '../shared/heroics.ts';
+import { distanceBetween } from '../shared/geometry.ts';
+import { startingPoints } from '../shared/catalog.ts';
+import { tierOf } from '../shared/warbands.ts';
 import { RollRow } from './Panels.tsx';
 import { useDraggable } from './useDraggable.tsx';
 import { pendingSpell } from '../shared/magic.ts';
@@ -90,6 +93,24 @@ function SpellStep({ state, dispatch, role, name }: { state: GameState; dispatch
   );
 }
 
+/** A hero's shot that stopped on a roll its Might could still save: spend it on the die, or carry on. */
+function ShotPauseStep({ state, dispatch, role, name }: { state: GameState; dispatch: Dispatch; role: Role; name: (s: Seat) => string }) {
+  const p = state.flow.shotPause;
+  const hero = p && state.models[p.shot.shooter.id];
+  const r = p && state.log.filter(x => x.group === p.group).at(-1);
+  if (!p || !hero || !r) return null;
+  return (
+    <div className="spell-step">
+      <p>
+        {hero.name}'s shot is waiting: {hero.owner === role ? `spend Might on the die to raise it (${hero.might} left), or carry on.` : `${name(hero.owner)} can spend Might on it before it goes on.`}
+      </p>
+      <ol className="log">
+        <RollRow r={r} state={state} role={role} dispatch={dispatch} />
+      </ol>
+    </div>
+  );
+}
+
 /** A Compel that worked: its caster's player drags the enemy model, then says they're done. */
 function CompelStep({ state, dispatch, role }: { state: GameState; dispatch: Dispatch; role: Role }) {
   const c = state.flow.compel;
@@ -114,15 +135,28 @@ function CompelStep({ state, dispatch, role }: { state: GameState; dispatch: Dis
 
 function HeroicStep({ state, dispatch, role, name }: { state: GameState; dispatch: Dispatch; role: Role; name: (s: Seat) => string }) {
   const me = role === 'spectator' ? null : role;
+  const { catalog } = useCatalog();
   const heroes = me ? canDeclare(state, me) : [];
-  const actions = HEROICS.filter(h => h.phase === state.phase);
   const [hero, setHero] = useState('');
   const [action, setAction] = useState('');
+  const [target, setTarget] = useState('');
   const turn = heroicTurn(state);
   const settled = heroicsSettled(state);
   const declaredNow = phaseHeroics(state);
   const pickedHero = heroes.find(m => m.id === hero) ?? heroes[0];
+  const unitOf = (m: Model) => (m.profileId ? catalog?.units[m.profileId] : undefined);
+  // Only the heroic actions this hero can call: the universal ones, and the rest if they're on its profile.
+  const actions = HEROICS.filter(h => h.phase === state.phase && (!pickedHero || mayDeclare(state, pickedHero, h.name, unitOf(pickedHero)?.heroics)));
   const pickedAction = actions.find(a => a.name === action) ?? actions[0];
+  // A Heroic Challenge names an enemy hero within 6", of the same tier or higher.
+  const rivals = pickedHero
+    ? Object.values(state.models).filter(e => e.hero && !e.dead && !e.escaped && !e.waiting && e.owner !== pickedHero.owner && distanceBetween(e, pickedHero) <= 6 && (!unitOf(e) || !unitOf(pickedHero) || tierOf(unitOf(e)) >= tierOf(unitOf(pickedHero))))
+    : [];
+  const pickedRival = rivals.find(e => e.id === target) ?? rivals[0];
+  const challenge = pickedAction?.name === 'Heroic Challenge';
+  const asked = (state.flow.challenges ?? []).filter(c => c.accepted === undefined && state.models[c.target]?.owner === role);
+  const now = settled ? heroicNow(state) : null;
+  const going = now?.hero ? state.models[now.hero] : undefined;
   const orderLabel = orderRollLabel(state);
   const orderRoll = [...state.log].reverse().find(r => r.label === orderLabel);
 
@@ -140,6 +174,17 @@ function HeroicStep({ state, dispatch, role, name }: { state: GameState; dispatc
           })}
         </ul>
       )}
+      {asked.map(c => (
+        <div key={c.target} className="row wrap challenge-ask">
+          <p>
+            <b>{state.models[c.by]?.name}</b> challenges <b>{state.models[c.target]?.name}</b> to a duel. Accept, and the two get +1 Attack and +1 to wound against each other.
+          </p>
+          <button className="primary" onClick={() => dispatch({ type: 'answerChallenge', target: c.target, accept: true })}>
+            Accept
+          </button>
+          <button onClick={() => dispatch({ type: 'answerChallenge', target: c.target, accept: false })}>Decline</button>
+        </div>
+      ))}
       {!settled && turn && (
         <>
           <p>
@@ -155,18 +200,34 @@ function HeroicStep({ state, dispatch, role, name }: { state: GameState; dispatc
                     </option>
                   ))}
                 </select>
-                <select value={pickedAction.name} onChange={e => setAction(e.target.value)} aria-label="Heroic action">
+                <select value={pickedAction?.name ?? ''} onChange={e => setAction(e.target.value)} aria-label="Heroic action">
                   {actions.map(a => (
                     <option key={a.name} value={a.name}>
                       {a.name}
-                      {a.universal ? '' : ' (if on its profile)'}
                     </option>
                   ))}
                 </select>
+                {challenge && (
+                  <select value={pickedRival?.id ?? ''} onChange={e => setTarget(e.target.value)} aria-label="Hero to challenge">
+                    {!rivals.length && <option value="">No enemy hero within 6"</option>}
+                    {rivals.map(e => (
+                      <option key={e.id} value={e.id}>
+                        Challenge {e.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
-              <p className="muted small">{pickedAction.tip}</p>
+              {pickedAction && <p className="muted small">{pickedAction.tip}</p>}
               <div className="row wrap">
-                <button className="primary" onClick={() => dispatch({ type: 'declareHeroic', model: pickedHero.id, action: pickedAction.name })}>
+                <button
+                  className="primary"
+                  disabled={!pickedAction || (challenge && !pickedRival)}
+                  onClick={() =>
+                    pickedAction &&
+                    dispatch({ type: 'declareHeroic', model: pickedHero.id, action: pickedAction.name, ...(challenge && pickedRival ? { target: pickedRival.id, cap: startingPoints(catalog, pickedHero)?.might ?? pickedHero.might } : {}) })
+                  }
+                >
                   Declare
                 </button>
                 <button onClick={() => dispatch({ type: 'passHeroic', seat: me })}>{declaredNow.some(h => state.models[h.model]?.owner === me) ? 'No more' : 'Pass'}</button>
@@ -175,6 +236,15 @@ function HeroicStep({ state, dispatch, role, name }: { state: GameState; dispatc
           )}
         </>
       )}
+      {now?.seat ? (
+        <p>
+          {going
+            ? `${going.owner === role ? 'Finish' : `${name(going.owner)} is finishing`} ${going.name}'s ${GOES_FIRST[state.phase]}${shoutedFor(state, going).length ? `, with the friends within 6" of where it began` : ''}, then end the activation.`
+            : now.seat === role
+              ? `Pick a hero to make its ${GOES_FIRST[state.phase]}: start moving it, or end the activation to skip it.`
+              : `${name(now.seat)} picks a hero to make its ${GOES_FIRST[state.phase]}.`}
+        </p>
+      ) : null}
       {settled && orderRollNeeded(state) && (
         <p>
           Both sides declared heroic actions that go first.{' '}
@@ -382,7 +452,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
             <Who s={act} /> {act === role ? 'are' : 'is'} Broken: Courage tests were rolled as this move began, and models that failed have fled. See the log.
           </p>
         )}
-        {me === act ? (
+        {state.flow.shotPause ? null : me === act ? (
           <button className="primary go" onClick={() => dispatch({ type: 'endActivation', seat: act })}>
             Done {verb}
           </button>
@@ -493,6 +563,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
         <div className="coach-body">
           {flow.started && <SpellStep state={state} dispatch={dispatch} role={role} name={name} />}
           {flow.started && <CompelStep state={state} dispatch={dispatch} role={role} />}
+          {flow.started && <ShotPauseStep state={state} dispatch={dispatch} role={role} name={name} />}
           {flow.started && <FateStep state={state} dispatch={dispatch} role={role} name={name} />}
           {flow.started && <Reinforcements state={state} name={name} />}
           {state.result && <ResultReport state={state} role={role} dispatch={dispatch} />}
