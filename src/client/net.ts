@@ -55,6 +55,24 @@ function writeInvite(room: string, code: string | null) {
   }
 }
 
+const SEAT_PREFIX = 'mesbg-seat:';
+/** The key to this browser's seat in a room's battle, which lets it back into that seat. */
+function readSeatKey(room: string): { seat: string; key: string } | null {
+  try {
+    const raw = localStorage.getItem(SEAT_PREFIX + room);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+function writeSeatKey(room: string, seat: string, key: string) {
+  try {
+    localStorage.setItem(SEAT_PREFIX + room, JSON.stringify({ seat, key }));
+  } catch {
+    // Storage blocked: the seat is still yours until you close the tab.
+  }
+}
+
 /** Whether a game has anything worth bringing back. */
 const worthKeeping = (s: GameState) => s.flow.started || Object.keys(s.models).length > 0 || Object.keys(s.terrain).length > 0;
 
@@ -168,8 +186,9 @@ export class RoomConnection implements Connection {
     this.set({ status: 'connecting' });
     ws.onopen = () => {
       this.retry = 0;
-      this.hello();
+      // Who you are first, so a signed-in player can be let back into their seat from another device.
       if (this.token) ws.send(JSON.stringify({ type: 'identify', token: this.token }));
+      this.hello();
     };
     ws.onmessage = ev => {
       // Anything from the server shows the link is alive.
@@ -209,7 +228,8 @@ export class RoomConnection implements Connection {
       else if (msg.type === 'invite') {
         writeInvite(this.room, msg.code);
         this.set({ invite: msg.code });
-      } else if (msg.type === 'seatRefused') this.set({ refused: msg.message });
+      } else if (msg.type === 'seatKey') writeSeatKey(this.room, msg.seat, msg.key);
+      else if (msg.type === 'seatRefused') this.set({ refused: msg.message });
       else if (msg.type === 'error') console.warn(msg.message);
     };
     ws.onclose = () => this.lost(ws);
@@ -291,7 +311,10 @@ export class RoomConnection implements Connection {
   }
 
   private hello() {
-    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: 'hello', role: this.role, invite: this.snap.invite ?? undefined }));
+    if (this.ws?.readyState !== WebSocket.OPEN) return;
+    const held = readSeatKey(this.room);
+    const seatKey = held?.seat === this.role ? held.key : undefined;
+    this.ws.send(JSON.stringify({ type: 'hello', role: this.role, invite: this.snap.invite ?? undefined, seatKey }));
   }
 
   setRole(role: Role) {

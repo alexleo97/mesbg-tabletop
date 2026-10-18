@@ -1,6 +1,7 @@
 // Runs a real game server for tests, and browsers that join its rooms.
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createServer } from 'node:net';
+import { afterAll } from 'vitest';
 import { WebSocket } from 'ws';
 import type { ServerMessage } from '../src/shared/types.ts';
 
@@ -19,6 +20,12 @@ export interface TestServer {
   stop(): Promise<void>;
 }
 
+/** Every server started, so none is left running (and holding the test run open) if a test fails. */
+const running = new Set<ChildProcess>();
+afterAll(() => {
+  for (const proc of running) proc.kill('SIGKILL');
+});
+
 /** Starts the game server on a spare port with the given settings, once it is listening. */
 export async function startServer(env: Record<string, string>): Promise<TestServer> {
   const port = await freePort();
@@ -26,6 +33,8 @@ export async function startServer(env: Record<string, string>): Promise<TestServ
     env: { ...process.env, SUPABASE_URL: '', SUPABASE_SERVICE_ROLE_KEY: '', DISCORD_WEBHOOK_URL: '', DISCORD_BOT_TOKEN: '', ...env, PORT: String(port) },
     stdio: ['ignore', 'pipe', 'inherit'],
   });
+  running.add(proc);
+  proc.once('exit', () => running.delete(proc));
   await new Promise<void>((done, fail) => {
     proc.stdout!.on('data', d => String(d).includes('listening') && done());
     proc.once('exit', code => fail(new Error(`server exited with ${code}`)));

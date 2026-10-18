@@ -469,8 +469,8 @@ export type ClientMessage =
   /** A ping or an arrow to show the other players, or `clear` to take your arrows away. */
   | { type: 'mark'; mark: Pick<Mark, 'kind' | 'x' | 'y' | 'x2' | 'y2'> }
   | { type: 'clearMarks' }
-  /** `invite`: the private game's invite code, if this browser has one. */
-  | { type: 'hello'; role: Role; invite?: string }
+  /** `invite`: the private game's invite code, if this browser has one. `seatKey`: the key to this seat, if it has one. */
+  | { type: 'hello'; role: Role; invite?: string; seatKey?: string }
   /** A seated player making the game invite-only, or open to anyone again. */
   | { type: 'privacy'; private: boolean }
   /** A player's browser offering its saved copy of a game the server has lost. */
@@ -493,6 +493,8 @@ export type ServerMessage =
   /** `seq` counts up by one with each action in a room, so a gap means one was missed. */
   | { type: 'action'; action: Action; seq?: number }
   | { type: 'pong' }
+  /** The key to your seat in a battle under way, so you can come back to it after a refresh or a dropped link. */
+  | { type: 'seatKey'; seat: Seat; key: string }
   | { type: 'presence'; players: Role[] }
   /** How many of your own changes the server can take back. */
   | { type: 'undo'; count: number }
