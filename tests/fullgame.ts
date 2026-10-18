@@ -18,7 +18,7 @@ import { catalog, seeded } from './botsim.ts';
 
 const [scenario, seedArg, armyA = 'Minas Tirith', armyB = 'Mordor'] = process.argv.slice(2);
 const rand = seeded(Number(seedArg ?? 1));
-const room = `FG${Date.now() % 100000}`;
+const room = `FG${Date.now() % 100000}${seedArg ?? ''}`;
 const ws = new WebSocket(`ws://localhost:${process.env.PORT ?? 8789}/ws?room=${room}`);
 let state: GameState = initialState();
 let changed = Date.now();
