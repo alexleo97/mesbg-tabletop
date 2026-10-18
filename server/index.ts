@@ -184,6 +184,9 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
     }
     case 'setPick':
       return action.seat === client.role ? action : null;
+    case 'pairOff':
+      // Only the player with Priority pairs off the fights.
+      return state.priority === client.role ? action : null;
     case 'setBotSpeed':
       return action;
     case 'compel':

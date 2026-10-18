@@ -179,6 +179,8 @@ export interface DiceRoll {
   side?: 0 | 1;
   /** Might points spent raising these dice. */
   might?: number;
+  /** A supporting model's duel die (a spear or pike lending a hand). */
+  support?: boolean;
   at: number;
 }
 
@@ -306,6 +308,14 @@ export interface Flow {
   fort?: Record<Seat, number>;
   /** Each player's secret choices, shown to the other player once the game is over. */
   picks?: Record<Seat, Picks>;
+  /** The fights paired off at the start of this Fight phase, by combat key. */
+  pairs?: string[];
+  /** The Priority player's choices of who fights whom, where a model could be paired off more than one way. */
+  pairChoices?: Record<string, string>;
+  /** Spear and pike models that have supported a fight this Fight phase; each supports one fight at most. */
+  supported?: string[];
+  /** Each hero's Heroic Strike bonus this turn, rolled at its first fight and kept for the rest of the phase. */
+  strikeBonus?: Record<string, number>;
   /** Fights and shots whose wounds have been taken off already, by roll group, so they're never taken twice. */
   applied?: string[];
 }
@@ -330,6 +340,8 @@ export type Action =
   | { type: 'affect'; id: string; patch: Partial<Omit<Model, 'id'>> }
   /** A Compel that worked (from the game), or (null) its caster's player has finished moving the model. */
   | { type: 'compel'; compel: Flow['compel'] | null }
+  /** The Priority player pairs a model off against one of the enemies it touches, before the fights are rolled. */
+  | { type: 'pairOff'; id: string; with: string }
   /** A model climbs to another floor of the building it is in. */
   | { type: 'climb'; id: string; floor: number }
   /** Paralysed models have rolled to recover this End phase (never sent by a player). */

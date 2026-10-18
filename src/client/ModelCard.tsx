@@ -1,6 +1,6 @@
 import { useEffect, useState, type Ref } from 'react';
 import { loadRulesText, modelStats, pictureUrl, startingPoints, statsWithOptions, STAT_NAMES, type Catalog } from '../shared/catalog.ts';
-import { strikeWounds } from '../shared/fight.ts';
+import { strikeWounds, woundsTaken } from '../shared/fight.ts';
 import type { Combat } from '../shared/flow.ts';
 import { fightDone, moveLeft } from '../shared/movement.ts';
 import { heroicInfo, phaseAllows } from '../shared/heroics.ts';
@@ -158,7 +158,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
             </button>
             <button onClick={clearTarget}>Change target</button>
           </div>
-          {shotWounds > 0 && lastShot && lastShot.against === target.id && !state.flow.applied?.includes(lastShot.group ?? '') && !target.dead && (
+          {shotWounds > 0 && lastShot && lastShot.against === target.id && !woundsTaken(state.flow.applied, lastShot.group ?? '', target.id) && !target.dead && (
             <button onClick={() => dispatch({ type: 'wound', id: target.id, count: shotWounds, by: [m.id], how: 'shoot', group: lastShot.group })}>
               Wound {target.name} {shotWounds} time{shotWounds === 1 ? '' : 's'}
               {target.hero && target.fate > 0 ? ' (Fate can be rolled)' : target.wounds - shotWounds <= 0 ? ' (slain)' : ''}

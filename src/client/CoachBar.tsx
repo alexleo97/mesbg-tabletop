@@ -399,7 +399,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
     combats = [...combats].sort((a, b) => Number(isHeroic(b)) - Number(isHeroic(a)));
     const open = combats.filter(c => !fightDone(state, c));
     const label = (c: Combat) => {
-      const n = (ids: string[]) => (ids.length === 1 ? state.models[ids[0]]?.name : `${state.models[ids[0]]?.name} +${ids.length - 1}`);
+      const n = (ids: string[]) => (ids.length === 0 ? 'the fallen' : ids.length === 1 ? state.models[ids[0]]?.name : `${state.models[ids[0]]?.name} +${ids.length - 1}`);
       return `${n(c.p1)} vs ${n(c.p2)}`;
     };
     body = (

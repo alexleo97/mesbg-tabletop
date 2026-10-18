@@ -1,5 +1,6 @@
 import { modelStats, type Catalog } from './catalog.ts';
-import { duelLeader, strikeWounds, type Fighter, type FightRequest } from './fight.ts';
+import { duelLeader, duelSettled, strikeWounds, woundsTaken, type Fighter, type FightRequest } from './fight.ts';
+import { supporters } from './support.ts';
 import { activeSeat, combats, CONTACT_SLACK, other, type Combat } from './flow.ts';
 import { distanceBetween, halfExtents, mmToIn, type Point } from './geometry.ts';
 import { canActivate, canDeclare, declared, heroicInfo, heroicTurn, heroicsSettled, orderRollLabel, orderRollNeeded, phaseHeroics } from './heroics.ts';
@@ -807,18 +808,20 @@ function shootStep(ctx: Ctx): BotStep {
   return { action: { type: 'endActivation', seat }, delay: THINK_PAUSE };
 }
 
-/** Takes the wounds off for a fight or shot the computer's models won, once. */
+/** Takes the wounds off for a fight or shot the computer's models won, once for each model struck. */
 function woundsFor(ctx: Ctx, group: string): BotStep | null {
   const { state, seat } = ctx;
-  if (state.flow.applied?.includes(group)) return null;
   const rolls = state.log.filter(r => r.group === group);
   const strikes = rolls.filter(r => r.against && r.model && state.models[r.model]?.owner === seat);
-  if (!strikes.length) return null;
-  const victim = state.models[strikes[0].against!];
-  const wounds = strikeWounds(rolls);
-  if (!victim || victim.dead || wounds < 1) return null;
-  const by = [...new Set(strikes.map(r => r.model!))];
-  return { action: { type: 'wound', id: victim.id, count: wounds, by, how: group.startsWith('s-') ? 'shoot' : 'fight', group }, delay: THINK_PAUSE };
+  for (const id of [...new Set(strikes.map(r => r.against!))]) {
+    const victim = state.models[id];
+    const at = strikes.filter(r => r.against === id);
+    const wounds = strikeWounds(at);
+    if (!victim || victim.dead || wounds < 1 || woundsTaken(state.flow.applied, group, id)) continue;
+    const by = [...new Set(at.map(r => r.model!))];
+    return { action: { type: 'wound', id, count: wounds, by, how: group.startsWith('s-') ? 'shoot' : 'fight', group }, delay: THINK_PAUSE };
+  }
+  return null;
 }
 
 // ——— Fighting ———
@@ -831,7 +834,7 @@ export function openDuel(state: GameState, c: Combat, since = 0): { group: strin
     if (!r.group?.startsWith('f-') || r.side === undefined || !r.model || !ids.has(r.model)) continue;
     if (r.at < since) return null;
     const rolls = state.log.filter(x => x.group === r.group);
-    const struck = rolls.some(x => x.against || x.note || x.label.startsWith('Roll-off'));
+    const struck = rolls.some(duelSettled);
     return struck ? null : { group: r.group, rolls };
   }
   return null;
@@ -876,7 +879,7 @@ function fighterFor(ctx: Ctx, m: Model): Fighter {
   };
 }
 
-function fightRequest(ctx: Ctx, c: Combat): FightRequest {
+function fightRequest(ctx: Ctx, c: Combat, duel?: DiceRoll[]): FightRequest {
   const { state, seat } = ctx;
   const ms = (s: Seat) => c[s].map(id => state.models[id]).filter(m => m && isUp(m));
   const ours = ms(seat);
@@ -884,7 +887,23 @@ function fightRequest(ctx: Ctx, c: Combat): FightRequest {
   // The computer strikes where it expects to do the most; the other player's strikes go at the first model, as the fight panel does.
   const pick = [...theirs].sort((a, b) => strikeWorth(ctx, ours, b) - strikeWorth(ctx, ours, a))[0];
   const targets = { [seat]: pick.id, [other(seat)]: ours[0].id } as Record<Seat, string>;
-  return { sides: [ms('p1').map(m => fighterFor(ctx, m)), ms('p2').map(m => fighterFor(ctx, m))], targets: [targets.p1, targets.p2], trapped: false, combat: c.key };
+  // Spears and pikes behind the front rank join in (once the duel is rolled, just the ones that rolled in it).
+  const rolled = (s: Seat) => (duel ?? []).filter(r => r.support && r.side === (s === 'p1' ? 0 : 1)).map(r => r.model!);
+  const helping: Record<Seat, string[]> = duel ? { p1: rolled('p1'), p2: rolled('p2') } : supporters(state, ctx.catalog, c);
+  const side = (s: Seat) => [...ms(s).map(m => fighterFor(ctx, m)), ...helping[s].map(id => state.models[id]).filter(m => m && isUp(m)).map(m => ({ ...fighterFor(ctx, m), a: 1, support: true }))];
+  // A lone model beating several spreads its strikes, finishing off whoever it can before moving on.
+  const aims: Record<string, string[]> = {};
+  if (ours.length === 1 && theirs.length > 1) {
+    const f = fighterFor(ctx, ours[0]);
+    const order = [...theirs].sort((a, b) => strikeWorth(ctx, ours, b) - strikeWorth(ctx, ours, a));
+    const list: string[] = [];
+    for (const t of order) {
+      const need = Math.max(1, Math.ceil(t.wounds / Math.max(0.15, woundChance(f.s, profile(ctx, t).d))));
+      for (let i = 0; i < need && list.length < f.a; i++) list.push(t.id);
+    }
+    aims[ours[0].id] = list;
+  }
+  return { sides: [side('p1'), side('p2')], targets: [targets.p1, targets.p2], trapped: false, combat: c.key, ...(Object.keys(aims).length ? { aims } : {}) };
 }
 
 function strikeWorth(ctx: Ctx, strikers: Model[], t: Model): number {
@@ -907,7 +926,8 @@ function fightStep(ctx: Ctx): BotStep | null {
   const open = combats(state)
     .filter(c => !fightDone(state, c) && c[seat].length && c[other(seat)].length)
     .sort((a, b) => Number([...b.p1, ...b.p2].some(id => heroic.has(id))) - Number([...a.p1, ...a.p2].some(id => heroic.has(id))));
-  const c = open[0];
+  // Strikes for a duel already rolled come first; new fights are started only by the side with Priority.
+  const c = open.find(x => openDuel(state, x, memo.since)) ?? (state.priority === seat || !state.priority ? open[0] : undefined);
   if (!c) return null;
   const duel = openDuel(state, c, memo.since);
   if (!duel) return { action: { type: 'fight', fight: fightRequest(ctx, c) }, delay: DICE_PAUSE * 1.5 };
@@ -915,7 +935,7 @@ function fightStep(ctx: Ctx): BotStep | null {
   if (raise) return raise;
   // Hold the strikes while the other player could still use Might; they roll the strikes themselves.
   if (ctx.person && humanCanRaise(state, other(seat), duel.rolls)) return { delay: WAIT_PAUSE };
-  return { action: { type: 'strikes', fight: fightRequest(ctx, c), group: duel.group }, delay: DICE_PAUSE * 1.5 };
+  return { action: { type: 'strikes', fight: fightRequest(ctx, c, duel.rolls), group: duel.group }, delay: DICE_PAUSE * 1.5 };
 }
 
 /** Might on the computer's own duel dice, when a point or two turns a lost duel into a won one. */
@@ -947,12 +967,13 @@ function mightInDuel(ctx: Ctx, rolls: DiceRoll[]): BotStep | null {
 /** Might on a strike die one short, when that extra wound kills the target. */
 function mightOnStrikes(ctx: Ctx, group: string): BotStep | null {
   const { state, seat } = ctx;
-  if (state.flow.applied?.includes(group)) return null;
   const rolls = state.log.filter(r => r.group === group);
   const strikes = rolls.filter(r => r.against && r.target && r.then === undefined && r.model && state.models[r.model]?.owner === seat);
   if (!strikes.length) return null;
   const victim = state.models[strikes[0].against!];
-  if (!victim || victim.dead) return null;
+  if (!victim || victim.dead || woundsTaken(state.flow.applied, group, victim.id)) return null;
+  // Against Heroic Defence only natural 6s wound, so Might is no help.
+  if (declared(state, victim.id, 'Heroic Defence')) return null;
   const wounds = strikeWounds(rolls);
   if (wounds >= victim.wounds || wounds + 1 < victim.wounds) return null;
   for (const r of strikes) {
