@@ -1,19 +1,20 @@
 import { useEffect, useState, type Ref } from 'react';
 import { loadRulesText, modelStats, pictureUrl, startingPoints, statsWithOptions, STAT_NAMES, type Catalog } from '../shared/catalog.ts';
 import { strikeWounds, woundsTaken } from '../shared/fight.ts';
-import type { Combat } from '../shared/flow.ts';
+import { CONTACT_SLACK, type Combat } from '../shared/flow.ts';
 import { fightDone, moveLeft } from '../shared/movement.ts';
 import { heroicInfo, phaseAllows } from '../shared/heroics.ts';
 import { carriedBy, markerActions, OBJECT_NAMES } from '../shared/objects.ts';
 import { causesTerror } from '../shared/courage.ts';
-import { effectNotes, heldBy, shotNeed } from '../shared/powers.ts';
-import { flooredAt, floorHeight, floorName, inTheWay, sightTo, standingAt } from '../shared/sight.ts';
+import { effectNotes, heldBy } from '../shared/powers.ts';
+import { isThrowing, planShot, shooterBlocked, throwingPoint, weaponFor } from '../shared/shooting.ts';
+import { flooredAt, floorHeight, floorName, sightTo, standingAt } from '../shared/sight.ts';
 import RULES from '../data/special-rules.json';
 import { CastBox } from './MagicPanel.tsx';
 import { RollRow } from './Panels.tsx';
 import { useDraggable } from './useDraggable.tsx';
 import { distanceBetween, formatInches } from '../shared/geometry.ts';
-import { formatNeed, missileWeapon, woundNeed } from '../shared/rules.ts';
+import { formatNeed, woundNeed } from '../shared/rules.ts';
 import type { Action, GameState, Model, Role } from '../shared/types.ts';
 
 interface Props {
@@ -32,10 +33,7 @@ interface Props {
 }
 
 /** What the gear of a model says it can shoot with, if anything. */
-export function weaponOf(m: Model, catalog: Catalog | null) {
-  const unit = m.profileId ? catalog?.units[m.profileId] : undefined;
-  return unit ? missileWeapon([...unit.wargear, ...(m.options ?? [])]) : undefined;
-}
+export const weaponOf = (m: Model, catalog: Catalog | null) => weaponFor(catalog, m);
 
 /** A hero's Might, Will or Fate as pips: filled for what's left, hollow for what's been spent. The game spends them. */
 function Points({ label, value, max }: { label: string; value: number; max: number }) {
@@ -69,9 +67,6 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
   const drag = useDraggable('model-card');
   const [photoFailed, setPhotoFailed] = useState(false);
   const [openRule, setOpenRule] = useState<string | null>(null);
-  // What's between the shooter and its target: the game rolls In the Way for each (up to 5).
-  const between = target ? inTheWay(state, m, target) : [];
-  const obstacles = Math.min(5, between.length);
   const seen = target ? sightTo(state, m, target) : null;
   const up = Math.round(standingAt(state, m) * 10) / 10;
   // Inside a building with floors, the model's player picks which level it stands on (climbing costs Move in the battle).
@@ -99,7 +94,6 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
   const lastShotGroup = [...state.log].reverse().find(r => r.group?.startsWith('s-') && r.model === m.id)?.group;
   const shotRolls = lastShotGroup ? state.log.filter(r => r.group === lastShotGroup) : [];
   const lastShot = shotRolls.find(r => r.against);
-  const shotWounds = strikeWounds(shotRolls);
 
   // In the Move phase, charging an enemy with Terror within reach needs a Courage test first.
   const terrifying =
@@ -114,56 +108,78 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
   const held = state.flow.started && state.phase === 'move' ? heldBy(state, m) : null;
 
   let action: React.ReactNode = null;
-  if (state.phase === 'shoot' && mine && weapon && state.flow.started) {
+  const throwing = state.phase === 'move' && !!weapon && isThrowing(weapon);
+  const mustCharge = state.flow.mustCharge?.model === m.id ? state.models[state.flow.mustCharge.target] : undefined;
+  if (state.phase === 'move' && mine && mustCharge && !mustCharge.dead && distanceBetween(m, mustCharge) > CONTACT_SLACK) {
+    action = <p className="hint">{m.name} threw at {mustCharge.name}, so it must now finish its charge: move it into contact with {mustCharge.name}.</p>;
+  } else if ((state.phase === 'shoot' || (throwing && target)) && mine && weapon && state.flow.started) {
+    const charge = state.phase === 'move';
     const hasShot = !!state.flow.shot?.includes(m.id);
-    const tooFar = !!state.flow.farMoved?.includes(m.id);
-    const held = heldBy(state, m) ?? (m.prone ? 'Prone' : null);
+    const held = heldBy(state, m);
+    const blocked = shooterBlocked(state, m, weapon, charge);
     if (held) action = <p className="hint">{m.name} is {held === 'Thrown from its mount' ? 'thrown from its mount' : held}, so it can't shoot this turn.</p>;
-    else if (tooFar) action = <p className="hint">{m.name} moved more than half its Move this turn, so it can't shoot.</p>;
+    else if (blocked && (!target || hasShot)) action = <p className="hint">{m.name} {blocked}{hasShot ? '. Each model shoots once a turn.' : ', so it can’t shoot this turn.'}</p>;
     else if (!target)
-      action = hasShot ? <p className="hint">{m.name} has shot this turn. Each model shoots once a turn.</p> : <p className="hint">Tap an enemy model to aim the {weapon.name.toLowerCase()} ({weapon.range}", S{weapon.s}).</p>;
+      action = (
+        <p className="hint">
+          Tap an enemy model to aim the {weapon.name.toLowerCase()} ({weapon.range}", S{weapon.s}).
+          {state.flow.moved?.includes(m.id) ? ' It moved this turn, so it shoots 1 worse.' : ''}
+        </p>
+      );
     else {
-      const dist = distanceBetween(m, target);
+      const plan = planShot(state, catalog, m, target, { charge });
       const tStats = modelStats(catalog, target);
       const d = tStats?.D ?? 4;
-      const printedShoot = stats?.Sv ?? 4;
-      // Blinding Light and Protection of the Valar make the shot harder; the game applies it too.
-      const shoot = shotNeed(state, m, target, printedShoot);
       const need = woundNeed(weapon.s, d);
-      const inRange = dist <= weapon.range;
+      const stand = charge ? throwingPoint(state, m, target) : null;
+      const why = plan.why ?? (charge && !stand ? `can’t get within 1" of ${target.name} to throw` : undefined);
+      const ok = !why && !!need && phaseAllows(state, role, { type: 'shoot', shot: { shooter: { id: m.id }, charge } });
+      const harder = [plan.moved ? '1 worse for moving' : '', plan.need > plan.printed + (plan.moved ? 1 : 0) ? 'a power makes it harder' : ''].filter(Boolean).join(', ');
+      const stray = plan.fight?.[0] ? state.models[plan.fight[0]] : undefined;
       action = (
         <div className="aim-card">
           <p>
-            At <b>{target.name}</b>: {formatInches(dist)} of {weapon.range}"{inRange ? '' : ', out of range'}. Hits on {shoot}+{shoot !== printedShoot ? ' (a power makes it harder)' : ''}, wounds on {formatNeed(need)}.
+            {charge ? 'Throw at' : 'At'} <b>{target.name}</b>: {formatInches(plan.dist)} of {weapon.range}". Hits on {plan.need}+{harder ? ` (${harder})` : ''}, wounds on {formatNeed(need)}
+            {plan.shots > 1 ? `, ${plan.shots} shots (it didn't move)` : ''}.
           </p>
-          {seen === 'hidden' && <p className="warn">Terrain seems to hide {target.name} completely. Check from the model's eye level.</p>}
-          <p className="muted small">
-            {between.length
-              ? `In the way: ${between.join(', ')}. That's ${obstacles} In the Way roll${obstacles === 1 ? '' : 's'}, rolled for you.`
-              : 'Nothing is in the way.'}
-          </p>
+          {why && <p className="warn">{m.name} {why}.</p>}
+          {!why && seen === 'partial' && <p className="muted small">{target.name} is partly hidden.</p>}
+          {!why && (
+            <p className="muted small">
+              {plan.inWay.length
+                ? `In the way: ${plan.inWay.map(o => o.name).join(', ')}. That's ${plan.inWay.length} In the Way roll${plan.inWay.length === 1 ? '' : 's'}, rolled for you; a model in the way that stops the shot is hit instead.`
+                : 'Nothing is in the way.'}
+              {stray ? ` ${target.name} is in a fight: on a 1-3 the shot hits ${stray.name} instead.` : ''}
+              {plan.rerolls ? ' Heroic Accuracy re-rolls failed In the Way rolls.' : ''}
+              {charge ? ` ${m.name} stops 1" short to throw, then must charge ${target.name} unless the throw slays it.` : ''}
+            </p>
+          )}
           <div className="row wrap">
             <button
               className="primary"
-              disabled={hasShot || !inRange || !need || !phaseAllows(state, role, { type: 'shoot', shot: { shooter: { id: m.id } } })}
-              title={hasShot ? `${m.name} has shot this turn. Each model shoots once a turn.` : !phaseAllows(state, role, { type: 'shoot', shot: { shooter: { id: m.id } } }) ? 'Models shoot in the Shoot phase, when it is their side’s turn.' : undefined}
+              disabled={!ok}
+              title={hasShot ? `${m.name} has shot this turn. Each model shoots once a turn.` : !phaseAllows(state, role, { type: 'shoot', shot: { shooter: { id: m.id }, charge } }) ? 'Models shoot in the Shoot phase, when it is their side’s turn.' : undefined}
               onClick={() =>
                 dispatch({
                   type: 'shoot',
-                  shot: { shooter: { id: m.id, name: m.name, weapon: weapon.name, shoot: printedShoot, s: weapon.s, shots: 1 }, target: { id: target.id, name: target.name, d }, obstacles },
+                  shot: { shooter: { id: m.id, name: m.name, weapon: weapon.name, shoot: plan.printed, s: weapon.s, shots: plan.shots }, target: { id: target.id, name: target.name, d }, obstacles: plan.inWay.length, ...(charge ? { charge: true } : {}) },
                 })
               }
             >
-              {hasShot ? 'Shot this turn' : 'Shoot'}
+              {hasShot ? 'Shot this turn' : charge ? 'Throw and charge' : 'Shoot'}
             </button>
             <button onClick={clearTarget}>Change target</button>
           </div>
-          {shotWounds > 0 && lastShot && lastShot.against === target.id && !woundsTaken(state.flow.applied, lastShot.group ?? '', target.id) && !target.dead && (
-            <button onClick={() => dispatch({ type: 'wound', id: target.id, count: shotWounds, by: [m.id], how: 'shoot', group: lastShot.group })}>
-              Wound {target.name} {shotWounds} time{shotWounds === 1 ? '' : 's'}
-              {target.hero && target.fate > 0 ? ' (Fate can be rolled)' : target.wounds - shotWounds <= 0 ? ' (slain)' : ''}
-            </button>
-          )}
+          {lastShot && !woundsTaken(state.flow.applied, lastShot.group ?? '', lastShot.against!) && (() => {
+            const victim = state.models[lastShot.against!];
+            const wounds = strikeWounds(shotRolls.filter(r => r.against === victim?.id));
+            return victim && !victim.dead && wounds > 0 ? (
+              <button onClick={() => dispatch({ type: 'wound', id: victim.id, count: wounds, by: [m.id], how: 'shoot', group: lastShot.group })}>
+                Wound {victim.name} {wounds} time{wounds === 1 ? '' : 's'}
+                {victim.hero && victim.fate > 0 ? ' (Fate can be rolled)' : victim.wounds - wounds <= 0 ? ' (slain)' : ''}
+              </button>
+            ) : null;
+          })()}
         </div>
       );
     }

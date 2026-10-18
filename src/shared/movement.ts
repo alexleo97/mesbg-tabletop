@@ -154,6 +154,13 @@ export function movedTooFar(state: GameState): string[] {
     .concat(Object.entries(state.flow.climbed ?? {}).filter(([id, c]) => !state.flow.starts?.[id] && state.models[id] && c > state.models[id].move / 2 + 0.05).map(([id]) => id));
 }
 
+/** Models that moved at all this Move phase, even a little or only between floors, so shoot 1 worse. */
+export function movedAtAll(state: GameState): string[] {
+  const walked = Object.entries(state.flow.starts ?? {}).filter(([id, [x, y]]) => state.models[id] && moveCost(state, { x, y }, state.models[id], state.models[id].owner).cost > 0.05);
+  const climbed = Object.entries(state.flow.climbed ?? {}).filter(([, c]) => c > 0);
+  return [...new Set([...walked, ...climbed].map(([id]) => id))];
+}
+
 /** How much of its Move a model still has this phase, after the ground it's walked and any floors it's climbed. */
 export function moveLeft(state: GameState, m: Model): number | null {
   const allowance = moveAllowance(state, m);

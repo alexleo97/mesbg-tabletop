@@ -1,13 +1,15 @@
 import { backAway } from './backAway.ts';
-import { inTheWay } from './sight.ts';
+import { canActivate } from './heroics.ts';
+import { modelStats, type Catalog } from './catalog.ts';
+import { missileWeapon } from './rules.ts';
+import { planShot, throwingPoint } from './shooting.ts';
 import { cleanFight, cleanShot, duelSettled, resolveDuel, resolveShot, resolveStrikes, type DrawRule, type Fighter, type FightRequest } from './fight.ts';
 import { combatFromKey, priorityChooser } from './flow.ts';
 import { hasElvenWeapon, sideOf } from './gear.ts';
 import { supporters } from './support.ts';
 import { fightDone, foughtThisTurn } from './movement.ts';
 import { rollCast, rollResist } from './magic.ts';
-import { cannotAct, intelligenceWorse, noStrikes, shotNeed, under, witheredStrength } from './powers.ts';
-import type { Catalog } from './catalog.ts';
+import { intelligenceWorse, noStrikes, under, witheredStrength } from './powers.ts';
 import { touching } from './objects.ts';
 import { MAX_DICE } from './reducer.ts';
 import type { Action, DiceRoll, GameState, Seat } from './types.ts';
@@ -171,20 +173,38 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
     }
     case 'shoot': {
       const req = cleanShot(action.shot);
-      if (!req || state.flow.shot?.includes(req.shooter.id) || state.flow.farMoved?.includes(req.shooter.id)) return null;
-      // The game counts what's in the way itself, from the table.
-      const shooter = state.models[req.shooter.id];
-      const target = state.models[req.target.id];
-      // Prone models never shoot, and nor do ones held by a power.
-      if (shooter && state.flow.started && (shooter.prone || cannotAct(state, shooter))) return null;
-      if (shooter && target) {
-        req.obstacles = Math.min(5, inTheWay(state, shooter, target).length);
-        req.shooter.shoot = shotNeed(state, shooter, target, req.shooter.shoot);
+      const shooter = req && state.models[req.shooter.id];
+      const target = req && state.models[req.target.id];
+      if (!req || !shooter || !target || shooter.owner !== seat) return null;
+      // The game works the shot out from the table: whether it can be taken, what it needs and what's in the way.
+      const fallback = { weapon: missileWeapon([req.shooter.weapon]), shoot: req.shooter.shoot };
+      const plan = planShot(state, catalog, shooter, target, { charge: req.charge, fallback });
+      if (plan.why || !plan.weapon) return null;
+      const stats = modelStats(catalog, target);
+      const dOf = (id: string) => modelStats(catalog, state.models[id])?.D ?? 4;
+      req.shooter = { ...req.shooter, name: shooter.name, weapon: plan.weapon.name, shoot: plan.need, s: plan.weapon.s, shots: plan.shots };
+      req.target = { id: target.id, name: target.name, d: stats?.D ?? req.target.d };
+      req.inWay = plan.inWay.slice(0, 6).map(o => (o.model ? { name: o.name, id: o.model, d: dOf(o.model) } : { name: o.name }));
+      req.obstacles = req.inWay.length;
+      const stray = plan.fight?.[0];
+      if (stray) req.stray = { id: stray, name: state.models[stray].name, d: dOf(stray) };
+      if (plan.rerolls) req.rerolls = true;
+      // Thrown as it charges: the model first closes to 1" of its target (unless it set off that close).
+      const before: Action[] = [];
+      if (req.charge) {
+        if (!(state.phase === 'move' && canActivate(state, seat))) return null;
+        const at = throwingPoint(state, shooter, target);
+        if (!at) return null;
+        if (at.x !== shooter.x || at.y !== shooter.y) before.push({ type: 'moveModels', moves: [{ id: shooter.id, x: at.x, y: at.y }] });
       }
       const group = `s-${uid()}`;
       const shot = resolveShot(req, d6, seat, group, now);
       return {
-        apply: [...shot.rolls.map((roll): Action => ({ type: 'rolled', roll })), ...woundAction(state, shot.rolls, req.target.id, shot.wounds, [req.shooter.id], 'shoot', group)],
+        apply: [
+          ...before,
+          ...shot.rolls.map((roll): Action => ({ type: 'rolled', roll })),
+          ...shot.hits.flatMap(h => woundAction(state, shot.rolls.filter(r => r.against === h.id), h.id, h.wounds, [shooter.id], 'shoot', group)),
+        ],
       };
     }
     case 'cast': {

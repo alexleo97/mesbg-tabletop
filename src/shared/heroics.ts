@@ -85,11 +85,12 @@ export function canActivate(state: GameState, seat: Seat): boolean {
  * fights only in the Fight phase, and objectives only handled as models move. Moving models is held to the phase
  * by their move allowance (see movement.ts).
  */
-export function phaseAllows(state: GameState, seat: Seat, action: { type: string; model?: string; shot?: { shooter?: { id?: string } } }): boolean {
+export function phaseAllows(state: GameState, seat: Seat, action: { type: string; model?: string; shot?: { shooter?: { id?: string }; charge?: boolean } }): boolean {
   if (!state.flow.started) return true;
   switch (action.type) {
     case 'shoot':
-      return state.phase === 'shoot' && canActivate(state, seat) && state.models[String(action.shot?.shooter?.id)]?.owner === seat;
+      // A throwing weapon can also be thrown in the Move phase, as the model charges.
+      return (state.phase === 'shoot' || (state.phase === 'move' && !!action.shot?.charge)) && canActivate(state, seat) && state.models[String(action.shot?.shooter?.id)]?.owner === seat;
     case 'fight':
     case 'strikes':
       return state.phase === 'fight' && heroicsSettled(state);

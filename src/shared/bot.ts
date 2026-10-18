@@ -10,9 +10,8 @@ import { affected, basePower, cannotAct, effectsOn, isCavalry, isLinePower, unde
 import { carriedBy, exitEdges, markerActions, onTable, sanctuary } from './objects.ts';
 import { chance, fightOdds, woundChance, type Side } from './odds.ts';
 import { PICKS, pickOptions } from './picks.ts';
-import { missileWeapon } from './rules.ts';
 import { scoreLines } from './scoring.ts';
-import { inTheWay, sightTo } from './sight.ts';
+import { planShot, weaponFor } from './shooting.ts';
 import { armyStatus } from './status.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
@@ -96,7 +95,7 @@ function profile(ctx: Ctx, m: Model): Profile {
     c: st?.C ?? 7,
     i: st?.I ?? 7,
     shoot: st?.Sv ?? 4,
-    weapon: unit ? missileWeapon([...unit.wargear, ...(m.options ?? [])]) : undefined,
+    weapon: unit ? weaponFor(ctx.catalog, m) : undefined,
     heroics: unit?.heroics ?? [],
     terror: !!unit?.rules.some(r => /^Terror\b/.test(r)),
     value: worth(m),
@@ -605,10 +604,13 @@ function bestShot(ctx: Ctx, m: Model, state = ctx.state): Shot | null {
   if (!p.weapon) return null;
   let best: Shot | null = null;
   for (const e of side(state, other(m.owner))) {
-    if (distanceBetween(m, e) > p.weapon.range || engagedWith(state, e).length) continue;
-    if (sightTo(state, m, e) === 'hidden') continue;
-    const obstacles = Math.min(5, inTheWay(state, m, e).length);
-    const hit = chance(p.shoot) * Math.pow(0.5, obstacles) * woundChance(p.weapon.s, profile(ctx, e).d);
+    if (distanceBetween(m, e) > p.weapon.range) continue;
+    const plan = planShot(state, ctx.catalog, m, e, { fallback: { weapon: p.weapon, shoot: p.shoot } });
+    if (plan.why) continue;
+    const obstacles = Math.min(5, plan.inWay.length);
+    // A shot into a fight might hit a friend instead.
+    const stray = plan.fight?.length ? 0.5 : 1;
+    const hit = plan.shots * chance(plan.need) * Math.pow(0.5, obstacles) * stray * woundChance(p.weapon.s, profile(ctx, e).d);
     const value = (hit * profile(ctx, e).value) / Math.max(1, e.wounds) / (e.hero && e.fate ? 2 : 1);
     if (!best || value > best.value) best = { target: e, obstacles, value };
   }
@@ -791,7 +793,7 @@ function shootStep(ctx: Ctx): BotStep {
     if (memo.acted.includes(m.id)) continue;
     memo.acted.push(m.id);
     const p = profile(ctx, m);
-    if (!p.weapon || engagedWith(state, m).length || (memo.moved[m.id] ?? 0) > p.mv / 2 + 0.05 || m.prone || cannotAct(state, m)) continue;
+    if (!p.weapon || engagedWith(state, m).length || m.prone || cannotAct(state, m)) continue;
     if (memo.courage[m.id] === false && armyStatus(state, seat).broken) continue;
     const shot = bestShot(ctx, m);
     if (!shot || shot.value < 0.02) continue;

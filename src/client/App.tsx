@@ -13,7 +13,8 @@ import { FightPanel } from './FightPanel.tsx';
 import { ModelCard, weaponOf } from './ModelCard.tsx';
 import { SightHint } from './SightHint.tsx';
 import { combatFromKey, combats, other } from '../shared/flow.ts';
-import { fightDone } from '../shared/movement.ts';
+import { engaged, fightDone } from '../shared/movement.ts';
+import { isThrowing } from '../shared/shooting.ts';
 import { waitingOnMight } from '../shared/bot.ts';
 import { distanceBetween, formatInches } from '../shared/geometry.ts';
 import { scenarioById } from '../shared/scenarios.ts';
@@ -367,8 +368,13 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
     setPanelOpen(true);
   };
 
-  // In the Shoot phase, tapping an enemy while your archer is selected aims at it instead of selecting it.
-  const shooter = single && single.owner === role && state.phase === 'shoot' && state.flow.started && weaponOf(single, catalog) ? single : undefined;
+  // In the Shoot phase, tapping an enemy while your archer is selected aims at it instead of selecting it; in the
+  // Move phase the same goes for a model with a throwing weapon, which can throw as it charges.
+  const missile = single && weaponOf(single, catalog);
+  const shooter =
+    single && single.owner === role && state.flow.started && missile && (state.phase === 'shoot' || (state.phase === 'move' && isThrowing(missile) && !state.flow.shot?.includes(single.id) && !engaged(state, single)))
+      ? single
+      : undefined;
   const onModelTap = (m: Model) => {
     if (!shooter || m.owner === shooter.owner || m.dead) return false;
     setAimAt(m.id);

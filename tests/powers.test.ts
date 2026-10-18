@@ -143,14 +143,14 @@ describe('power effects', () => {
   });
 
   it('Protection of the Valar keeps enemy powers off and makes shots harder; Blinding Light makes them need 6s', () => {
-    let s = game([caster(), mk('man', 'p1', 14, 30), mk('archer', 'p2', 10, 10, { profileId: 'orc' })]);
+    let s = game([caster(), mk('man', 'p1', 14, 30), mk('archer', 'p2', 10, 14, { profileId: 'orc' })]);
     s = ask(s, 'p1', cast('man', 'Protection of the Valar'), [6])!;
     s = run(s, { type: 'endActivation', seat: 'p1' }, { type: 'endActivation', seat: 'p2' });
     const shot = (target: string) => ({ type: 'shoot', shot: { shooter: { id: 'archer', name: 'archer', weapon: 'Orc bow', shoot: 5, s: 2, shots: 1 }, target: { id: target, name: target, d: 5 }, obstacles: 0 } }) as Action;
     expect(ask(s, 'p2', shot('man'), [1])!.log.at(-1)?.label).toMatch(/\(Orc bow, 6\+\)|6\+/);
-    let b = ask(game([caster(), mk('man', 'p1', 14, 30), mk('archer', 'p2', 10, 10, { profileId: 'orc' })]), 'p1', cast('shaman', 'Blinding Light'), [6])!;
+    let b = ask(game([caster(), mk('man', 'p1', 14, 30), mk('archer', 'p2', 10, 14, { profileId: 'orc' })]), 'p1', cast('shaman', 'Blinding Light'), [6])!;
     b = run(b, { type: 'endActivation', seat: 'p1' }, { type: 'endActivation', seat: 'p2' });
-    expect(ask(b, 'p2', { ...shot('man'), shot: { ...(shot('man') as { shot: object }).shot, shooter: { id: 'archer', name: 'archer', weapon: 'Orc bow', shoot: 4, s: 2, shots: 1 } } } as Action, [5])!.log.some(r => r.label.includes('Orc bow, 6+'))).toBe(true);
+    expect(ask(b, 'p2', { ...shot('man'), shot: { ...(shot('man') as { shot: object }).shot, shooter: { id: 'archer', name: 'archer', weapon: 'Orc bow', shoot: 4, s: 2, shots: 1 } } } as Action, [5])!.log.some(r => /orc bow, 6\+/i.test(r.label))).toBe(true);
   });
 
   it("Nature's Wrath knocks every enemy in range down, and the toughest-willed one resists for all", () => {
