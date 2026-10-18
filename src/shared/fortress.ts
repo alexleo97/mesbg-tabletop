@@ -130,6 +130,25 @@ export function raiseLadders(state: GameState): GameState {
   return terrain === state.terrain ? state : { ...state, terrain };
 }
 
+/**
+ * Where a model climbing a ladder at `p` is headed: over a wall to `by` inches beyond its far face, or up onto the
+ * top of anything else.
+ */
+export function overThe(t: Terrain, p: Point, by = 1): Point {
+  if (t.kind !== 'wall' && t.kind !== 'ruin') return { x: t.x, y: t.y };
+  const a = (t.rot * Math.PI) / 180;
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  const dx = p.x - t.x;
+  const dy = p.y - t.y;
+  let lx = dx * c + dy * s;
+  let ly = -dx * s + dy * c;
+  // Across the wall's thin side.
+  if (t.h <= t.w) ly = -Math.sign(ly || 1) * (t.h / 2 + by);
+  else lx = -Math.sign(lx || 1) * (t.w / 2 + by);
+  return { x: t.x + lx * c - ly * s, y: t.y + lx * s + ly * c };
+}
+
 /** Friends of the carrier also touching the Heavy Object it carries, who share the load. */
 export const helpers = (state: GameState, carrier: Model, t: Terrain) =>
   Object.values(state.models).filter(f => f.id !== carrier.id && f.owner === carrier.owner && !f.dead && !f.waiting && !f.escaped && !f.siege && !mounted(f) && touchingMarker(f, t));
@@ -149,7 +168,8 @@ export function ramCrew(state: GameState, ram: Terrain, seat: Seat, inFight: (m:
 }
 
 /** The standing enemy gate a ram is up against, if any. */
-export const ramGate = (state: GameState, ram: Terrain, seat: Seat) => Object.values(state.terrain).find(t => gateStanding(t) && enemyOf(t, seat) && markerToPiece(ram, t) <= 0.3);
+// (The marker stands for a long log, so it reaches a little further than its size.)
+export const ramGate = (state: GameState, ram: Terrain, seat: Seat) => Object.values(state.terrain).find(t => gateStanding(t) && enemyOf(t, seat) && markerToPiece(ram, t) <= 0.6);
 
 /** How a gate, ladder or ram works, in a line or two for its tooltip. */
 export function fortressNotes(t: Terrain): string[] {

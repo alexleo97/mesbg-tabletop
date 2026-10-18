@@ -1,4 +1,6 @@
 import { useEffect, useState, type Ref } from 'react';
+import { breachOptions } from '../shared/breach.ts';
+import { laden } from '../shared/fortress.ts';
 import { loadRulesText, modelStats, pictureUrl, startingPoints, statsWithOptions, STAT_NAMES, type Catalog } from '../shared/catalog.ts';
 import { strikeWounds, woundsTaken } from '../shared/fight.ts';
 import { CONTACT_SLACK, type Combat } from '../shared/flow.ts';
@@ -194,6 +196,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
   // Objectives are handled as models move (dropping one is always allowed).
   const markers = markerActions(state, m).filter(a => a.kind === 'drop' || phaseAllows(state, m.owner, { type: a.kind }));
   const carried = carriedBy(state, m);
+  const breaches = breachOptions(state, catalog, m);
   const weapon = weaponOf(m, catalog);
   const patch = (p: Partial<Model>) => dispatch({ type: 'updateModel', id: m.id, patch: p });
   const photo = unit && pictureUrl(unit);
@@ -450,7 +453,20 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
       {mine && state.phase === 'move' && state.flow.started && !held && <TerrainMoves state={state} dispatch={dispatch} m={m} />}
       {mine && state.phase === 'fight' && state.flow.started && !m.dead && <BackAwayPicker state={state} dispatch={dispatch} m={m} />}
       {mine && state.phase === 'move' && <CastBox state={state} dispatch={dispatch} role={role} model={m} />}
-      {carried.length > 0 && <p className="muted carrying">Carrying {carried.map(t => `the ${OBJECT_NAMES[t.object!]}`).join(' and ')}.</p>}
+      {carried.length > 0 && (
+        <p className="muted carrying">
+          Carrying {carried.map(t => `the ${OBJECT_NAMES[t.object!]}`).join(' and ')}.{laden(state, m) ? ' A Heavy Object carried alone halves its Move.' : ''}
+        </p>
+      )}
+      {mine && breaches.length > 0 && (
+        <div className="row wrap marker-actions">
+          {breaches.map(b => (
+            <button key={b.how + b.target} className="primary" onClick={() => dispatch({ type: 'breach', how: b.how, model: m.id, target: b.target })}>
+              {b.label}
+            </button>
+          ))}
+        </div>
+      )}
       {mine && markers.length > 0 && (
         <div className="row wrap marker-actions">
           {markers.map(a => (

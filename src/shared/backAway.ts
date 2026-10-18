@@ -1,6 +1,7 @@
 // After a duel the losers back away 1" from the winners. The app does it for the players: each loser steps
 // straight away from the enemies it fought, or as close to that as it can get, and its player may then pick another
 // way. A friend may make way for it; a loser with nowhere to go is trapped, unless it can go over the edge of a drop.
+import { shutTo } from './fortress.ts';
 import { distanceBetween, halfExtents, type Point } from './geometry.ts';
 import { engaged } from './movement.ts';
 import { cannotAct } from './powers.ts';
@@ -41,6 +42,8 @@ function step(state: GameState, models: Record<string, Model>, m: Model, at: Poi
       if (!t.carrier && !t.gone && Math.hypot(t.x - at.x, t.y - at.y) < t.w / 2 + r - 0.05) return no;
     } else if (t.kind === 'building' && t !== inside && insidePolygon(outline(t), at)) return no;
     else if (t.kind === 'wall' && heightOf(t) > tall / 2 && crosses(outline(t), m, at)) return no;
+    // Nor back through a gate shut to it.
+    else if (shutTo(t, m.owner) && crosses(outline(t), m, at)) return no;
   }
   if (!m.floor) {
     const rise = climbedLevel(state, at) - climbedLevel(state, m);

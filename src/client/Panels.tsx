@@ -5,6 +5,7 @@ import { ResultReport } from './ResultReport.tsx';
 import { MapsSection } from './Maps.tsx';
 import { DEFAULT_HEIGHT, FLOORED, heightOf, isDifficult } from '../shared/sight.ts';
 import { TERRAIN_GROUPS, TERRAIN_INFO, terrainRules } from '../shared/terrain.ts';
+import { DOORS } from '../shared/fortress.ts';
 import { useRef, useState } from 'react';
 import { objectiveMarkers, river, STARTER_BOARDS, starterTerrain } from '../shared/boards.ts';
 import { baseLabel, loadCatalog, parseBuilderExport, STAT_NAMES, startingPoints, statsWithOptions } from '../shared/catalog.ts';
@@ -15,7 +16,7 @@ import { PREMADE, premadeRoster } from '../shared/premade.ts';
 import { listEntries } from '../shared/warbands.ts';
 import { botRoster, playableArmies } from '../shared/botList.ts';
 import { parseAdmiral } from '../shared/admiral.ts';
-import { BOT_NAME, MATS, TERRAIN_KINDS, type Action, type Base, type DiceRoll, type GameState, type Mat, type Model, type Role, type Seat, type Terrain, type TerrainKind } from '../shared/types.ts';
+import { BOT_NAME, DOOR_TYPES, MATS, TERRAIN_KINDS, type Action, type Base, type DiceRoll, type DoorType, type GameState, type Mat, type Model, type Role, type Seat, type Terrain, type TerrainKind } from '../shared/types.ts';
 import { BODY_FONTS, HEADING_FONTS, THEMES, type Settings } from './settings.ts';
 
 type Dispatch = (a: Action) => void;
@@ -571,7 +572,26 @@ const TERRAIN_PRESETS: { label: string; t: Omit<Terrain, 'id' | 'x' | 'y' | 'loc
   { label: 'Cliff', t: { kind: 'cliff', shape: 'circle', w: 6, h: 8, rot: 0 } },
   { label: 'Field', t: { kind: 'field', shape: 'rect', w: 8, h: 5, rot: 0 } },
   { label: 'Objective', t: { kind: 'objective', shape: 'circle', w: 1.6, h: 1.6, rot: 0 } },
+  { label: 'Fortress wall', t: { kind: 'wall', shape: 'rect', w: 10, h: 1, rot: 0, height: 3, sheer: true } },
+  { label: 'Fortress gate', t: { kind: 'gate', shape: 'rect', w: 4, h: 1, rot: 0, door: 'castle' } },
+  { label: 'Door', t: { kind: 'gate', shape: 'rect', w: 1.5, h: 0.5, rot: 0, door: 'heavy', height: 2 } },
+  { label: 'Siege Ladder', t: { kind: 'objective', shape: 'circle', w: 1, h: 1, rot: 0, object: 'ladder' } },
+  { label: 'Battering ram', t: { kind: 'objective', shape: 'circle', w: 1, h: 1, rot: 0, object: 'ram' } },
 ];
+
+/** Who holds a gate, or owns a ladder or ram: either player, or (for a gate) no one. */
+function SidePicker({ state, value, onChange, none }: { state: GameState; value?: Seat; onChange: (s: Seat | undefined) => void; none?: string }) {
+  return (
+    <select value={value ?? ''} onChange={e => onChange((e.target.value || undefined) as Seat | undefined)}>
+      {none && <option value="">{none}</option>}
+      {(['p1', 'p2'] as const).map(seat => (
+        <option key={seat} value={seat}>
+          {state.names[seat] || (seat === 'p1' ? 'Player 1' : 'Player 2')}
+        </option>
+      ))}
+    </select>
+  );
+}
 
 export function TablePanel({
   state,
@@ -611,7 +631,7 @@ export function TablePanel({
     if (fileRef.current) fileRef.current.value = '';
   };
 
-  const objectives = Object.values(state.terrain).filter(o => o.kind === 'objective');
+  const objectives = Object.values(state.terrain).filter(o => o.kind === 'objective' && o.object !== 'ladder' && o.object !== 'ram');
 
   return (
     <div className="panel-body">
@@ -704,6 +724,40 @@ export function TablePanel({
           <Stepper label="Depth" value={Math.round(t.h)} min={1} max={48} onChange={v => patch({ h: v })} />
           {DEFAULT_HEIGHT[t.kind] !== undefined && <Stepper label="Height" value={Math.round(heightOf(t))} min={0} max={12} onChange={v => patch({ height: v })} />}
           {FLOORED.has(t.kind) && <Stepper label="Floors inside" value={t.floors ?? 0} min={0} max={6} onChange={v => patch({ floors: v })} />}
+          {t.kind === 'gate' && (
+            <>
+              <label>
+                Kind
+                <select value={t.door ?? 'castle'} onChange={e => patch({ door: e.target.value as DoorType, wounds: undefined })}>
+                  {DOOR_TYPES.map(k => (
+                    <option key={k} value={k}>
+                      {DOORS[k].name} (Defence {DOORS[k].d}, {DOORS[k].w} Wound{DOORS[k].w === 1 ? '' : 's'})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Held by
+                <SidePicker state={state} value={t.side} onChange={side => patch({ side })} none="No one (shut to both sides)" />
+              </label>
+              {t.gone ? (
+                <button onClick={() => patch({ gone: undefined, wounds: undefined, by: undefined })}>Put the gate back up</button>
+              ) : (
+                <Stepper label="Wounds left" value={t.wounds ?? DOORS[t.door ?? 'castle'].w} min={1} max={DOORS[t.door ?? 'castle'].w} onChange={v => patch({ wounds: v })} />
+              )}
+            </>
+          )}
+          {(t.object === 'ladder' || t.object === 'ram') && (
+            <label>
+              Belongs to
+              <SidePicker state={state} value={t.side} onChange={side => patch({ side })} none="Either side" />
+            </label>
+          )}
+          {(t.kind === 'wall' || t.kind === 'building' || t.kind === 'rock' || t.kind === 'cliff') && (
+            <label className="check">
+              <input type="checkbox" checked={!!t.sheer} onChange={e => patch({ sheer: e.target.checked })} /> Sheer (needs a Siege Ladder to climb)
+            </label>
+          )}
           <div className="row">
             <button onClick={() => patch({ rot: t.rot - 15 })}>⟲ 15°</button>
             <button onClick={() => patch({ rot: t.rot + 15 })}>⟳ 15°</button>

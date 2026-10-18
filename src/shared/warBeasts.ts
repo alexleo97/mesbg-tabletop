@@ -148,6 +148,8 @@ const STEP = 0.05;
 /** The terrain a war beast or chariot can't drive through: woods (for a war beast), and anything over 2" tall for either. */
 function stopsAt(t: Terrain, kind: 'war' | 'chariot'): 'blocked' | 'obstacle' | undefined {
   if (t.gone || t.kind === 'objective' || t.kind === 'road' || t.kind === 'bridge') return undefined;
+  // A gate still standing stops either, whoever holds it.
+  if (t.kind === 'gate') return kind === 'war' ? 'blocked' : 'obstacle';
   if (kind === 'war') {
     if (t.kind === 'wood') return 'blocked';
     if ((t.kind === 'wall' || t.kind === 'rock' || t.kind === 'cliff' || t.kind === 'building' || t.kind === 'ruin') && heightOf(t) > 2) return 'blocked';

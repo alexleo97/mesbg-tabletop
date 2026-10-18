@@ -1,4 +1,6 @@
 import { mounted } from './cavalry.ts';
+import { breachOptions } from './breach.ts';
+import { gateStanding, ladderable, nearestEdge, overThe } from './fortress.ts';
 import { modelStats, type Catalog } from './catalog.ts';
 import { fighterOf } from './wargear.ts';
 import { duelLeader, duelSettled, strikeWounds, woundsTaken, type BrutalAttack, type Fighter, type FightRequest } from './fight.ts';
@@ -14,13 +16,13 @@ import { carriedBy, exitEdges, markerActions, onTable, sanctuary } from './objec
 import { chance, fightOdds, woundChance, type Side } from './odds.ts';
 import { PICKS, pickOptions } from './picks.ts';
 import { scoreLines } from './scoring.ts';
-import { flooredAt, floorHeight } from './sight.ts';
+import { flooredAt, floorHeight, heightOf } from './sight.ts';
 import { planShot, weaponFor } from './shooting.ts';
 import { atCrossing, crossBlocked, fallingHits } from './terrainTests.ts';
 import { armyStatus } from './status.ts';
 import { pushers } from './siege.ts';
 import { chargeAim, chargesDue, straightOn } from './trample.ts';
-import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
+import type { Action, DiceRoll, GameState, Model, Seat, Terrain } from './types.ts';
 
 // The computer player. Each call looks at the game and picks the one thing it would do next, so the server can play
 // its moves out one at a time with a pause between them, and anything the other player does in the meantime is seen.
@@ -427,8 +429,14 @@ function latestRoll(ctx: Ctx, model: string, prefix: string): DiceRoll | undefin
 function markerStep(ctx: Ctx, m: Model): BotStep | null {
   const { state } = ctx;
   if (!isUp(m)) return null;
+  // A defender on the walls pushes down any ladder it can reach.
+  const push = breachOptions(state, ctx.catalog, m).find(b => b.how === 'push');
+  if (push) return { action: { type: 'breach', how: 'push', model: m.id, target: push.target }, delay: DICE_PAUSE };
   for (const a of markerActions(state, m)) {
     if (a.kind === 'drop') continue;
+    // Only its own side's ladders and rams are worth hauling about.
+    const object = a.marker ? state.terrain[a.marker] : undefined;
+    if (a.kind === 'pickUp' && (object?.object === 'ladder' || object?.object === 'ram') && object.side !== m.owner) continue;
     if (a.kind === 'escape') {
       // Leave the table with something worth carrying off, or in a scenario that scores getting models away.
       if (carriedBy(state, m).length || state.scenario === 'reconnoitre') return { action: { type: 'escape', model: m.id }, delay: MOVE_PAUSE };
@@ -485,9 +493,22 @@ function assignGoals(ctx: Ctx): Map<string, Goal> {
   const { w, h } = state.board;
 
   // Carriers first: off the table where that scores, to a Sanctuary with the wounded, otherwise back to safety.
+  // A Siege Ladder goes to the nearest wall before the enemy, a ram to the enemy's gate.
+  const gates = Object.values(state.terrain).filter(t => gateStanding(t) && t.side && t.side !== seat);
+  const walls = Object.values(state.terrain).filter(t => ladderable(t) && (t.sheer || heightOf(t) > 2));
+  const heavyGoal = (m: Model, t: Terrain): Goal | undefined => {
+    const to = (t.object === 'ram' ? gates : walls).map(x => nearestEdge(x, m)).sort((a, b) => centre(m, a) - centre(m, b))[0];
+    return to && { at: to, pull: 1.2 };
+  };
   for (const m of ours) {
     const carried = carriedBy(state, m);
     if (!carried.length) continue;
+    const gear = carried.find(t => t.object === 'ladder' || t.object === 'ram');
+    const goal = gear && heavyGoal(m, gear);
+    if (goal) {
+      out.set(m.id, goal);
+      continue;
+    }
     const edges = exitEdges(state, m);
     const spots: Point[] = edges.map(e => (e === 'top' ? { x: m.x, y: 0 } : e === 'bottom' ? { x: m.x, y: h } : e === 'left' ? { x: 0, y: m.y } : { x: w, y: m.y }));
     if (carried.some(t => t.object === 'ally')) spots.push(...sanctuary(state, seat).map(z => (z.shape === 'quarter-circle' ? { x: z.cx === 0 ? 3 : w - 3, y: z.cy === 0 ? 3 : h - 3 } : { x: w / 2, y: h / 2 })));
@@ -498,6 +519,17 @@ function assignGoals(ctx: Ctx): Map<string, Goal> {
 
   const wants: { at: Point; need: number; pull: number; near?: number; infantry?: boolean }[] = [];
   for (const t of onTable(state)) {
+    if (t.object === 'ladder' || t.object === 'ram') {
+      // Our own siege gear: hands to carry it (and a ram's second pair to share the load), then climbers up a raised
+      // ladder, over the top.
+      if (t.side !== seat) continue;
+      const c = t.carrier ? state.models[t.carrier] : undefined;
+      const wall = t.raised ? state.terrain[t.raised] : undefined;
+      if (wall) wants.push({ at: overThe(wall, t), need: 4, pull: 1, infantry: true });
+      else if (c) wants.push({ at: c, need: t.object === 'ram' ? 2 : 1, pull: 1.1, infantry: true });
+      else if (t.object === 'ram' ? gates.length : walls.length) wants.push({ at: t, need: t.object === 'ram' ? 3 : 2, pull: 0.9, infantry: true });
+      continue;
+    }
     if (t.carrier) {
       const c = state.models[t.carrier];
       if (c && c.owner !== seat) wants.push({ at: c, need: 2, pull: 0.9 });
@@ -905,7 +937,12 @@ function shootStep(ctx: Ctx): BotStep {
     if (!p.weapon || engagedWith(state, m).length || m.prone || cannotAct(state, m)) continue;
     if (memo.courage[m.id] === false && armyStatus(state, seat).broken) continue;
     const shot = bestShot(ctx, m);
-    if (!shot || shot.value < 0.02) continue;
+    if (!shot || shot.value < 0.02) {
+      // With nothing better to shoot, a strong enough bow or an engine shoots at an enemy gate.
+      const gate = breachOptions(state, ctx.catalog, m).find(b => b.how === 'shoot' && state.terrain[b.target]?.kind === 'gate');
+      if (gate) return { action: { type: 'breach', how: 'shoot', model: m.id, target: gate.target }, delay: DICE_PAUSE };
+      continue;
+    }
     memo.pending = { kind: 'shot', model: m.id };
     const t = shot.target;
     return {
@@ -1095,13 +1132,25 @@ function fightStep(ctx: Ctx): BotStep | null {
     const apply = woundsFor(ctx, g);
     if (apply) return apply;
   }
+  // A battering ram up against a gate swings before the other fights.
+  for (const m of side(state, seat)) {
+    const ram = breachOptions(state, ctx.catalog, m).find(b => b.how === 'ram');
+    if (ram) return { action: { type: 'breach', how: 'ram', model: m.id, target: ram.target }, delay: DICE_PAUSE };
+  }
   const heroic = new Set(phaseHeroics(state).filter(h => h.action === 'Heroic Combat').map(h => h.model));
   const open = combats(state)
     .filter(c => !fightDone(state, c) && c[seat].length && c[other(seat)].length)
     .sort((a, b) => Number([...b.p1, ...b.p2].some(id => heroic.has(id))) - Number([...a.p1, ...a.p2].some(id => heroic.has(id))));
   // Strikes for a duel already rolled come first; new fights are started only by the side with Priority.
   const c = open.find(x => openDuel(state, x, memo.since)) ?? (state.priority === seat || !state.priority ? open[0] : undefined);
-  if (!c) return null;
+  if (!c) {
+    // Out of the fights, models at an enemy gate strike at it.
+    for (const m of side(state, seat)) {
+      const hit = breachOptions(state, ctx.catalog, m).find(b => b.how === 'strike' && state.terrain[b.target]?.kind === 'gate');
+      if (hit) return { action: { type: 'breach', how: 'strike', model: m.id, target: hit.target }, delay: DICE_PAUSE };
+    }
+    return null;
+  }
   const duel = openDuel(state, c, memo.since);
   if (!duel) return { action: { type: 'fight', fight: fightRequest(ctx, c) }, delay: DICE_PAUSE * 1.5 };
   const raise = mightInDuel(ctx, duel.rolls);
