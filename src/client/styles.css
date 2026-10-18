@@ -139,6 +139,24 @@ h1, h3, h4, .topbar .room, .phases .turn, .roster-summary b, .name-input, .tabs 
 .terrain .objective-glyph { fill: #e0c25a; font-weight: 700; font-family: Cinzel, serif; pointer-events: none; }
 .terrain .objective-glyph.p1 { fill: #8cb8f2; }
 .terrain .objective-glyph.p2 { fill: #f08a82; }
+.terrain .gate-leaf { fill: #6b4a2b; stroke: #2e1f12; stroke-width: 0.08; }
+.terrain .gate-plank { stroke: #2e1f12; stroke-width: 0.04; opacity: 0.6; pointer-events: none; }
+.terrain .gate-band { stroke: #2b2b2e; stroke-width: 0.16; pointer-events: none; }
+.terrain .gate-seam { stroke: #1d140b; stroke-width: 0.08; pointer-events: none; }
+.terrain .gate-post { stroke: #2b2722; stroke-width: 0.06; }
+.terrain .gate-side { fill: none; stroke-width: 0.1; stroke-dasharray: 0.3 0.2; pointer-events: none; }
+.terrain .gate-side.p1 { stroke: #8cb8f2; }
+.terrain .gate-side.p2 { stroke: #f08a82; }
+.terrain .gate-splinter { fill: #6b4a2b; stroke: #2e1f12; stroke-width: 0.03; }
+.terrain .gear-hit { fill: #0000; }
+.terrain .ladder-rail { stroke: #8a6236; stroke-width: 0.12; stroke-linecap: round; }
+.terrain .ladder-rung { stroke: #8a6236; stroke-width: 0.08; }
+.terrain .ladder.raised .ladder-rail { stroke: #c08a4a; }
+.terrain .ram-log { fill: #6b4a2b; stroke: #2e1f12; stroke-width: 0.05; }
+.terrain .ram-head { fill: #55565c; stroke: #222; stroke-width: 0.04; }
+.terrain .ram-head.p1 { fill: #6c86a8; }
+.terrain .ram-head.p2 { fill: #a86c66; }
+.terrain .ram-band { fill: #2b2b2e; }
 .marker-actions { margin-top: 6px; }
 .carrying { margin: 4px 0; }
 .pick-row { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin: 4px 0; }

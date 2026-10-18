@@ -19,6 +19,7 @@ const MATERIAL: Record<Terrain['kind'], Material> = {
   objective: 'stone',
   bridge: 'wall',
   road: 'dirt',
+  gate: 'wall',
 };
 
 function rand(seed: string, i: number) {
@@ -313,7 +314,62 @@ export function TerrainArt({ t, mat }: { t: Terrain; mat: Mat }) {
         </>
       );
     }
+    case 'gate': {
+      // Long side runs along w: two leaves of planks with iron bands, a stone post at each end. Broken down, only
+      // splinters and the posts are left.
+      const post = Math.min(0.5, t.w * 0.12);
+      const inner = t.w - post * 2;
+      const planks = Math.max(4, Math.round(inner / 0.35));
+      if (t.gone)
+        return (
+          <>
+            <rect className="ground gate-post" x={-t.w / 2} y={-t.h / 2} width={post} height={t.h} fill={tex} />
+            <rect className="ground gate-post" x={t.w / 2 - post} y={-t.h / 2} width={post} height={t.h} fill={tex} />
+            {Array.from({ length: 7 }, (_, i) => (
+              <rect key={i} className="gate-splinter" x={-inner / 2 + rand(t.id, i) * (inner - 0.5)} y={-t.h / 2 + rand(t.id, i + 9) * t.h} width={0.5} height={0.12} transform={`rotate(${rand(t.id, i + 20) * 180 - 90} ${-inner / 2 + rand(t.id, i) * (inner - 0.5) + 0.25} ${-t.h / 2 + rand(t.id, i + 9) * t.h})`} />
+            ))}
+          </>
+        );
+      return (
+        <>
+          <rect className="ground gate-leaf" x={-inner / 2} y={-t.h / 2} width={inner} height={t.h} filter="url(#hard-shadow)" />
+          {Array.from({ length: planks - 1 }, (_, i) => {
+            const x = -inner / 2 + ((i + 1) * inner) / planks;
+            return <line key={i} className="gate-plank" x1={x} x2={x} y1={-t.h / 2} y2={t.h / 2} />;
+          })}
+          {[-0.3, 0.3].map(k => (
+            <line key={k} className="gate-band" x1={-inner / 2} x2={inner / 2} y1={k * t.h} y2={k * t.h} />
+          ))}
+          <line className="gate-seam" x1={0} x2={0} y1={-t.h / 2} y2={t.h / 2} />
+          <rect className="ground gate-post" x={-t.w / 2} y={-t.h / 2} width={post} height={t.h} fill={tex} />
+          <rect className="ground gate-post" x={t.w / 2 - post} y={-t.h / 2} width={post} height={t.h} fill={tex} />
+          {t.side && <rect className={`gate-side ${t.side}`} x={-inner / 2} y={-t.h / 2} width={inner} height={t.h} />}
+        </>
+      );
+    }
     case 'objective':
+      if (t.object === 'ladder')
+        return (
+          <g className={t.raised ? 'ladder raised' : 'ladder'} filter="url(#hard-shadow)">
+            <circle className="gear-hit" r={t.w / 2} />
+            <line className="ladder-rail" x1={-t.w * 0.22} x2={-t.w * 0.22} y1={-t.w * 0.6} y2={t.w * 0.6} />
+            <line className="ladder-rail" x1={t.w * 0.22} x2={t.w * 0.22} y1={-t.w * 0.6} y2={t.w * 0.6} />
+            {[-0.4, -0.15, 0.1, 0.35].map(k => (
+              <line key={k} className="ladder-rung" x1={-t.w * 0.22} x2={t.w * 0.22} y1={k * t.w} y2={k * t.w} />
+            ))}
+          </g>
+        );
+      if (t.object === 'ram')
+        return (
+          <g className="ram" filter="url(#hard-shadow)">
+            <circle className="gear-hit" r={t.w / 2} />
+            <rect className="ram-log" x={-t.w * 0.75} y={-t.w * 0.16} width={t.w * 1.3} height={t.w * 0.32} rx={t.w * 0.12} />
+            <path className={`ram-head ${t.side ?? ''}`} d={`M ${t.w * 0.55} ${-t.w * 0.24} L ${t.w * 0.8} 0 L ${t.w * 0.55} ${t.w * 0.24} Z`} />
+            {[-0.45, 0.05].map(k => (
+              <rect key={k} className="ram-band" x={k * t.w} y={-t.w * 0.17} width={t.w * 0.08} height={t.w * 0.34} />
+            ))}
+          </g>
+        );
       return (
         <>
           <circle className="ground objective" r={t.w / 2} filter="url(#hard-shadow)" />
@@ -331,7 +387,7 @@ export function TerrainArt({ t, mat }: { t: Terrain; mat: Mat }) {
 }
 
 /** A letter on each kind of scenario marker, so you can tell them apart at a glance. */
-const GLYPHS: Record<NonNullable<Terrain['object']>, string> = { artefact: 'A', relic: 'R', heirloom: 'H', decoy: '✕', supply: 'S', ally: '+' };
+const GLYPHS: Record<NonNullable<Terrain['object']>, string> = { artefact: 'A', relic: 'R', heirloom: 'H', decoy: '✕', supply: 'S', ally: '+', ladder: 'L', ram: 'B' };
 
 function star(r: number) {
   const pts: string[] = [];

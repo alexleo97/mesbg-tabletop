@@ -10,10 +10,11 @@ const IN_THE_WAY: ReadonlySet<TerrainKind> = new Set(['wood', 'ruin', 'wall', 'f
 /** Terrain that halves movement unless set otherwise on the piece. */
 const DIFFICULT: ReadonlySet<TerrainKind> = new Set(['wood', 'water', 'ruin']);
 
-export const blocksSight = (t: Terrain) => BLOCKS.has(t.kind) || t.kind === 'hill';
+/** (A gate or door hides what's behind it until it's broken down.) */
+export const blocksSight = (t: Terrain) => BLOCKS.has(t.kind) || t.kind === 'hill' || (t.kind === 'gate' && !t.gone);
 
 /** How tall each kind of terrain usually is, in inches, unless set on the piece. Woods count their trees. */
-export const DEFAULT_HEIGHT: Partial<Record<TerrainKind, number>> = { hill: 2, rock: 2, building: 4, cliff: 6, wall: 1, ruin: 1.5, wood: 4, field: 1 };
+export const DEFAULT_HEIGHT: Partial<Record<TerrainKind, number>> = { hill: 2, rock: 2, building: 4, cliff: 6, wall: 1, ruin: 1.5, wood: 4, field: 1, gate: 3 };
 export const heightOf = (t: Terrain) => t.height ?? DEFAULT_HEIGHT[t.kind] ?? 0;
 /** Terrain a model can stand on top of: hills, and rocks, buildings and cliffs it has climbed. */
 const STANDABLE: ReadonlySet<TerrainKind> = new Set(['hill', 'rock', 'building', 'cliff']);

@@ -5,6 +5,7 @@ import { overWallSpot, secondAttacker, touching, wallBetween } from './barriers.
 import { combatFromKey, CONTACT_SLACK, type Combat } from './flow.ts';
 import { canActivate, phaseHeroics } from './heroics.ts';
 import { cannotAct } from './powers.ts';
+import { laden, overlapsPiece, shutGates } from './fortress.ts';
 import { crossingAhead } from './terrainTests.ts';
 import type { GameState, Model, Seat } from './types.ts';
 
@@ -26,7 +27,9 @@ export function moveAllowance(state: GameState, m: Model): number | null {
     if (m.prone && (state.flow.crawling?.includes(m.id) || state.flow.lay?.includes(m.id))) return 1;
     // Climbing between floors of a building spends Move too.
     const climbed = state.flow.climbed?.[m.id] ?? 0;
-    return Math.max(0, (m.prone || state.flow.stood?.includes(m.id) ? m.move / 2 : m.move) + marchBonus(state, m) - climbed);
+    // So does carrying a Heavy Object alone.
+    const halved = m.prone || state.flow.stood?.includes(m.id) || laden(state, m);
+    return Math.max(0, (halved ? m.move / 2 : m.move) + marchBonus(state, m) - climbed);
   }
   if (state.phase === 'fight') return heroicCombatWon(state, m) ? m.move : (bargeMove(state, m) ?? 1);
   return 0;
@@ -81,6 +84,7 @@ export function basesOverlap(a: Model, b: Model): boolean {
  * Where a move from `from` to `to` has to stop, walking the straight line between them:
  * - short of any other model's base (models can't pass through each other, so a gap must be wide enough), and of
  *   an objective marker at the end of the move;
+ * - short of a gate or door shut to it (one its own side holds it walks through);
  * - outside every enemy's control zone (1"), unless charging. A model charges the enemy it ends up next to, which it
  *   must have been able to see when it set off; once inside that enemy's zone it ignores the others. An enemy in a
  *   fight or lying Prone has no zone, and a model that starts inside a zone may move off without getting closer.
@@ -108,6 +112,8 @@ export function blockMove(state: GameState, m: Model, from: Point, to: Point, sk
   const sees = target && sightTo(state, start, target) !== 'hidden' ? target : undefined;
   const markers = Object.values(state.terrain).filter(t => t.kind === 'objective' && !t.carrier && !t.gone);
   const onMarker = (p: Point) => markers.some(t => Math.hypot(t.x - p.x, t.y - p.y) < t.w / 2 + mmToIn(m.base.w) / 2 - 0.05);
+  // (A model already overlapping a gate, put there by hand, may step off it.)
+  const gates = state.flow.started ? shutGates(state, m, from, to).filter(t => !overlapsPiece(m, t, from)) : [];
   const steps = Math.ceil(d / 0.05);
   let last = from;
   for (let i = 1; i <= steps; i++) {
@@ -115,6 +121,7 @@ export function blockMove(state: GameState, m: Model, from: Point, to: Point, sk
     const p = { x: from.x + (to.x - from.x) * f, y: from.y + (to.y - from.y) * f };
     const here = at(p);
     if (others.some(e => basesOverlap(here, e))) break;
+    if (gates.some(t => overlapsPiece(m, t, p))) break;
     if (!(sees && distanceBetween(here, sees) < 1)) {
       if (zoned.some(e => {
         const de = distanceBetween(here, e);

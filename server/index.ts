@@ -311,6 +311,7 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
     case 'bannerRolled':
     case 'brutal':
     case 'trampled':
+    case 'breached':
       return null; // the server rolls for these and settles them
     case 'board':
       return mine(action.id) && (!action.beast || mine(action.beast)) ? action : null;

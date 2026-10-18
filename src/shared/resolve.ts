@@ -1,4 +1,5 @@
 import { beside, mounted, mountLabel, mountOf, onFoot, separatedMount } from './cavalry.ts';
+import { resolveBreach } from './breach.ts';
 import { brutalOptions, chargeEffects, hurl, knockedDown } from './monsters.ts';
 import { trample } from './trample.ts';
 import { biggerHolds, commanderOf, howdahFor, immovable } from './warBeasts.ts';
@@ -24,7 +25,7 @@ import { MAX_DICE } from './reducer.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
 /** Dice requests a player sends, which only whoever holds the dice (the server, or the browser in practice games) can answer. */
-export const DICE_REQUESTS = new Set<Action['type']>(['roll', 'fight', 'strikes', 'shoot', 'shotOn', 'banner', 'dismount', 'trample', 'cross', 'rollFate', 'rollPriority', 'uncover', 'cast', 'resist']);
+export const DICE_REQUESTS = new Set<Action['type']>(['roll', 'fight', 'strikes', 'shoot', 'shotOn', 'banner', 'dismount', 'trample', 'cross', 'rollFate', 'rollPriority', 'uncover', 'cast', 'resist', 'breach']);
 
 export interface Resolved {
   /** Results everyone applies, in order. */
@@ -448,6 +449,12 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       const shooter = p && state.models[p.shot.shooter.id];
       if (!p || !shooter || p.group !== String(action.group) || shooter.owner !== seat) return null;
       return { apply: [{ type: 'shotPaused', pause: null }, ...shotActions(state, p.shot, shooter, d6, seat, p.group, now, state.log.filter(r => r.group === p.group))] };
+    }
+    case 'breach': {
+      const how = action.how;
+      if (how !== 'strike' && how !== 'ram' && how !== 'shoot' && how !== 'push') return null;
+      const out = resolveBreach(state, catalog, seat, how, String(action.model), String(action.target), d6, uid, now);
+      return out && { apply: out };
     }
     case 'cross': {
       const out = resolveCross(state, seat, String(action.id), d6, uid, now, catalog);

@@ -1,5 +1,6 @@
 import { mounted } from './cavalry.ts';
 import { distanceToBase, halfExtents, inBaseContact, type Point } from './geometry.ts';
+import { fortressNotes, helpers, HEAVY } from './fortress.ts';
 import { scenarioById, type Zone } from './scenarios.ts';
 import type { GameState, MarkerObject, Model, Seat, Terrain } from './types.ts';
 
@@ -13,6 +14,8 @@ export const OBJECT_NAMES: Record<MarkerObject, string> = {
   decoy: 'Heirloom',
   supply: 'Supply',
   ally: 'Wounded Ally',
+  ladder: 'Siege Ladder',
+  ram: 'Battering Ram',
 };
 
 /** How far a model's base is from a marker's edge. */
@@ -136,6 +139,11 @@ export function markerActions(state: GameState, m: Model): MarkerAction[] {
 export function canPickUp(state: GameState, m: Model, t: Terrain): boolean {
   if (!t.object || t.gone || t.carrier || t.hidden || !touching(m, t) || m.dead || m.escaped) return false;
   if (t.object === 'supply' || t.object === 'decoy') return false;
+  // Cavalry can't carry a Heavy Object; a raised ladder stays against its wall, and a ram takes two to lift.
+  if (HEAVY.has(t.object) && isCavalry(m)) return false;
+  if (t.object === 'ladder' && t.raised) return false;
+  if (t.object === 'ram' && !helpers(state, m, t).length) return false;
+  if (t.object === 'ladder' || t.object === 'ram') return !carriedBy(state, m).length;
   // You can only carry your own wounded; nobody carries both Relics, and your own only once the enemy has had it.
   if (t.object === 'ally') return t.side === m.owner;
   if (t.object === 'relic') {
@@ -235,6 +243,9 @@ export function markerNotes(t: Terrain): string[] {
       return ['An enemy model touching it in the End phase destroys it.'];
     case 'ally':
       return ["A heavy object only its own side can carry. Carry it wholly into one of your Sanctuaries (within 12\" of the enemy's corners) to rescue it."];
+    case 'ladder':
+    case 'ram':
+      return fortressNotes(t);
     default:
       return [];
   }

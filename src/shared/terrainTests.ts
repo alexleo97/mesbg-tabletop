@@ -3,6 +3,7 @@
 import { hitModel, mounted, mountOf } from './cavalry.ts';
 import { modelStats, type Catalog } from './catalog.ts';
 import { distanceBetween, halfExtents, type Point } from './geometry.ts';
+import { ladderAt } from './fortress.ts';
 import { canActivate } from './heroics.ts';
 import { engaged, moveLeft, settleMove } from './movement.ts';
 import { formatNeed, woundNeed } from './rules.ts';
@@ -82,6 +83,8 @@ export function crossingAhead(state: GameState, m: Model, from: Point, to: Point
     // A wall: stop with the base touching it, land just clear of it on the far side.
     for (const w of walls) {
       if (startOn.has(w.t.id) || !overlaps(w.poly, p)) continue;
+      // A Siege Ladder against it within 1" takes the model over without a test.
+      if (ladderAt(state, w.t.id, p, r)) continue;
       let k = t;
       while (k < d + r * 2 + 4 && overlaps(w.poly, along(k))) k += 0.05;
       return { terrain: w.t.id, test: testFor(heightOf(w.t), tall)!, stop: along(Math.max(0, t - 0.06)), landing: along(k + 0.02), drop: 0 };
@@ -100,8 +103,8 @@ export function crossingAhead(state: GameState, m: Model, from: Point, to: Point
       const piece = climbed.filter(c => insidePolygon(c.poly, level > prevLevel ? p : along(t - 0.05))).sort((a, b) => b.top - a.top)[0]?.t;
       if (level > prevLevel) {
         const test = testFor(level - prevLevel, tall);
-        if (test && piece) return { terrain: piece.id, test, stop: along(Math.max(0, t - r - 0.01)), landing: along(t + r + 0.02), drop: prevLevel };
-      } else if (prevLevel - level > tall + 1e-6 && piece) {
+        if (test && piece && !ladderAt(state, piece.id, p, r)) return { terrain: piece.id, test, stop: along(Math.max(0, t - r - 0.01)), landing: along(t + r + 0.02), drop: prevLevel };
+      } else if (prevLevel - level > tall + 1e-6 && piece && !ladderAt(state, piece.id, p, r)) {
         return { terrain: piece.id, test: 'Climb down', stop: along(Math.max(0, t - 0.06)), landing: along(t + r + 0.02), drop: prevLevel - level };
       }
       prevLevel = level;
@@ -119,8 +122,10 @@ export function crossBlocked(state: GameState, m: Model, c: Crossing): string | 
   if (c.test === 'Climb' && isCavalryBase(m)) return 'Cavalry can’t climb';
   if (m.prone) return 'A Prone model can’t jump, leap or climb';
   if (engaged(state, m)) return 'It is in a fight';
-  // An enemy defending a wall stops anyone crossing it within its reach (1"), unless it's already in a fight.
+  // A purpose-built wall too tall to jump is too sheer to climb without a ladder, unless the model has Swift Movement.
   const t = state.terrain[c.terrain];
+  if (t?.sheer && c.test === 'Climb' && !m.ground?.includes('swift')) return 'Too sheer to climb: it needs a Siege Ladder';
+  // An enemy defending a wall stops anyone crossing it within its reach (1"), unless it's already in a fight.
   if (t?.kind === 'wall') {
     const guard = Object.values(state.models).find(e => e.owner !== m.owner && !e.dead && !e.waiting && !e.escaped && !e.prone && Math.abs(e.x - c.stop.x) < 4 && Math.abs(e.y - c.stop.y) < 4 && distanceToTerrain(e, t) <= 0.2 && (distanceBetween({ ...m, ...c.stop }, e) < 1 || distanceBetween({ ...m, ...c.landing }, e) < 1) && !engaged(state, e));
     if (guard) return `${guard.name} is defending the wall here: charge it instead`;
