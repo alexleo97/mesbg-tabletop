@@ -433,7 +433,9 @@ function step(state: GameState, action: Action): GameState {
           if (state.phase === 'move') {
             const ahead = crossingAhead(state, prev, from, asked);
             const { [prev.id]: _, ...rest } = blocked ?? {};
-            blocked = ahead && Math.hypot(to.x - ahead.stop.x, to.y - ahead.stop.y) < 0.05 ? { ...rest, [prev.id]: { terrain: ahead.terrain, test: ahead.test, stop: [to.x, to.y], landing: [ahead.landing.x, ahead.landing.y], drop: ahead.drop } } : rest;
+            // (Not if it stopped there to fight an enemy across it.)
+            const fighting = ahead && touchingEnemies({ ...state, models }, { ...prev, ...to }).length > 0;
+            blocked = ahead && !fighting && Math.hypot(to.x - ahead.stop.x, to.y - ahead.stop.y) < 0.05 ? { ...rest, [prev.id]: { terrain: ahead.terrain, test: ahead.test, stop: [to.x, to.y], landing: [ahead.landing.x, ahead.landing.y], drop: ahead.drop } } : rest;
           }
         }
         let next: Model = { ...prev, ...to, rot: mv.rot === undefined ? prev.rot : num(mv.rot, -360, 720, prev.rot) % 360 };
