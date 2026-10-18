@@ -3,6 +3,7 @@ import { modelStats } from '../shared/catalog.ts';
 import { duelLeader, duelSettled, strikeWounds, woundsTaken, type Fighter } from '../shared/fight.ts';
 import { combats, enemiesTouching } from '../shared/flow.ts';
 import { supporters } from '../shared/support.ts';
+import { defence } from '../shared/barriers.ts';
 import { declared, phaseAllows } from '../shared/heroics.ts';
 import { waitingOnMight } from '../shared/bot.ts';
 import { foughtThisTurn } from '../shared/movement.ts';
@@ -111,6 +112,8 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
   const choosing = state.flow.started && state.phase === 'fight' && role === state.priority && !state.flow.duels?.length && !state.flow.resolved.length;
   const others = choosing ? chosen.map(m => ({ m, foes: enemiesTouching(state, m.id).filter(id => !idSet.has(id)) })).filter(x => x.foes.length) : [];
   const fightOf = (id: string) => combats(state).find(c => c.p1.includes(id) || c.p2.includes(id));
+  // A fight over a defended wall, ledge or doorway.
+  const held = sides.p1.length === 1 && sides.p2.length === 1 ? defence(state, [[sides.p1[0].id], [sides.p2[0].id]]) : null;
   const sideName = (i: 0 | 1) => {
     const ms = i === 0 ? sides.p1 : sides.p2;
     return ms.length === 1 ? ms[0].name : seatName(i === 0 ? 'p1' : 'p2');
@@ -239,6 +242,11 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
             </label>
           ))}
         </div>
+      )}
+      {held && (
+        <p className="hint">
+          {state.models[held.defender].name} is defending {held.name} against {state.models[held.attacker].name}: the strikes come before anyone backs away, {state.models[held.attacker].name}'s strikes each need a 4+ to get past {held.name}, and {state.models[held.defender].name} never backs away. If it falls, {state.models[held.attacker].name} takes its place.
+        </p>
       )}
       {ready && priorityOnly && (!lastGroup || struck) && <p className="hint">{seatName(state.priority!)} has Priority, so they choose the order the fights are rolled in.</p>}
       {ready && (!lastGroup || struck) && (

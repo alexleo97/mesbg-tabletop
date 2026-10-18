@@ -93,6 +93,7 @@ export function phaseAllows(state: GameState, seat: Seat, action: { type: string
       return (state.phase === 'shoot' || (state.phase === 'move' && !!action.shot?.charge)) && canActivate(state, seat) && state.models[String(action.shot?.shooter?.id)]?.owner === seat;
     case 'fight':
     case 'strikes':
+    case 'backAwayTo':
       return state.phase === 'fight' && heroicsSettled(state);
     case 'cross':
     case 'crossed':
