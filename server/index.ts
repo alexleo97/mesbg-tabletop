@@ -249,6 +249,7 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
   if (!action || typeof action !== 'object' || typeof action.type !== 'string') return null;
   if (client.role === 'spectator') return null;
   const mine = (id: unknown) => typeof id === 'string' && state.models[id]?.owner === client.role;
+  const ours = (id: unknown) => mine(id) || (!!state.bot && typeof id === 'string' && state.models[id]?.owner === state.bot);
   switch (action.type) {
     case 'rolled':
     case 'backAway':
@@ -330,6 +331,26 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
           return mine(mv?.id) || (!!state.bot && state.models[mv?.id]?.owner === state.bot);
         }),
       };
+    case 'updateModel':
+      // Once the battle is under way, each player changes only their own models (and the Palantír's, in a solo game).
+      return !state.flow.started || ours(action.id) ? action : null;
+    case 'removeModels':
+      if (!state.flow.started || !Array.isArray(action.ids)) return action;
+      return action.ids.every(ours) ? action : null;
+    case 'addModels':
+      if (!state.flow.started || !Array.isArray(action.models)) return action;
+      return action.models.every(m => m?.owner === client.role || (!!state.bot && m?.owner === state.bot)) ? action : null;
+    case 'wound':
+      // Wounds go on your own model, or on an enemy your models struck.
+      if (!state.flow.started) return action;
+      return ours(action.id) || (Array.isArray(action.by) && action.by.some(ours)) ? action : null;
+    case 'setName':
+    case 'endActivation':
+      // Your own name, and the end of your own move or shooting.
+      return !state.flow.started || action.seat === client.role || action.seat === state.bot ? action : null;
+    case 'choosePriority':
+      // Only the player who won the roll decides who has Priority.
+      return !state.flow.chooser || state.flow.chooser === client.role ? action : null;
     case 'loadState':
       // A loaded save keeps its board, but not its dice history or a result, so neither can be forged.
       return { type: 'loadState', state: { ...loadState(action.state), log: [], accounts: state.accounts, result: undefined, private: state.private, listed: state.private ? false : loadState(action.state).listed } };
@@ -724,6 +745,28 @@ const server = createServer((req, res) => {
   createReadStream(file).pipe(res);
 });
 
+const MAX_SOCKETS_PER_ADDRESS = Number(process.env.MAX_SOCKETS_PER_ADDRESS ?? 60);
+const MAX_NEW_ROOMS_PER_ADDRESS = Number(process.env.MAX_NEW_ROOMS_PER_ADDRESS ?? 60);
+const NEW_ROOM_WINDOW_MS = 1000 * 60 * 10;
+/** Open connections, and recently opened new games, for each address. */
+const sockets = new Map<string, number>();
+const newRooms = new Map<string, number[]>();
+setInterval(() => {
+  for (const [from, times] of newRooms) if (!times.some(t => Date.now() - t < NEW_ROOM_WINDOW_MS)) newRooms.delete(from);
+}, NEW_ROOM_WINDOW_MS).unref();
+
+/**
+ * The visitor's address. Behind Render's proxies the socket's own address is the proxy's, so the address the proxies
+ * pass on comes first. A visitor can fake these headers, but only to dodge the limits, never to block anyone else.
+ */
+function addressOf(req: import('node:http').IncomingMessage): string {
+  const header = (name: string) => {
+    const v = req.headers[name];
+    return (Array.isArray(v) ? v[0] : v)?.split(',')[0]?.trim();
+  };
+  return header('cf-connecting-ip') || header('true-client-ip') || header('x-forwarded-for') || req.socket.remoteAddress || 'unknown';
+}
+
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 1024 * 1024 });
 
 wss.on('connection', async (ws, req) => {
@@ -743,6 +786,23 @@ wss.on('connection', async (ws, req) => {
     ws.close();
     return;
   }
+  // One address can't hog the server: limits on open connections and on new games, generous enough for a shop's wifi.
+  const from = addressOf(req);
+  const mine = (sockets.get(from) ?? 0) + 1;
+  const made = !rooms.has(roomId) ? (newRooms.get(from) ?? []).filter(t => Date.now() - t < NEW_ROOM_WINDOW_MS) : null;
+  if (mine > MAX_SOCKETS_PER_ADDRESS || (made && made.length >= MAX_NEW_ROOMS_PER_ADDRESS)) {
+    console.warn(`Turned away a connection from ${from}: too many ${made && made.length >= MAX_NEW_ROOMS_PER_ADDRESS ? 'new games' : 'connections'}`);
+    send(ws, { type: 'error', message: 'Too many games open from your connection. Close some tabs and try again in a few minutes.' });
+    ws.close();
+    return;
+  }
+  sockets.set(from, mine);
+  ws.once('close', () => {
+    const n = (sockets.get(from) ?? 1) - 1;
+    if (n > 0) sockets.set(from, n);
+    else sockets.delete(from);
+  });
+  if (made) newRooms.set(from, [...made, Date.now()]);
   // Anything the browser sends while its game is being fetched waits its turn.
   const early: import('ws').RawData[] = [];
   const hold = (data: import('ws').RawData) => void (early.length < 100 && early.push(data));
