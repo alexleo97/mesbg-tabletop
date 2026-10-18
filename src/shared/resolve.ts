@@ -1,7 +1,9 @@
 import { backAway } from './backAway.ts';
 import { inTheWay } from './sight.ts';
-import { cleanFight, cleanShot, resolveDuel, resolveShot, resolveStrikes, type Fighter, type FightRequest } from './fight.ts';
+import { cleanFight, cleanShot, duelSettled, resolveDuel, resolveShot, resolveStrikes, type DrawRule, type Fighter, type FightRequest } from './fight.ts';
 import { combatFromKey, priorityChooser } from './flow.ts';
+import { hasElvenWeapon, sideOf } from './gear.ts';
+import { supporters } from './support.ts';
 import { fightDone, foughtThisTurn } from './movement.ts';
 import { rollCast, rollResist } from './magic.ts';
 import { cannotAct, intelligenceWorse, noStrikes, shotNeed, under, witheredStrength } from './powers.ts';
@@ -27,7 +29,7 @@ export interface Resolved {
 function duelOpen(state: GameState, ids: string[]) {
   const set = new Set(ids);
   const r = [...state.log].reverse().find(x => x.group?.startsWith('f-') && x.side !== undefined && x.model && set.has(x.model));
-  return !!r && !!state.flow.duels?.includes(r.group!) && !state.log.some(x => x.group === r.group && (x.against || x.note || x.label.startsWith('Roll-off')));
+  return !!r && !!state.flow.duels?.includes(r.group!) && !state.log.some(x => x.group === r.group && duelSettled(x));
 }
 
 /**
@@ -41,6 +43,37 @@ function freshFighters(state: GameState, req: FightRequest | null): FightRequest
   if (!sides[0].length || !sides[1].length) return null;
   const target = (id: string, side: Fighter[]) => (side.some(f => f.id === id) ? id : side[0].id);
   return { ...req, sides, targets: [target(req.targets[0], sides[1]), target(req.targets[1], sides[0])] };
+}
+
+/**
+ * What the game decides about a fight whatever the player sent: a supporting model must really be able to support
+ * (once its duel is rolled, it must have rolled in it) and lends one die; a Heroic Strike keeps the bonus rolled at
+ * the hero's first fight this phase; and a tie between Good and Evil is settled by the Good/Evil roll.
+ */
+function prepareFight(state: GameState, catalog: Catalog | null, req: FightRequest | null, duel?: DiceRoll[]): FightRequest | null {
+  const fresh = freshFighters(state, req);
+  if (!fresh) return null;
+  const front = fresh.sides.map(side => side.filter(f => !f.support).map(f => f.id));
+  if (!front[0].length || !front[1].length) return null;
+  const offered = supporters(state, catalog, { key: '', p1: front[0], p2: front[1] });
+  const sides = fresh.sides.map((side, i) =>
+    side
+      .filter(f => {
+        if (!f.support) return true;
+        const m = state.models[f.id];
+        if (!m || m.owner !== (i === 0 ? 'p1' : 'p2')) return false;
+        return duel ? duel.some(r => r.support && r.model === f.id && r.side === i) : offered[m.owner].includes(f.id);
+      })
+      .map(f => ({ ...f, ...(f.support ? { a: 1 } : {}), ...(f.strike && state.flow.strikeBonus?.[f.id] ? { strikeBonus: state.flow.strikeBonus[f.id] } : {}) })),
+  ) as [Fighter[], Fighter[]];
+  const sideOfFight = (i: 0 | 1) => {
+    const found = new Set(front[i].map(id => state.models[id] && sideOf(catalog, state.models[id])));
+    return found.size === 1 ? [...found][0] : undefined;
+  };
+  const [a, b] = [sideOfFight(0), sideOfFight(1)];
+  const elven = [0, 1].map(i => front[i].some(id => state.models[id] && hasElvenWeapon(catalog, state.models[id]))) as [boolean, boolean];
+  const draw: DrawRule | undefined = a && b && a !== b ? { good: a === 'Good' ? 0 : 1, elven } : undefined;
+  return { ...fresh, sides, ...(draw ? { draw } : {}) };
 }
 
 /**
@@ -96,21 +129,24 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       };
     }
     case 'fight': {
-      const fresh = freshFighters(state, cleanFight(action.fight));
+      // The player with Priority picks the order the fights are rolled in, so they start each one.
+      if (state.flow.started && state.phase === 'fight' && state.priority && seat !== state.priority) return null;
+      const fresh = prepareFight(state, catalog, cleanFight(action.fight));
       const req = fresh && adjustFight(state, fresh);
       if (!req || (state.flow.started && req.combat && fightDone(state, combatFromKey(state, req.combat) ?? { key: req.combat, p1: [], p2: [] })) || duelOpen(state, req.sides.flat().map(f => f.id))) return null;
       return { apply: resolveDuel(req, d6, seat, `f-${uid()}`, now).map(roll => ({ type: 'rolled', roll })) };
     }
     case 'strikes': {
-      const fresh = freshFighters(state, cleanFight(action.fight));
-      const req = fresh && adjustFight(state, fresh);
       const group = String(action.group ?? '');
       const rolls = state.log.filter(r => r.group === group);
+      const fresh = prepareFight(state, catalog, cleanFight(action.fight), rolls);
+      const req = fresh && adjustFight(state, fresh);
       // Strikes follow a duel that's still in the log, once.
-      if (!req || !group.startsWith('f-') || !rolls.some(r => r.side !== undefined) || rolls.some(r => r.against || r.note || r.label.startsWith('Roll-off'))) return null;
+      if (!req || !group.startsWith('f-') || !rolls.some(r => r.side !== undefined) || rolls.some(r => duelSettled(r))) return null;
       // The losers back away 1" by themselves; one with nowhere to go is trapped, and takes double strikes.
       let retreat: ReturnType<typeof backAway> | undefined;
-      const ids = (side: 0 | 1) => req.sides[side].map(f => f.id).filter(id => state.models[id]);
+      // Supporting models aren't in the fight: they neither back away nor get up.
+      const ids = (side: 0 | 1) => req.sides[side].filter(f => !f.support).map(f => f.id).filter(id => state.models[id]);
       const cornered = (winner: 0 | 1, target: string) => {
         retreat = backAway(state, ids((1 - winner) as 0 | 1), ids(winner));
         // A Prone model that loses is always trapped.
@@ -123,7 +159,10 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       return {
         apply: [
           ...strikes.map((roll): Action => ({ type: 'rolled', roll })),
-          ...woundAction(state, strikes, outcome.target?.id, outcome.wounds, ids(outcome.winner), 'fight', group),
+          ...outcome.hits.flatMap(h => {
+            const at = strikes.filter(r => r.against === h.target.id);
+            return woundAction(state, at, h.target.id, h.wounds, [...new Set(at.map(r => r.model!).filter(Boolean))], 'fight', group);
+          }),
           ...(retreat?.moves.length ? [{ type: 'backAway', moves: retreat.moves } as Action] : []),
           ...rise.map((id): Action => ({ type: 'affect', id, patch: { prone: false } })),
         ],

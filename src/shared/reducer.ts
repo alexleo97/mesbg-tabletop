@@ -5,6 +5,8 @@ import { pendingSpell } from './magic.ts';
 import { basePower, cannotAct, effectActive } from './powers.ts';
 import { finishCharge, heroicCombatWon, limitMove, moveAllowance, movedTooFar, moveLeft, moveStart } from './movement.ts';
 import { FLOORED, floorHeight, flooredAt } from './sight.ts';
+import { woundsTaken } from './fight.ts';
+import { pairOff } from './flow.ts';
 import { canPickUp, markerUpkeep, syncCarried, touching, canEscape } from './objects.ts';
 import { endPhaseUpkeep } from './scoring.ts';
 import { BOT_NAME, BOT_SPEEDS, MARKER_OBJECTS, MATS, PHASES, PICK_KEYS, TERRAIN_KINDS, type Action, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type ModelEffect, type Phase, type Picks, type Seat, type SpellPending, type Terrain } from './types.ts';
@@ -47,6 +49,8 @@ function goTo(state: GameState, phase: Phase, turn: number): GameState {
   return enraged.reduce((s, m) => reduce(s, { type: 'wound', id: m.id, count: 1, how: 'other' }), next);
 }
 
+const livingModels = (state: GameState) => Object.values(state.models).filter(m => !m.dead && !m.waiting && !m.escaped);
+
 function goToPhase(state: GameState, phase: Phase, turn: number, newTurn: boolean, ending: boolean, upkeep: Partial<Flow>, farMoved: Partial<Flow>): GameState {
   // Writhing Vines are pulled up in the End phase.
   const terrain = ending ? Object.fromEntries(Object.entries(markerUpkeep(state)).filter(([, t]) => !t.vines)) : state.terrain;
@@ -67,8 +71,10 @@ function goToPhase(state: GameState, phase: Phase, turn: number, newTurn: boolea
       done: [],
       resolved: newTurn ? [] : state.flow.resolved,
       heroics: newTurn ? [] : state.flow.heroics,
-      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], cast: [], spell: undefined, held: [], stood: [], climbed: {}, compel: undefined } : {}),
+      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], cast: [], spell: undefined, held: [], stood: [], climbed: {}, compel: undefined, supported: [], strikeBonus: {} } : {}),
       ...(phase !== state.phase ? { compel: undefined } : {}),
+      // The fights are paired off as the Fight phase begins, and stay that way until it ends.
+      ...(phase !== state.phase ? { pairs: phase === 'fight' && state.flow.started ? pairOff(livingModels(state), { ...state, phase: 'move' }, state.flow.pairChoices).map(c => c.key) : undefined, pairChoices: undefined } : {}),
       passed: [],
       lastHeroic: null,
       starts: {},
@@ -321,6 +327,7 @@ function cleanRoll(r: unknown): DiceRoll | null {
     ...(o.f !== undefined ? { f: int(o.f, 1, 10, 3) } : {}),
     ...(o.side === 0 || o.side === 1 ? { side: o.side } : {}),
     ...(o.might ? { might: int(o.might, 0, 60, 0) } : {}),
+    ...(o.support === true ? { support: true } : {}),
     at: num(o.at, 0, Number.MAX_SAFE_INTEGER, 0),
   };
 }
@@ -554,6 +561,15 @@ function step(state: GameState, action: Action): GameState {
       const compel = state.flow.compel && state.models[state.flow.compel.caster]?.owner === action.seat ? undefined : state.flow.compel;
       return { ...state, flow: { ...state.flow, done, compel } };
     }
+    case 'pairOff': {
+      // The Priority player says who a model fights, where it touches more than one enemy, before any fight is rolled.
+      const m = state.models[action.id];
+      const foe = state.models[action.with];
+      if (!m || !foe || m.owner === foe.owner || state.phase !== 'fight' || state.flow.resolved.length || state.flow.duels?.length) return state;
+      const pairChoices = { ...state.flow.pairChoices, [m.id]: foe.id };
+      const pairs = pairOff(livingModels(state), { ...state, phase: 'move' }, pairChoices).map(c => c.key);
+      return { ...state, flow: { ...state.flow, pairChoices, pairs } };
+    }
     case 'resolveCombat': {
       const key = str(action.key, 2000);
       if (!key || state.flow.resolved.includes(key)) return state;
@@ -621,6 +637,8 @@ function step(state: GameState, action: Action): GameState {
       const r = state.log[i];
       const m = r?.model ? state.models[r.model] : undefined;
       if (!r || !m || !m.hero || m.might < 1) return state;
+      // Against Heroic Defence only a natural 6 wounds, so Might can't make one.
+      if (r.against && r.group?.startsWith('f-') && state.flow.heroics.some(h => h.model === r.against && h.action === 'Heroic Defence')) return state;
       const k = int(action.die, 0, MAX_DICE, -1);
       // Raising a first die of a 6/4+ roll would need a new follow-up die, so only the follow-ups can be raised there.
       const follow = r.then !== undefined && r.follow !== undefined;
@@ -642,11 +660,12 @@ function step(state: GameState, action: Action): GameState {
       if (!m || m.dead || !n) return state;
       // Each fight or shot's wounds are taken once, whoever presses the button first.
       const group = action.group === undefined ? '' : str(action.group, 80);
-      if (group && state.flow.applied?.includes(group)) return state;
+      if (group && woundsTaken(state.flow.applied, group, m.id)) return state;
       const by = Array.isArray(action.by) ? action.by.filter(i => typeof i === 'string' && state.models[i]) : [];
       const struck = { ...m, ...(by.length ? { lastHit: cleanHit({ ids: by, how: action.how }) } : { lastHit: undefined }) };
       const hit = m.hero && m.fate > 0 ? { ...struck, pending: (m.pending ?? 0) + n } : takeWounds(struck, n);
-      const flow = group ? { ...state.flow, applied: [...(state.flow.applied ?? []), group].slice(-60) } : state.flow;
+      // A fight's strikes can wound several models, so each one's share is ticked off separately.
+      const flow = group ? { ...state.flow, applied: [...(state.flow.applied ?? []), `${group}>${m.id}`].slice(-80) } : state.flow;
       return { ...state, flow, models: { ...state.models, [m.id]: hit } };
     }
     case 'fateRolled': {
@@ -762,6 +781,10 @@ function step(state: GameState, action: Action): GameState {
       if (r.id.startsWith('w-') && r.model && !flow.cast?.includes(r.model)) flow = { ...flow, cast: [...(flow.cast ?? []), r.model].slice(-200) };
       // So does a duel's first roll, for its fight (after any Heroic Strike roll).
       if (r.group?.startsWith('f-') && r.side !== undefined && !flow.duels?.includes(r.group)) flow = { ...flow, duels: [...(flow.duels ?? []), r.group].slice(-200) };
+      // A spear or pike that supports a fight can't support another this phase.
+      if (r.support && r.model && !flow.supported?.includes(r.model)) flow = { ...flow, supported: [...(flow.supported ?? []), r.model].slice(-400) };
+      // A hero's Heroic Strike bonus lasts the whole phase.
+      if (r.group?.startsWith('f-') && r.label.startsWith('Heroic Strike') && r.model) flow = { ...flow, strikeBonus: { ...flow.strikeBonus, [r.model]: r.dice[0] } };
       return { ...state, flow, log: log.slice(-MAX_LOG) };
     }
     case 'loadState':
@@ -896,6 +919,10 @@ export function loadState(raw: unknown): GameState {
         ...(f.spell && typeof f.spell === 'object' ? { spell: cleanSpell(f.spell) } : {}),
         ...(Array.isArray(f.held) ? { held: f.held.slice(0, 200).map(x => String(x).slice(0, 80)) } : {}),
         ...(Array.isArray(f.stood) ? { stood: f.stood.slice(0, 400).map(x => String(x).slice(0, 80)) } : {}),
+        ...(Array.isArray(f.pairs) ? { pairs: f.pairs.slice(0, 200).map(x => String(x).slice(0, 2000)) } : {}),
+        ...(f.pairChoices && typeof f.pairChoices === 'object' ? { pairChoices: Object.fromEntries(Object.entries(f.pairChoices).slice(0, 200).map(([k, v]) => [k.slice(0, 80), String(v).slice(0, 80)])) } : {}),
+        ...(Array.isArray(f.supported) ? { supported: f.supported.slice(0, 400).map(x => String(x).slice(0, 80)) } : {}),
+        ...(f.strikeBonus && typeof f.strikeBonus === 'object' ? { strikeBonus: Object.fromEntries(Object.entries(f.strikeBonus).slice(0, 100).map(([k, v]) => [k.slice(0, 80), int(v, 1, 3, 1)])) } : {}),
         ...(f.climbed && typeof f.climbed === 'object' ? { climbed: Object.fromEntries(Object.entries(f.climbed).slice(0, 400).map(([k, v]) => [k.slice(0, 80), num(v, 0, 99, 0)])) } : {}),
         ...(Number.isFinite(f.recovered) ? { recovered: int(f.recovered, 0, 99, 0) } : {}),
         ...(Array.isArray(f.farMoved) ? { farMoved: f.farMoved.slice(0, 400).map(x => String(x).slice(0, 80)) } : {}),

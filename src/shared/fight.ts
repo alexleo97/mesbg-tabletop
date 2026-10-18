@@ -21,6 +21,19 @@ export interface Fighter {
   noStrike?: string;
   /** Enchant Blades: re-rolls failed To Wound rolls on its strikes. */
   reroll?: boolean;
+  /** Its Heroic Strike bonus, when already rolled at an earlier fight this phase. */
+  strikeBonus?: number;
+  /**
+   * Supporting with a spear or pike: not in the fight itself, so it can't be struck, but it adds one die to the duel
+   * at its own Fight and makes one strike if its side wins.
+   */
+  support?: boolean;
+}
+
+/** How a fight tied on dice and Fight is settled: which side is Good, and which sides fight with Elven weapons. */
+export interface DrawRule {
+  good: 0 | 1;
+  elven: [boolean, boolean];
 }
 
 export interface FightRequest {
@@ -31,6 +44,10 @@ export interface FightRequest {
   trapped: boolean;
   /** The combat this resolves, so the turn tracker can tick it off. */
   combat?: string;
+  /** Where each striking model puts its strikes, one target id per strike; any left over go at `targets`. */
+  aims?: Record<string, string[]>;
+  /** Set by the game when the two sides are Good and Evil (never taken from a player's request). */
+  draw?: DrawRule;
 }
 
 export interface ShotRequest {
@@ -44,8 +61,11 @@ export interface FightOutcome {
   winner: 0 | 1;
   /** Why the winner won: higher die, higher Fight, or a roll-off. */
   how: 'dice' | 'fight' | 'roll-off';
+  /** The first model struck, and the wounds caused to it. */
   target: Fighter | undefined;
   wounds: number;
+  /** Every model struck and the wounds each takes. */
+  hits: { target: Fighter; wounds: number }[];
 }
 
 type D6 = () => number;
@@ -69,15 +89,29 @@ export function cleanFight(raw: unknown): FightRequest | null {
       d: clamp(f?.d, 1, 10, 4),
       ...(f?.strike === true ? { strike: true } : {}),
       ...(f?.defence === true ? { defence: true } : {}),
+      ...(f?.support === true ? { support: true } : {}),
     }));
   const sides: [Fighter[], Fighter[]] = [side(o.sides[0]), side(o.sides[1])];
   if (!sides[0].length || !sides[1].length) return null;
   const t = Array.isArray(o.targets) ? o.targets : [];
   const combat = typeof o.combat === 'string' ? o.combat.slice(0, 2000) : undefined;
-  return { sides, targets: [String(t[0] ?? ''), String(t[1] ?? '')], trapped: o.trapped === true, ...(combat ? { combat } : {}) };
+  const aims: Record<string, string[]> = {};
+  if (o.aims && typeof o.aims === 'object')
+    for (const [k, v] of Object.entries(o.aims).slice(0, 20)) if (Array.isArray(v)) aims[String(k).slice(0, 64)] = v.slice(0, 10).map(x => String(x).slice(0, 64));
+  return { sides, targets: [String(t[0] ?? ''), String(t[1] ?? '')], trapped: o.trapped === true, ...(combat ? { combat } : {}), ...(Object.keys(aims).length ? { aims } : {}) };
 }
 
-const names = (side: Fighter[]) => (side.length === 1 ? side[0].name : `${side[0].name} +${side.length - 1}`);
+const names = (side: Fighter[]) => {
+  const main = side.filter(f => !f.support);
+  const list = main.length ? main : side;
+  return list.length === 1 ? list[0].name : `${list[0].name} +${list.length - 1}`;
+};
+
+/** A roll that shows a duel has been settled: a strike, the winner's note, or the roll that broke a tie. */
+export const duelSettled = (r: DiceRoll) => !!r.against || !!r.note || r.label.startsWith('Roll-off') || r.label.startsWith('Drawn fight');
+
+/** Whose wounds from a fight or shot have been taken off already: the whole group (older games) or this model's share. */
+export const woundsTaken = (applied: string[] | undefined, group: string, victim?: string) => !!applied?.includes(group) || (!!victim && !!applied?.includes(`${group}>${victim}`));
 
 /** Wounds caused by a group of rolls: successes on strikes, counting only follow-up dice for 6/4 results. */
 export function strikeWounds(rolls: DiceRoll[]): number {
@@ -97,11 +131,12 @@ export function resolveDuel(req: FightRequest, d6: D6, by: Role, group: string, 
       if (f.still) continue;
       let fv = f.f;
       if (f.strike) {
-        const bonus = Math.ceil(d6() / 2);
+        // The D3 is rolled once, at the hero's first fight, and lasts the whole phase.
+        const bonus = f.strikeBonus ?? Math.ceil(d6() / 2);
         fv = Math.min(10, fv + bonus);
-        push(`Heroic Strike: ${f.name} +${bonus} Fight`, [bonus]);
+        if (f.strikeBonus === undefined) push(`Heroic Strike: ${f.name} +${bonus} Fight`, [bonus], { model: f.id });
       }
-      push(`Duel: ${f.name} (F${fv})`, Array.from({ length: f.a }, d6), { model: f.id, f: fv, side: i as 0 | 1 });
+      push(`${f.support ? 'Supporting' : 'Duel'}: ${f.name} (F${fv})`, Array.from({ length: f.support ? 1 : f.a }, d6), { model: f.id, f: fv, side: i as 0 | 1, ...(f.support ? { support: true } : {}) });
     }
   });
   return rolls;
@@ -129,7 +164,15 @@ export function resolveStrikes(req: FightRequest, duel: DiceRoll[], d6: D6, by: 
   let winner: 0 | 1;
   let how: FightOutcome['how'];
   if (lead) ({ winner, how } = lead);
-  else {
+  else if (req.draw) {
+    // A drawn fight between Good and Evil: one die decides, 4+ for Good. An Elven weapon on one side only shifts it by one.
+    how = 'roll-off';
+    const { good, elven } = req.draw;
+    const need = elven[good] && !elven[1 - good] ? 3 : elven[1 - good] && !elven[good] ? 5 : 4;
+    const r = d6();
+    push(`Drawn fight: ${need}+ for ${names(req.sides[good])}, Good`, [r], { target: need });
+    winner = r >= need ? good : ((1 - good) as 0 | 1);
+  } else {
     how = 'roll-off';
     let r: number[];
     do r = [d6(), d6()];
@@ -138,31 +181,45 @@ export function resolveStrikes(req: FightRequest, duel: DiceRoll[], d6: D6, by: 
     winner = r[0] > r[1] ? 0 : 1;
   }
 
-  const losers = req.sides[1 - winner];
-  const target = losers.find(f => f.id === req.targets[winner]) ?? losers[0];
-  const trapped = req.trapped || !!cornered?.(winner, target.id);
+  // Supporting models aren't in the fight, so they can't be struck.
+  const losers = req.sides[1 - winner].filter(f => !f.support);
+  const main = losers.find(f => f.id === req.targets[winner]) ?? losers[0];
+  const trappedFor = new Map<string, boolean>();
+  const isTrapped = (t: Fighter) => {
+    if (!trappedFor.has(t.id)) trappedFor.set(t.id, req.trapped || !!cornered?.(winner, t.id));
+    return trappedFor.get(t.id)!;
+  };
   const idle: string[] = [];
   for (const f of req.sides[winner]) {
     if (f.noStrike) {
       idle.push(`${f.name} (${f.noStrike})`);
       continue;
     }
-    const base = woundNeed(f.s, target.d);
-    // Heroic Defence: only natural 6s wound (both dice for 6/4+ style results).
-    const need = base && target.defence ? { target: 6, ...(base.then ? { then: 6 } : {}) } : base;
-    if (!need) continue;
-    let dice = Array.from({ length: f.a * (trapped ? 2 : 1) }, d6);
-    if (f.reroll) dice = dice.map(d => (d >= need.target ? d : d6()));
-    const follow = need.then ? dice.filter(d => d >= need.target).map(d6).map(d => (f.reroll && d < need.then! ? d6() : d)) : undefined;
-    const label = `${f.name} strikes ${target.name}${trapped ? ', trapped,' : ''}${f.reroll ? ', re-rolling misses,' : ''} (${formatNeed(need)})`;
-    push(label, dice, { target: need.target, against: target.id, model: f.id, ...(need.then ? { then: need.then, follow } : {}) });
+    // Its strikes, each at the model it chose (any not aimed go at the main target).
+    const count = f.support ? 1 : f.a;
+    const aimed = (req.aims?.[f.id] ?? []).map(id => losers.find(l => l.id === id)).filter((t): t is Fighter => !!t);
+    const at = Array.from({ length: count }, (_, i) => aimed[i] ?? main);
+    for (const target of [...new Set(at)]) {
+      const n = at.filter(t => t === target).length;
+      const base = woundNeed(f.s, target.d);
+      // Heroic Defence: only natural 6s wound (both dice for 6/4+ style results).
+      const need = base && target.defence ? { target: 6, ...(base.then ? { then: 6 } : {}) } : base;
+      if (!need) continue;
+      const trapped = isTrapped(target);
+      let dice = Array.from({ length: n * (trapped ? 2 : 1) }, d6);
+      if (f.reroll) dice = dice.map(d => (d >= need.target ? d : d6()));
+      const follow = need.then ? dice.filter(d => d >= need.target).map(d6).map(d => (f.reroll && d < need.then! ? d6() : d)) : undefined;
+      const label = `${f.name} strikes ${target.name}${trapped ? ', trapped,' : ''}${f.reroll ? ', re-rolling misses,' : ''} (${formatNeed(need)})`;
+      push(label, dice, { target: need.target, against: target.id, model: f.id, ...(need.then ? { then: need.then, follow } : {}) });
+    }
   }
-  const wounds = strikeWounds(rolls);
-  const why = how === 'dice' ? 'higher roll' : how === 'fight' ? 'higher Fight' : 'roll-off';
+  const hits = losers.map(t => ({ target: t, wounds: strikeWounds(rolls.filter(r => r.against === t.id)) })).filter(h => rolls.some(r => r.against === h.target.id));
+  const why = how === 'dice' ? 'higher roll' : how === 'fight' ? 'higher Fight' : req.draw ? 'drawn fight' : 'roll-off';
   const note = `${names(req.sides[winner])} wins the duel (${why})${idle.length ? `. No strikes from ${idle.join(', ')}` : ''}`;
-  if (rolls.length) rolls[rolls.length - 1].note = note.slice(0, 200);
-  else push(idle.length ? `${names(req.sides[winner])} makes no strikes` : `${names(req.sides[winner])} can't wound ${target.name}`, [], { note });
-  return { rolls, outcome: { winner, how, target, wounds } };
+  if (rolls.some(r => r.against)) rolls[rolls.length - 1].note = note.slice(0, 200);
+  else push(idle.length ? `${names(req.sides[winner])} makes no strikes` : `${names(req.sides[winner])} can't wound ${main.name}`, [], { note });
+  const first = hits[0];
+  return { rolls, outcome: { winner, how, target: first?.target ?? main, wounds: first?.wounds ?? 0, hits } };
 }
 
 /** Rolls a whole fight in one go: the duel, any roll-off and the strikes. */
