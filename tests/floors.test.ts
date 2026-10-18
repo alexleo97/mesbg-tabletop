@@ -45,10 +45,9 @@ describe('floors inside buildings', () => {
   });
 
   it('keeps models on different floors out of each other\'s fights', () => {
-    let s = game(mk('a', 'p1', 20, 20), mk('b', 'p2', 21, 20));
-    expect(combats(s)).toHaveLength(1);
-    s = run(s, { type: 'climb', id: 'a', floor: 1 });
+    let s = run(game(mk('a', 'p1', 20, 20)), { type: 'climb', id: 'a', floor: 1 }, { type: 'addModels', models: [mk('b', 'p2', 21, 20)] });
     expect(combats(s)).toHaveLength(0);
+    expect(combats(run(s, { type: 'updateModel', id: 'a', patch: { floor: 0 } }))).toHaveLength(1);
   });
 
   it('lets a model up a floor see over the walls of other buildings', () => {

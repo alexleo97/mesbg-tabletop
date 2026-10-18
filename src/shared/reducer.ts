@@ -3,7 +3,7 @@ import { holdInZones } from './deployment.ts';
 import { heroicInfo } from './heroics.ts';
 import { pendingSpell } from './magic.ts';
 import { basePower, cannotAct, effectActive } from './powers.ts';
-import { limitMove, moveAllowance, movedTooFar, moveLeft, moveStart } from './movement.ts';
+import { finishCharge, heroicCombatWon, limitMove, moveAllowance, movedTooFar, moveLeft, moveStart } from './movement.ts';
 import { FLOORED, floorHeight, flooredAt } from './sight.ts';
 import { canPickUp, markerUpkeep, syncCarried, touching, canEscape } from './objects.ts';
 import { endPhaseUpkeep } from './scoring.ts';
@@ -390,6 +390,8 @@ function step(state: GameState, action: Action): GameState {
       const moves = state.flow.started ? action.moves : holdInZones(state, action.moves.filter(mv => mv && models[mv.id]).map(mv => ({ id: String(mv.id), x: num(mv.x, -24, 200, models[mv.id].x), y: num(mv.y, -24, 200, models[mv.id].y), rot: mv.rot })));
       let stood = state.flow.stood;
       let climbed = state.flow.climbed;
+      // Models moved together don't block each other.
+      const together = new Set(moves.map(mv => mv && String(mv.id)));
       for (const mv of moves) {
         const prev = mv && models[mv.id];
         if (!prev || prev.escaped || prev.waiting) continue;
@@ -397,13 +399,15 @@ function step(state: GameState, action: Action): GameState {
         const moving = to.x !== prev.x || to.y !== prev.y;
         const compel = state.flow.compel?.model === prev.id ? state.flow.compel : undefined;
         // A Compelled model goes where the caster's player takes it, up to half its Move from where it stood.
-        if (compel && moving) to = limitMove(state, { x: compel.from[0], y: compel.from[1] }, to, compel.max, prev.owner);
+        if (compel && moving) to = limitMove(state, { x: compel.from[0], y: compel.from[1] }, to, compel.max, prev.owner, prev, together);
         // Once the battle is under way a model goes no further than its allowance from where it began the phase:
         // its Move in the Move phase, 1" in the Fight phase, and nowhere in the others.
         const allowance = compel ? null : moveAllowance(state, prev);
         if (allowance !== null && moving) {
           const from = moveStart(state, prev);
-          to = limitMove(state, from, to, allowance, prev.owner);
+          to = limitMove(state, from, to, allowance, prev.owner, prev, together);
+          // A model that stops inside an enemy's control zone is charging it: it must reach base contact, or stay out.
+          if (state.phase === 'move' || heroicCombatWon(state, prev)) to = finishCharge(state, prev, from, to, together);
           if (!starts?.[prev.id]) starts = { ...starts, [prev.id]: [from.x, from.y] };
         }
         let next: Model = { ...prev, ...to, rot: mv.rot === undefined ? prev.rot : num(mv.rot, -360, 720, prev.rot) % 360 };

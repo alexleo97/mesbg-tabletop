@@ -449,7 +449,7 @@ function planMove(ctx: Ctx, m: Model, goal: Goal | undefined): Plan | null {
   const mv = Math.min(p.mv, moveAllowance(state, m) ?? p.mv);
 
   const spots: { at: Point; charge?: Model }[] = [{ at: from }];
-  const reach = (to: Point) => limitMove(state, from, to, mv, seat);
+  const reach = (to: Point) => limitMove(state, from, to, mv, seat, m);
   for (let i = 0; i < 16; i++) {
     const a = (i * Math.PI) / 8;
     for (const f of [1, 0.5]) spots.push({ at: reach({ x: from.x + Math.sin(a) * mv * f, y: from.y - Math.cos(a) * mv * f }) });
