@@ -281,7 +281,7 @@ small.muted, p.small { font-size: 0.8rem; }
 .seen-hidden .sight-ring { stroke: #ff6b5e; stroke-dasharray: 0.08 0.12; }
 .seen-hidden { opacity: 0.55; }
 .sight-line { stroke-width: 0.05; stroke-linecap: round; }
-.engine-arc { fill: var(--gold); fill-opacity: 0.08; stroke: var(--gold); stroke-opacity: 0.5; stroke-width: 0.06; stroke-dasharray: 0.4 0.2; }
+.engine-arc { fill: var(--gold); fill-opacity: 0.16; stroke: var(--gold); stroke-opacity: 0.9; stroke-width: 0.12; stroke-dasharray: 0.5 0.25; }
 .cable { stroke: #d8c9a3; stroke-width: 0.08; stroke-dasharray: 0.3 0.12; }
 .sight-line.clear { stroke: var(--ok); }
 .sight-line.partial { stroke: var(--gold); stroke-dasharray: 0.25 0.15; }

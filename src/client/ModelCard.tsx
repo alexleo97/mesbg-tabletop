@@ -14,7 +14,7 @@ import { mounted, mountLabel, mountOf } from '../shared/cavalry.ts';
 import { commanderStats, howdahFor, immovable } from '../shared/warBeasts.ts';
 import { BeastPanel } from './BeastPanel.tsx';
 import { SiegePanel } from './SiegePanel.tsx';
-import { rapidFire } from '../shared/siege.ts';
+import { rapidFire, siegeTarget } from '../shared/siege.ts';
 import { flooredAt, floorHeight, floorName, sightTo, standingAt } from '../shared/sight.ts';
 import RULES from '../data/special-rules.json';
 import { CastBox } from './MagicPanel.tsx';
@@ -252,6 +252,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
           <p>
             {charge ? 'Throw at' : 'At'} <b>{target.name}</b>: {formatInches(plan.dist)} of {weapon.range}". Hits on {plan.need}+{harder ? ` (${harder})` : ''}, wounds on {formatNeed(need)}
             {m.siege && rapidFire(catalog, m) ? ', D6 bolts (rolled when it shoots)' : ''}
+            {m.siege && !rapidFire(catalog, m) ? (siegeTarget(target) ? (rulesOf(m, catalog).includes('Wall-breaker') ? ', and Wall-breaker makes each wound D3' : '') : `, and a wound slays ${target.maxWounds >= 10 ? 'half its Wounds' : 'it outright'}`) : ''}
             {plan.shots > 1 ? (m.beast === 'war' ? `, ${plan.shots} shots (one for each Wound the Howdah has left)` : `, ${plan.shots} shots (it didn't move)`) : ''}.
           </p>
           {why && <p className="warn">{m.name} {why}.</p>}

@@ -37,7 +37,7 @@ export function SiegePanel({ state, catalog, dispatch, role, m }: { state: GameS
             <p className="muted small">Turn it to face:</p>
             <div className="row wrap">
               {WAYS.map((w, k) => (
-                <button key={w} className="small" disabled={Math.abs(((m.rot - k * 45 + 540) % 360) - 180) > 179.5} onClick={() => dispatch({ type: 'moveModels', moves: [{ id: m.id, x: m.x, y: m.y, rot: k * 45 }] })}>
+                <button key={w} className="small" disabled={Math.abs(((m.rot - k * 45 + 540) % 360) - 180) < 0.5} onClick={() => dispatch({ type: 'moveModels', moves: [{ id: m.id, x: m.x, y: m.y, rot: k * 45 }] })}>
                   {w}
                 </button>
               ))}

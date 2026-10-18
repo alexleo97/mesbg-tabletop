@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Catalog } from '../src/shared/catalog.ts';
 import { entriesFor, modelStats } from '../src/shared/catalog.ts';
+import { distanceBetween } from '../src/shared/geometry.ts';
 import { initialState, reduce } from '../src/shared/reducer.ts';
 import { resolveRequest } from '../src/shared/resolve.ts';
 import { planShot } from '../src/shared/shooting.ts';
@@ -167,5 +168,18 @@ describe('siege engines', () => {
     expect(planShot(s, catalog, s.models.a, s.models.w).why).toBeUndefined();
     s = run(s, { type: 'cable', from: [10, 32], to: [30, 32] });
     expect(planShot(s, catalog, s.models.a, s.models.w).why).toMatch(/line/);
+  });
+});
+
+describe('deploying an engine', () => {
+  it('puts its crew beside it, ready to shoot', () => {
+    const entries = entriesFor('[mordor] catapult', catalog.units['[mordor] catapult'], [], 1);
+    const models = entries.flatMap((e, i) => Array.from({ length: e.count }, (_, k) => mk(`m${i}${k}`, 'p2', 10 + i * 3 + k, 5, '[mordor] catapult', { name: e.name, siege: e.siege, base: e.base ?? { shape: 'round', w: 25, h: 25 }, rot: 180 })));
+    const s = run(initialState(), { type: 'addModels', models });
+    const cat = Object.values(s.models).find(m => m.siege)!;
+    const crew = Object.values(s.models).filter(m => m.crewOf === cat.id);
+    expect(crew).toHaveLength(4);
+    expect(crew.every(m => distanceBetween(m, cat) < 0.2)).toBe(true);
+    expect(firingCrew(s, catalog, cat)).toBeDefined();
   });
 });

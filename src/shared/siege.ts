@@ -92,6 +92,23 @@ export function assignCrew(models: Record<string, Model>, added: string[]): Reco
     taken.set(home.id, (taken.get(home.id) ?? 0) + 1);
     out[id] = { ...m, crewOf: home.id };
   }
+  // Each engine's crew deploy beside it, ready to shoot it: the biggest behind it, the rest along its sides.
+  for (const e of engines) {
+    const crew = Object.values(out).filter(m => m.crewOf === e.id && added.includes(m.id)).sort((a, b) => b.base.w - a.base.w);
+    const { rx, ry } = halfExtents(e.base);
+    const placed: Model[] = [];
+    const slots = (r: number) => [[0, ry + r], [-(rx + r), r + 0.03], [rx + r, r + 0.03], [-(rx + r), -(r + 0.03)], [rx + r, -(r + 0.03)]];
+    const a = (e.rot * Math.PI) / 180;
+    for (const m of crew) {
+      const r = halfExtents(m.base).rx + 0.01;
+      const spot = slots(r)
+        .map(([dx, dy]) => ({ ...m, x: e.x + dx * Math.cos(a) - dy * Math.sin(a), y: e.y + dx * Math.sin(a) + dy * Math.cos(a) }))
+        .find(p => !placed.some(o => distanceBetween(o, p) < 0.02));
+      if (!spot) continue;
+      placed.push(spot);
+      out[m.id] = spot;
+    }
+  }
   return out;
 }
 
