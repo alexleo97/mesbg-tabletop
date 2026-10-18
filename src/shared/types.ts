@@ -476,14 +476,23 @@ export type ClientMessage =
   /** A player's browser offering its saved copy of a game the server has lost. */
   | { type: 'restore'; state: GameState; invite?: string }
   /** A signed-in player's sign-in token, so their seat counts towards their stats. */
-  | { type: 'identify'; token: string | null };
+  | { type: 'identify'; token: string | null }
+  /** Checking the link is still alive; the server answers with `pong`. */
+  | { type: 'ping' }
+  /** Asking for the whole game again, after missing an action or failing to apply one. */
+  | { type: 'sync' };
 
 export type ServerMessage =
   | { type: 'mark'; mark: Mark }
   | { type: 'clearMarks'; by: Role }
-  /** `blank`: the server has nothing for this room yet, so a player may restore it. */
-  | { type: 'snapshot'; state: GameState; players: Role[]; blank?: boolean }
-  | { type: 'action'; action: Action }
+  /**
+   * `blank`: the server has nothing for this room yet, so a player may restore it. `seq`: the number of the last
+   * action already in `state`. `build`: the browser code the server hands out now.
+   */
+  | { type: 'snapshot'; state: GameState; players: Role[]; blank?: boolean; seq?: number; build?: string }
+  /** `seq` counts up by one with each action in a room, so a gap means one was missed. */
+  | { type: 'action'; action: Action; seq?: number }
+  | { type: 'pong' }
   | { type: 'presence'; players: Role[] }
   /** How many of your own changes the server can take back. */
   | { type: 'undo'; count: number }

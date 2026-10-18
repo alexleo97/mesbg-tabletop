@@ -33,11 +33,23 @@ const CANONICAL = (process.env.PUBLIC_URL ?? '').replace(/\/$/, '');
 const MAX_ROOMS = 2000;
 const ROOM_ID = /^[a-z0-9-]{3,40}$/;
 const INVITE = /^[A-Za-z0-9_-]{8,40}$/;
+/** How often the server checks each connection is still there; one that misses two checks in a row is dropped. */
+const HEARTBEAT_MS = Number(process.env.HEARTBEAT_MS ?? 15_000);
+/** The build of the browser code this server hands out, so browsers left open from an older build know to reload. */
+const BUILD = (() => {
+  try {
+    return readFileSync(join(DIST, 'build-id.txt'), 'utf8').trim() || 'dev';
+  } catch {
+    return 'dev';
+  }
+})();
 
 interface Client {
   ws: WebSocket;
   role: Role;
   tokens: number;
+  /** Answered since the last heartbeat check. */
+  alive: boolean;
   /** The signed-in account behind this browser, once checked. */
   account?: Account;
 }
@@ -67,6 +79,8 @@ interface Room {
   voice?: { id?: string; opening?: boolean; closeAt?: number };
   /** When a player was last connected, so an abandoned game's voice channel can be taken down. */
   seen: number;
+  /** How many actions have been sent out, so a browser can tell if it missed one. */
+  seq: number;
 }
 
 interface UndoEntry {
@@ -102,7 +116,7 @@ function getRoom(id: string): Room {
     }
     // A private game whose code was lost can't be joined by anyone, so it opens up again.
     if (state.private && !invite) state = reduce(state, { type: 'setPrivate', private: false });
-    room = { id, state, clients: new Set(), touched: Date.now(), undo: { p1: [], p2: [] }, blank, invite, seen: Date.now(), voice: voice ? { id: voice } : undefined };
+    room = { id, state, clients: new Set(), touched: Date.now(), undo: { p1: [], p2: [] }, blank, invite, seen: Date.now(), voice: voice ? { id: voice } : undefined, seq: 0 };
     rooms.set(id, room);
   }
   return room;
@@ -124,6 +138,10 @@ const broadcast = (room: Room, msg: ServerMessage) => {
   const data = JSON.stringify(msg);
   for (const c of room.clients) if (c.ws.readyState === WebSocket.OPEN) c.ws.send(data);
 };
+/** Sends out an action already applied to the room, numbered so every browser applies each one exactly once, in order. */
+const broadcastAction = (room: Room, action: Action) => broadcast(room, { type: 'action', action, seq: ++room.seq });
+/** The whole game as it stands, for a browser joining or catching up. */
+const sendSnapshot = (ws: WebSocket, room: Room) => send(ws, { type: 'snapshot', state: room.state, players: players(room), blank: room.blank, seq: room.seq, build: BUILD });
 
 /** Marks a seat as belonging to the signed-in player sitting in it. */
 function seatAccount(room: Room, client: Client) {
@@ -265,7 +283,7 @@ function scheduleAnnouncement(room: Room) {
 function apply(room: Room, action: Action) {
   room.blank = false;
   room.state = reduce(room.state, action);
-  broadcast(room, { type: 'action', action });
+  broadcastAction(room, action);
   scheduleSave(room);
   // The game declares its own winner as soon as it's over (and corrects it if the score changes before both confirm).
   if (action.type !== 'gameOver') {
@@ -273,7 +291,7 @@ function apply(room: Room, action: Action) {
     if (winner) {
       const before = room.state;
       room.state = reduce(room.state, { type: 'gameOver', winner });
-      if (room.state !== before) broadcast(room, { type: 'action', action: { type: 'gameOver', winner } });
+      if (room.state !== before) broadcastAction(room, { type: 'gameOver', winner });
     }
   }
   settleSpells(room);
@@ -606,9 +624,10 @@ wss.on('connection', (ws, req) => {
     return;
   }
   const room = getRoom(roomId);
-  const client: Client = { ws, role: 'spectator', tokens: 120 };
+  const client: Client = { ws, role: 'spectator', tokens: 120, alive: true };
   room.clients.add(client);
-  send(ws, { type: 'snapshot', state: room.state, players: players(room), blank: room.blank });
+  sendSnapshot(ws, room);
+  ws.on('pong', () => (client.alive = true));
 
   ws.on('message', data => {
     try {
@@ -620,6 +639,7 @@ wss.on('connection', (ws, req) => {
   });
 
   const onMessage = (data: import('ws').RawData) => {
+    client.alive = true;
     // Simple rate limit: refills 60 messages per second, bursts up to 120.
     if (client.tokens <= 0) return;
     client.tokens--;
@@ -627,6 +647,16 @@ wss.on('connection', (ws, req) => {
     try {
       msg = JSON.parse(String(data));
     } catch {
+      return;
+    }
+    if (msg.type === 'ping') {
+      // The browser checking its link is still alive.
+      send(ws, { type: 'pong' });
+      return;
+    }
+    if (msg.type === 'sync') {
+      // A browser that missed an action, or couldn't apply one, catches up from the whole game.
+      sendSnapshot(ws, room);
       return;
     }
     if (msg.type === 'hello') {
@@ -726,10 +756,20 @@ wss.on('connection', (ws, req) => {
   });
 });
 
-// Keep connections alive through proxies that drop idle sockets.
+// Keep connections alive through proxies that drop idle sockets, and drop any that have stopped answering
+// (a phone that lost signal never says goodbye), so the other player sees them leave.
 setInterval(() => {
-  for (const c of wss.clients) c.ping();
-}, 25_000).unref();
+  for (const room of rooms.values()) {
+    for (const c of room.clients) {
+      if (!c.alive) {
+        c.ws.terminate();
+        continue;
+      }
+      c.alive = false;
+      c.ws.ping();
+    }
+  }
+}, HEARTBEAT_MS).unref();
 
 setInterval(() => {
   for (const room of rooms.values()) {

@@ -60,6 +60,23 @@ const worthKeeping = (s: GameState) => s.flow.started || Object.keys(s.models).l
 
 export type ConnectionStatus = 'connecting' | 'online' | 'offline';
 
+/** How often an open link is checked, and how long an answer may take before the link counts as dropped. */
+const CHECK_EVERY_MS = 5_000;
+const ANSWER_WITHIN_MS = 10_000;
+
+/**
+ * What to do with an action numbered `seq` when the last one applied was `last`: apply it, skip it (already in the
+ * game), or ask for the whole game again because one went missing. Unnumbered actions (an older server) are applied.
+ */
+export function actionFits(last: number, seq: number | undefined): 'apply' | 'skip' | 'gap' {
+  if (seq === undefined) return 'apply';
+  if (seq <= last) return 'skip';
+  return seq === last + 1 ? 'apply' : 'gap';
+}
+
+/** Whether this page is older than the code the server now hands out, so it should reload. Never in development. */
+export const staleBuild = (mine: string, server: string | undefined) => !!server && server !== 'dev' && mine !== 'dev' && server !== mine;
+
 export interface Snapshot {
   state: GameState;
   status: ConnectionStatus;
@@ -72,6 +89,8 @@ export interface Snapshot {
   refused?: string;
   /** Pings and arrows on the table right now. */
   marks?: Mark[];
+  /** Has been connected before, so a dropped link is a reconnection rather than the first connection. */
+  wasOnline?: boolean;
 }
 
 /** Puts a mark on the table, taking a ping off again once it has faded. */
@@ -108,6 +127,14 @@ export class RoomConnection implements Connection {
   private retry = 0;
   private closed = false;
   private saveTimer?: ReturnType<typeof setTimeout>;
+  private retryTimer?: ReturnType<typeof setTimeout>;
+  private checkTimer?: ReturnType<typeof setInterval>;
+  /** When the unanswered link check went out, if one is waiting. */
+  private asked?: number;
+  /** The number of the last action applied. */
+  private seq = 0;
+  /** Waiting for the whole game after missing an action. */
+  private syncing = false;
   private token: string | null = null;
   private snap: Snapshot = { state: initialState(), status: 'connecting', players: [], undoDepth: 0 };
 
@@ -125,10 +152,16 @@ export class RoomConnection implements Connection {
     }
     this.snap.invite = readInvite(room);
     this.connect();
+    this.checkTimer = setInterval(this.check, CHECK_EVERY_MS);
+    addEventListener('online', this.wake);
+    document.addEventListener('visibilitychange', this.wake);
   }
 
   private connect() {
     if (this.closed) return;
+    clearTimeout(this.retryTimer);
+    this.retryTimer = undefined;
+    this.asked = undefined;
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     const ws = new WebSocket(`${proto}://${location.host}/ws?room=${encodeURIComponent(this.room)}`);
     this.ws = ws;
@@ -139,15 +172,36 @@ export class RoomConnection implements Connection {
       if (this.token) ws.send(JSON.stringify({ type: 'identify', token: this.token }));
     };
     ws.onmessage = ev => {
-      const msg = JSON.parse(ev.data) as ServerMessage;
+      // Anything from the server shows the link is alive.
+      this.asked = undefined;
+      let msg: ServerMessage;
+      try {
+        msg = JSON.parse(ev.data) as ServerMessage;
+      } catch {
+        return;
+      }
       if (msg.type === 'snapshot') {
-        this.set({ state: loadState(msg.state), players: msg.players, status: 'online' });
+        if (staleBuild(__BUILD_ID__, msg.build) && this.reload(msg.build!)) return;
+        this.seq = msg.seq ?? 0;
+        this.syncing = false;
+        this.set({ state: loadState(msg.state), players: msg.players, status: 'online', wasOnline: true });
         const saved = msg.blank && this.role !== 'spectator' ? readSave(this.room) : null;
         if (saved && worthKeeping(saved)) ws.send(JSON.stringify({ type: 'restore', state: saved, invite: this.snap.invite ?? undefined }));
       } else if (msg.type === 'mark') showMark(this.getSnapshot, p => this.set(p), msg.mark);
       else if (msg.type === 'clearMarks') this.set({ marks: (this.snap.marks ?? []).filter(m => m.by !== msg.by) });
       else if (msg.type === 'action') {
-        const state = reduce(this.snap.state, msg.action);
+        if (this.syncing) return;
+        const fits = actionFits(this.seq, msg.seq);
+        if (fits === 'skip') return;
+        if (fits === 'gap') return this.resync();
+        let state: GameState;
+        try {
+          state = reduce(this.snap.state, msg.action);
+        } catch (err) {
+          console.warn('Could not apply a change from the server; fetching the whole game again.', err);
+          return this.resync();
+        }
+        if (msg.seq !== undefined) this.seq = msg.seq;
         this.set({ state, ...turnMarks(this.snap.state, state, this.snap.marks) });
         this.scheduleSave();
       } else if (msg.type === 'presence') this.set({ players: msg.players });
@@ -158,13 +212,70 @@ export class RoomConnection implements Connection {
       } else if (msg.type === 'seatRefused') this.set({ refused: msg.message });
       else if (msg.type === 'error') console.warn(msg.message);
     };
-    ws.onclose = () => {
-      this.set({ status: 'offline' });
-      if (this.closed) return;
-      const delay = Math.min(10_000, 500 * 2 ** this.retry++);
-      setTimeout(() => this.connect(), delay);
-    };
+    ws.onclose = () => this.lost(ws);
   }
+
+  /** The link is gone: show it, and try again after a pause that grows with each failed attempt. */
+  private lost(ws: WebSocket) {
+    if (ws !== this.ws) return;
+    ws.onopen = ws.onmessage = ws.onclose = null;
+    this.ws = undefined;
+    this.set({ status: 'offline' });
+    if (this.closed || this.retryTimer) return;
+    const delay = Math.min(10_000, 500 * 2 ** this.retry++);
+    this.retryTimer = setTimeout(() => this.connect(), delay);
+  }
+
+  /** Asks the server for the whole game, after missing a change or failing to apply one. */
+  private resync() {
+    if (this.syncing || this.ws?.readyState !== WebSocket.OPEN) return;
+    this.syncing = true;
+    this.ws.send(JSON.stringify({ type: 'sync' }));
+  }
+
+  /** Reloads onto the server's newer code, once per build, keeping the seat (it's remembered per room). */
+  private reload(build: string) {
+    const key = `mesbg-reloaded:${build}`;
+    try {
+      if (sessionStorage.getItem(key)) return false;
+      sessionStorage.setItem(key, '1');
+    } catch {
+      return false;
+    }
+    if (worthKeeping(this.snap.state)) writeSave(this.room, this.snap.state);
+    this.close();
+    location.reload();
+    return true;
+  }
+
+  /**
+   * Checks the link every few seconds. A phone that loses signal often never sees the link close, so a check the
+   * server doesn't answer counts as a dropped link. Timed from the check itself, so a background tab's slowed timers
+   * don't make a healthy link look dead.
+   */
+  private check = () => {
+    const ws = this.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    if (this.asked === undefined) {
+      this.asked = Date.now();
+      ws.send(JSON.stringify({ type: 'ping' }));
+    } else if (Date.now() - this.asked > ANSWER_WITHIN_MS) {
+      ws.close();
+      this.lost(ws);
+    }
+  };
+
+  /** Back online, or back to this tab: reconnect straight away rather than waiting out the pause, or check the link. */
+  private wake = () => {
+    if (this.closed || document.visibilityState === 'hidden') return;
+    if (!this.ws) {
+      this.retry = 0;
+      this.connect();
+    } else if (this.ws.readyState === WebSocket.OPEN && this.asked === undefined) {
+      this.asked = Date.now();
+      this.ws.send(JSON.stringify({ type: 'ping' }));
+    }
+  };
 
   private scheduleSave() {
     if (this.saveTimer) return;
@@ -220,6 +331,10 @@ export class RoomConnection implements Connection {
 
   close() {
     this.closed = true;
+    clearTimeout(this.retryTimer);
+    clearInterval(this.checkTimer);
+    removeEventListener('online', this.wake);
+    document.removeEventListener('visibilitychange', this.wake);
     this.ws?.close();
   }
 }
