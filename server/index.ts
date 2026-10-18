@@ -34,6 +34,9 @@ const CANONICAL = (process.env.PUBLIC_URL ?? '').replace(/\/$/, '');
 const MAX_ROOMS = 2000;
 const ROOM_ID = /^[a-z0-9-]{3,40}$/;
 const INVITE = /^[A-Za-z0-9_-]{8,40}$/;
+const SEAT_KEY = /^[A-Za-z0-9_-]{16,64}$/;
+/** How long a player's seat is kept for them after they leave a battle, before anyone else may take it. */
+const SEAT_HELD_MS = Number(process.env.SEAT_HELD_MS ?? 1000 * 60 * 10);
 /** How often the server checks each connection is still there; one that misses two checks in a row is dropped. */
 const HEARTBEAT_MS = Number(process.env.HEARTBEAT_MS ?? 15_000);
 /** The build of the browser code this server hands out, so browsers left open from an older build know to reload. */
@@ -53,6 +56,8 @@ interface Client {
   alive: boolean;
   /** The signed-in account behind this browser, once checked. */
   account?: Account;
+  /** A sign-in being checked right now. */
+  verifying?: Promise<void>;
 }
 
 interface Room {
@@ -82,6 +87,10 @@ interface Room {
   seen: number;
   /** How many actions have been sent out, so a browser can tell if it missed one. */
   seq: number;
+  /** Each seat's private key once the battle has started, so only the player sitting there can come back to it. */
+  seats: Partial<Record<Seat, string>>;
+  /** When someone last sat in each seat, so a seat left empty long enough opens up again. */
+  seatSeen: Record<Seat, number>;
   /** Nothing has changed since the game was loaded, so it can be fetched again in case another server saved it since. */
   fresh: boolean;
   /** Saving to the shared store: changes not yet saved, the turn and phase last saved, the next save, and the save in flight. */
@@ -119,8 +128,11 @@ function unpack(saved: StoredRoom | null) {
   let state = initialState();
   let invite: string | undefined;
   let voice: string | undefined;
+  const seats: Partial<Record<Seat, string>> = {};
   if (saved) {
     try {
+      const kept = (saved.state as { _seats?: Record<string, unknown> } | null)?._seats;
+      for (const seat of ['p1', 'p2'] as const) if (typeof kept?.[seat] === 'string' && SEAT_KEY.test(kept[seat])) seats[seat] = kept[seat];
       state = loadState(saved.state);
       if (typeof saved.invite === 'string' && INVITE.test(saved.invite)) invite = saved.invite;
       if (typeof saved.voice === 'string') voice = saved.voice;
@@ -130,7 +142,7 @@ function unpack(saved: StoredRoom | null) {
   }
   // A private game whose code was lost can't be joined by anyone, so it opens up again.
   if (state.private && !invite) state = reduce(state, { type: 'setPrivate', private: false });
-  return { state, invite, voice: voice ? { id: voice } : undefined, blank: !saved };
+  return { state, invite, voice: voice ? { id: voice } : undefined, blank: !saved, seats, seatSeen: { p1: Date.now(), p2: Date.now() } };
 }
 
 /** Rooms being fetched from the store right now, so people arriving together share one fetch. */
@@ -165,8 +177,8 @@ function openRoom(id: string): Promise<Room> {
   return pending;
 }
 
-/** The game and its private details, as saved. */
-const packed = (room: Room): StoredRoom => ({ state: room.state, ...(room.invite ? { invite: room.invite } : {}), ...(room.voice?.id ? { voice: room.voice.id } : {}) });
+/** The game and its private details, as saved. Seat keys go inside the saved game, which only this server reads. */
+const packed = (room: Room): StoredRoom => ({ state: Object.keys(room.seats).length ? { ...room.state, _seats: room.seats } : room.state, ...(room.invite ? { invite: room.invite } : {}), ...(room.voice?.id ? { voice: room.voice.id } : {}) });
 
 function scheduleSave(room: Room) {
   room.touched = Date.now();
@@ -324,6 +336,29 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
     default:
       return action;
   }
+}
+
+/**
+ * Whether a browser may sit in a seat. Before the battle anyone may; once it starts, only the browser holding the
+ * seat's key, the signed-in player it belongs to, or anyone at all once its player has been gone a while.
+ */
+function maySit(room: Room, client: Client, seat: Seat, key: unknown): 'yes' | 'abandoned' | 'no' {
+  const held = room.seats[seat];
+  if (!room.state.flow.started || !held || key === held) return 'yes';
+  const owner = room.state.accounts?.[seat];
+  if (owner && client.account?.id === owner.id) return 'yes';
+  const empty = ![...room.clients].some(c => c !== client && c.role === seat);
+  return empty && Date.now() - room.seatSeen[seat] > SEAT_HELD_MS ? 'abandoned' : 'no';
+}
+
+/** Hands a seat's key to everyone sitting in it, making one if the seat has none yet (or was taken over). */
+function giveSeatKey(room: Room, seat: Seat, fresh = false) {
+  if (!room.state.flow.started) return;
+  if (fresh || !room.seats[seat]) {
+    room.seats[seat] = randomBytes(18).toString('base64url');
+    scheduleSave(room);
+  }
+  for (const c of room.clients) if (c.role === seat) send(c.ws, { type: 'seatKey', seat, key: room.seats[seat]! });
 }
 
 /** Listed games with at least one player connected, most recently active first. */
@@ -762,6 +797,20 @@ wss.on('connection', async (ws, req) => {
     }
     if (msg.type === 'hello') {
       client.role = msg.role === 'p1' || msg.role === 'p2' ? msg.role : 'spectator';
+      let takeover = false;
+      if (client.role !== 'spectator') {
+        const may = maySit(room, client, client.role, msg.seatKey);
+        // Still checking who this is: their account may own the seat, so decide once that's known.
+        if (may === 'no' && client.verifying) {
+          void client.verifying.then(() => onMessage(data));
+          return;
+        }
+        if (may === 'no') {
+          client.role = 'spectator';
+          send(ws, { type: 'seatRefused', message: 'Someone is already playing that side. If that was you on another device, sign in with the same account, or wait: a seat opens up again after 10 minutes away. Until then you can watch.' });
+        }
+        takeover = may === 'abandoned';
+      }
       if (client.role !== 'spectator' && client.role === room.state.bot) {
         client.role = 'spectator';
         send(ws, { type: 'seatRefused', message: 'The computer is playing that side. Take the other seat to play against it.' });
@@ -774,7 +823,10 @@ wss.on('connection', async (ws, req) => {
       if (client.role !== 'spectator' && room.invite) send(ws, { type: 'invite', code: room.invite });
       if (client.role !== 'spectator') scheduleAnnouncement(room);
       broadcast(room, { type: 'presence', players: players(room) });
+      // Someone taking over an abandoned seat can't take back the last player's moves.
+      if (client.role !== 'spectator' && takeover) room.undo[client.role] = [];
       if (client.role !== 'spectator') sendUndoDepth(room, client.role);
+      if (client.role !== 'spectator') giveSeatKey(room, client.role, takeover);
       seatAccount(room, client);
       scheduleBot(room);
       // A game loaded after a restart may have been about to move on from a finished phase.
@@ -813,10 +865,12 @@ wss.on('connection', async (ws, req) => {
         client.account = undefined;
         return;
       }
-      void verifyToken(msg.token).then(account => {
-        client.account = account ?? undefined;
-        seatAccount(room, client);
-      });
+      client.verifying = verifyToken(msg.token)
+        .then(account => {
+          client.account = account ?? undefined;
+          seatAccount(room, client);
+        })
+        .finally(() => (client.verifying = undefined));
       return;
     }
     if (msg.type !== 'action') return;
@@ -845,6 +899,9 @@ wss.on('connection', async (ws, req) => {
     if (action.type === 'loadState') room.undo = { p1: [], p2: [] };
     if (action.type === 'startGame') {
       room.saveTries = 0;
+      // Each new battle gets new seat keys, handed to whoever is sitting down for it.
+      room.seats = {};
+      for (const seat of ['p1', 'p2'] as const) giveSeatKey(room, seat);
       // A new game in the same room gets a voice channel of its own.
       if (room.voice && !room.voice.id && !room.voice.opening) {
         room.voice = undefined;
@@ -879,6 +936,7 @@ setInterval(() => {
   for (const room of rooms.values()) {
     for (const c of room.clients) c.tokens = Math.min(120, c.tokens + 60);
     if ([...room.clients].some(c => c.role !== 'spectator')) room.seen = Date.now();
+    for (const c of room.clients) if (c.role !== 'spectator') room.seatSeen[c.role] = Date.now();
     if (room.voice?.id && (Date.now() > (room.voice.closeAt ?? Infinity) || Date.now() - room.seen > VOICE_ABANDONED_MS)) closeVoice(room);
     if (room.clients.size === 0 && Date.now() - room.touched > 1000 * 60 * 30) {
       closeVoice(room);
