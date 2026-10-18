@@ -1,6 +1,6 @@
 import { combats } from './flow.ts';
 import { heroicsSettled } from './heroics.ts';
-import { fightDone, heroicCombatWon } from './movement.ts';
+import { fightDone, fightsAgain } from './movement.ts';
 import { recoveryDue } from './powers.ts';
 import { endCheck, endRollLabel, gameEnded } from './status.ts';
 import type { GameState } from './types.ts';
@@ -19,8 +19,8 @@ export function phaseFinished(state: GameState): boolean {
   if (!state.flow.started || state.result) return false;
   if (state.phase === 'fight') {
     if (!heroicsSettled(state) || combats(state).some(c => !fightDone(state, c))) return false;
-    // A hero who won a Heroic Combat may move and fight again: that's the player's call.
-    return !Object.values(state.models).some(m => heroicCombatWon(state, m));
+    // A hero who won a Heroic Combat (or a monster that barged) may move and fight again: that's the player's call.
+    return !Object.values(state.models).some(m => fightsAgain(state, m));
   }
   if (state.phase === 'end') return !endRollDue(state) && !recoveryDue(state) && !gameEnded(state);
   return false;

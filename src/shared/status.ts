@@ -14,7 +14,8 @@ export interface ArmyStatus {
 
 /** Counts each army from the models on the table, with casualties still counted towards its starting size. */
 export function armyStatus(state: GameState, seat: Seat): ArmyStatus {
-  const all = Object.values(state.models).filter(m => m.owner === seat);
+  // A mount fighting on without its rider isn't counted: the cavalry model was lost when its rider fell.
+  const all = Object.values(state.models).filter(m => m.owner === seat && !m.steed);
   const lost = all.filter(m => m.dead).length;
   const start = all.length;
   return { start, lost, left: start - lost, broken: start > 0 && lost * 2 > start, quartered: start > 0 && (start - lost) * 4 <= start };

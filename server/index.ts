@@ -8,6 +8,7 @@ import type { Account, Action, ClientMessage, GameState, Model, Revert, Role, Ro
 import { DICE_REQUESTS, resolveRequest } from '../src/shared/resolve.ts';
 import { mayDeclare, phaseAllows } from '../src/shared/heroics.ts';
 import { brokenSideToTest, brokenTests, terrorAhead, terrorTest, willOfEvilDue, willOfEvilToll } from '../src/shared/courage.ts';
+import { mountName, mountProfile, riderTests, riderTestsDue } from '../src/shared/cavalry.ts';
 import { settleSpell, spellReady } from '../src/shared/magic.ts';
 import { recoveryDue, recoveryRolls } from '../src/shared/powers.ts';
 import { arrivalsDue, rollArrivals } from '../src/shared/maelstrom.ts';
@@ -305,6 +306,7 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
     case 'willOfEvil':
     case 'shotPaused':
     case 'bannerRolled':
+    case 'brutal':
       return null; // the server rolls for these and settles them
     case 'takeWound':
     case 'climb':
@@ -450,7 +452,7 @@ function scheduleAnnouncement(room: Room) {
 
 function apply(room: Room, action: Action) {
   room.blank = false;
-  // Models that fly are marked as they come onto the table, so moves can allow for it.
+  // Models that fly, cross terrain specially, beat a war drum or ride a mount are marked as they come onto the table.
   if (action.type === 'addModels' && Array.isArray(action.models))
     action = {
       ...action,
@@ -458,7 +460,9 @@ function apply(room: Room, action: Action) {
         if (!m?.profileId || !CATALOG.units[m.profileId]) return m;
         const ground = terrainRules(CATALOG, m);
         const drum = gearOf(CATALOG, m as Model).some(g => /war ?drum/.test(g));
-        return { ...m, ...(CATALOG.units[m.profileId].rules.some(r => /^Fly\b/.test(r)) ? { fly: true } : {}), ...(ground.length ? { ground } : {}), ...(drum ? { drum: true } : {}) };
+        // A rider's mount, for lists deployed before mounts were recorded.
+        const mount = m.mount || m.dismounted ? undefined : mountName(CATALOG.units[m.profileId], m.options ?? []);
+        return { ...m, ...(CATALOG.units[m.profileId].rules.some(r => /^Fly\b/.test(r)) ? { fly: true } : {}), ...(ground.length ? { ground } : {}), ...(drum ? { drum: true } : {}), ...(mount ? { mount, mountWounds: mountProfile(mount)?.w } : {}) };
       }),
     };
   room.state = reduce(room.state, action);
@@ -474,6 +478,7 @@ function apply(room: Room, action: Action) {
     }
   }
   settleSpells(room);
+  rollRiderTests(room);
   rollBrokenTests(room);
   rollReinforcements(room);
   rollGameEnd(room);
@@ -541,6 +546,18 @@ function rollBrokenTests(room: Room) {
     for (const a of brokenTests(room.state, seat, CATALOG, serverDice, serverId)) apply(room, a);
   } finally {
     rollingCourage = false;
+  }
+}
+
+/** Rolls the Thrown Rider test for a rider whose mount fell, and the Courage test for a mount that lost its rider. */
+let rollingRiders = false;
+function rollRiderTests(room: Room) {
+  if (rollingRiders || !riderTestsDue(room.state)) return;
+  rollingRiders = true;
+  try {
+    for (const a of riderTests(room.state, CATALOG, serverDice, serverId)) apply(room, a);
+  } finally {
+    rollingRiders = false;
   }
 }
 

@@ -1,3 +1,4 @@
+import { mounted } from './cavalry.ts';
 import { distanceToBase, halfExtents, inBaseContact, type Point } from './geometry.ts';
 import { scenarioById, type Zone } from './scenarios.ts';
 import type { GameState, MarkerObject, Model, Seat, Terrain } from './types.ts';
@@ -28,7 +29,7 @@ export const carriedBy = (state: GameState, m: Model) => onTable(state).filter(t
 const engaged = (state: GameState, m: Model) =>
   Object.values(state.models).some(e => e.owner !== m.owner && !e.dead && !e.escaped && inBaseContact(e, m));
 
-const isCavalry = (m: Model) => m.base.h > m.base.w;
+const isCavalry = (m: Model) => mounted(m);
 
 /** Player 1 starts at the bottom of the table, player 2 at the top. */
 export function inZone(z: Zone, p: Point): boolean {

@@ -5,6 +5,7 @@ import { DICE_REQUESTS, resolveRequest } from '../shared/resolve.ts';
 import { loadCatalog, type Catalog } from '../shared/catalog.ts';
 import { settleSpell } from '../shared/magic.ts';
 import { recoveryDue, recoveryRolls } from '../shared/powers.ts';
+import { riderTests, riderTestsDue } from '../shared/cavalry.ts';
 import { cleanMark } from '../shared/marks.ts';
 import type { Action, GameState, Mark, Role } from '../shared/types.ts';
 import { showMark, turnMarks, type Connection, type Snapshot } from './net.ts';
@@ -40,9 +41,10 @@ export class PracticeGame implements Connection {
       if (!out) return;
       for (const a of [...out.apply, ...(out.record ? [out.record] : [])]) state = reduce(state, a);
     } else if (action.type !== 'undo') state = reduce(state, action);
-    // What the server would do by itself: put a lifted cast into play, and roll Paralysed models' recovery.
+    // What the server would do by itself: put a lifted cast into play, roll Paralysed models' recovery and thrown riders' tests.
     for (const a of settleSpell(state, catalog, d6, uid)) state = reduce(state, a);
     if (recoveryDue(state)) for (const a of recoveryRolls(state, d6, uid)) state = reduce(state, a);
+    if (riderTestsDue(state)) for (const a of riderTests(state, catalog, d6, uid)) state = reduce(state, a);
     this.set(this.opponent(state));
   }
 

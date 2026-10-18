@@ -210,3 +210,33 @@ export function canRetreatTo(state: GameState, id: string, p: Point): boolean {
   const s = step(state, { ...state.models, [id]: was }, was, p);
   return s.ok && !s.drop;
 }
+
+/**
+ * A monster's Barge: each model backs away `dist` (3") rather than 1", straight back if it can and otherwise the
+ * way that lets it go furthest. One that can't go the whole way goes as far as it can and is knocked Prone.
+ */
+export function pushBack(state: GameState, losers: string[], winners: string[], dist: number): { moves: { id: string; x: number; y: number }[]; short: string[] } {
+  const models = { ...state.models };
+  const out = { moves: [] as { id: string; x: number; y: number }[], short: [] as string[] };
+  const foes = winners.map(id => state.models[id]).filter((m): m is Model => !!m && !m.dead);
+  for (const id of losers) {
+    const m = models[id];
+    if (!m || m.dead || m.escaped) continue;
+    const heading = headingAway(m, foes);
+    let best: { p: Point; d: number } | null = null;
+    for (let d = dist; d > 0.2 && !best; d -= 0.25)
+      for (const turn of TURNS) {
+        const p = at(m, heading + (turn * Math.PI) / 180, d);
+        const s = step(state, models, m, p);
+        if (s.ok && !s.drop) {
+          best = { p, d };
+          break;
+        }
+      }
+    if (!best || best.d < dist - 1e-6) out.short.push(id);
+    if (!best) continue;
+    models[id] = { ...m, ...best.p };
+    out.moves.push({ id, ...rounded(best.p) });
+  }
+  return out;
+}

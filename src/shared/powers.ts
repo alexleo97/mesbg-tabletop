@@ -1,6 +1,7 @@
 // What magical powers do once they work, applied by the game: the effects that stay on models (Transfix, Paralyse,
 // auras and the rest), the hits and wounds they cause, models knocked Prone or thrown from their mounts, and the
 // odd ones that move models or put a marker down. The rest of the rules ask here whether a model is held by one.
+import { mounted } from './cavalry.ts';
 import magic from '../data/magic.json';
 import { modelStats, startingPoints, type Catalog } from './catalog.ts';
 import { combats } from './flow.ts';
@@ -45,8 +46,8 @@ const MOUNT_OPTION = /\b(horse|steed|warg|pony|goat|camel|elk|boar)\b/i;
 
 /** A rider on a mount (until it is thrown or its mount flees). */
 export function isCavalry(catalog: Catalog | null, m: Model): boolean {
-  if (m.dismounted) return false;
-  if (m.base.h > m.base.w) return true;
+  if (m.dismounted || m.steed) return false;
+  if (mounted(m)) return true;
   const unit = unitOf(catalog, m);
   return !!unit && (unit.wargear.some(w => MOUNT.test(w.trim())) || (m.options ?? []).some(o => MOUNT_OPTION.test(o)));
 }

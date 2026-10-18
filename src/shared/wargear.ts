@@ -8,6 +8,8 @@ import { duelLeader, duelSettled } from './fight.ts';
 import { sightTo } from './sight.ts';
 import { declared } from './heroics.ts';
 import { hasKeyword, isCavalry } from './powers.ts';
+import { mountLabel, mountOf } from './cavalry.ts';
+import { isMonster } from './monsters.ts';
 import type { DiceRoll, GameState, Model, Seat } from './types.ts';
 
 const unitOf = (catalog: Catalog | null | undefined, m: Model) => (m.profileId ? catalog?.units[m.profileId] : undefined);
@@ -121,6 +123,20 @@ export function fighterOf(state: GameState, catalog: Catalog | null | undefined,
   };
   if (!st) return f;
   const notes: string[] = [];
+  // A rider fights with its mount's Fight, Strength and Attacks where they're better, and either can be struck.
+  const mount = mountOf(m);
+  if (mount) {
+    const label = mountLabel(mount.name);
+    const better = [mount.f > f.f && 'F', mount.s > strength && 'S', mount.a > f.a && 'A'].filter(Boolean);
+    f.f = Math.max(f.f, mount.f);
+    f.a = Math.max(f.a, mount.a);
+    if (mount.s > strength) f.s = declared(state, m.id, 'Heroic Strength') ? Math.min(10, mount.s * 2) : mount.s;
+    if (better.length) notes.push(`${label}: its ${better.join(', ')}`);
+    if (mount.left > 0) f.mount = { name: label, d: mount.d, s: mount.s };
+  }
+  if (isMonster(catalog, m)) f.monster = true;
+  // A hero's Fate might yet save it, so only a model without Fate is known to be slain by its last wound.
+  if (!(m.hero && m.fate > 0)) f.left = m.wounds;
   let duel = 0;
   let wound = 0;
   const two = twoHandedChoice(catalog, m);

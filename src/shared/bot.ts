@@ -1,3 +1,4 @@
+import { mounted } from './cavalry.ts';
 import { modelStats, type Catalog } from './catalog.ts';
 import { fighterOf } from './wargear.ts';
 import { duelLeader, duelSettled, strikeWounds, woundsTaken, type Fighter, type FightRequest } from './fight.ts';
@@ -401,7 +402,7 @@ function assignGoals(ctx: Ctx): Map<string, Goal> {
   const { state, seat } = ctx;
   const out = new Map<string, Goal>();
   const ours = side(state, seat).filter(m => !engagedWith(state, m).length);
-  const cavalry = (m: Model) => m.base.h > m.base.w;
+  const cavalry = (m: Model) => mounted(m);
   const { w, h } = state.board;
 
   // Carriers first: off the table where that scores, to a Sanctuary with the wounded, otherwise back to safety.
