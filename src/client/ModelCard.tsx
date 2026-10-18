@@ -2,7 +2,8 @@ import { useEffect, useState, type Ref } from 'react';
 import { loadRulesText, modelStats, pictureUrl, startingPoints, statsWithOptions, STAT_NAMES, type Catalog } from '../shared/catalog.ts';
 import { strikeWounds, woundsTaken } from '../shared/fight.ts';
 import { CONTACT_SLACK, type Combat } from '../shared/flow.ts';
-import { fightDone, moveLeft } from '../shared/movement.ts';
+import { engaged, fightDone, moveLeft } from '../shared/movement.ts';
+import { atCrossing, crossBlocked, fallingHits, terrainName, type CrossTest } from '../shared/terrainTests.ts';
 import { heroicInfo, phaseAllows } from '../shared/heroics.ts';
 import { carriedBy, markerActions, OBJECT_NAMES } from '../shared/objects.ts';
 import { causesTerror } from '../shared/courage.ts';
@@ -60,6 +61,60 @@ export function ruleSummary(name: string): string | undefined {
 export function rulesOf(m: Model, catalog: Catalog | null): string[] {
   const unit = m.profileId ? catalog?.units[m.profileId] : undefined;
   return unit?.rules ?? [];
+}
+
+const TEST_HELP: Record<CrossTest, string> = {
+  Jump: 'a Jump test gets it over',
+  Climb: 'a Climb test gets it up',
+  'Climb down': 'a Climb test gets it down',
+  Leap: 'a Leap test gets it across',
+};
+
+/** In the Move phase: the test for terrain the model was stopped at, and crawling or lying down. */
+function TerrainMoves({ state, dispatch, m }: { state: GameState; dispatch: (a: Action) => void; m: Model }) {
+  const at = atCrossing(state, m);
+  const left = moveLeft(state, m);
+  const moved = !!state.flow.starts?.[m.id];
+  const stopped = state.flow.stopped?.includes(m.id);
+  if (at) {
+    const t = state.terrain[at.terrain];
+    const c = { terrain: at.terrain, test: at.test, stop: { x: at.stop[0], y: at.stop[1] }, landing: { x: at.landing[0], y: at.landing[1] }, drop: at.drop };
+    const why = crossBlocked(state, m, c);
+    const falls = at.test === 'Climb down' && fallingHits(m, at.drop) ? `, and a fall this far does ${fallingHits(m, at.drop)} Strength 3 hit${fallingHits(m, at.drop) === 1 ? '' : 's'}` : '';
+    return (
+      <div className="terrain-test">
+        <p>
+          {m.name} is at the {terrainName(t)}: {TEST_HELP[at.test]}. On a 1 it {at.test === 'Jump' ? 'stays put' : 'falls and is Prone'}
+          {falls}; on 2-5 it gets {at.test === 'Leap' ? 'across' : at.test === 'Climb' ? 'up' : at.test === 'Climb down' ? 'down' : 'over'} and its move ends; on a 6 it carries on.
+        </p>
+        {why && <p className="warn">{why}.</p>}
+        <div className="row wrap">
+          <button className="primary" disabled={!!why} onClick={() => dispatch({ type: 'cross', id: m.id })}>
+            {at.test === 'Climb down' ? 'Climb down' : at.test}
+          </button>
+          {at.test === 'Leap' && <button onClick={() => dispatch({ type: 'crossed', id: m.id, terrain: at.terrain })}>Wade in</button>}
+        </div>
+      </div>
+    );
+  }
+  if (stopped) return <p className="hint">{m.name}'s move has ended this turn.</p>;
+  if (m.prone && !moved && !state.flow.crawling?.includes(m.id) && !state.flow.lay?.includes(m.id))
+    return (
+      <div className="row wrap terrain-test">
+        <p className="muted small">Prone: moving it stands it up for half its Move, or it can crawl 1" and stay down.</p>
+        <button onClick={() => dispatch({ type: 'crawl', id: m.id })}>Crawl 1"</button>
+      </div>
+    );
+  if (m.prone && state.flow.crawling?.includes(m.id)) return <p className="hint">{m.name} is crawling: up to 1", staying Prone.</p>;
+  if (!m.prone && left !== null && left + 1e-6 >= m.move / 2 && !state.flow.stood?.includes(m.id) && !engaged(state, m))
+    return (
+      <div className="row wrap terrain-test">
+        <button className="small" title={`Lying down costs half its Move and ends its move. Prone, it is half as tall for sight but has no Control Zone.`} onClick={() => dispatch({ type: 'lieDown', id: m.id })}>
+          Lie down
+        </button>
+      </div>
+    );
+  return null;
 }
 
 /** A selected model's card: its profile at a glance and the actions that make sense in this phase. */
@@ -293,6 +348,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
         )
       )}
       {action}
+      {mine && state.phase === 'move' && state.flow.started && !held && <TerrainMoves state={state} dispatch={dispatch} m={m} />}
       {mine && state.phase === 'move' && <CastBox state={state} dispatch={dispatch} role={role} model={m} />}
       {carried.length > 0 && <p className="muted carrying">Carrying {carried.map(t => `the ${OBJECT_NAMES[t.object!]}`).join(' and ')}.</p>}
       {mine && markers.length > 0 && (

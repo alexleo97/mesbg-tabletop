@@ -1,6 +1,7 @@
 // Plays one whole game through a running server (npx tsx tests/fullgame.ts <scenario id|none> <seed> [army] [army]):
 // this script is player 1, played by the computer player's logic as a stand-in for a person, and the Palantír is
 // player 2. It reports where the game got stuck and any roll made twice.
+import { STARTER_BOARDS, starterTerrain } from '../src/shared/boards.ts';
 import { writeFileSync } from 'node:fs';
 import WebSocket from 'ws';
 import { botStep, newMemo } from '../src/shared/bot.ts';
@@ -50,6 +51,12 @@ ws.on('open', async () => {
     await sleep(200);
     let n = 0;
     for (const t of scenarioMarkers(sc, state.board.w, state.board.h, p => `${p}${n++}`, rand)) send({ type: 'addTerrain', terrain: t });
+  }
+  // BOARD=farmstead (or another starter board's id) plays over that board's terrain.
+  const board = STARTER_BOARDS.find(b => b.id === process.env.BOARD);
+  if (board) {
+    let n = 0;
+    for (const t of starterTerrain(board, p => `${p}${n++}`)) send({ type: 'addTerrain', terrain: t });
   }
   await sleep(300);
   for (const [seat, army] of [['p1', armyA], ['p2', armyB]] as const) {

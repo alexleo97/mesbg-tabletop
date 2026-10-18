@@ -54,7 +54,7 @@ describe('floors inside buildings', () => {
     const s = run(game(mk('a', 'p1', 20, 20), mk('b', 'p2', 20, 40)), { type: 'addTerrain', terrain: { id: 'hut', kind: 'building', shape: 'rect', x: 20, y: 30, w: 6, h: 4, height: 3 } as Terrain });
     expect(sightTo(s, s.models.a, s.models.b)).toBe('hidden');
     const up = run(s, { type: 'climb', id: 'a', floor: 2 });
-    expect(eyeOf(up, up.models.a)).toBe(7);
+    expect(eyeOf(up, up.models.a)).toBeCloseTo(7.1, 5);
     expect(sightTo(up, up.models.a, up.models.b)).not.toBe('hidden');
   });
 

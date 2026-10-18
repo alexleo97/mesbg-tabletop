@@ -94,6 +94,10 @@ export function phaseAllows(state: GameState, seat: Seat, action: { type: string
     case 'fight':
     case 'strikes':
       return state.phase === 'fight' && heroicsSettled(state);
+    case 'cross':
+    case 'crossed':
+    case 'crawl':
+    case 'lieDown':
     case 'pickUp':
     case 'flip':
     case 'uncover':

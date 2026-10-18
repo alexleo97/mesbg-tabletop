@@ -1,8 +1,9 @@
-import { distanceBetween, mmToIn, type Point } from './geometry.ts';
-import { moveCost, sightTo } from './sight.ts';
+import { distanceBetween, halfExtents, mmToIn, type Point } from './geometry.ts';
+import { heightOfModel, moveCost, sightTo } from './sight.ts';
 import { combatFromKey, CONTACT_SLACK, type Combat } from './flow.ts';
 import { canActivate, phaseHeroics } from './heroics.ts';
 import { cannotAct } from './powers.ts';
+import { crossingAhead } from './terrainTests.ts';
 import type { GameState, Model, Seat } from './types.ts';
 
 /**
@@ -18,6 +19,9 @@ export function moveAllowance(state: GameState, m: Model): number | null {
     if (!canActivate(state, m.owner) || state.flow.courage?.[m.id] === false || cannotAct(state, m) || state.flow.held?.includes(m.id)) return 0;
     // A model already in a fight when its turn to move comes can't move (one that has just charged may still adjust).
     if (!state.flow.starts?.[m.id] && engaged(state, m)) return 0;
+    // A model whose move has ended (a failed test, or a test passed on 2-5) goes no further; a Prone one crawls 1".
+    if (state.flow.stopped?.includes(m.id)) return 0;
+    if (m.prone && (state.flow.crawling?.includes(m.id) || state.flow.lay?.includes(m.id))) return 1;
     // Climbing between floors of a building spends Move too.
     const climbed = state.flow.climbed?.[m.id] ?? 0;
     return Math.max(0, (m.prone || state.flow.stood?.includes(m.id) ? m.move / 2 : m.move) + marchBonus(state, m) - climbed);
@@ -62,6 +66,10 @@ export function basesOverlap(a: Model, b: Model): boolean {
  * `skip` lists models moving alongside this one, which don't block it.
  */
 export function blockMove(state: GameState, m: Model, from: Point, to: Point, skip?: ReadonlySet<string>, charge = true): Point {
+  if (Math.hypot(to.x - from.x, to.y - from.y) < 1e-6) return to;
+  // Terrain that needs a Jump, Climb or Leap test stops the model at it, to take the test (see terrainTests.ts).
+  const ahead = state.flow.started && state.phase === 'move' ? crossingAhead(state, m, from, to) : null;
+  if (ahead) to = ahead.stop;
   const d = Math.hypot(to.x - from.x, to.y - from.y);
   if (d < 1e-6) return to;
   const at = (p: Point): Model => ({ ...m, x: p.x, y: p.y });
@@ -148,15 +156,18 @@ export function movedTooFar(state: GameState): string[] {
   return Object.entries(state.flow.starts ?? {})
     .filter(([id, [x, y]]) => {
       const m = state.models[id];
-      return m && !m.dead && moveCost(state, { x, y }, m, m.owner).cost + (state.flow.climbed?.[id] ?? 0) > m.move / 2 + 0.05;
+      return m && !m.dead && costOf(state, m, { x, y }, m) + (state.flow.climbed?.[id] ?? 0) > m.move / 2 + 0.05;
     })
     .map(([id]) => id)
     .concat(Object.entries(state.flow.climbed ?? {}).filter(([id, c]) => !state.flow.starts?.[id] && state.models[id] && c > state.models[id].move / 2 + 0.05).map(([id]) => id));
 }
 
+/** What a model's move from a to b costs: difficult ground under any of its base counts double, and so does climbing. */
+export const costOf = (state: GameState, m: Model, a: Point, b: Point) => moveCost(state, a, b, m.owner, Math.max(halfExtents(m.base).rx, halfExtents(m.base).ry), heightOfModel(m)).cost;
+
 /** Models that moved at all this Move phase, even a little or only between floors, so shoot 1 worse. */
 export function movedAtAll(state: GameState): string[] {
-  const walked = Object.entries(state.flow.starts ?? {}).filter(([id, [x, y]]) => state.models[id] && moveCost(state, { x, y }, state.models[id], state.models[id].owner).cost > 0.05);
+  const walked = Object.entries(state.flow.starts ?? {}).filter(([id, [x, y]]) => state.models[id] && costOf(state, state.models[id], { x, y }, state.models[id]) > 0.05);
   const climbed = Object.entries(state.flow.climbed ?? {}).filter(([, c]) => c > 0);
   return [...new Set([...walked, ...climbed].map(([id]) => id))];
 }
@@ -164,7 +175,7 @@ export function movedAtAll(state: GameState): string[] {
 /** How much of its Move a model still has this phase, after the ground it's walked and any floors it's climbed. */
 export function moveLeft(state: GameState, m: Model): number | null {
   const allowance = moveAllowance(state, m);
-  return allowance === null ? null : Math.max(0, allowance - moveCost(state, moveStart(state, m), m, m.owner).cost);
+  return allowance === null ? null : Math.max(0, allowance - costOf(state, m, moveStart(state, m), m));
 }
 
 /** Where a model stood when this Move phase began (where it is now, if it hasn't moved yet). */
@@ -178,18 +189,22 @@ export function moveStart(state: GameState, m: Model): Point {
  * (difficult terrain counts double). Returns `to` itself when it's in reach.
  */
 export function limitMove(state: GameState, from: Point, to: Point, move: number, seat?: Seat, m?: Model, skip?: ReadonlySet<string>): Point {
-  const reached = reachable(state, from, to, move, seat);
+  // Terrain that needs a test stops the model at it first, whatever its Move would allow beyond.
+  const ahead = m && state.flow.started && state.phase === 'move' ? crossingAhead(state, m, from, to) : null;
+  if (ahead) to = ahead.stop;
+  const reached = reachable(state, from, to, move, seat, m);
   return m ? blockMove(state, m, from, reached, skip) : reached;
 }
 
-function reachable(state: GameState, from: Point, to: Point, move: number, seat?: Seat): Point {
-  if (moveCost(state, from, to, seat).cost <= move + 1e-6) return to;
+function reachable(state: GameState, from: Point, to: Point, move: number, seat?: Seat, m?: Model): Point {
+  const cost = (p: Point) => (m ? costOf(state, m, from, p) : moveCost(state, from, p, seat).cost);
+  if (cost(to) <= move + 1e-6) return to;
   let lo = 0;
   let hi = 1;
   for (let i = 0; i < 20; i++) {
     const t = (lo + hi) / 2;
     const p = { x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t };
-    if (moveCost(state, from, p, seat).cost <= move) lo = t;
+    if (cost(p) <= move) lo = t;
     else hi = t;
   }
   return { x: from.x + (to.x - from.x) * lo, y: from.y + (to.y - from.y) * lo };

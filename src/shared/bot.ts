@@ -12,6 +12,7 @@ import { chance, fightOdds, woundChance, type Side } from './odds.ts';
 import { PICKS, pickOptions } from './picks.ts';
 import { scoreLines } from './scoring.ts';
 import { planShot, weaponFor } from './shooting.ts';
+import { atCrossing, crossBlocked, fallingHits } from './terrainTests.ts';
 import { armyStatus } from './status.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
@@ -38,6 +39,8 @@ export interface BotMemo {
   compelled?: string;
   /** Heroes that have thought about casting this phase. */
   pondered?: string[];
+  /** Models that have tried a Jump, Climb or Leap test this phase. */
+  tested?: string[];
 }
 
 export const newMemo = (): BotMemo => ({ key: '', turn: 0, since: 0, acted: [], moved: {}, courage: {}, steps: 0 });
@@ -301,6 +304,15 @@ function moveStep(ctx: Ctx): BotStep {
       memo.acted.push(m.id);
       return { action: { type: 'updateModel', id: m.id, patch: { dead: true, wounds: 0 } }, delay: MOVE_PAUSE };
     }
+  }
+
+  // A model stopped at a wall, rock or stream takes the test to get over it.
+  for (const m of side(state, seat)) {
+    const at = atCrossing(state, m);
+    if (!at || (memo.tested ??= []).includes(m.id)) continue;
+    memo.tested.push(m.id);
+    const c = { terrain: at.terrain, test: at.test, stop: { x: at.stop[0], y: at.stop[1] }, landing: { x: at.landing[0], y: at.landing[1] }, drop: at.drop };
+    if (!crossBlocked(state, m, c) && !(at.test === 'Climb down' && fallingHits(m, at.drop) >= m.wounds)) return { action: { type: 'cross', id: m.id }, delay: DICE_PAUSE };
   }
 
   const cast = castStep(ctx);

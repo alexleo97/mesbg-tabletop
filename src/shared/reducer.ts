@@ -7,6 +7,7 @@ import { finishCharge, heroicCombatWon, limitMove, moveAllowance, movedAtAll, mo
 import { FLOORED, floorHeight, flooredAt } from './sight.ts';
 import { woundsTaken } from './fight.ts';
 import { CONTACT_SLACK, pairOff } from './flow.ts';
+import { crossingAhead } from './terrainTests.ts';
 import { distanceBetween } from './geometry.ts';
 import { canPickUp, markerUpkeep, syncCarried, touching, canEscape } from './objects.ts';
 import { endPhaseUpkeep } from './scoring.ts';
@@ -79,6 +80,7 @@ function goToPhase(state: GameState, phase: Phase, turn: number, newTurn: boolea
       passed: [],
       lastHeroic: null,
       starts: {},
+      ...(phase !== state.phase ? { crossed: {}, blocked: {}, stopped: [], crawling: [], lay: [] } : {}),
       ...farMoved,
       ...upkeep,
     },
@@ -398,13 +400,17 @@ function step(state: GameState, action: Action): GameState {
       // Before the battle, models stay in their deployment zones (and a warband switching zones comes along whole).
       const moves = state.flow.started ? action.moves : holdInZones(state, action.moves.filter(mv => mv && models[mv.id]).map(mv => ({ id: String(mv.id), x: num(mv.x, -24, 200, models[mv.id].x), y: num(mv.y, -24, 200, models[mv.id].y), rot: mv.rot })));
       let stood = state.flow.stood;
+      let blocked = state.flow.blocked;
       let climbed = state.flow.climbed;
       // Models moved together don't block each other.
       const together = new Set(moves.map(mv => mv && String(mv.id)));
       for (const mv of moves) {
         const prev = mv && models[mv.id];
         if (!prev || prev.escaped || prev.waiting) continue;
-        let to = { x: num(mv.x, -24, 200, prev.x), y: num(mv.y, -24, 200, prev.y) };
+        const asked = { x: num(mv.x, -24, 200, prev.x), y: num(mv.y, -24, 200, prev.y) };
+        // A model whose move has ended this phase stays where it is.
+        if (state.flow.started && state.phase === 'move' && state.flow.stopped?.includes(prev.id) && (asked.x !== prev.x || asked.y !== prev.y)) continue;
+        let to = asked;
         const moving = to.x !== prev.x || to.y !== prev.y;
         const compel = state.flow.compel?.model === prev.id ? state.flow.compel : undefined;
         // A Compelled model goes where the caster's player takes it, up to half its Move from where it stood.
@@ -421,6 +427,12 @@ function step(state: GameState, action: Action): GameState {
           const must = state.flow.mustCharge?.model === prev.id ? state.models[state.flow.mustCharge.target] : undefined;
           if (must && !must.dead && distanceBetween({ ...prev, ...to }, must) > CONTACT_SLACK) to = { x: prev.x, y: prev.y };
           if (!starts?.[prev.id]) starts = { ...starts, [prev.id]: [from.x, from.y] };
+          // Stopped at terrain that needs a test: remember it, so the model's card can offer the test.
+          if (state.phase === 'move') {
+            const ahead = crossingAhead(state, prev, from, asked);
+            const { [prev.id]: _, ...rest } = blocked ?? {};
+            blocked = ahead && Math.hypot(to.x - ahead.stop.x, to.y - ahead.stop.y) < 0.05 ? { ...rest, [prev.id]: { terrain: ahead.terrain, test: ahead.test, stop: [to.x, to.y], landing: [ahead.landing.x, ahead.landing.y], drop: ahead.drop } } : rest;
+          }
         }
         let next: Model = { ...prev, ...to, rot: mv.rot === undefined ? prev.rot : num(mv.rot, -360, 720, prev.rot) % 360 };
         // Inside a building a model keeps to its floor; leaving it (or walking into another) takes it back to the
@@ -433,14 +445,18 @@ function step(state: GameState, action: Action): GameState {
           }
         }
         // A Prone model that moves stands up first, which costs it half its Move this turn.
-        if (prev.prone && allowance && moving && (to.x !== prev.x || to.y !== prev.y)) {
+        const crawls = state.flow.crawling?.includes(prev.id) || state.flow.lay?.includes(prev.id);
+        if (prev.prone && allowance && moving && !crawls && (to.x !== prev.x || to.y !== prev.y)) {
           next = { ...next, prone: undefined };
           delete next.prone;
           stood = [...new Set([...(stood ?? []), prev.id])];
         }
         models[prev.id] = next;
       }
-      const flow = starts !== state.flow.starts || stood !== state.flow.stood || climbed !== state.flow.climbed ? { flow: { ...state.flow, starts, ...(stood ? { stood } : {}), ...(climbed ? { climbed } : {}) } } : {};
+      const flow =
+        starts !== state.flow.starts || stood !== state.flow.stood || climbed !== state.flow.climbed || blocked !== state.flow.blocked
+          ? { flow: { ...state.flow, starts, ...(stood ? { stood } : {}), ...(climbed ? { climbed } : {}), ...(blocked ? { blocked } : {}) } }
+          : {};
       return { ...state, models, ...flow };
     }
     case 'climb': {
@@ -451,6 +467,8 @@ function step(state: GameState, action: Action): GameState {
       const to = int(action.floor, 0, t.floors ?? 0, 0);
       const cost = Math.abs(floorHeight(t, to) - floorHeight(t, m.floor ?? 0));
       if (to === (m.floor ?? 0)) return state;
+      // Cavalry can't climb (a rider's base is longer than it is wide).
+      if (state.flow.started && m.base.h > m.base.w && to > (m.floor ?? 0)) return state;
       let flow = state.flow;
       if (state.flow.started) {
         const left = moveLeft(state, m);
@@ -460,6 +478,39 @@ function step(state: GameState, action: Action): GameState {
       const next: Model = { ...m, floor: to };
       if (!to) delete next.floor;
       return { ...state, models: { ...state.models, [m.id]: next }, flow };
+    }
+    case 'crossed': {
+      // A model may now cross a piece of terrain (it passed its test, or waded in), and its move may have ended.
+      const m = state.models[action.id];
+      if (!m) return state;
+      const terrain = action.terrain && state.terrain[action.terrain] ? action.terrain : undefined;
+      const crossed = terrain ? { ...state.flow.crossed, [m.id]: [...new Set([...(state.flow.crossed?.[m.id] ?? []), terrain])] } : state.flow.crossed;
+      const stopped = action.stop ? [...new Set([...(state.flow.stopped ?? []), m.id])] : state.flow.stopped;
+      const { [m.id]: _, ...blocked } = state.flow.blocked ?? {};
+      return { ...state, flow: { ...state.flow, ...(crossed ? { crossed } : {}), ...(stopped ? { stopped } : {}), blocked } };
+    }
+    case 'crawl': {
+      // A Prone model crawls up to 1" and stays Prone, instead of standing up.
+      const m = state.models[action.id];
+      if (!m?.prone || !state.flow.started || state.phase !== 'move' || state.flow.starts?.[m.id] || state.flow.crawling?.includes(m.id)) return state;
+      return { ...state, flow: { ...state.flow, crawling: [...(state.flow.crawling ?? []), m.id] } };
+    }
+    case 'lieDown': {
+      // A standing model lies down for half its Move, and its move ends.
+      const m = state.models[action.id];
+      if (!m || m.dead || m.prone || !state.flow.started || state.phase !== 'move' || state.flow.stood?.includes(m.id)) return state;
+      const left = moveLeft(state, m);
+      if (left === null || left + 1e-6 < m.move / 2) return state;
+      return {
+        ...state,
+        models: { ...state.models, [m.id]: { ...m, prone: true } },
+        flow: {
+          ...state.flow,
+          climbed: { ...state.flow.climbed, [m.id]: (state.flow.climbed?.[m.id] ?? 0) + m.move / 2 },
+          lay: [...new Set([...(state.flow.lay ?? []), m.id])],
+          stopped: [...new Set([...(state.flow.stopped ?? []), m.id])],
+        },
+      };
     }
     case 'arrive': {
       // Waiting models come onto the table; the side has rolled for its arrivals this turn either way.
@@ -874,6 +925,19 @@ function step(state: GameState, action: Action): GameState {
   }
 }
 
+const TESTS = ['Jump', 'Climb', 'Climb down', 'Leap'] as const;
+/** Where models were stopped to take a terrain test, from untrusted JSON. */
+function cleanBlocked(raw: object): NonNullable<Flow['blocked']> {
+  const out: NonNullable<Flow['blocked']> = {};
+  for (const [k, v] of Object.entries(raw).slice(0, 400)) {
+    const b = v as Record<string, unknown>;
+    const pt = (p: unknown): [number, number] => (Array.isArray(p) ? [num(p[0], -24, 200, 0), num(p[1], -24, 200, 0)] : [0, 0]);
+    if (!b || !TESTS.includes(b.test as (typeof TESTS)[number])) continue;
+    out[str(k, 80)] = { terrain: str(b.terrain, 80), test: b.test as (typeof TESTS)[number], stop: pt(b.stop), landing: pt(b.landing), drop: num(b.drop, 0, 50, 0) };
+  }
+  return out;
+}
+
 /** Rebuilds a full state from untrusted JSON (a saved game or a server snapshot). */
 export function loadState(raw: unknown): GameState {
   const s = initialState();
@@ -934,6 +998,11 @@ export function loadState(raw: unknown): GameState {
         ...(Number.isFinite(f.recovered) ? { recovered: int(f.recovered, 0, 99, 0) } : {}),
         ...(Array.isArray(f.farMoved) ? { farMoved: f.farMoved.slice(0, 400).map(x => String(x).slice(0, 80)) } : {}),
         ...(Array.isArray(f.moved) ? { moved: f.moved.slice(0, 400).map(x => String(x).slice(0, 80)) } : {}),
+        ...(Array.isArray(f.stopped) ? { stopped: f.stopped.slice(0, 400).map(x => String(x).slice(0, 80)) } : {}),
+        ...(Array.isArray(f.crawling) ? { crawling: f.crawling.slice(0, 400).map(x => String(x).slice(0, 80)) } : {}),
+        ...(Array.isArray(f.lay) ? { lay: f.lay.slice(0, 400).map(x => String(x).slice(0, 80)) } : {}),
+        ...(f.crossed && typeof f.crossed === 'object' ? { crossed: Object.fromEntries(Object.entries(f.crossed).slice(0, 400).filter(([, v]) => Array.isArray(v)).map(([k, v]) => [str(k, 80), (v as unknown[]).slice(0, 20).map(x => str(x, 80))])) } : {}),
+        ...(f.blocked && typeof f.blocked === 'object' ? { blocked: cleanBlocked(f.blocked) } : {}),
         ...(f.mustCharge && typeof f.mustCharge === 'object' ? { mustCharge: { model: str(f.mustCharge.model, 80), target: str(f.mustCharge.target, 80) } } : {}),
         ...(Array.isArray(f.duels) ? { duels: f.duels.slice(0, 200).map(x => String(x).slice(0, 80)) } : {}),
         ...(f.startFate && typeof f.startFate === 'object' ? { startFate: cleanCounts(f.startFate, 9) } : {}),
