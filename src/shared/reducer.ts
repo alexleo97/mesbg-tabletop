@@ -3,7 +3,7 @@ import { holdInZones } from './deployment.ts';
 import { heroicInfo, heroicNow, heroicQueue, mayActivate, shoutedFor, SHOUT_RANGE } from './heroics.ts';
 import { pendingSpell } from './magic.ts';
 import { basePower, cannotAct, effectActive } from './powers.ts';
-import { engaged as engagedNow, finishCharge, heroicCombatWon, limitMove, marchedBy, moveAllowance, movedAtAll, movedTooFar, moveLeft, moveStart } from './movement.ts';
+import { engaged as engagedNow, finishCharge, heroicCombatWon, limitMove, marchedBy, marchRange, moveAllowance, movedAtAll, movedTooFar, moveLeft, moveStart } from './movement.ts';
 import { FLOORED, floorHeight, flooredAt } from './sight.ts';
 import { cleanPausedShot, woundsTaken } from './fight.ts';
 import { pairOff } from './flow.ts';
@@ -37,6 +37,8 @@ export function initialState(): GameState {
   };
 }
 
+/** The terrain rules a model can carry (see wargear.terrainRules). */
+const GROUND = ['wood', 'rock', 'cave', 'spectral', 'swift'];
 const newFlow = (): Flow => ({ started: false, chooser: null, chooserTurn: 0, roll: null, done: [], resolved: [], heroics: [], passed: [], lastHeroic: null });
 
 /** Moves to a phase (and turn), clearing who has finished; a new turn also clears fights and priority. */
@@ -82,7 +84,7 @@ function goToPhase(state: GameState, phase: Phase, turn: number, newTurn: boolea
       passed: [],
       lastHeroic: null,
       starts: {},
-      ...(phase !== state.phase ? { crossed: {}, blocked: {}, stopped: [], crawling: [], lay: [], retreat: {}, heroicDone: [], heroicNow: undefined, heroicFirst: undefined, activated: [], shotPause: undefined } : {}),
+      ...(phase !== state.phase ? { crossed: {}, blocked: {}, stopped: [], crawling: [], lay: [], retreat: {}, heroicDone: [], heroicNow: undefined, heroicFirst: undefined, activated: [], shotPause: undefined, choices: undefined } : {}),
       ...farMoved,
       ...upkeep,
     },
@@ -158,6 +160,9 @@ export function cleanModel(m: Partial<Model>, prev?: Model): Model | null {
   const tier = m.tier !== undefined ? int(m.tier, 0, 9, 0) : base.tier;
   if (tier) out.tier = tier;
   if ('fly' in m ? m.fly === true : base.fly) out.fly = true;
+  if ('drum' in m ? m.drum === true : base.drum) out.drum = true;
+  const ground = 'ground' in m ? (Array.isArray(m.ground) ? m.ground.filter(g => GROUND.includes(g)) : undefined) : base.ground;
+  if (ground?.length) out.ground = ground;
   out.wounds = int(m.wounds, 0, out.maxWounds, Math.min(base.wounds, out.maxWounds));
   if ('escaped' in m ? m.escaped === true : base.escaped) out.escaped = true;
   if ('waiting' in m ? m.waiting === true : base.waiting) out.waiting = true;
@@ -335,6 +340,10 @@ function cleanRoll(r: unknown): DiceRoll | null {
     ...(o.might ? { might: int(o.might, 0, 60, 0) } : {}),
     ...(o.support === true ? { support: true } : {}),
     ...(o.charge === true ? { charge: true } : {}),
+    ...(o.mod ? { mod: int(o.mod, -3, 3, 0) } : {}),
+    ...(o.sixSafe === true ? { sixSafe: true } : {}),
+    ...(o.per && o.per > 1 ? { per: int(o.per, 1, 3, 1) } : {}),
+    ...(o.banner === true ? { banner: true } : {}),
     at: num(o.at, 0, Number.MAX_SAFE_INTEGER, 0),
   };
 }
@@ -367,7 +376,7 @@ function followed(state: GameState, m: Model, heroic: string | undefined): Model
 
 /** Where a move from `from` towards `to` has to stop to end within 6" of `leader`: `to`, or the last point along the way that is. */
 function keepNear(m: Model, from: { x: number; y: number }, to: { x: number; y: number }, leader: Model): { x: number; y: number } {
-  const near = (p: { x: number; y: number }) => distanceBetween({ ...m, ...p }, leader) <= SHOUT_RANGE + 1e-6;
+  const near = (p: { x: number; y: number }) => distanceBetween({ ...m, ...p }, leader) <= Math.max(SHOUT_RANGE, marchRange(leader)) + 1e-6;
   if (near(to)) return to;
   for (let i = 1; i <= 50; i++) {
     const f = 1 - i / 50;
@@ -723,7 +732,9 @@ function step(state: GameState, action: Action): GameState {
     case 'declareHeroic': {
       const m = state.models[action.model];
       const info = heroicInfo(str(action.action, 40));
-      if (!m || !m.hero || m.dead || m.might < 1 || !info || info.phase !== state.phase || cannotAct(state, m)) return state;
+      // A war drum calls a Heroic March for free, hero or not.
+      const drum = !!m?.drum && info?.name === 'Heroic March';
+      if (!m || (!m.hero && !drum) || m.dead || (m.might < 1 && !drum) || !info || info.phase !== state.phase || cannotAct(state, m)) return state;
       if (state.flow.heroics.some(h => h.model === m.id && h.phase === state.phase)) return state;
       if ((info.name === 'Heroic Shoot' || info.name === 'Heroic Accuracy') && state.flow.started && engagedNow(state, m)) return state;
       const other: Seat = m.owner === 'p1' ? 'p2' : 'p1';
@@ -738,7 +749,7 @@ function step(state: GameState, action: Action): GameState {
       }
       return {
         ...state,
-        models: { ...state.models, [m.id]: { ...m, might: m.might - 1 } },
+        models: drum ? state.models : { ...state.models, [m.id]: { ...m, might: m.might - 1 } },
         flow: {
           ...state.flow,
           heroics: [...state.flow.heroics, { model: m.id, action: info.name, phase: state.phase }],
@@ -755,6 +766,26 @@ function step(state: GameState, action: Action): GameState {
       const challenges = [...state.flow.challenges!];
       challenges[i] = { ...challenges[i], accepted: action.accept === true };
       return { ...state, flow: { ...state.flow, challenges } };
+    }
+    case 'bannerRolled': {
+      const i = state.log.findIndex(r => r.id === action.roll);
+      const r = state.log[i];
+      const k = int(action.die, 0, MAX_DICE, -1);
+      if (!r || r.banner || k < 0 || k >= r.dice.length) return state;
+      const dice = [...r.dice];
+      const was = dice[k];
+      dice[k] = int(action.value, 1, 6, was);
+      const log = [...state.log];
+      // (Not a note: a note on a duel roll marks the duel settled.)
+      log[i] = { ...r, dice, banner: true, label: `${r.label.replace(/ \(F.*$/, '')}: ${str(action.by, 30)}'s banner re-rolled a ${was}`.slice(0, 80) };
+      return { ...state, log };
+    }
+    case 'fightChoice': {
+      const m = state.models[action.id];
+      if (!m) return state;
+      const pick = { ...(action.shielding === true ? { shielding: true } : {}), ...(action.twoHanded === true ? { twoHanded: true } : {}) };
+      const { [m.id]: _, ...rest } = state.flow.choices ?? {};
+      return { ...state, flow: { ...state.flow, choices: Object.keys(pick).length ? { ...rest, [m.id]: pick } : rest } };
     }
     case 'shotPaused':
       return { ...state, flow: { ...state.flow, shotPause: action.pause ? cleanPause(action.pause) : undefined } };
@@ -1130,6 +1161,9 @@ export function loadState(raw: unknown): GameState {
         ...(Array.isArray(f.activated) ? { activated: f.activated.slice(0, 400).map(x => str(x, 80)) } : {}),
         ...(Number.isFinite(f.willed) ? { willed: int(f.willed, 0, 99, 0) } : {}),
         ...(f.shotPause && typeof f.shotPause === 'object' && cleanPause(f.shotPause) ? { shotPause: cleanPause(f.shotPause) } : {}),
+        ...(f.choices && typeof f.choices === 'object'
+          ? { choices: Object.fromEntries(Object.entries(f.choices as Record<string, { shielding?: unknown; twoHanded?: unknown }>).slice(0, 200).map(([k, v]) => [str(k, 80), { ...(v?.shielding === true ? { shielding: true } : {}), ...(v?.twoHanded === true ? { twoHanded: true } : {}) }])) }
+          : {}),
         ...(Array.isArray(f.challenges) ? { challenges: f.challenges.slice(0, 20).filter(c => c && typeof c === 'object').map(c => ({ by: str(c.by, 80), target: str(c.target, 80), cap: int(c.cap, 0, 9, 3), ...(typeof c.accepted === 'boolean' ? { accepted: c.accepted } : {}) })) } : {}),
         ...(f.charges && typeof f.charges === 'object' ? { charges: Object.fromEntries(Object.entries(f.charges).slice(0, 400).map(([k, v]) => [str(k, 80), str(v, 80)])) } : {}),
         ...(f.retreat && typeof f.retreat === 'object' ? { retreat: Object.fromEntries(Object.entries(f.retreat).slice(0, 100).filter(([, v]) => Array.isArray(v)).map(([k, v]) => [str(k, 80), [num((v as unknown[])[0], -24, 200, 0), num((v as unknown[])[1], -24, 200, 0)] as [number, number]])) } : {}),

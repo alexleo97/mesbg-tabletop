@@ -8,6 +8,7 @@ import { declared, phaseAllows } from '../shared/heroics.ts';
 import { waitingOnMight } from '../shared/bot.ts';
 import { foughtThisTurn } from '../shared/movement.ts';
 import { noStrikes, under } from '../shared/powers.ts';
+import { cantShield, fighterOf, twoHandedChoice } from '../shared/wargear.ts';
 import { BOT_NAME, type Action, type GameState, type Model, type Role, type Seat } from '../shared/types.ts';
 import { useCatalog } from './ListBuilder.tsx';
 import { RollRow } from './Panels.tsx';
@@ -43,6 +44,7 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
   /** Spear and pike models the player chose to keep out of this fight. */
   const [benched, setBenched] = useState<Set<string>>(new Set());
 
+  const choices = state.flow.choices ?? {};
   const chosen = ids.map(id => state.models[id]).filter((m): m is Model => !!m && !m.dead);
   const sides: Record<Seat, Model[]> = { p1: chosen.filter(m => m.owner === 'p1'), p2: chosen.filter(m => m.owner === 'p2') };
   const seatName = (s: Seat) => state.names[s] || (s === 'p1' ? 'Player 1' : 'Player 2');
@@ -53,6 +55,8 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
   };
 
   const fighter = (m: Model): Fighter => {
+    // A model with a profile fights as its wargear and rules say (the server works it out the same way).
+    if (modelStats(catalog, m)) return fighterOf(state, catalog, m, { shielding: shieldingSide(m.owner), twoHanded: !!choices[m.id]?.twoHanded });
     const st = modelStats(catalog, m);
     const strength = st?.S ?? 3;
     const base = {
@@ -94,8 +98,19 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
   const ready = sides.p1.length > 0 && sides.p2.length > 0 && role !== 'spectator';
   // Fights are rolled in the Fight phase once the battle is under way.
   const fightNow = role === 'spectator' || phaseAllows(state, role, { type: 'fight' });
+  // Shielding and two-handed weapons are chosen before the duel is rolled, by the side's own player.
+  const choosingFor = (s: Seat) => (!lastGroup || struck) && role === s;
   const priorityOnly = state.flow.started && state.phase === 'fight' && !!state.priority && role !== state.priority;
-  const side = (s: Seat) => [...sides[s].map(fighter), ...helping(s).map(m => ({ ...fighter(m), a: 1, support: true }))];
+  // Shielding needs every model on the side able to do it, and then none of them can be Supported.
+  function canShieldSide(s: Seat) {
+    return sides[s].length > 0 && sides[s].every(m => !cantShield(catalog, m));
+  }
+  function shieldingSide(s: Seat) {
+    return canShieldSide(s) && sides[s].some(m => choices[m.id]?.shielding);
+  }
+  // Choices go to the game, so whichever player rolls the fight rolls it as both sides chose.
+  const choose = (m: Model, pick: { shielding?: boolean; twoHanded?: boolean }) => dispatch({ type: 'fightChoice', id: m.id, ...choices[m.id], ...pick });
+  const side = (s: Seat) => [...sides[s].map(fighter), ...(shieldingSide(s) ? [] : helping(s).map(m => ({ ...fighter(m), a: 1, support: true, shielding: undefined, noStrike: undefined })))];
   const request = () => {
     const target = (s: Seat) => (sides[s].some(m => m.id === targets[s]) ? targets[s] : sides[s][0].id);
     return { sides: [side('p1'), side('p2')] as [Fighter[], Fighter[]], targets: [target('p2'), target('p1')] as [string, string], trapped, aims, ...(combat ? { combat } : {}) };
@@ -143,28 +158,50 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
                       {f.defence && <small className="heroic-tag">Heroic Defence</small>}
                       {declared(state, m.id, 'Heroic Strength') && <small className="heroic-tag">Heroic Strength</small>}
                       {fought.has(m.id) && <small className="heroic-tag">Fought this turn: sits this one out</small>}
+                      {f.notes?.map(t => (
+                        <small key={t} className="heroic-tag gear-tag">
+                          {t}
+                        </small>
+                      ))}
                       {fightEffects(state, m).map(t => (
                         <small key={t} className="heroic-tag spell-tag">
                           {t}
                         </small>
                       ))}
                     </span>
-                    {STATS.map(([k, label]) => (
-                      <label key={k} className="mini-stat">
-                        {label}
-                        <input
-                          type="number"
-                          min={1}
-                          max={10}
-                          value={f[k]}
-                          onChange={e => setEdits(x => ({ ...x, [m.id]: { ...x[m.id], [k]: Number(e.target.value) || 1 } }))}
-                        />
+                    {STATS.map(([k, label]) =>
+                      // Profile numbers come from the game; a model added by hand can have its numbers typed in.
+                      modelStats(catalog, m) ? (
+                        <span key={k} className="mini-stat">
+                          {label} <b>{f[k]}</b>
+                        </span>
+                      ) : (
+                        <label key={k} className="mini-stat">
+                          {label}
+                          <input
+                            type="number"
+                            min={1}
+                            max={10}
+                            value={f[k]}
+                            onChange={e => setEdits(x => ({ ...x, [m.id]: { ...x[m.id], [k]: Number(e.target.value) || 1 } }))}
+                          />
+                        </label>
+                      ),
+                    )}
+                    {choosingFor(m.owner) && twoHandedChoice(catalog, m) === 'may' && !shieldingSide(seat) && (
+                      <label className="check small">
+                        <input type="checkbox" checked={!!choices[m.id]?.twoHanded} onChange={e => choose(m, { twoHanded: e.target.checked })} /> Two-handed
                       </label>
-                    ))}
+                    )}
                   </div>
                 );
               })}
-              {helping(seat).map(m => (
+              {choosingFor(seat) && canShieldSide(seat) && (
+                <label className="check small">
+                  <input type="checkbox" checked={shieldingSide(seat)} onChange={e => sides[seat].forEach(m => choose(m, { shielding: e.target.checked }))} /> Shielding: double Attacks, but no strikes and no support
+                </label>
+              )}
+              {!shieldingSide(seat) && helping(seat).map(m => (
                 <div key={m.id} className="fighter supporter">
                   <span className="fighter-name">
                     {m.name}

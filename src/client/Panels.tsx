@@ -1,5 +1,6 @@
 import { scenarioById } from '../shared/scenarios.ts';
 import { armyStatus } from '../shared/status.ts';
+import { bannerFor } from '../shared/wargear.ts';
 import { ResultReport } from './ResultReport.tsx';
 import { MapsSection } from './Maps.tsx';
 import { DEFAULT_HEIGHT, FLOORED, heightOf, isDifficult } from '../shared/sight.ts';
@@ -181,6 +182,9 @@ export function RollRow({ r, state, role, dispatch }: { r: DiceRoll; state: Game
   const paused = !!pause && pause.group === r.group && state.log.filter(x => x.group === r.group).at(-1)?.id === r.id;
   const mine = !!dispatch && !!hero && hero.hero && !hero.dead && hero.owner === role && (!shot || paused);
   const might = mine && hero!.might > 0;
+  // A friendly banner nearby lets a side re-roll one die of a duel it isn't winning.
+  const { catalog } = useCatalog();
+  const flag = !!dispatch && role !== undefined && role !== 'spectator' ? bannerFor(state, catalog, r, role) : undefined;
   // A Courage test can be raised with Will as well as Might.
   const will = mine && hero!.will > 0 && r.sum !== undefined && /^Courage/.test(r.label);
   // Dice from a roll made in the last moment tumble before they land.
@@ -193,6 +197,11 @@ export function RollRow({ r, state, role, dispatch }: { r: DiceRoll; state: Game
       {might && d < 6 && follow === (wounds !== null) && (
         <button className="might" onClick={() => dispatch!({ type: 'useMight', roll: r.id, die: i, ...(follow ? { follow: true } : {}) })} title={`Spend 1 of ${hero!.name}'s ${hero!.might} Might to make this a ${d + 1}`}>
           +1
+        </button>
+      )}
+      {flag && !follow && (
+        <button className="might banner" onClick={() => dispatch!({ type: 'banner', roll: r.id, die: i })} title={`Re-roll this die with ${flag.name}'s banner (once per side in this fight)`}>
+          ↻
         </button>
       )}
       {will && d < 6 && !follow && (

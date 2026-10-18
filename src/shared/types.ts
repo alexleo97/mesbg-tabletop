@@ -47,6 +47,10 @@ export interface Model {
   tier?: number;
   /** It has the Fly special rule (a Heroic March takes it 5" further rather than 3"). */
   fly?: boolean;
+  /** It carries a war drum: it can call a free Heroic March for friends of its own army within 12". */
+  drum?: boolean;
+  /** Special rules for crossing terrain, marked as it comes onto the table (see wargear.terrainRules). */
+  ground?: string[];
   /** Left the table via a board edge (still counts as on the table for Broken). */
   escaped?: boolean;
   /** Off the table, waiting to arrive (Maelstrom of Battle). */
@@ -179,6 +183,13 @@ export interface DiceRoll {
   /** For duel rolls: the Fight value used and which side (0 is player 1) the model fought on. */
   f?: number;
   side?: 0 | 1;
+  /** For duel rolls: added to each die (a two-handed weapon's -1 and so on); with `sixSafe`, not to a natural 6. */
+  mod?: number;
+  sixSafe?: boolean;
+  /** For strikes: wounds each success causes (Mighty Blow). */
+  per?: number;
+  /** A die re-rolled with a banner. */
+  banner?: boolean;
   /** Might points spent raising these dice. */
   might?: number;
   /** A supporting model's duel die (a spear or pike lending a hand). */
@@ -313,6 +324,8 @@ export interface Flow {
   willed?: number;
   /** A shot paused for its shooter's player to spend Might on the roll it just made: its roll group, and the shot. */
   shotPause?: { group: string; shot: ShotRequest };
+  /** How models fight this phase, as their players chose: Shielding, or a weapon used two-handed. */
+  choices?: Record<string, { shielding?: boolean; twoHanded?: boolean }>;
   /** Who charged whom this turn (charger to the enemy it reached), so a fight over a wall knows who is defending. */
   charges?: Record<string, string>;
   /** Models that backed away after the last fight, and where from, so their player may pick another way. */
@@ -434,6 +447,11 @@ export type Action =
   | { type: 'willOfEvil' }
   /** Carry on with a shot paused for Might (see Flow.shotPause). */
   | { type: 'shotOn'; group: string }
+  /** A player's choice for how one of its models fights this phase. */
+  | { type: 'fightChoice'; id: string; shielding?: boolean; twoHanded?: boolean }
+  /** Asks to re-roll one duel die with a friendly banner nearby (the server rolls it). */
+  | { type: 'banner'; roll: string; die: number }
+  | { type: 'bannerRolled'; roll: string; die: number; value: number; by: string }
   /** A shot stops for Might, or carries on (null), worked out by the game (never sent by a player). */
   | { type: 'shotPaused'; pause: { group: string; shot: ShotRequest } | null }
   /** A player has no more heroic actions to declare this phase. */

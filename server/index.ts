@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { WebSocket, WebSocketServer } from 'ws';
 import { initialState, loadState, reduce } from '../src/shared/reducer.ts';
-import type { Account, Action, ClientMessage, GameState, Revert, Role, RoomSummary, Seat, ServerMessage } from '../src/shared/types.ts';
+import type { Account, Action, ClientMessage, GameState, Model, Revert, Role, RoomSummary, Seat, ServerMessage } from '../src/shared/types.ts';
 import { DICE_REQUESTS, resolveRequest } from '../src/shared/resolve.ts';
 import { mayDeclare, phaseAllows } from '../src/shared/heroics.ts';
 import { brokenSideToTest, brokenTests, terrorAhead, terrorTest, willOfEvilDue, willOfEvilToll } from '../src/shared/courage.ts';
@@ -23,6 +23,8 @@ import { botStep, newMemo, type BotMemo } from '../src/shared/bot.ts';
 import { startingPoints, type Catalog } from '../src/shared/catalog.ts';
 import catalogJson from '../src/data/mesbg-data.json';
 import { tierOf } from '../src/shared/warbands.ts';
+import { terrainRules } from '../src/shared/wargear.ts';
+import { gearOf } from '../src/shared/gear.ts';
 
 const CATALOG = catalogJson as unknown as Catalog;
 
@@ -297,9 +299,12 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
     }
     case 'answerChallenge':
       return mine(action.target) ? action : null;
+    case 'fightChoice':
+      return ours(action.id) ? action : null;
     case 'heroicOrder':
     case 'willOfEvil':
     case 'shotPaused':
+    case 'bannerRolled':
       return null; // the server rolls for these and settles them
     case 'takeWound':
     case 'climb':
@@ -446,7 +451,16 @@ function scheduleAnnouncement(room: Room) {
 function apply(room: Room, action: Action) {
   room.blank = false;
   // Models that fly are marked as they come onto the table, so moves can allow for it.
-  if (action.type === 'addModels' && Array.isArray(action.models)) action = { ...action, models: action.models.map(m => (m?.profileId && CATALOG.units[m.profileId]?.rules.some(r => /^Fly\b/.test(r)) ? { ...m, fly: true } : m)) };
+  if (action.type === 'addModels' && Array.isArray(action.models))
+    action = {
+      ...action,
+      models: action.models.map(m => {
+        if (!m?.profileId || !CATALOG.units[m.profileId]) return m;
+        const ground = terrainRules(CATALOG, m);
+        const drum = gearOf(CATALOG, m as Model).some(g => /war ?drum/.test(g));
+        return { ...m, ...(CATALOG.units[m.profileId].rules.some(r => /^Fly\b/.test(r)) ? { fly: true } : {}), ...(ground.length ? { ground } : {}), ...(drum ? { drum: true } : {}) };
+      }),
+    };
   room.state = reduce(room.state, action);
   broadcastAction(room, action);
   scheduleSave(room);

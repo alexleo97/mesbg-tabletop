@@ -45,6 +45,10 @@ export function marchBonus(state: GameState, m: Model): number {
   return marchedBy(state, m) ? (m.base.h > m.base.w || m.fly ? 5 : 3) : 0;
 }
 
+/** How far a Heroic March's At the Double reaches, and how close friends must finish: 12" for a war drum's. */
+export const marchRange = (hero: Model) => (hero.drum && !hero.hero ? 12 : 6);
+const armyOf = (m: Model) => m.profileId?.slice(0, m.profileId.indexOf(']') + 1) ?? '';
+
 /**
  * The hero whose Heroic March this model moves with this phase: its own, or a friend's whose At the Double reached
  * it (within 6" of where the hero began the phase). A hero charged or held before it moves loses its March.
@@ -56,7 +60,9 @@ export function marchedBy(state: GameState, m: Model): Model | undefined {
     const hero = h.action === 'Heroic March' ? state.models[h.model] : undefined;
     if (!hero || hero.owner !== m.owner || hero.dead) continue;
     if (!state.flow.starts?.[hero.id] && (engaged(state, hero) || cannotAct(state, hero))) continue;
-    if (hero.id === m.id || Math.hypot(moveStart(state, hero).x - start.x, moveStart(state, hero).y - start.y) <= 6 + (mmToIn(hero.base.w) + mmToIn(m.base.w)) / 2) return hero;
+    // A war drum's March reaches 12", but only friends of the drummer's own army.
+    if (hero.drum && !hero.hero && hero.id !== m.id && armyOf(hero) !== armyOf(m)) continue;
+    if (hero.id === m.id || Math.hypot(moveStart(state, hero).x - start.x, moveStart(state, hero).y - start.y) <= marchRange(hero) + (mmToIn(hero.base.w) + mmToIn(m.base.w)) / 2) return hero;
   }
   return undefined;
 }
@@ -175,7 +181,7 @@ export function movedTooFar(state: GameState): string[] {
 }
 
 /** What a model's move from a to b costs: difficult ground under any of its base counts double, and so does climbing. */
-export const costOf = (state: GameState, m: Model, a: Point, b: Point) => moveCost(state, a, b, m.owner, Math.max(halfExtents(m.base).rx, halfExtents(m.base).ry), heightOfModel(m)).cost;
+export const costOf = (state: GameState, m: Model, a: Point, b: Point) => moveCost(state, a, b, m.owner, Math.max(halfExtents(m.base).rx, halfExtents(m.base).ry), heightOfModel(m), m.ground).cost;
 
 /** Models that moved at all this Move phase, even a little or only between floors, so shoot 1 worse. */
 export function movedAtAll(state: GameState): string[] {

@@ -9,6 +9,7 @@ import { engaged, limitMove, moveAllowance, moveStart } from './movement.ts';
 import { cannotAct, shotNeed } from './powers.ts';
 import { missileWeapon, MISSILE_WEAPONS } from './rules.ts';
 import { distanceToTerrain, heightOf, obstructions, sightTo, type Obstruction } from './sight.ts';
+import { cloaked, hasRule, poisonedShot, shotDefence, stalks, stones } from './wargear.ts';
 import type { GameState, Model } from './types.ts';
 
 export type Weapon = (typeof MISSILE_WEAPONS)[number];
@@ -40,6 +41,11 @@ export interface ShotPlan {
   fight?: string[];
   /** Heroic Accuracy (the hero's own, or a Take Aim within 6"): failed In the Way tests are re-rolled. */
   rerolls: boolean;
+  /** The target's Defence against this shot (light armour helps here). */
+  d?: number;
+  /** Re-rolls 1s to wound (Poisoned Attacks on this weapon), or every miss (Bane of Kings). */
+  ones?: boolean;
+  bane?: boolean;
 }
 
 /** Why a model can't shoot (or throw as it charges) this turn, whatever it aims at; unset if it can. */
@@ -67,22 +73,31 @@ export function planShot(
   target: Model,
   opts: { charge?: boolean; fallback?: { weapon?: Weapon; shoot?: number } } = {},
 ): ShotPlan {
-  const weapon = weaponFor(catalog, shooter) ?? opts.fallback?.weapon;
-  const printed = modelStats(catalog, shooter)?.Sv ?? opts.fallback?.shoot ?? 4;
   const started = !!state.flow.started;
   const moved = started && !opts.charge && !!state.flow.moved?.includes(shooter.id);
+  // Thrown stones, for a model that has nothing better and didn't move.
+  const rocks = !opts.charge ? stones(catalog, shooter) : undefined;
+  const weapon = weaponFor(catalog, shooter) ?? (rocks && !moved ? rocks : undefined) ?? opts.fallback?.weapon;
+  const printed = modelStats(catalog, shooter)?.Sv ?? opts.fallback?.shoot ?? 4;
   const dist = distanceBetween(shooter, target);
   const plan: ShotPlan = { weapon, printed, need: printed, moved, shots: 1, dist, inWay: [], rerolls: false };
   const no = (why: string) => ({ ...plan, why });
-  if (!weapon) return no('has no missile weapon');
+  if (!weapon) return no(rocks ? 'moved, and only throws stones standing still' : 'has no missile weapon');
   if (target.owner === shooter.owner) return no('only shoots at enemies');
   if (target.dead || target.escaped || target.waiting) return no('has nothing there to shoot at');
   const blocked = shooterBlocked(state, shooter, weapon, opts.charge);
   if (blocked) return no(blocked);
   plan.shots = isSling(weapon) && started && !moved && !opts.charge ? 2 : 1;
-  plan.need = Math.min(6, shotNeed(state, shooter, target, printed + (moved ? 1 : 0)));
+  // An Elven cloak makes a model on foot 1 harder to hit.
+  plan.need = Math.min(6, shotNeed(state, shooter, target, printed + (moved ? 1 : 0) + (cloaked(catalog, target) ? 1 : 0)));
   if (dist > weapon.range + 0.01) return no(`is out of range (${weapon.range}")`);
-  if (sightTo(state, shooter, target) === 'hidden') return no('can’t see the target');
+  const sight = sightTo(state, shooter, target);
+  if (sight === 'hidden') return no('can’t see the target');
+  // Stalk Unseen (or an Elven cloak): beyond 6" it can only be picked out in plain view.
+  if (sight !== 'clear' && dist > 6 && stalks(catalog, target) && !hasRule(catalog, shooter, 'Fell Sight')) return no('can’t pick out a model stalking unseen beyond 6"');
+  plan.d = shotDefence(catalog, target, modelStats(catalog, target)?.D ?? 4);
+  if (poisonedShot(catalog, shooter, weapon.name)) plan.ones = true;
+  if (hasRule(catalog, shooter, 'Bane of Kings')) plan.bane = true;
 
   // Shooting over a low wall it touches, or over the shoulder of a friend no bigger than itself (and that friend's wall).
   const others = Object.values(state.models).filter(m => !m.dead && !m.escaped && !m.waiting);
