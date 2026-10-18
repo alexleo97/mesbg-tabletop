@@ -305,7 +305,7 @@ function OpponentArmy({ state, dispatch, seat }: { state: GameState; dispatch: D
         {!fromList && (
           <label className="mini-stat">
             Points
-            <input type="number" min={100} max={2000} step={50} value={points} onChange={e => setPoints(Math.max(100, Math.min(2000, Number(e.target.value) || 500)))} />
+            <input className="points" type="number" min={100} max={2000} step={50} value={points} onChange={e => setPoints(Math.max(100, Math.min(2000, Number(e.target.value) || 500)))} />
           </label>
         )}
         <button className="primary" disabled={state.flow.started} onClick={deploy}>
@@ -331,8 +331,8 @@ function ReadyMade({ state, owner, onDeploy }: { state: GameState; owner: Seat; 
   };
   return (
     <>
-      <p className="hint">No list to hand? Pick a ready-made army and how many points to play, and it goes straight on the table.</p>
-      <select className="ready-made" value={pick} onChange={e => setPick(e.target.value)} aria-label="Ready-made army">
+      <p className="hint">No list to hand? Pick a premade army and how many points to play, and it goes straight on the table.</p>
+      <select className="ready-made" value={pick} onChange={e => setPick(e.target.value)} aria-label="Premade army">
           <optgroup label="Good">
             {PREMADE.filter(p => p.seed < 20).map(p => (
               <option key={p.id} value={p.id}>
@@ -351,7 +351,7 @@ function ReadyMade({ state, owner, onDeploy }: { state: GameState; owner: Seat; 
       <div className="row wrap">
         <label className="mini-stat">
           Points
-          <input type="number" min={100} max={2000} step={50} value={points} onChange={e => setPoints(Math.max(100, Math.min(2000, Number(e.target.value) || 500)))} />
+          <input className="points" type="number" min={100} max={2000} step={50} value={points} onChange={e => setPoints(Math.max(100, Math.min(2000, Number(e.target.value) || 500)))} />
         </label>
         <button className="primary" onClick={deploy}>
           Deploy for {state.names[owner] || (owner === 'p1' ? 'Player 1' : 'Player 2')}
@@ -464,7 +464,7 @@ export function ArmyPanel({ state, dispatch, role }: { state: GameState; dispatc
           {state.bot && role !== 'spectator' && <h4>Your army</h4>}
         <div className="row seg">
           <button className={mode === 'lists' ? 'on' : ''} onClick={() => setMode('lists')}>My lists</button>
-          <button className={mode === 'ready' ? 'on' : ''} onClick={() => setMode('ready')}>Ready-made</button>
+          <button className={mode === 'ready' ? 'on' : ''} onClick={() => setMode('ready')}>Premade</button>
           <button className={mode === 'build' ? 'on' : ''} onClick={() => setMode('build')}>Build</button>
           <button className={mode === 'import' ? 'on' : ''} onClick={() => setMode('import')}>Import</button>
         </div>
