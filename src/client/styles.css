@@ -948,3 +948,6 @@ table.vp tr.auto .vp-cell b { color: var(--gold); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+select.ready-made {
+  width: 100%;
+}

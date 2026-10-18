@@ -316,6 +316,51 @@ function OpponentArmy({ state, dispatch, seat }: { state: GameState; dispatch: D
   );
 }
 
+/** One of the ready-made armies, at the points the player picks: the same list every time for a given size. */
+function ReadyMade({ state, owner, onDeploy }: { state: GameState; owner: Seat; onDeploy: (entries: ListEntry[], note: string) => void }) {
+  const { catalog } = useCatalog();
+  const [pick, setPick] = useState(PREMADE[0].id);
+  // Match the other side's army if it's already on the table.
+  const theirs = Object.values(state.models).filter(m => m.owner !== owner).reduce((n, m) => n + (m.points ?? 0), 0);
+  const [points, setPoints] = useState(() => (theirs > 0 ? Math.max(200, Math.round(theirs / 50) * 50) : 500));
+  if (!catalog) return <p className="hint">Loading armies…</p>;
+  const premade = PREMADE.find(p => p.id === pick)!;
+  const deploy = () => {
+    const roster = premadeRoster(catalog, premade.id, points);
+    if (roster) onDeploy(listEntries(roster, catalog).flatMap(g => g.entries), ` ${premade.name} (${premade.army}), about ${points} pts.`);
+  };
+  return (
+    <>
+      <p className="hint">No list to hand? Pick a ready-made army and how many points to play, and it goes straight on the table.</p>
+      <select className="ready-made" value={pick} onChange={e => setPick(e.target.value)} aria-label="Ready-made army">
+          <optgroup label="Good">
+            {PREMADE.filter(p => p.seed < 20).map(p => (
+              <option key={p.id} value={p.id}>
+                {p.name} ({p.army})
+              </option>
+            ))}
+          </optgroup>
+          <optgroup label="Evil">
+            {PREMADE.filter(p => p.seed >= 20).map(p => (
+              <option key={p.id} value={p.id}>
+                {p.name} ({p.army})
+              </option>
+            ))}
+          </optgroup>
+      </select>
+      <div className="row wrap">
+        <label className="mini-stat">
+          Points
+          <input type="number" min={100} max={2000} step={50} value={points} onChange={e => setPoints(Math.max(100, Math.min(2000, Number(e.target.value) || 500)))} />
+        </label>
+        <button className="primary" onClick={deploy}>
+          Deploy for {state.names[owner] || (owner === 'p1' ? 'Player 1' : 'Player 2')}
+        </button>
+      </div>
+    </>
+  );
+}
+
 export function ArmyPanel({ state, dispatch, role }: { state: GameState; dispatch: Dispatch; role: Role }) {
   const [text, setText] = useState('');
   const [chosen, setOwner] = useState<Seat>(role === 'p2' ? 'p2' : 'p1');
@@ -325,7 +370,7 @@ export function ArmyPanel({ state, dispatch, role }: { state: GameState; dispatc
   const [byWarband, setByWarband] = useState<Set<Seat>>(new Set());
   const [message, setMessage] = useState('');
   const [single, setSingle] = useState('');
-  const [mode, setMode] = useState<'lists' | 'build' | 'import'>('lists');
+  const [mode, setMode] = useState<'lists' | 'ready' | 'build' | 'import'>('lists');
   const fileRef = useRef<HTMLInputElement>(null);
 
   const deploy = (entries: ListEntry[], note = '', warband = false) => {
@@ -419,12 +464,15 @@ export function ArmyPanel({ state, dispatch, role }: { state: GameState; dispatc
           {state.bot && role !== 'spectator' && <h4>Your army</h4>}
         <div className="row seg">
           <button className={mode === 'lists' ? 'on' : ''} onClick={() => setMode('lists')}>My lists</button>
+          <button className={mode === 'ready' ? 'on' : ''} onClick={() => setMode('ready')}>Ready-made</button>
           <button className={mode === 'build' ? 'on' : ''} onClick={() => setMode('build')}>Build</button>
           <button className={mode === 'import' ? 'on' : ''} onClick={() => setMode('import')}>Import</button>
         </div>
         {message && <p className="hint">{message}</p>}
         {mode === 'lists' ? (
           <SavedLists onDeploy={(entries, _name, warband) => deploy(entries, '', warband)} onBuild={() => setMode('build')} />
+        ) : mode === 'ready' ? (
+          <ReadyMade key={owner} state={state} owner={owner} onDeploy={(entries, note) => deploy(entries, note)} />
         ) : mode === 'build' ? (
           <ListBuilder onDeploy={entries => deploy(entries)} deployLabel={`Deploy for ${state.names[owner] || (owner === 'p1' ? 'Player 1' : 'Player 2')}`} />
         ) : (
