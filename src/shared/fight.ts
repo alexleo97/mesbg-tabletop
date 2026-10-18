@@ -55,6 +55,14 @@ export interface ShotRequest {
   target: { id: string; name: string; d: number };
   /** Things in the way (models or terrain): each needs a 4+ for the shot to get past. */
   obstacles: number;
+  /** A throwing weapon thrown in the Move phase as the shooter charges its target. */
+  charge?: boolean;
+  /** What's in the way, nearest first, worked out by the game from the table; a model in the way that stops the shot is hit. */
+  inWay?: { name: string; id?: string; d?: number }[];
+  /** Shooting into a fight: the shooter's friend a stray shot hits instead (on a 1-3). */
+  stray?: { id: string; name: string; d: number };
+  /** Heroic Accuracy: failed In the Way tests are re-rolled. */
+  rerolls?: boolean;
 }
 
 export interface FightOutcome {
@@ -243,31 +251,80 @@ export function cleanShot(raw: unknown): ShotRequest | null {
     },
     target: { id: String(o.target.id ?? '').slice(0, 64), name: String(o.target.name ?? 'Model').slice(0, 40), d: clamp(o.target.d, 1, 10, 4) },
     obstacles: clamp(o.obstacles, 0, 5, 0),
+    ...(o.charge === true ? { charge: true } : {}),
   };
 }
 
-/** Resolves a shooting attack: to hit, In the Way for each obstacle, then to wound. */
-export function resolveShot(req: ShotRequest, d6: D6, by: Role, group: string, now = Date.now()): { rolls: DiceRoll[]; wounds: number } {
+/**
+ * Resolves a shooting attack: to hit, an In the Way test for each thing in the way (a model that stops the shot is
+ * hit instead), the test for which model in a fight is hit, then to wound each model hit.
+ */
+export function resolveShot(req: ShotRequest, d6: D6, by: Role, group: string, now = Date.now()): { rolls: DiceRoll[]; wounds: number; hits: { id: string; wounds: number }[] } {
   const rolls: DiceRoll[] = [];
   const push = (label: string, dice: number[], extra: Partial<DiceRoll> = {}) =>
     rolls.push({ id: `${group}-${rolls.length}`, by, label: label.slice(0, 80), dice, at: now, group, ...extra });
   const { shooter, target } = req;
   const toHit = Array.from({ length: shooter.shots }, d6);
-  push(`${shooter.name} shoots ${target.name} (${shooter.weapon}, ${shooter.shoot}+)`, toHit, { target: shooter.shoot, model: shooter.id, aim: target.id });
-  let hits = toHit.filter(d => d >= shooter.shoot).length;
-  for (let i = 0; i < req.obstacles && hits > 0; i++) {
-    const past = Array.from({ length: hits }, d6);
-    push(`In the Way ${i + 1} (4+ gets past)`, past, { target: 4, model: shooter.id });
-    hits = past.filter(d => d >= 4).length;
+  push(`${shooter.name} ${req.charge ? 'throws at' : 'shoots'} ${target.name} (${shooter.weapon}, ${shooter.shoot}+)`, toHit, {
+    target: shooter.shoot,
+    model: shooter.id,
+    aim: target.id,
+    ...(req.charge ? { charge: true } : {}),
+  });
+  // A natural 6 always hits.
+  let flying = toHit.filter(d => d >= Math.min(6, shooter.shoot)).length;
+  const struck: { id: string; name: string; d: number; count: number }[] = [];
+  const strike = (id: string, name: string, d: number, count: number) => {
+    const at = struck.find(x => x.id === id);
+    if (at) at.count += count;
+    else if (count > 0) struck.push({ id, name, d, count });
+  };
+  // Each test lets 4+ through; Heroic Accuracy re-rolls the ones that fail.
+  const test = (label: string) => {
+    const dice = Array.from({ length: flying }, d6);
+    push(label, dice, { target: 4, model: shooter.id });
+    let past = dice.filter(d => d >= 4).length;
+    if (req.rerolls && past < dice.length) {
+      const again = Array.from({ length: dice.length - past }, d6);
+      push(`${label.replace(/ \(.*$/, '')} re-rolled (Heroic Accuracy)`, again, { target: 4, model: shooter.id });
+      past += again.filter(d => d >= 4).length;
+    }
+    return past;
+  };
+  const inWay = req.inWay ?? Array.from({ length: req.obstacles }, (_, i) => ({ name: `obstacle ${i + 1}` }) as { name: string; id?: string; d?: number });
+  let stoppedBy = '';
+  for (const o of inWay) {
+    if (flying < 1) break;
+    const past = test(`In the Way: ${o.name} (4+ gets past)`);
+    if (past < flying && !stoppedBy) stoppedBy = o.name;
+    if (o.id) strike(o.id, o.name, o.d ?? 4, flying - past);
+    flying = past;
   }
-  const need = woundNeed(shooter.s, target.d);
-  if (hits > 0 && need) {
-    const dice = Array.from({ length: hits }, d6);
+  if (req.stray && flying > 0) {
+    const past = test(`Into the fight: 4+ hits ${target.name}, else ${req.stray.name}`);
+    strike(req.stray.id, req.stray.name, req.stray.d, flying - past);
+    flying = past;
+  }
+  strike(target.id, target.name, target.d, flying);
+  const hits: { id: string; wounds: number }[] = [];
+  for (const v of struck) {
+    const need = woundNeed(shooter.s, v.d);
+    if (!need) continue;
+    const dice = Array.from({ length: v.count }, d6);
     const follow = need.then ? dice.filter(d => d >= need.target).map(d6) : undefined;
-    push(`To wound ${target.name}: S${shooter.s} vs D${target.d} (${formatNeed(need)})`, dice, { target: need.target, against: target.id, model: shooter.id, ...(need.then ? { then: need.then, follow } : {}) });
+    push(`To wound ${v.name}: S${shooter.s} vs D${v.d} (${formatNeed(need)})`, dice, { target: need.target, against: v.id, model: shooter.id, ...(need.then ? { then: need.then, follow } : {}) });
+    hits.push({ id: v.id, wounds: strikeWounds(rolls.slice(-1)) });
   }
-  const wounds = strikeWounds(rolls);
-  rolls[rolls.length - 1].note =
-    hits === 0 ? `${shooter.name} misses ${target.name}` : !need ? `${shooter.weapon} can't wound ${target.name}` : `${shooter.name} hits ${target.name}`;
-  return { rolls, wounds };
+  const onTarget = hits.find(h => h.id === target.id)?.wounds ?? 0;
+  const others = struck.filter(v => v.id !== target.id).map(v => v.name);
+  rolls[rolls.length - 1].note = struck.length
+    ? struck.some(v => v.id === target.id)
+      ? !woundNeed(shooter.s, target.d)
+        ? `${shooter.weapon} can't wound ${target.name}`
+        : `${shooter.name} hits ${target.name}${others.length ? ` and ${others.join(', ')}` : ''}`
+      : `${shooter.name} hits ${others.join(', ')} instead`
+    : stoppedBy
+      ? `The shot hits the ${stoppedBy}`
+      : `${shooter.name} misses ${target.name}`;
+  return { rolls, wounds: onTarget, hits };
 }

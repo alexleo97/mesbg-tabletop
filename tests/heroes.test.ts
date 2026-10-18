@@ -136,7 +136,7 @@ describe('line of sight and terrain', () => {
     expect(sightTo(s, s.models.archer, s.models.orc)).toBe('hidden');
     expect(sightTo(s, s.models.archer, s.models.goblin)).toBe('clear');
     const shooter = { ...s.models.archer, y: 30 };
-    expect(inTheWay(s, shooter, s.models.goblin)).toEqual(['wood', 'friend']);
+    expect(inTheWay(s, shooter, s.models.goblin)).toEqual(['friend', 'wood']);
   });
 
   it('counts movement through difficult terrain double', () => {

@@ -149,16 +149,24 @@ export function sightTo(state: GameState, from: Model, to: Model): Sight {
   return seen === points.length ? 'clear' : seen === 0 ? 'hidden' : 'partial';
 }
 
-/** Terrain and models between a shooter and its target, each needing an In the Way roll. */
-export function inTheWay(state: GameState, from: Model, to: Model): string[] {
-  const out: string[] = [];
+/** Something a shot has to get past: a piece of terrain or a model, and how far along the line it is (0 at the shooter). */
+export interface Obstruction {
+  name: string;
+  terrain?: string;
+  model?: string;
+  at: number;
+}
+
+/** Terrain and models between a shooter and its target, each needing an In the Way roll, nearest the shooter first. */
+export function obstructions(state: GameState, from: Model, to: Model): Obstruction[] {
+  const out: Obstruction[] = [];
   const [ha, hb] = [eyeOf(state, from), eyeOf(state, to)];
   for (const t of Object.values(state.terrain)) {
     if (!IN_THE_WAY.has(t.kind)) continue;
     const poly = outline(t);
     // Cover the shooter stands in doesn't get in its own way, and a shot from well above low cover passes over it.
     if (insidePolygon(poly, from)) continue;
-    if (lineCrosses(poly, from, to) && !(insidePolygon(poly, to) ? false : clears(poly, heightOf(t), from, ha, to, hb, 0.5))) out.push(t.kind === 'field' ? 'crops' : t.kind);
+    if (lineCrosses(poly, from, to) && !(insidePolygon(poly, to) ? false : clears(poly, heightOf(t), from, ha, to, hb, 0.5))) out.push({ name: t.kind === 'field' ? 'crops' : t.kind, terrain: t.id, at: entersAt(poly, from, to) });
   }
   const len = Math.hypot(to.x - from.x, to.y - from.y) || 1;
   for (const m of Object.values(state.models)) {
@@ -168,9 +176,30 @@ export function inTheWay(state: GameState, from: Model, to: Model): string[] {
     // A shot passing well over a model's head isn't blocked by it.
     const f = Math.max(0, Math.min(1, ((m.x - from.x) * (to.x - from.x) + (m.y - from.y) * (to.y - from.y)) / (len * len)));
     if (ha + (hb - ha) * f > eyeOf(state, m) + 0.5) continue;
-    out.push(m.name);
+    out.push({ name: m.name, model: m.id, at: f });
   }
-  return out;
+  return out.sort((a, b) => a.at - b.at);
+}
+
+/** How far along the line from a to b it first enters a polygon (0 to 1). */
+function entersAt(poly: Point[], a: Point, b: Point): number {
+  for (let i = 0; i <= 100; i++) {
+    const t = i / 100;
+    const p = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+    if (insidePolygon(poly, p) || poly.some((q, j) => distanceToSegment(p, poly[(j || poly.length) - 1], q) < 0.05)) return t;
+  }
+  return 0.5;
+}
+
+/** The names of what's between a shooter and its target, each needing an In the Way roll. */
+export const inTheWay = (state: GameState, from: Model, to: Model): string[] => obstructions(state, from, to).map(o => o.name);
+
+/** How far a model's base is from a piece of terrain's outline (0 if it stands on it). */
+export function distanceToTerrain(m: Model, t: Terrain): number {
+  const poly = outline(t);
+  if (insidePolygon(poly, m)) return 0;
+  const r = Math.max(halfExtents(m.base).rx, halfExtents(m.base).ry);
+  return Math.max(0, Math.min(...poly.map((q, j) => distanceToSegment(m, poly[(j || poly.length) - 1], q))) - r);
 }
 
 /** The ground Writhing Vines make difficult for the other side: 3" around the marker. */

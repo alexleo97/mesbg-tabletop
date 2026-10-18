@@ -181,6 +181,8 @@ export interface DiceRoll {
   might?: number;
   /** A supporting model's duel die (a spear or pike lending a hand). */
   support?: boolean;
+  /** A throwing weapon thrown in the Move phase as the model charges its target. */
+  charge?: boolean;
   at: number;
 }
 
@@ -283,6 +285,10 @@ export interface Flow {
   shot?: string[];
   /** Models that moved more than half their Move this turn, so can't shoot. */
   farMoved?: string[];
+  /** Models that moved at all this turn, so shoot 1 worse (and can't shoot a crossbow). */
+  moved?: string[];
+  /** A model that threw a weapon as it charged: unless its target fell, it must go on and charge that target. */
+  mustCharge?: { model: string; target: string };
   /** Models that have cast a power this turn; each casts at most once. */
   cast?: string[];
   /** A cast waiting on its target's player (resist or not), or on its caster (spend Might or let it fail). */

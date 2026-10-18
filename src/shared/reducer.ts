@@ -3,10 +3,11 @@ import { holdInZones } from './deployment.ts';
 import { heroicInfo } from './heroics.ts';
 import { pendingSpell } from './magic.ts';
 import { basePower, cannotAct, effectActive } from './powers.ts';
-import { finishCharge, heroicCombatWon, limitMove, moveAllowance, movedTooFar, moveLeft, moveStart } from './movement.ts';
+import { finishCharge, heroicCombatWon, limitMove, moveAllowance, movedAtAll, movedTooFar, moveLeft, moveStart } from './movement.ts';
 import { FLOORED, floorHeight, flooredAt } from './sight.ts';
 import { woundsTaken } from './fight.ts';
-import { pairOff } from './flow.ts';
+import { CONTACT_SLACK, pairOff } from './flow.ts';
+import { distanceBetween } from './geometry.ts';
 import { canPickUp, markerUpkeep, syncCarried, touching, canEscape } from './objects.ts';
 import { endPhaseUpkeep } from './scoring.ts';
 import { BOT_NAME, BOT_SPEEDS, MARKER_OBJECTS, MATS, PHASES, PICK_KEYS, TERRAIN_KINDS, type Action, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type ModelEffect, type Phase, type Picks, type Seat, type SpellPending, type Terrain } from './types.ts';
@@ -42,7 +43,7 @@ function goTo(state: GameState, phase: Phase, turn: number): GameState {
   const ending = phase === 'end' && state.phase !== 'end' && state.flow.started;
   const upkeep = ending ? endPhaseUpkeep(state) : {};
   // Leaving the Move phase, note who went too far to shoot.
-  const farMoved = state.phase === 'move' && phase !== 'move' && !newTurn && state.flow.started ? { farMoved: movedTooFar(state) } : {};
+  const farMoved = state.phase === 'move' && phase !== 'move' && !newTurn && state.flow.started ? { farMoved: movedTooFar(state), moved: movedAtAll(state) } : {};
   // Enrage Beast wears off in the End phase, and takes a Wound from the beast as it does.
   const enraged = ending ? Object.values(state.models).filter(m => !m.dead && m.effects?.some(e => basePower(e.power) === 'Enrage Beast' && effectActive(state, e))) : [];
   const next = goToPhase(state, phase, turn, newTurn, ending, upkeep, farMoved);
@@ -71,8 +72,8 @@ function goToPhase(state: GameState, phase: Phase, turn: number, newTurn: boolea
       done: [],
       resolved: newTurn ? [] : state.flow.resolved,
       heroics: newTurn ? [] : state.flow.heroics,
-      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], cast: [], spell: undefined, held: [], stood: [], climbed: {}, compel: undefined, supported: [], strikeBonus: {} } : {}),
-      ...(phase !== state.phase ? { compel: undefined } : {}),
+      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], moved: [], cast: [], spell: undefined, held: [], stood: [], climbed: {}, compel: undefined, supported: [], strikeBonus: {} } : {}),
+      ...(phase !== state.phase ? { compel: undefined, mustCharge: undefined } : {}),
       // The fights are paired off as the Fight phase begins, and stay that way until it ends.
       ...(phase !== state.phase ? { pairs: phase === 'fight' && state.flow.started ? pairOff(livingModels(state), { ...state, phase: 'move' }, state.flow.pairChoices).map(c => c.key) : undefined, pairChoices: undefined } : {}),
       passed: [],
@@ -328,6 +329,7 @@ function cleanRoll(r: unknown): DiceRoll | null {
     ...(o.side === 0 || o.side === 1 ? { side: o.side } : {}),
     ...(o.might ? { might: int(o.might, 0, 60, 0) } : {}),
     ...(o.support === true ? { support: true } : {}),
+    ...(o.charge === true ? { charge: true } : {}),
     at: num(o.at, 0, Number.MAX_SAFE_INTEGER, 0),
   };
 }
@@ -415,6 +417,9 @@ function step(state: GameState, action: Action): GameState {
           to = limitMove(state, from, to, allowance, prev.owner, prev, together);
           // A model that stops inside an enemy's control zone is charging it: it must reach base contact, or stay out.
           if (state.phase === 'move' || heroicCombatWon(state, prev)) to = finishCharge(state, prev, from, to, together);
+          // A model that threw a weapon as it charged goes on into contact with its target, unless the throw slew it.
+          const must = state.flow.mustCharge?.model === prev.id ? state.models[state.flow.mustCharge.target] : undefined;
+          if (must && !must.dead && distanceBetween({ ...prev, ...to }, must) > CONTACT_SLACK) to = { x: prev.x, y: prev.y };
           if (!starts?.[prev.id]) starts = { ...starts, [prev.id]: [from.x, from.y] };
         }
         let next: Model = { ...prev, ...to, rot: mv.rot === undefined ? prev.rot : num(mv.rot, -360, 720, prev.rot) % 360 };
@@ -778,6 +783,8 @@ function step(state: GameState, action: Action): GameState {
       // A shot's first roll marks its shooter as having shot this turn.
       const shooter = r.group?.startsWith('s-') && r.id === `${r.group}-0` ? r.model : undefined;
       let flow = shooter && !state.flow.shot?.includes(shooter) ? { ...state.flow, shot: [...(state.flow.shot ?? []), shooter].slice(-400) } : state.flow;
+      // A weapon thrown as a model charges commits it to charging that target.
+      if (shooter && r.charge && r.aim) flow = { ...flow, mustCharge: { model: shooter, target: r.aim } };
       if (r.id.startsWith('w-') && r.model && !flow.cast?.includes(r.model)) flow = { ...flow, cast: [...(flow.cast ?? []), r.model].slice(-200) };
       // So does a duel's first roll, for its fight (after any Heroic Strike roll).
       if (r.group?.startsWith('f-') && r.side !== undefined && !flow.duels?.includes(r.group)) flow = { ...flow, duels: [...(flow.duels ?? []), r.group].slice(-200) };
@@ -926,6 +933,8 @@ export function loadState(raw: unknown): GameState {
         ...(f.climbed && typeof f.climbed === 'object' ? { climbed: Object.fromEntries(Object.entries(f.climbed).slice(0, 400).map(([k, v]) => [k.slice(0, 80), num(v, 0, 99, 0)])) } : {}),
         ...(Number.isFinite(f.recovered) ? { recovered: int(f.recovered, 0, 99, 0) } : {}),
         ...(Array.isArray(f.farMoved) ? { farMoved: f.farMoved.slice(0, 400).map(x => String(x).slice(0, 80)) } : {}),
+        ...(Array.isArray(f.moved) ? { moved: f.moved.slice(0, 400).map(x => String(x).slice(0, 80)) } : {}),
+        ...(f.mustCharge && typeof f.mustCharge === 'object' ? { mustCharge: { model: str(f.mustCharge.model, 80), target: str(f.mustCharge.target, 80) } } : {}),
         ...(Array.isArray(f.duels) ? { duels: f.duels.slice(0, 200).map(x => String(x).slice(0, 80)) } : {}),
         ...(f.startFate && typeof f.startFate === 'object' ? { startFate: cleanCounts(f.startFate, 9) } : {}),
         ...(f.control && typeof f.control === 'object'

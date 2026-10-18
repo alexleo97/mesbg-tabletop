@@ -373,7 +373,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
             </>
           ) : (
             <>
-              <Who s={act} /> {act === role ? 'shoot' : 'shoots'}. Select a model with a missile weapon, then tap its target. Models that moved more than half their Move can't shoot.
+              <Who s={act} /> {act === role ? 'shoot' : 'shoots'}. Select a model with a missile weapon, then tap its target. Models that moved shoot 1 worse, and ones that moved more than half their Move can't shoot (throwing weapons can).
             </>
           )}
         </p>
