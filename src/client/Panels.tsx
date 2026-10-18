@@ -175,7 +175,14 @@ export function RollRow({ r, state, role, dispatch }: { r: DiceRoll; state: Game
   const hits = r.target ? r.dice.filter(d => d >= r.target!).length : null;
   const wounds = r.then && r.follow ? r.follow.filter(d => d >= r.then!).length : null;
   const hero = r.model ? state.models[r.model] : undefined;
-  const might = !!dispatch && !!hero && hero.hero && !hero.dead && hero.might > 0 && hero.owner === role;
+  const pause = state.flow.shotPause;
+  const shot = r.group?.startsWith('s-');
+  // A shot's dice can be raised only while the shot waits on them: the last roll of the shot that stopped.
+  const paused = !!pause && pause.group === r.group && state.log.filter(x => x.group === r.group).at(-1)?.id === r.id;
+  const mine = !!dispatch && !!hero && hero.hero && !hero.dead && hero.owner === role && (!shot || paused);
+  const might = mine && hero!.might > 0;
+  // A Courage test can be raised with Will as well as Might.
+  const will = mine && hero!.will > 0 && r.sum !== undefined && /^Courage/.test(r.label);
   // Dice from a roll made in the last moment tumble before they land.
   const [fresh] = useState(() => Date.now() - r.at < 2500);
   const die = (d: number, i: number, target: number | undefined, follow: boolean) => (
@@ -186,6 +193,11 @@ export function RollRow({ r, state, role, dispatch }: { r: DiceRoll; state: Game
       {might && d < 6 && follow === (wounds !== null) && (
         <button className="might" onClick={() => dispatch!({ type: 'useMight', roll: r.id, die: i, ...(follow ? { follow: true } : {}) })} title={`Spend 1 of ${hero!.name}'s ${hero!.might} Might to make this a ${d + 1}`}>
           +1
+        </button>
+      )}
+      {will && d < 6 && !follow && (
+        <button className="might will" onClick={() => dispatch!({ type: 'useMight', roll: r.id, die: i, will: true })} title={`Spend 1 of ${hero!.name}'s ${hero!.will} Will to make this a ${d + 1}`}>
+          +1 W
         </button>
       )}
     </span>
@@ -214,6 +226,11 @@ export function RollRow({ r, state, role, dispatch }: { r: DiceRoll; state: Game
         </div>
       )}
       {r.note && <div className="roll-note">{r.note}</div>}
+      {paused && dispatch && hero?.owner === role && (
+        <button className="primary small" onClick={() => dispatch({ type: 'shotOn', group: r.group! })}>
+          Carry on with the shot
+        </button>
+      )}
     </li>
   );
 }

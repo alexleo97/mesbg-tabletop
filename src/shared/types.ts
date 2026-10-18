@@ -45,6 +45,8 @@ export interface Model {
   /** What the model cost in the list, and its heroic tier (5 for a Hero of Legend), for scenarios that score them. */
   points?: number;
   tier?: number;
+  /** It has the Fly special rule (a Heroic March takes it 5" further rather than 3"). */
+  fly?: boolean;
   /** Left the table via a board edge (still counts as on the table for Broken). */
   escaped?: boolean;
   /** Off the table, waiting to arrive (Maelstrom of Battle). */
@@ -297,6 +299,20 @@ export interface Flow {
   crawling?: string[];
   /** Models that lay down this Move phase, so can't stand up again in it. */
   lay?: string[];
+  /** Heroes whose heroic activation (Heroic Move or Heroic Shoot) is over this phase, done or cancelled. */
+  heroicDone?: string[];
+  /** The hero whose heroic activation is under way. */
+  heroicNow?: string;
+  /** The side whose hero goes first when both sides declared a Heroic Move (or Shoot), from the roll. */
+  heroicFirst?: Seat;
+  /** Models that have had their activation this phase by going with a hero's heroic activation. */
+  activated?: string[];
+  /** Heroic Challenges: who called it on whom, whether it was taken up, and the most Might the caller can have. */
+  challenges?: { by: string; target: string; accepted?: boolean; cap: number }[];
+  /** The turn Will of Evil last took its toll. */
+  willed?: number;
+  /** A shot paused for its shooter's player to spend Might on the roll it just made: its roll group, and the shot. */
+  shotPause?: { group: string; shot: ShotRequest };
   /** Who charged whom this turn (charger to the enemy it reached), so a fight over a wall knows who is defending. */
   charges?: Record<string, string>;
   /** Models that backed away after the last fight, and where from, so their player may pick another way. */
@@ -408,11 +424,22 @@ export type Action =
   | { type: 'endActivation'; seat: Seat }
   | { type: 'resolveCombat'; key: string }
   /** A hero spends a Might point to declare a heroic action this phase. */
-  | { type: 'declareHeroic'; model: string; action: string }
+  /** A hero's heroic action; a Heroic Challenge names the enemy hero it challenges (`cap` is the most Might it may have). */
+  | { type: 'declareHeroic'; model: string; action: string; target?: string; cap?: number }
+  /** The challenged hero's player takes up a Heroic Challenge, or turns it down. */
+  | { type: 'answerChallenge'; target: string; accept: boolean }
+  /** Which side's hero goes first this phase, from the roll (never sent by a player). */
+  | { type: 'heroicOrder'; seat: Seat }
+  /** Will of Evil has taken its toll this turn (never sent by a player). */
+  | { type: 'willOfEvil' }
+  /** Carry on with a shot paused for Might (see Flow.shotPause). */
+  | { type: 'shotOn'; group: string }
+  /** A shot stops for Might, or carries on (null), worked out by the game (never sent by a player). */
+  | { type: 'shotPaused'; pause: { group: string; shot: ShotRequest } | null }
   /** A player has no more heroic actions to declare this phase. */
   | { type: 'passHeroic'; seat: Seat }
   /** A hero spends a Might point to raise one of its own dice by 1. `follow` picks the follow-up dice of a 6/4+ roll. */
-  | { type: 'useMight'; roll: string; die: number; follow?: boolean }
+  | { type: 'useMight'; roll: string; die: number; follow?: boolean; will?: boolean }
   /** Wounds dealt to a model. A hero with Fate holds them as pending until its player decides. */
   | { type: 'wound'; id: string; count: number; by?: string[]; how?: 'fight' | 'shoot' | 'other'; group?: string }
   /** A model picks up a marker it is touching, turns a face-down marker over, or drops what it carries. */

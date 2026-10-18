@@ -1,12 +1,12 @@
 import { backAway, separate, type Retreat } from './backAway.ts';
 import { defence, touchingEnemies, wallBetween } from './barriers.ts';
-import { canActivate } from './heroics.ts';
+import { canActivate, mayActivate, orderRoll, orderRollLabel, orderRollNeeded } from './heroics.ts';
 import { modelStats, type Catalog } from './catalog.ts';
 import { missileWeapon } from './rules.ts';
 import { planShot, throwingPoint } from './shooting.ts';
 import { fallDamage, resolveCross } from './terrainTests.ts';
-import { cleanFight, cleanShot, duelSettled, resolveDuel, resolveShot, resolveStrikes, type DrawRule, type Fighter, type FightRequest } from './fight.ts';
-import { combatFromKey, priorityChooser } from './flow.ts';
+import { cleanFight, cleanShot, duelSettled, mightCouldHelp, resolveDuel, resolveShot, resolveStrikes, type DrawRule, type Fighter, type FightRequest, type ShotRequest } from './fight.ts';
+import { combatFromKey, other, priorityChooser } from './flow.ts';
 import { hasElvenWeapon, sideOf } from './gear.ts';
 import { supporters } from './support.ts';
 import { fightDone, foughtThisTurn } from './movement.ts';
@@ -14,10 +14,10 @@ import { rollCast, rollResist } from './magic.ts';
 import { intelligenceWorse, noStrikes, under, witheredStrength } from './powers.ts';
 import { touching } from './objects.ts';
 import { MAX_DICE } from './reducer.ts';
-import type { Action, DiceRoll, GameState, Seat } from './types.ts';
+import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
 /** Dice requests a player sends, which only whoever holds the dice (the server, or the browser in practice games) can answer. */
-export const DICE_REQUESTS = new Set<Action['type']>(['roll', 'fight', 'strikes', 'shoot', 'cross', 'rollFate', 'rollPriority', 'uncover', 'cast', 'resist']);
+export const DICE_REQUESTS = new Set<Action['type']>(['roll', 'fight', 'strikes', 'shoot', 'shotOn', 'cross', 'rollFate', 'rollPriority', 'uncover', 'cast', 'resist']);
 
 export interface Resolved {
   /** Results everyone applies, in order. */
@@ -96,6 +96,10 @@ export function adjustFight(state: GameState, req: FightRequest): FightRequest {
     if (under(state, m, 'Paralyse')) out.still = true;
     const why = noStrikes(state, m);
     if (why) out.noStrike = why;
+    // A Heroic Challenge: +1 Attack while fighting the rival hero (who gets the same if it took the challenge up).
+    const foes = req.sides.flat().filter(x => !x.support && state.models[x.id] && state.models[x.id].owner !== m.owner).map(x => x.id);
+    const rival = (state.flow.challenges ?? []).map(c => (c.by === m.id ? c.target : c.target === m.id && c.accepted ? c.by : undefined)).find(id => id && foes.includes(id));
+    if (rival && !f.support) Object.assign(out, { a: Math.min(10, out.a + 1), rival });
     return out;
   };
   return { ...req, sides: [req.sides[0].map(adjust), req.sides[1].map(adjust)] };
@@ -109,6 +113,16 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
   const mine = (id: unknown) => typeof id === 'string' && state.models[id]?.owner === seat;
   switch (action.type) {
     case 'roll': {
+      // The roll for which side's hero goes first, once, by the player with Priority: 1-3 Evil, 4+ Good.
+      if (String(action.label ?? '') === orderRollLabel(state)) {
+        if (!orderRollNeeded(state) || orderRoll(state) || (state.priority && seat !== state.priority)) return null;
+        const die = d6();
+        const evil = (['p1', 'p2'] as const).find(s => Object.values(state.models).some(m => m.owner === s && sideOf(catalog, m) === 'Evil'));
+        const good = evil ? other(evil) : undefined;
+        const first = die <= 3 ? (evil ?? other(state.priority ?? 'p1')) : (good ?? state.priority ?? 'p1');
+        const roll: DiceRoll = { id: `r-${uid()}`, by: seat, label: orderRollLabel(state), dice: [die], note: `${state.names[first] || (first === 'p1' ? 'Player 1' : 'Player 2')}'s hero goes first`, at: now };
+        return { apply: [{ type: 'rolled', roll }, { type: 'heroicOrder', seat: first }] };
+      }
       const count = Math.max(1, Math.min(MAX_DICE, Math.round(Number(action.count) || 1)));
       const target = action.target === undefined ? undefined : Math.max(1, Math.min(7, Math.round(Number(action.target) || 4)));
       const then = target === undefined || action.then === undefined ? undefined : Math.max(1, Math.min(6, Math.round(Number(action.then) || 4)));
@@ -218,7 +232,7 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       const req = cleanShot(action.shot);
       const shooter = req && state.models[req.shooter.id];
       const target = req && state.models[req.target.id];
-      if (!req || !shooter || !target || shooter.owner !== seat) return null;
+      if (!req || !shooter || !target || shooter.owner !== seat || !mayActivate(state, shooter)) return null;
       // The game works the shot out from the table: whether it can be taken, what it needs and what's in the way.
       const fallback = { weapon: missileWeapon([req.shooter.weapon]), shoot: req.shooter.shoot };
       const plan = planShot(state, catalog, shooter, target, { charge: req.charge, fallback });
@@ -240,15 +254,16 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
         if (!at) return null;
         if (at.x !== shooter.x || at.y !== shooter.y) before.push({ type: 'moveModels', moves: [{ id: shooter.id, x: at.x, y: at.y }] });
       }
+      if (state.flow.shotPause) return null;
       const group = `s-${uid()}`;
-      const shot = resolveShot(req, d6, seat, group, now);
-      return {
-        apply: [
-          ...before,
-          ...shot.rolls.map((roll): Action => ({ type: 'rolled', roll })),
-          ...shot.hits.flatMap(h => woundAction(state, shot.rolls.filter(r => r.against === h.id), h.id, h.wounds, [shooter.id], 'shoot', group)),
-        ],
-      };
+      return { apply: [...before, ...shotActions(state, req, shooter, d6, seat, group, now, [])] };
+    }
+    case 'shotOn': {
+      // Carrying on with a shot that stopped for its hero to spend Might.
+      const p = state.flow.shotPause;
+      const shooter = p && state.models[p.shot.shooter.id];
+      if (!p || !shooter || p.group !== String(action.group) || shooter.owner !== seat) return null;
+      return { apply: [{ type: 'shotPaused', pause: null }, ...shotActions(state, p.shot, shooter, d6, seat, p.group, now, state.log.filter(r => r.group === p.group))] };
     }
     case 'cross': {
       const out = resolveCross(state, seat, String(action.id), d6, uid, now, catalog);
@@ -312,6 +327,23 @@ function autoWound(state: GameState, rolls: DiceRoll[]): boolean {
 }
 
 /** The wounds of a fight or shot, taken as soon as the dice land when nothing is left to decide. */
+/**
+ * Rolls a shot (or the rest of one, after `logged`) and the wounds it causes. A hero's shot stops after a roll it
+ * could still save with Might, for its player to decide.
+ */
+function shotActions(state: GameState, req: ShotRequest, shooter: Model, d6: () => number, seat: Seat, group: string, now: number, logged: DiceRoll[]): Action[] {
+  const pause = (r: DiceRoll) => shooter.hero && mightCouldHelp(r, shooter.might);
+  const shot = resolveShot(req, d6, seat, group, now, logged, pause);
+  const rolled = shot.rolls.map((roll): Action => ({ type: 'rolled', roll }));
+  if (shot.paused) {
+    const last = shot.rolls[shot.rolls.length - 1];
+    last.note = `${shooter.name} can spend Might to raise a die before the shot goes on.`;
+    return [...rolled, { type: 'shotPaused', pause: { group, shot: req } }];
+  }
+  const all = [...logged, ...shot.rolls];
+  return [...rolled, ...shot.hits.flatMap(h => woundAction(state, all.filter(r => r.against === h.id), h.id, h.wounds, [shooter.id], 'shoot', group))];
+}
+
 function woundAction(state: GameState, rolls: DiceRoll[], victim: string | undefined, count: number, by: string[], how: 'fight' | 'shoot', group: string): Action[] {
   if (!victim || count < 1 || !state.models[victim] || !autoWound(state, rolls)) return [];
   return [{ type: 'wound', id: victim, count, by, how, group }];

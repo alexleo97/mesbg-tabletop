@@ -42,12 +42,23 @@ export function engaged(state: GameState, m: Model, except?: string): boolean {
  */
 export function marchBonus(state: GameState, m: Model): number {
   if (state.phase !== 'move') return 0;
+  return marchedBy(state, m) ? (m.base.h > m.base.w || m.fly ? 5 : 3) : 0;
+}
+
+/**
+ * The hero whose Heroic March this model moves with this phase: its own, or a friend's whose At the Double reached
+ * it (within 6" of where the hero began the phase). A hero charged or held before it moves loses its March.
+ */
+export function marchedBy(state: GameState, m: Model): Model | undefined {
+  if (state.phase !== 'move') return undefined;
   const start = moveStart(state, m);
-  const marched = phaseHeroics(state).some(h => {
+  for (const h of phaseHeroics(state)) {
     const hero = h.action === 'Heroic March' ? state.models[h.model] : undefined;
-    return hero && hero.owner === m.owner && (hero.id === m.id || Math.hypot(moveStart(state, hero).x - start.x, moveStart(state, hero).y - start.y) <= 6 + (mmToIn(hero.base.w) + mmToIn(m.base.w)) / 2);
-  });
-  return marched ? (m.base.h > m.base.w ? 5 : 3) : 0;
+    if (!hero || hero.owner !== m.owner || hero.dead) continue;
+    if (!state.flow.starts?.[hero.id] && (engaged(state, hero) || cannotAct(state, hero))) continue;
+    if (hero.id === m.id || Math.hypot(moveStart(state, hero).x - start.x, moveStart(state, hero).y - start.y) <= 6 + (mmToIn(hero.base.w) + mmToIn(m.base.w)) / 2) return hero;
+  }
+  return undefined;
 }
 
 /** Whether two models' bases overlap (rather than just touch). */

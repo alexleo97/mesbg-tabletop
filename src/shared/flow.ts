@@ -1,6 +1,7 @@
 // The turn sequence as the app runs it: who acts now, who rolls for priority, and which fights are on.
 import { touching } from './barriers.ts';
 import { heroicCombatWon } from './movement.ts';
+import { heroicNow } from './heroics.ts';
 import type { GameState, Model, Seat } from './types.ts';
 
 export const other = (s: Seat): Seat => (s === 'p1' ? 'p2' : 'p1');
@@ -160,6 +161,9 @@ export function priorityChooser(dice: [number, number], turn: number, lastChoose
 /** In the Move and Shoot phases, the player who should be activating models now (priority first). */
 export function activeSeat(state: GameState): Seat | null {
   if (state.phase !== 'move' && state.phase !== 'shoot') return null;
+  // Heroes making a Heroic Move or Heroic Shoot go before everyone else.
+  const heroic = state.flow.started ? heroicNow(state) : null;
+  if (heroic) return heroic.seat;
   const first = state.priority ?? 'p1';
   if (!state.flow.done.includes(first)) return first;
   const second = other(first);

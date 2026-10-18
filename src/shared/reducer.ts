@@ -1,13 +1,14 @@
 import { bookBase, round } from './bases.ts';
 import { holdInZones } from './deployment.ts';
-import { heroicInfo } from './heroics.ts';
+import { heroicInfo, heroicNow, heroicQueue, mayActivate, shoutedFor, SHOUT_RANGE } from './heroics.ts';
 import { pendingSpell } from './magic.ts';
 import { basePower, cannotAct, effectActive } from './powers.ts';
-import { finishCharge, heroicCombatWon, limitMove, moveAllowance, movedAtAll, movedTooFar, moveLeft, moveStart } from './movement.ts';
+import { engaged as engagedNow, finishCharge, heroicCombatWon, limitMove, marchedBy, moveAllowance, movedAtAll, movedTooFar, moveLeft, moveStart } from './movement.ts';
 import { FLOORED, floorHeight, flooredAt } from './sight.ts';
-import { woundsTaken } from './fight.ts';
+import { cleanPausedShot, woundsTaken } from './fight.ts';
 import { pairOff } from './flow.ts';
 import { crossingAhead } from './terrainTests.ts';
+import { distanceBetween } from './geometry.ts';
 import { touching as inContact, touchingEnemies } from './barriers.ts';
 import { canRetreatTo } from './backAway.ts';
 import { canPickUp, markerUpkeep, syncCarried, touching, canEscape } from './objects.ts';
@@ -81,7 +82,7 @@ function goToPhase(state: GameState, phase: Phase, turn: number, newTurn: boolea
       passed: [],
       lastHeroic: null,
       starts: {},
-      ...(phase !== state.phase ? { crossed: {}, blocked: {}, stopped: [], crawling: [], lay: [], retreat: {} } : {}),
+      ...(phase !== state.phase ? { crossed: {}, blocked: {}, stopped: [], crawling: [], lay: [], retreat: {}, heroicDone: [], heroicNow: undefined, heroicFirst: undefined, activated: [], shotPause: undefined } : {}),
       ...farMoved,
       ...upkeep,
     },
@@ -156,6 +157,7 @@ export function cleanModel(m: Partial<Model>, prev?: Model): Model | null {
   if (points) out.points = points;
   const tier = m.tier !== undefined ? int(m.tier, 0, 9, 0) : base.tier;
   if (tier) out.tier = tier;
+  if ('fly' in m ? m.fly === true : base.fly) out.fly = true;
   out.wounds = int(m.wounds, 0, out.maxWounds, Math.min(base.wounds, out.maxWounds));
   if ('escaped' in m ? m.escaped === true : base.escaped) out.escaped = true;
   if ('waiting' in m ? m.waiting === true : base.waiting) out.waiting = true;
@@ -347,6 +349,34 @@ function afterMight(state: GameState, rollId: string): GameState {
   return { ...state, log: state.log.map(r => (r.id === rollId ? { ...r, note } : r)), flow: { ...state.flow, spell: { ...state.flow.spell!, ...(resistable ? {} : { ready: true }) } } };
 }
 
+function cleanPause(p: { group?: unknown; shot?: unknown }): Flow['shotPause'] {
+  const shot = cleanPausedShot(p.shot);
+  return shot && typeof p.group === 'string' ? { group: p.group.slice(0, 80), shot } : undefined;
+}
+
+/**
+ * The hero a model must stay within 6" of as it moves: the one whose With Me it is going with, or whose At the
+ * Double it is marching to.
+ */
+function followed(state: GameState, m: Model, heroic: string | undefined): Model | undefined {
+  const hero = heroic ? state.models[heroic] : undefined;
+  if (hero && hero.id !== m.id && hero.owner === m.owner && shoutedFor(state, hero).some(f => f.id === m.id)) return hero;
+  const march = marchedBy(state, m);
+  return march && march.id !== m.id ? march : undefined;
+}
+
+/** Where a move from `from` towards `to` has to stop to end within 6" of `leader`: `to`, or the last point along the way that is. */
+function keepNear(m: Model, from: { x: number; y: number }, to: { x: number; y: number }, leader: Model): { x: number; y: number } {
+  const near = (p: { x: number; y: number }) => distanceBetween({ ...m, ...p }, leader) <= SHOUT_RANGE + 1e-6;
+  if (near(to)) return to;
+  for (let i = 1; i <= 50; i++) {
+    const f = 1 - i / 50;
+    const p = { x: from.x + (to.x - from.x) * f, y: from.y + (to.y - from.y) * f };
+    if (near(p)) return p;
+  }
+  return { x: m.x, y: m.y };
+}
+
 /** Takes wounds off a model, removing it as a casualty when none are left. */
 function takeWounds(m: Model, n: number): Model {
   const wounds = Math.max(0, m.wounds - n);
@@ -379,7 +409,28 @@ function settle(m: Model): Model {
  */
 export function reduce(state: GameState, action: Action): GameState {
   // Carried markers go wherever their carrier goes.
-  return syncCarried(step(state, action));
+  return syncCarried(challengesSettled(state, step(state, action)));
+}
+
+/**
+ * Heroic Challenges end when either hero falls. The one that slew the other gains 1 Might (up to what it started
+ * with): the challenger always, the challenged hero only if it took the challenge up.
+ */
+function challengesSettled(before: GameState, state: GameState): GameState {
+  const list = state.flow.challenges;
+  if (!list?.length) return state;
+  const fallen = (id: string) => !!state.models[id]?.dead && !before.models[id]?.dead;
+  const ended = list.filter(c => fallen(c.by) || fallen(c.target) || !state.models[c.by] || !state.models[c.target]);
+  if (!ended.length) return state;
+  const models = { ...state.models };
+  for (const c of ended) {
+    for (const [winner, loser, earns] of [[c.by, c.target, true], [c.target, c.by, !!c.accepted]] as const) {
+      const w = models[winner];
+      if (!earns || !w || w.dead || !fallen(loser) || !models[loser].killedBy?.ids.includes(winner)) continue;
+      models[winner] = { ...w, might: Math.max(w.might, Math.min(c.by === winner ? c.cap : 9, w.might + 1)) };
+    }
+  }
+  return { ...state, models, flow: { ...state.flow, challenges: list.filter(c => !ended.includes(c)) } };
 }
 
 function step(state: GameState, action: Action): GameState {
@@ -404,6 +455,7 @@ function step(state: GameState, action: Action): GameState {
       let blocked = state.flow.blocked;
       let climbed = state.flow.climbed;
       let charges = state.flow.charges;
+      let heroicStarted = state.flow.heroicNow;
       // Models moved together don't block each other.
       const together = new Set(moves.map(mv => mv && String(mv.id)));
       for (const mv of moves) {
@@ -412,6 +464,10 @@ function step(state: GameState, action: Action): GameState {
         const asked = { x: num(mv.x, -24, 200, prev.x), y: num(mv.y, -24, 200, prev.y) };
         // A model whose move has ended this phase stays where it is.
         if (state.flow.started && state.phase === 'move' && state.flow.stopped?.includes(prev.id) && (asked.x !== prev.x || asked.y !== prev.y)) continue;
+        // Only the models whose activation it is may move (a hero's heroic activation goes first; see heroics.ts).
+        const askedToMove = asked.x !== prev.x || asked.y !== prev.y;
+        if (state.flow.started && state.phase === 'move' && askedToMove && !state.flow.compel && !mayActivate(state, prev)) continue;
+        if (state.flow.started && state.phase === 'move' && askedToMove && !heroicStarted && heroicQueue(state).some(h => h.id === prev.id) && heroicNow(state)?.seat === prev.owner) heroicStarted = prev.id;
         let to = asked;
         const moving = to.x !== prev.x || to.y !== prev.y;
         const compel = state.flow.compel?.model === prev.id ? state.flow.compel : undefined;
@@ -425,6 +481,9 @@ function step(state: GameState, action: Action): GameState {
           to = limitMove(state, from, to, allowance, prev.owner, prev, together);
           // A model that stops inside an enemy's control zone is charging it: it must reach base contact, or stay out.
           if (state.phase === 'move' || heroicCombatWon(state, prev)) to = finishCharge(state, prev, from, to, together);
+          // A friend going with a hero (With Me, or At the Double) must end within 6" of it.
+          const leader = state.phase === 'move' ? followed(state, prev, heroicStarted) : undefined;
+          if (leader && !together.has(leader.id)) to = keepNear(prev, from, to, leader);
           // A model that threw a weapon as it charged goes on into contact with its target, unless the throw slew it.
           const must = state.flow.mustCharge?.model === prev.id ? state.models[state.flow.mustCharge.target] : undefined;
           if (must && !must.dead && !inContact(state, { ...prev, ...to }, must)) to = { x: prev.x, y: prev.y };
@@ -464,8 +523,8 @@ function step(state: GameState, action: Action): GameState {
         models[prev.id] = next;
       }
       const flow =
-        starts !== state.flow.starts || stood !== state.flow.stood || climbed !== state.flow.climbed || blocked !== state.flow.blocked || charges !== state.flow.charges
-          ? { flow: { ...state.flow, starts, ...(stood ? { stood } : {}), ...(climbed ? { climbed } : {}), ...(blocked ? { blocked } : {}), ...(charges ? { charges } : {}) } }
+        starts !== state.flow.starts || stood !== state.flow.stood || climbed !== state.flow.climbed || blocked !== state.flow.blocked || charges !== state.flow.charges || heroicStarted !== state.flow.heroicNow
+          ? { flow: { ...state.flow, starts, ...(stood ? { stood } : {}), ...(climbed ? { climbed } : {}), ...(blocked ? { blocked } : {}), ...(charges ? { charges } : {}), ...(heroicStarted ? { heroicNow: heroicStarted } : {}) } }
           : {};
       return { ...state, models, ...flow };
     }
@@ -631,7 +690,15 @@ function step(state: GameState, action: Action): GameState {
       if (!isSeat(action.seat)) return state;
       return { ...goTo(state, state.phase === 'priority' ? 'move' : state.phase, state.turn), priority: action.seat };
     case 'endActivation': {
-      if (!isSeat(action.seat) || state.flow.done.includes(action.seat)) return state;
+      if (!isSeat(action.seat) || state.flow.done.includes(action.seat) || state.flow.shotPause) return state;
+      // Ending a hero's Heroic Move or Heroic Shoot: it and the friends it shouted for have had their activation.
+      const heroic = state.flow.started ? heroicNow(state) : null;
+      if (heroic) {
+        if (heroic.seat !== action.seat) return state;
+        const hero = state.models[heroic.hero ?? heroicQueue(state).find(m => m.owner === action.seat)!.id];
+        const went = [hero.id, ...shoutedFor(state, hero).map(f => f.id)];
+        return { ...state, flow: { ...state.flow, heroicDone: [...(state.flow.heroicDone ?? []), hero.id], heroicNow: undefined, activated: [...new Set([...(state.flow.activated ?? []), ...went])] } };
+      }
       const done = [...state.flow.done, action.seat];
       // Once both players have activated in the Move or Shoot phase, play moves on.
       if (done.length === 2 && (state.phase === 'move' || state.phase === 'shoot')) return goTo(state, state.phase === 'move' ? 'shoot' : 'fight', state.turn);
@@ -658,19 +725,43 @@ function step(state: GameState, action: Action): GameState {
       const info = heroicInfo(str(action.action, 40));
       if (!m || !m.hero || m.dead || m.might < 1 || !info || info.phase !== state.phase || cannotAct(state, m)) return state;
       if (state.flow.heroics.some(h => h.model === m.id && h.phase === state.phase)) return state;
+      if ((info.name === 'Heroic Shoot' || info.name === 'Heroic Accuracy') && state.flow.started && engagedNow(state, m)) return state;
       const other: Seat = m.owner === 'p1' ? 'p2' : 'p1';
+      // A Heroic Challenge names an enemy hero within 6", and a hero can have only one challenge going at a time.
+      let challenges = state.flow.challenges;
+      if (info.name === 'Heroic Challenge') {
+        const t = state.models[str(action.target, 80)];
+        const open = challenges ?? [];
+        if (!t || t.dead || !t.hero || t.owner === m.owner || distanceBetween(m, t) > 6) return state;
+        if (open.some(c => c.by === m.id || (c.accepted && (c.target === m.id || c.by === t.id || c.target === t.id)) || (c.accepted === false && c.target === m.id && c.by === t.id))) return state;
+        challenges = [...open, { by: m.id, target: t.id, cap: int(action.cap, 0, 9, m.might) }];
+      }
       return {
         ...state,
         models: { ...state.models, [m.id]: { ...m, might: m.might - 1 } },
         flow: {
           ...state.flow,
           heroics: [...state.flow.heroics, { model: m.id, action: info.name, phase: state.phase }],
+          ...(challenges !== state.flow.challenges ? { challenges } : {}),
           // A declaration gives the other player a fresh chance to respond.
           passed: state.flow.passed.filter(s => s !== other && s !== m.owner),
           lastHeroic: m.owner,
         },
       };
     }
+    case 'answerChallenge': {
+      const i = (state.flow.challenges ?? []).findIndex(c => c.target === action.target && c.accepted === undefined);
+      if (i < 0) return state;
+      const challenges = [...state.flow.challenges!];
+      challenges[i] = { ...challenges[i], accepted: action.accept === true };
+      return { ...state, flow: { ...state.flow, challenges } };
+    }
+    case 'shotPaused':
+      return { ...state, flow: { ...state.flow, shotPause: action.pause ? cleanPause(action.pause) : undefined } };
+    case 'heroicOrder':
+      return isSeat(action.seat) ? { ...state, flow: { ...state.flow, heroicFirst: action.seat } } : state;
+    case 'willOfEvil':
+      return { ...state, flow: { ...state.flow, willed: state.turn } };
     case 'passHeroic':
       if (!isSeat(action.seat) || state.flow.passed.includes(action.seat)) return state;
       return { ...state, flow: { ...state.flow, passed: [...state.flow.passed, action.seat], lastHeroic: action.seat } };
@@ -714,7 +805,13 @@ function step(state: GameState, action: Action): GameState {
       const i = state.log.findIndex(r => r.id === action.roll);
       const r = state.log[i];
       const m = r?.model ? state.models[r.model] : undefined;
-      if (!r || !m || !m.hero || m.might < 1) return state;
+      const will = action.will === true;
+      if (!r || !m || !m.hero || (will ? m.will < 1 : m.might < 1)) return state;
+      // Will can only help with a Courage test.
+      const courage = r.sum !== undefined && /^Courage/.test(r.label);
+      if (will && !courage) return state;
+      // A paused shot takes Might only on the roll it paused on.
+      if (r.group?.startsWith('s-') && (state.flow.shotPause?.group !== r.group || state.log.filter(x => x.group === r.group).at(-1)?.id !== r.id)) return state;
       // Against Heroic Defence only a natural 6 wounds, so Might can't make one.
       if (r.against && r.group?.startsWith('f-') && state.flow.heroics.some(h => h.model === r.against && h.action === 'Heroic Defence')) return state;
       const k = int(action.die, 0, MAX_DICE, -1);
@@ -727,10 +824,12 @@ function step(state: GameState, action: Action): GameState {
       const roll: DiceRoll = { ...r, ...(follow ? { follow: dice } : { dice }), might: (r.might ?? 0) + 1 };
       const log = [...state.log];
       log[i] = roll;
-      let hero: Model = { ...m, might: m.might - 1 };
+      let hero: Model = will ? { ...m, will: m.will - 1 } : { ...m, might: m.might - 1 };
       // Might that turns a failed Fate roll into a 4+ saves the wound.
       if (hero.fateRoll === r.id && roll.dice[0] >= 4) hero = { ...hero, pending: (hero.pending ?? 1) - 1, fateRoll: undefined };
-      return afterMight({ ...state, log, models: { ...state.models, [m.id]: settle(hero) } }, roll.id);
+      // A Courage test that now passes counts as passed (a charge at a terrifying enemy can go ahead).
+      const flow = courage && roll.dice[0] + roll.dice[1] >= roll.sum! && state.flow.courage?.[m.id] === false ? { ...state.flow, courage: { ...state.flow.courage, [m.id]: true } } : state.flow;
+      return afterMight({ ...state, log, flow, models: { ...state.models, [m.id]: settle(hero) } }, roll.id);
     }
     case 'wound': {
       const m = state.models[action.id];
@@ -1025,6 +1124,13 @@ export function loadState(raw: unknown): GameState {
         ...(Array.isArray(f.lay) ? { lay: f.lay.slice(0, 400).map(x => String(x).slice(0, 80)) } : {}),
         ...(f.crossed && typeof f.crossed === 'object' ? { crossed: Object.fromEntries(Object.entries(f.crossed).slice(0, 400).filter(([, v]) => Array.isArray(v)).map(([k, v]) => [str(k, 80), (v as unknown[]).slice(0, 20).map(x => str(x, 80))])) } : {}),
         ...(f.blocked && typeof f.blocked === 'object' ? { blocked: cleanBlocked(f.blocked) } : {}),
+        ...(Array.isArray(f.heroicDone) ? { heroicDone: f.heroicDone.slice(0, 40).map(x => str(x, 80)) } : {}),
+        ...(typeof f.heroicNow === 'string' ? { heroicNow: str(f.heroicNow, 80) } : {}),
+        ...(isSeat(f.heroicFirst) ? { heroicFirst: f.heroicFirst } : {}),
+        ...(Array.isArray(f.activated) ? { activated: f.activated.slice(0, 400).map(x => str(x, 80)) } : {}),
+        ...(Number.isFinite(f.willed) ? { willed: int(f.willed, 0, 99, 0) } : {}),
+        ...(f.shotPause && typeof f.shotPause === 'object' && cleanPause(f.shotPause) ? { shotPause: cleanPause(f.shotPause) } : {}),
+        ...(Array.isArray(f.challenges) ? { challenges: f.challenges.slice(0, 20).filter(c => c && typeof c === 'object').map(c => ({ by: str(c.by, 80), target: str(c.target, 80), cap: int(c.cap, 0, 9, 3), ...(typeof c.accepted === 'boolean' ? { accepted: c.accepted } : {}) })) } : {}),
         ...(f.charges && typeof f.charges === 'object' ? { charges: Object.fromEntries(Object.entries(f.charges).slice(0, 400).map(([k, v]) => [str(k, 80), str(v, 80)])) } : {}),
         ...(f.retreat && typeof f.retreat === 'object' ? { retreat: Object.fromEntries(Object.entries(f.retreat).slice(0, 100).filter(([, v]) => Array.isArray(v)).map(([k, v]) => [str(k, 80), [num((v as unknown[])[0], -24, 200, 0), num((v as unknown[])[1], -24, 200, 0)] as [number, number]])) } : {}),
         ...(f.mustCharge && typeof f.mustCharge === 'object' ? { mustCharge: { model: str(f.mustCharge.model, 80), target: str(f.mustCharge.target, 80) } } : {}),

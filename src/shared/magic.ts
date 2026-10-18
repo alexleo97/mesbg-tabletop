@@ -2,6 +2,8 @@ import type { Catalog } from './catalog.ts';
 import { distanceBetween } from './geometry.ts';
 import { affected, cannotAct, fitsTarget, freeResistDice, isAreaPower, isLinePower, powerInfo, powerTakesEffect, resister } from './powers.ts';
 import { sightTo } from './sight.ts';
+import { declared } from './heroics.ts';
+import { willOfEvil } from './courage.ts';
 import type { Action, DiceRoll, GameState, Model, Seat, SpellPending } from './types.ts';
 
 // Magical powers, handled by the game: the caster picks a power, a target and how much Will to spend, the game rolls,
@@ -70,8 +72,13 @@ export function rollCast(state: GameState, seat: Seat, a: Extract<Action, { type
   const t = self || isAreaPower(power) ? m : picked;
   if (t.id !== m.id && powerInfo(power) && !fitsTarget(state, catalog, m, power, t)) return null;
   const cv = Math.max(1, Math.min(6, Math.round(Number(a.cv)) || 4));
-  const n = Math.max(1, Math.min(m.will, Math.round(Number(a.will)) || 1));
-  const dice = Array.from({ length: n }, d6);
+  // A model kept alive by Will of Evil can't spend its last point.
+  const spare = willOfEvil(catalog, m) ? m.will - 1 : m.will;
+  if (spare < 1) return null;
+  // Heroic Channelling: its cast this turn counts as a 6, for one Will point and no roll.
+  const channelled = declared(state, m.id, 'Heroic Channelling');
+  const n = channelled ? 1 : Math.max(1, Math.min(spare, Math.round(Number(a.will)) || 1));
+  const dice = channelled ? [6] : Array.from({ length: n }, d6);
   const best = Math.max(...dice);
   const reach = isLinePower(power) ? Math.ceil(d6() / 2) + 3 : undefined;
   const spell: SpellPending = { roll: `w-${uid()}-0`, caster: m.id, target: t.id, power, cv, ...(reach ? { reach, aim: t.id } : {}) };
@@ -89,7 +96,7 @@ export function rollCast(state: GameState, seat: Seat, a: Extract<Action, { type
       : res
         ? `Cast on a ${best}. ${res.name} may resist${res.id === t.id ? '' : ' for all it hits'}, needing a ${best} or more.`
         : `${t.id === m.id || t.owner === m.owner ? '' : `${t.name} has no Will to resist. `}The power takes effect.`;
-  const roll: DiceRoll = { id: spell.roll, by: seat, label: castLabel(power, cv, m, t), dice, target: cv, model: m.id, aim: t.id, note, at: now };
+  const roll: DiceRoll = { id: spell.roll, by: seat, label: `${castLabel(power, cv, m, t)}${channelled ? ' (Heroic Channelling)' : ''}`.slice(0, 80), dice, target: cv, model: m.id, aim: t.id, note, at: now };
   const out: Action[] = [{ type: 'rolled', roll }, { type: 'spendWill', id: m.id, count: n }];
   if (liftable || (best >= cv && res)) out.push({ type: 'spellPending', spell });
   else if (best >= cv) out.push(...powerTakesEffect(state, catalog, spell, d6, uid, now));

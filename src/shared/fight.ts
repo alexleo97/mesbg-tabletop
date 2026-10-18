@@ -21,6 +21,8 @@ export interface Fighter {
   noStrike?: string;
   /** Enchant Blades: re-rolls failed To Wound rolls on its strikes. */
   reroll?: boolean;
+  /** The enemy hero of its Heroic Challenge, when that hero is in this fight: +1 to wound it (the extra Attack is already in `a`). */
+  rival?: string;
   /** Its Heroic Strike bonus, when already rolled at an earlier fight this phase. */
   strikeBonus?: number;
   /**
@@ -211,7 +213,9 @@ export function resolveStrikes(req: FightRequest, duel: DiceRoll[], d6: D6, by: 
     const at = Array.from({ length: count }, (_, i) => aimed[i] ?? main);
     for (const target of [...new Set(at)]) {
       const n = at.filter(t => t === target).length;
-      const base = woundNeed(f.s, target.d);
+      const plain = woundNeed(f.s, target.d);
+      // A Heroic Challenge: +1 to wound the rival hero.
+      const base = plain && f.rival === target.id ? (plain.then ? { ...plain, then: Math.max(2, plain.then - 1) } : { target: Math.max(2, plain.target - 1) }) : plain;
       // Heroic Defence: only natural 6s wound (both dice for 6/4+ style results).
       const need = base && target.defence ? { target: 6, ...(base.then ? { then: 6 } : {}) } : base;
       if (!need) continue;
@@ -269,22 +273,65 @@ export function cleanShot(raw: unknown): ShotRequest | null {
   };
 }
 
+/** Thrown to stop a shot part way, for its player to spend Might (see resolveShot). */
+const PAUSE = Symbol('pause');
+
+/** A shot request kept while it waits on Might, including what the game worked out (what's in the way and so on). */
+export function cleanPausedShot(raw: unknown): ShotRequest | null {
+  const base = cleanShot(raw);
+  const o = raw as Partial<ShotRequest>;
+  if (!base) return null;
+  const str = (v: unknown, n: number) => String(v ?? '').slice(0, n);
+  const inWay = Array.isArray(o.inWay) ? o.inWay.slice(0, 6).map(w => ({ name: str(w?.name, 40), ...(w?.id ? { id: str(w.id, 64), d: clamp(w.d, 1, 10, 4) } : {}) })) : undefined;
+  return {
+    ...base,
+    ...(inWay ? { inWay, obstacles: inWay.length } : {}),
+    ...(o.stray?.id ? { stray: { id: str(o.stray.id, 64), name: str(o.stray.name, 40), d: clamp(o.stray.d, 1, 10, 4) } } : {}),
+    ...(o.rerolls === true ? { rerolls: true } : {}),
+  };
+}
+
+/**
+ * Whether a shooting roll is worth stopping on for its hero to spend Might: a roll to hit, to get past something or
+ * to wound, with a die that missed by no more than the Might the hero has.
+ */
+export const mightCouldHelp = (r: DiceRoll, might: number) => r.target !== undefined && r.then === undefined && might > 0 && r.dice.some(d => d < r.target! && r.target! - d <= might);
+
 /**
  * Resolves a shooting attack: to hit, an In the Way test for each thing in the way (a model that stops the shot is
  * hit instead), the test for which model in a fight is hit, then to wound each model hit.
+ * A shot can stop after any roll that `pause` picks out, so a hero can spend Might on it; it then carries on from
+ * `logged` (its rolls so far, as the log has them now), rolling only what comes after. `paused` says it stopped.
  */
-export function resolveShot(req: ShotRequest, d6: D6, by: Role, group: string, now = Date.now()): { rolls: DiceRoll[]; wounds: number; hits: { id: string; wounds: number }[] } {
+export function resolveShot(req: ShotRequest, d6: D6, by: Role, group: string, now = Date.now(), logged: DiceRoll[] = [], pause?: (r: DiceRoll) => boolean): { rolls: DiceRoll[]; wounds: number; hits: { id: string; wounds: number }[]; paused?: boolean } {
   const rolls: DiceRoll[] = [];
-  const push = (label: string, dice: number[], extra: Partial<DiceRoll> = {}) =>
-    rolls.push({ id: `${group}-${rolls.length}`, by, label: label.slice(0, 80), dice, at: now, group, ...extra });
+  let k = 0;
+  /** The next roll of the shot: the one already in the log, or a fresh one. */
+  const take = (label: string, count: number, extra: Partial<DiceRoll> = {}, then?: number): DiceRoll => {
+    if (k < logged.length) return logged[k++];
+    const dice = Array.from({ length: count }, d6);
+    const follow = then !== undefined && extra.target !== undefined ? dice.filter(d => d >= extra.target!).map(d6) : undefined;
+    const r: DiceRoll = { id: `${group}-${k}`, by, label: label.slice(0, 80), dice, at: now, group, ...extra, ...(follow ? { then, follow } : {}) };
+    k++;
+    rolls.push(r);
+    if (pause?.(r)) throw PAUSE;
+    return r;
+  };
+  try {
+    return finishShot(req, take);
+  } catch (e) {
+    if (e !== PAUSE) throw e;
+    return { rolls, wounds: 0, hits: [], paused: true };
+  }
+
+  function finishShot(req: ShotRequest, take: (label: string, count: number, extra?: Partial<DiceRoll>, then?: number) => DiceRoll) {
   const { shooter, target } = req;
-  const toHit = Array.from({ length: shooter.shots }, d6);
-  push(`${shooter.name} ${req.charge ? 'throws at' : 'shoots'} ${target.name} (${shooter.weapon}, ${shooter.shoot}+)`, toHit, {
+  const toHit = take(`${shooter.name} ${req.charge ? 'throws at' : 'shoots'} ${target.name} (${shooter.weapon}, ${shooter.shoot}+)`, shooter.shots, {
     target: shooter.shoot,
     model: shooter.id,
     aim: target.id,
     ...(req.charge ? { charge: true } : {}),
-  });
+  }).dice;
   // A natural 6 always hits.
   let flying = toHit.filter(d => d >= Math.min(6, shooter.shoot)).length;
   const struck: { id: string; name: string; d: number; count: number }[] = [];
@@ -295,12 +342,10 @@ export function resolveShot(req: ShotRequest, d6: D6, by: Role, group: string, n
   };
   // Each test lets 4+ through; Heroic Accuracy re-rolls the ones that fail.
   const test = (label: string) => {
-    const dice = Array.from({ length: flying }, d6);
-    push(label, dice, { target: 4, model: shooter.id });
+    const dice = take(label, flying, { target: 4, model: shooter.id }).dice;
     let past = dice.filter(d => d >= 4).length;
     if (req.rerolls && past < dice.length) {
-      const again = Array.from({ length: dice.length - past }, d6);
-      push(`${label.replace(/ \(.*$/, '')} re-rolled (Heroic Accuracy)`, again, { target: 4, model: shooter.id });
+      const again = take(`${label.replace(/ \(.*$/, '')} re-rolled (Heroic Accuracy)`, dice.length - past, { target: 4, model: shooter.id }).dice;
       past += again.filter(d => d >= 4).length;
     }
     return past;
@@ -324,13 +369,13 @@ export function resolveShot(req: ShotRequest, d6: D6, by: Role, group: string, n
   for (const v of struck) {
     const need = woundNeed(shooter.s, v.d);
     if (!need) continue;
-    const dice = Array.from({ length: v.count }, d6);
-    const follow = need.then ? dice.filter(d => d >= need.target).map(d6) : undefined;
-    push(`To wound ${v.name}: S${shooter.s} vs D${v.d} (${formatNeed(need)})`, dice, { target: need.target, against: v.id, model: shooter.id, ...(need.then ? { then: need.then, follow } : {}) });
-    hits.push({ id: v.id, wounds: strikeWounds(rolls.slice(-1)) });
+    const r = take(`To wound ${v.name}: S${shooter.s} vs D${v.d} (${formatNeed(need)})`, v.count, { target: need.target, against: v.id, model: shooter.id }, need.then);
+    hits.push({ id: v.id, wounds: strikeWounds([r]) });
   }
   const onTarget = hits.find(h => h.id === target.id)?.wounds ?? 0;
   const others = struck.filter(v => v.id !== target.id).map(v => v.name);
+  // A shot carried on after a pause may have nothing left to roll: its outcome goes on a line of its own.
+  if (!rolls.length) rolls.push({ id: `${group}-${k}`, by, label: `${shooter.name}'s shot`, dice: [], at: now, group });
   rolls[rolls.length - 1].note = struck.length
     ? struck.some(v => v.id === target.id)
       ? !woundNeed(shooter.s, target.d)
@@ -341,4 +386,5 @@ export function resolveShot(req: ShotRequest, d6: D6, by: Role, group: string, n
       ? `The shot hits the ${stoppedBy}`
       : `${shooter.name} misses ${target.name}`;
   return { rolls, wounds: onTarget, hits };
+  }
 }
