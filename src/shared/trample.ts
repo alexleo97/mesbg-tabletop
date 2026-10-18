@@ -105,7 +105,38 @@ export function trample(state: GameState, catalog: Catalog | null, seat: Seat, a
 
 /** The war beasts and chariots a side hasn't moved yet as it ends its move: they must move if they can, so the game drives them straight on. */
 export const chargesDue = (state: GameState, catalog: Catalog | null | undefined, seat: Seat) =>
-  state.flow.started && state.phase === 'move' ? Object.values(state.models).filter(m => m.owner === seat && mustCharge(state, catalog, m) && mayActivate(state, m)) : [];
+  state.flow.started && state.phase === 'move' ? Object.values(state.models).filter(m => m.owner === seat && mustCharge(state, catalog, m) && mayActivate(state, m) && !(isChariot(catalog, m) && touchingEnemies(state, m).length)) : [];
+
+/**
+ * Where to point a war beast or chariot: at the nearest enemy it would reach without running down its own side first,
+ * or else whichever way takes it nearest the enemy without hitting a friend (a chariot that can't, turns to face them).
+ */
+export function chargeAim(state: GameState, catalog: Catalog | null | undefined, m: Model): { x: number; y: number; pivot?: boolean } {
+  const war = isWarBeast(catalog, m);
+  const foes = Object.values(state.models).filter(e => e.owner !== m.owner && !e.dead && !e.escaped && !e.waiting && !e.aboard);
+  const near = (p: { x: number; y: number }) => Math.min(...foes.map(e => Math.hypot(e.x - p.x, e.y - p.y)), 999);
+  const look = (to: { x: number; y: number }) => drive(state, catalog, m, to, { d6: () => 6, uid: () => '', now: 0, by: m.owner, group: '', skipHits: true, stampede: !!m.stampede });
+  const ahead = (k: number, r = 20) => ({ x: m.x + Math.sin((k * Math.PI) / 4) * r, y: m.y - Math.cos((k * Math.PI) / 4) * r });
+  // Straight at an enemy, nearest first.
+  for (const e of [...foes].sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y)).slice(0, 6)) {
+    const run = look(e);
+    if (run.target) return { x: e.x, y: e.y };
+  }
+  // Otherwise the way that ends nearest them, hitting no one of its own.
+  let best: { x: number; y: number; score: number } | undefined;
+  for (let k = 0; k < 8; k++) {
+    const to = ahead(k);
+    const run = look(to);
+    const friend = run.why && !run.target && !/edge|terrain|obstacle/i.test(run.why);
+    if (friend) continue;
+    const score = near(run.at) + (/obstacle/i.test(run.why ?? '') ? 6 : 0);
+    if (!best || score < best.score) best = { ...to, score };
+  }
+  if (best && (war || best.score < near(m))) return { x: best.x, y: best.y };
+  const foe = foes.sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y))[0];
+  if (!war) return { ...(foe ? { x: foe.x, y: foe.y } : straightOn(m)), pivot: true };
+  return best ? { x: best.x, y: best.y } : straightOn(m);
+}
 
 /** A point straight ahead of a model, far off, to drive it on the way it faces. */
 export const straightOn = (m: Model) => ({ x: m.x + Math.sin((m.rot * Math.PI) / 180) * 30, y: m.y - Math.cos((m.rot * Math.PI) / 180) * 30 });

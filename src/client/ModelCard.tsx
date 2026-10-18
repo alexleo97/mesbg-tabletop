@@ -11,7 +11,7 @@ import { effectNotes, heldBy } from '../shared/powers.ts';
 import { isThrowing, planShot, shooterBlocked, throwingPoint, weaponFor } from '../shared/shooting.ts';
 import { cloaked, stones } from '../shared/wargear.ts';
 import { mounted, mountLabel, mountOf } from '../shared/cavalry.ts';
-import { howdahFor } from '../shared/warBeasts.ts';
+import { commanderStats, howdahFor, immovable } from '../shared/warBeasts.ts';
 import { BeastPanel } from './BeastPanel.tsx';
 import { flooredAt, floorHeight, floorName, sightTo, standingAt } from '../shared/sight.ts';
 import RULES from '../data/special-rules.json';
@@ -121,7 +121,7 @@ function TerrainMoves({ state, dispatch, m }: { state: GameState; dispatch: (a: 
         </button>
       </div>
     );
-  if (!m.prone && left !== null && left + 1e-6 >= m.move / 2 && !state.flow.stood?.includes(m.id) && !engaged(state, m))
+  if (!m.prone && !m.aboard && !immovable(null, m) && left !== null && left + 1e-6 >= m.move / 2 && !state.flow.stood?.includes(m.id) && !engaged(state, m))
     return (
       <div className="row wrap terrain-test">
         <button className="small" title={`Lying down costs half its Move and ends its move. Prone, it is half as tall for sight but has no Control Zone.`} onClick={() => dispatch({ type: 'lieDown', id: m.id })}>
@@ -176,7 +176,9 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
   const unit = m.profileId ? catalog?.units[m.profileId] : undefined;
   const listed = unit && statsWithOptions(unit, unit.options.filter(o => m.options?.includes(o.name)).map(o => o.id));
   // A rider moves at its mount's pace, so show the Move it actually has.
-  const printed = listed && mounted(m) ? [`${m.move}"`, ...listed.slice(1)] : listed;
+  // A war beast's Commander has a profile of its own.
+  const commander = unit?.rules.includes('Trample') ? commanderStats(unit.name, m.name) : undefined;
+  const printed = commander ? STAT_NAMES.map(k => (commander[k] === undefined ? '-' : k === 'Mv' ? `${commander[k]}"` : k === 'Sv' || k === 'C' || k === 'I' ? `${commander[k]}+` : String(commander[k]))) : listed && mounted(m) ? [`${m.move}"`, ...listed.slice(1)] : listed;
   const stats = modelStats(catalog, m);
   const start = startingPoints(catalog, m);
   const [rulesText, setRulesText] = useState<Record<string, string>>({});
@@ -246,7 +248,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
         <div className="aim-card">
           <p>
             {charge ? 'Throw at' : 'At'} <b>{target.name}</b>: {formatInches(plan.dist)} of {weapon.range}". Hits on {plan.need}+{harder ? ` (${harder})` : ''}, wounds on {formatNeed(need)}
-            {plan.shots > 1 ? `, ${plan.shots} shots (it didn't move)` : ''}.
+            {plan.shots > 1 ? (m.beast === 'war' ? `, ${plan.shots} shots (one for each Wound the Howdah has left)` : `, ${plan.shots} shots (it didn't move)`) : ''}.
           </p>
           {why && <p className="warn">{m.name} {why}.</p>}
           {!why && seen === 'partial' && <p className="muted small">{target.name} is partly hidden.</p>}

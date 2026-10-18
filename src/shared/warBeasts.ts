@@ -268,12 +268,15 @@ export function drive(state: GameState, catalog: Catalog | null | undefined, m: 
       if (hit.has(o.id) || Math.abs(o.x - next.x) > reach + 2.5 || Math.abs(o.y - next.y) > reach + 2.5) continue;
       if (distanceBetween(body, o) > 0) continue;
       hit.add(o.id);
-      if (isWarBeast(catalog, o)) {
-        // Two war beasts meet: each takes three Strength 8 hits, and the charge stops.
-        if (kind === 'war') {
+      if (immovable(catalog, o)) {
+        // Two war beasts meet: each takes three Strength 8 hits. Anything else it hits that can't be moved takes its
+        // Impact Hits, but either way the charge stops there.
+        if (opts.skipHits) {
+          // (Just looking where it would go.)
+        } else if (kind === 'war' && isWarBeast(catalog, o)) {
           crash(8, `${m.name} meets ${o.name}`);
           for (let i = 0; i < 3; i++) push(hitModel(o, modelStats(catalog, o)?.D ?? 7, 8, `${m.name} meets ${o.name}`, d6, by, `${group}-${uid()}`, now, group, false, [m.id]));
-        }
+        } else impacted(o);
         return done(`It runs into ${o.name}.`, o.owner !== m.owner ? o.id : undefined);
       }
       // Arriving from reserve, it can't trample anyone yet: it stops against them.

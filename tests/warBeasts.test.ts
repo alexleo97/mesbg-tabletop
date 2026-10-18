@@ -3,6 +3,7 @@ import type { Catalog } from '../src/shared/catalog.ts';
 import { botStep, type BotMemo } from '../src/shared/bot.ts';
 import { initialState, reduce } from '../src/shared/reducer.ts';
 import { resolveRequest } from '../src/shared/resolve.ts';
+import { planShot } from '../src/shared/shooting.ts';
 import { chargesDue } from '../src/shared/trample.ts';
 import { biggerHolds, heldBy, impactHits, isChariot, isWarBeast, riders } from '../src/shared/warBeasts.ts';
 import type { Action, GameState, Model, Seat, Terrain } from '../src/shared/types.ts';
@@ -16,6 +17,7 @@ const catalog = {
     '[harad] warrior': unit('Haradrim Warrior', 'Harad'),
     '[harad] chariot': unit('Khandish Chariot', 'Harad', ['Chariot Charge'], ['10"', '4', '4+', '3', '7', '1', '3', '7', '7+']),
     '[gondor] warrior': unit('Warrior of Minas Tirith', 'Gondor'),
+    '[gondor] archer': { ...unit('Archer', 'Gondor'), wargear: ['Bow', 'hand weapon'] },
     '[gondor] troll': unit('Cave Troll', 'Gondor', [], ['6"', '6', '5+', '9', '7', '3', '3', '3', '4+']),
   },
 } as unknown as Catalog;
@@ -108,6 +110,43 @@ describe('war beasts', () => {
   });
 });
 
+describe('shooting at a war beast', () => {
+  const shots = (s: GameState, at: string) => {
+    const out = resolveRequest(s, 'p1', { type: 'shoot', shot: { shooter: { id: 'b', name: 'Archer', weapon: 'Bow', shoot: 4, s: 2, shots: 1 }, target: { id: at, name: at, d: 7 }, obstacles: 0 } } as Action, () => 6, uid, 0, catalog);
+    return out!.apply.flatMap(a => (a.type === 'rolled' ? [a.roll.label] : []));
+  };
+  const scene = () =>
+    run(
+      initialState(),
+      { type: 'addModels', models: [mumak(20, 20), mk('cmd', 'p2', 20, 20, '[harad] warrior', { name: 'Commander', hero: true, aboard: 'mk' }), mk('h', 'p2', 20.5, 21, '[harad] warrior', { name: 'Haradrim Warrior', aboard: 'mk' }), mk('b', 'p1', 20, 40, '[gondor] archer', { name: 'Archer' })] },
+      { type: 'startGame' },
+      { type: 'setPhase', phase: 'shoot' },
+      { type: 'choosePriority', seat: 'p1' },
+      { type: 'passHeroic', seat: 'p1' },
+      { type: 'passHeroic', seat: 'p2' },
+    );
+
+  it("doesn't count those riding it as in the way", () => {
+    expect(shots(scene(), 'mk').filter(l => l.startsWith('In the Way'))).toEqual([]);
+  });
+
+  it('puts the Howdah in the way of a shot at a warrior in it, but not the beast', () => {
+    expect(shots(scene(), 'h').filter(l => l.startsWith('In the Way'))).toEqual(['In the Way: the Howdah (4+ gets past)']);
+    expect(shots(scene(), 'cmd').filter(l => l.startsWith('In the Way'))).toEqual([]);
+  });
+});
+
+describe('a Great Beast', () => {
+  it("shoots from its Howdah once for each Wound the Howdah has left, however far it moved", () => {
+    const beast = mk('gb', 'p2', 20, 20, '[harad] mumak', { name: 'Great Beast', beast: 'war', wounds: 6, maxWounds: 6, howdahWounds: 4, base: { shape: 'oval', w: 92, h: 120 } });
+    let s = run(initialState(), { type: 'addModels', models: [beast, mk('o', 'p1', 20, 32, '[gondor] warrior')] }, { type: 'startGame' }, { type: 'setPhase', phase: 'shoot' }, { type: 'choosePriority', seat: 'p2' }, { type: 'passHeroic', seat: 'p2' }, { type: 'passHeroic', seat: 'p1' });
+    s = { ...s, flow: { ...s.flow, moved: ['gb'], farMoved: ['gb'] } };
+    const plan = planShot(s, catalog, s.models.gb, s.models.o);
+    expect(plan).toMatchObject({ shots: 4, printed: 5, moved: false, weapon: { name: 'Orc Bow' } });
+    expect(plan.why).toBeUndefined();
+  });
+});
+
 describe('chariots', () => {
   it('turns only 45° at the start of its Chariot Charge', () => {
     let s = begin([chariot(20, 30), mk('far', 'p1', 50, 5, '[gondor] warrior')]);
@@ -127,12 +166,26 @@ describe('chariots', () => {
 });
 
 describe('the computer', () => {
-  it('Tramples at the nearest enemy before it moves anything else', () => {
-    const s = begin([mumak(20, 30), mk('cmd', 'p2', 20, 30, '[harad] warrior', { name: 'Commander', hero: true, aboard: 'mk' }), mk('o', 'p1', 30, 10, '[gondor] warrior')]);
+  const crew = mk('cmd', 'p2', 20, 30, '[harad] warrior', { name: 'Commander', hero: true, aboard: 'mk' });
+  const memo = () => ({ key: '', turn: 0, since: 0 }) as unknown as BotMemo;
+  const firstTrample = (s: GameState) => {
+    const mem = memo();
+    let step = botStep(s, 'p2', catalog, mem, Date.now(), false);
+    for (let i = 0; i < 5 && step && step.action?.type !== 'trample'; i++) step = botStep(s, 'p2', catalog, mem, Date.now(), false);
+    return step?.action as Extract<Action, { type: 'trample' }> | undefined;
+  };
+
+  it('Tramples at the nearest enemy it can reach before it moves anything else', () => {
+    const s = begin([mumak(20, 30), crew, mk('o', 'p1', 21, 22, '[gondor] warrior')]);
     expect(chargesDue(s, catalog, 'p2').map(m => m.id)).toEqual(['mk']);
-    const memo = { key: '', turn: 0, since: 0 } as unknown as BotMemo;
-    let step = botStep(s, 'p2', catalog, memo, Date.now(), false);
-    for (let i = 0; i < 5 && step && step.action?.type !== 'trample'; i++) step = botStep(s, 'p2', catalog, memo, Date.now(), false);
-    expect(step?.action).toMatchObject({ type: 'trample', id: 'mk', x: 30, y: 10 });
+    expect(firstTrample(s)).toMatchObject({ type: 'trample', id: 'mk', x: 21, y: 22 });
+  });
+
+  it("won't run down its own side to get there", () => {
+    const s = begin([mumak(20, 30), crew, mk('f', 'p2', 20, 25, '[harad] warrior'), mk('o', 'p1', 20, 21, '[gondor] warrior')]);
+    const aim = firstTrample(s)!;
+    const after = ask(s, 'p2', aim, [])!;
+    expect(after.models.f.dead).toBe(false);
+    expect(after.models.mk.y).not.toBe(30);
   });
 });

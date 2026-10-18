@@ -26,8 +26,9 @@ export function BeastPanel({ state, catalog, dispatch, role, m }: { state: GameS
     return (
       <div className="beast">
         <p className="muted small">
-          {commands ? `Commands ${beast.name}: it can't shoot, and the beast's Stampede tests use its Courage.` : `In ${beast.name}'s Howdah: it never fights, shoots however far the beast moved, and the Howdah is in the way of shots at it.`}
+          {commands ? `Commands ${beast.name}: it can't shoot, and the beast's Stampede tests use its Courage. Drag it to drive the beast.` : `In ${beast.name}'s Howdah: it never fights, shoots however far the beast moved, and the Howdah is in the way of shots at it.`}
         </p>
+        {commands && <BeastPanel state={state} catalog={catalog} dispatch={dispatch} role={role} m={beast} />}
         {mine && !state.flow.started && !/commander/i.test(m.name) && (
           <button className="small" onClick={() => dispatch({ type: 'board', id: m.id })}>
             Climb out

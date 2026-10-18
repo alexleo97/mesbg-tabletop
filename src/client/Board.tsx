@@ -12,7 +12,7 @@ import { holdInZones } from '../shared/deployment.ts';
 import { limitMove, moveAllowance, moveStart, movesLimited, settleMove } from '../shared/movement.ts';
 import { inDifficult, standingAt, insidePolygon, inTheWay, isDifficult, moveCost, outline, shadowPath, sightTo, VINES_REACH } from '../shared/sight.ts';
 import { effectsOn } from '../shared/powers.ts';
-import { drive } from '../shared/warBeasts.ts';
+import { carried, drive, riders } from '../shared/warBeasts.ts';
 import { mounted, mountProfile } from '../shared/cavalry.ts';
 
 export type Tool = 'move' | 'select' | 'measure' | 'mark';
@@ -327,7 +327,12 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
       if (!wasSelected) setSelected(group);
       setSelectedTerrain(null);
       const origin: Record<string, Point> = {};
-      for (const id of group) if (state.models[id]) origin[id] = { x: state.models[id].x, y: state.models[id].y };
+      // Dragging someone riding a war beast drives the beast.
+      const ridden = (id: string) => {
+        const beast = state.models[state.models[id]?.aboard ?? ''];
+        return beast && !beast.dead ? beast.id : id;
+      };
+      for (const id of [...group].map(ridden)) if (state.models[id]) origin[id] = { x: state.models[id].x, y: state.models[id].y };
       setGesture({ kind: 'drag', start: p, origin, moved: false, tapId: hit.id, multi, wasSelected });
       return;
     }
@@ -393,7 +398,9 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
         const toward = { x: gesture.origin[lone.id].x + dx, y: gesture.origin[lone.id].y + dy };
         charging.current = { id: lone.id, toward };
         const run = drive(state, null, lone, toward, { d6: () => 6, uid: () => '', now: 0, by: lone.owner, group: '', skipHits: true, stampede: !!lone.stampede });
-        setDragPos({ [lone.id]: { x: run.at.x, y: run.at.y, rot: run.at.rot } as Point });
+        // Those riding it go with it.
+        const aboard = Object.fromEntries(riders(state, lone).map(r => [r.id, carried(lone, run.at, r) as Point]));
+        setDragPos({ ...aboard, [lone.id]: { x: run.at.x, y: run.at.y, rot: run.at.rot } as Point });
         return;
       }
       charging.current = null;

@@ -1,7 +1,7 @@
 import { beside, mounted, mountLabel, mountOf, onFoot, separatedMount } from './cavalry.ts';
 import { brutalOptions, chargeEffects, hurl, knockedDown } from './monsters.ts';
 import { trample } from './trample.ts';
-import { biggerHolds, howdahFor, immovable } from './warBeasts.ts';
+import { biggerHolds, commanderOf, howdahFor, immovable } from './warBeasts.ts';
 import { distanceBetween } from './geometry.ts';
 import { backAway, pushBack, separate, type Retreat } from './backAway.ts';
 import { defence, touchingEnemies, wallBetween } from './barriers.ts';
@@ -381,7 +381,7 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       const carrier = target.aboard ? state.models[target.aboard] : target;
       if (howdah && carrier?.howdahWounds && req.atHowdah && !target.aboard) req.target = { id: `${target.id}#howdah`, name: `${target.name}'s Howdah`, d: howdah.d };
       else delete req.atHowdah;
-      if (howdah && carrier?.howdahWounds && target.aboard) req.inWay = [{ name: 'the Howdah', id: `${carrier.id}#howdah`, d: howdah.d }, ...req.inWay].slice(0, 6);
+      if (howdah && carrier?.howdahWounds && target.aboard && commanderOf(state, carrier)?.id !== target.id) req.inWay = [{ name: 'the Howdah', id: `${carrier.id}#howdah`, d: howdah.d }, ...req.inWay].slice(0, 6);
       req.obstacles = req.inWay.length;
       const stray = plan.fight?.[0];
       if (stray) req.stray = { id: stray, name: state.models[stray].name, d: dOf(stray) };

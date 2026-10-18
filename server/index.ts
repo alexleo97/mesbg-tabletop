@@ -10,7 +10,7 @@ import { mayDeclare, phaseAllows } from '../src/shared/heroics.ts';
 import { brokenSideToTest, brokenTests, terrorAhead, terrorTest, willOfEvilDue, willOfEvilToll } from '../src/shared/courage.ts';
 import { mountName, mountProfile, riderTests, riderTestsDue } from '../src/shared/cavalry.ts';
 import { beastKind, beastTests, beastTestsDue } from '../src/shared/warBeasts.ts';
-import { chargesDue, straightOn, trample } from '../src/shared/trample.ts';
+import { chargeAim, chargesDue, straightOn, trample } from '../src/shared/trample.ts';
 import { settleSpell, spellReady } from '../src/shared/magic.ts';
 import { recoveryDue, recoveryRolls } from '../src/shared/powers.ts';
 import { arrivalsDue, rollArrivals } from '../src/shared/maelstrom.ts';
@@ -460,7 +460,7 @@ function apply(room: Room, action: Action) {
   // A war beast or chariot must move if it can: one its side left standing goes straight on as the side ends its move.
   if (action.type === 'endActivation' && (action.seat === 'p1' || action.seat === 'p2') && !room.state.flow.done.includes(action.seat))
     for (const m of chargesDue(room.state, CATALOG, action.seat)) {
-      const out = trample(room.state, CATALOG, action.seat, { type: 'trample', id: m.id, ...straightOn(m) }, serverDice, serverId, Date.now());
+      const out = trample(room.state, CATALOG, action.seat, { type: 'trample', id: m.id, ...(m.stampede ? straightOn(m) : chargeAim(room.state, CATALOG, m)) }, serverDice, serverId, Date.now());
       for (const a of out ?? []) apply(room, a);
     }
   // Models that fly, cross terrain specially, beat a war drum or ride a mount are marked as they come onto the table.
