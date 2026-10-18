@@ -10,7 +10,7 @@ import { MATERIALS, textures } from './textures.ts';
 import { TERRAIN_INFO, terrainRules } from '../shared/terrain.ts';
 import { holdInZones } from '../shared/deployment.ts';
 import { limitMove, moveAllowance, moveStart, movesLimited, settleMove } from '../shared/movement.ts';
-import { groundAt, inDifficult, insidePolygon, inTheWay, isDifficult, moveCost, outline, shadowPath, sightTo, VINES_REACH } from '../shared/sight.ts';
+import { inDifficult, standingAt, insidePolygon, inTheWay, isDifficult, moveCost, outline, shadowPath, sightTo, VINES_REACH } from '../shared/sight.ts';
 import { effectsOn } from '../shared/powers.ts';
 
 export type Tool = 'move' | 'select' | 'measure' | 'mark';
@@ -656,13 +656,14 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
               .map(t => (
                 <text key={`tn-${t.id}`} className="terrain-name" x={t.x} y={t.y} textAnchor="middle" dominantBaseline="middle" pointerEvents="none">
                   {TERRAIN_INFO[t.kind].name}
+                  {t.floors ? ` · ${t.floors + 1} levels` : ''}
                 </text>
               ))}
           {animate && <Effects state={state} fontSize={fontSize} />}
           {/* Models standing up high show how far up they are. */}
           {models.map(m0 => {
             const m = shown(m0);
-            const up = groundAt(state, m);
+            const up = Math.round(standingAt(state, m) * 10) / 10;
             if (!up) return null;
             const { rx, ry } = halfExtents(m.base);
             return (

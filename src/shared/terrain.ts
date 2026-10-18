@@ -1,4 +1,5 @@
-import { blocksSight, heightOf, isDifficult, slowsShots } from './sight.ts';
+import { formatInches } from './geometry.ts';
+import { blocksSight, hasFloors, heightOf, isDifficult, slowsShots } from './sight.ts';
 import type { Terrain, TerrainKind } from './types.ts';
 
 /** What each kind of terrain is called, the group it belongs to and a note on how it plays, in this site's own words. */
@@ -26,7 +27,10 @@ export function terrainRules(t: Terrain): string[] {
   if (isDifficult(t)) out.push('Difficult terrain: moving through it costs double.');
   if (blocksSight(t)) out.push(`Blocks line of sight up to ${heightOf(t)}" high: models behind it are hidden unless someone looks down from higher up.`);
   if (t.kind === 'hill') out.push(`Models on it stand ${heightOf(t)}" up, so they see and shoot over lower terrain.`);
-  if (t.kind === 'rock' || t.kind === 'building' || t.kind === 'cliff') out.push(`Climbing up or down it costs ${heightOf(t)}" of a model's move.`);
+  if (hasFloors(t)) {
+    const n = t.floors!;
+    out.push(`Walk in at ground level. ${n === 1 ? 'Climbing onto the roof' : `It has ${n} floors and a roof; each climb`} costs ${formatInches(heightOf(t) / n)} of a model's move. Models on different floors don't fight each other.`);
+  } else if (t.kind === 'rock' || t.kind === 'building' || t.kind === 'cliff') out.push(`Climbing up or down it costs ${heightOf(t)}" of a model's move.`);
   if (slowsShots(t)) out.push('In the Way: shots through it need an In the Way roll.');
   out.push(TERRAIN_INFO[t.kind].note);
   return out;

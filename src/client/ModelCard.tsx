@@ -2,12 +2,12 @@ import { useEffect, useState, type Ref } from 'react';
 import { loadRulesText, modelStats, pictureUrl, startingPoints, statsWithOptions, STAT_NAMES, type Catalog } from '../shared/catalog.ts';
 import { strikeWounds } from '../shared/fight.ts';
 import type { Combat } from '../shared/flow.ts';
-import { fightDone } from '../shared/movement.ts';
+import { fightDone, moveLeft } from '../shared/movement.ts';
 import { heroicInfo, phaseAllows } from '../shared/heroics.ts';
 import { carriedBy, markerActions, OBJECT_NAMES } from '../shared/objects.ts';
 import { causesTerror } from '../shared/courage.ts';
 import { effectNotes, heldBy, shotNeed } from '../shared/powers.ts';
-import { groundAt, inTheWay, sightTo } from '../shared/sight.ts';
+import { flooredAt, floorHeight, floorName, inTheWay, sightTo, standingAt } from '../shared/sight.ts';
 import RULES from '../data/special-rules.json';
 import { CastBox } from './MagicPanel.tsx';
 import { RollRow } from './Panels.tsx';
@@ -73,7 +73,11 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
   const between = target ? inTheWay(state, m, target) : [];
   const obstacles = Math.min(5, between.length);
   const seen = target ? sightTo(state, m, target) : null;
-  const up = groundAt(state, m);
+  const up = Math.round(standingAt(state, m) * 10) / 10;
+  // Inside a building with floors, the model's player picks which level it stands on (climbing costs Move in the battle).
+  const building = !m.dead ? flooredAt(state, m) : undefined;
+  const left = building ? moveLeft(state, m) : null;
+  const climbCost = (level: number) => (building ? Math.abs(floorHeight(building, level) - floorHeight(building, m.floor ?? 0)) : 0);
   const unit = m.profileId ? catalog?.units[m.profileId] : undefined;
   const printed = unit && statsWithOptions(unit, unit.options.filter(o => m.options?.includes(o.name)).map(o => o.id));
   const stats = modelStats(catalog, m);
@@ -208,6 +212,24 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
           </>
         )}
       </div>
+      {building && (
+        <div className="floors">
+          <span className="muted">{floorName(building, m.floor ?? 0)} of the {building.kind === 'ruin' ? 'ruins' : 'building'}.</span>
+          {mine && (
+            <div className="row wrap">
+              {Array.from({ length: (building.floors ?? 0) + 1 }, (_, level) => {
+                const cost = climbCost(level);
+                const blocked = level !== (m.floor ?? 0) && left !== null && (state.phase !== 'move' || left + 1e-6 < cost || !!m.prone);
+                return (
+                  <button key={level} className={level === (m.floor ?? 0) ? 'on' : ''} disabled={level === (m.floor ?? 0) || blocked} title={left !== null && cost ? `Costs ${formatInches(cost)} of Move` : undefined} onClick={() => dispatch({ type: 'climb', id: m.id, floor: level })}>
+                    {floorName(building, level)}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
       {up > 0 && <p className="muted high-ground">▲ Standing {up}" up: sees and shoots over lower terrain.</p>}
       {heroics.length > 0 && (
         <div className="row wrap">
