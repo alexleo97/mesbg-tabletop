@@ -1,11 +1,11 @@
 // Getting over terrain: the Jump, Climb and Leap tests a model needs to cross walls, rocks, cliffs and streams, and
 // the falls when they go wrong.
 import { modelStats, type Catalog } from './catalog.ts';
-import { halfExtents, type Point } from './geometry.ts';
+import { distanceBetween, halfExtents, type Point } from './geometry.ts';
 import { canActivate } from './heroics.ts';
-import { moveLeft, settleMove } from './movement.ts';
+import { engaged, moveLeft, settleMove } from './movement.ts';
 import { formatNeed, woundNeed } from './rules.ts';
-import { climbedLevel, heightOf, heightOfModel, insidePolygon, outline } from './sight.ts';
+import { climbedLevel, distanceToTerrain, heightOf, heightOfModel, insidePolygon, outline } from './sight.ts';
 import type { Action, DiceRoll, GameState, Model, Seat, Terrain } from './types.ts';
 
 export type CrossTest = 'Jump' | 'Climb' | 'Climb down' | 'Leap';
@@ -116,6 +116,13 @@ export function crossingAhead(state: GameState, m: Model, from: Point, to: Point
 export function crossBlocked(state: GameState, m: Model, c: Crossing): string | undefined {
   if ((c.test === 'Climb' || c.test === 'Climb down') && isCavalryBase(m)) return 'Cavalry can’t climb';
   if (m.prone) return 'A Prone model can’t jump, leap or climb';
+  if (engaged(state, m)) return 'It is in a fight';
+  // An enemy defending a wall stops anyone crossing it within its reach (1"), unless it's already in a fight.
+  const t = state.terrain[c.terrain];
+  if (t?.kind === 'wall') {
+    const guard = Object.values(state.models).find(e => e.owner !== m.owner && !e.dead && !e.waiting && !e.escaped && !e.prone && Math.abs(e.x - c.stop.x) < 4 && Math.abs(e.y - c.stop.y) < 4 && distanceToTerrain(e, t) <= 0.2 && (distanceBetween({ ...m, ...c.stop }, e) < 1 || distanceBetween({ ...m, ...c.landing }, e) < 1) && !engaged(state, e));
+    if (guard) return `${guard.name} is defending the wall here: charge it instead`;
+  }
   const left = moveLeft(state, m) ?? Infinity;
   if (c.test === 'Jump' || c.test === 'Leap') {
     if (Math.hypot(c.landing.x - c.stop.x, c.landing.y - c.stop.y) > left + 1e-6) return c.test === 'Leap' ? 'Not enough Move left to reach the far side' : 'Not enough Move left to get over';
@@ -128,6 +135,20 @@ export const terrainName = (t: Terrain | undefined) => (t ? (NAMES[t.kind] ?? t.
 
 /** S3 hits for a fall further than the model's own height: one, and another for each full inch beyond it. */
 export const fallingHits = (m: Model, drop: number) => (drop > heightOfModel(m) + 1e-6 ? 1 + Math.floor(drop - heightOfModel(m) + 1e-6) : 0);
+
+/**
+ * Rolls the Strength 3 hits for a fall (see fallingHits) with `push`, and returns the wounds they cause.
+ */
+export function fallDamage(catalog: Catalog | null, m: Model, fall: number, d6: () => number, push: (label: string, dice: number[], extra?: Partial<DiceRoll>) => void, group: string): Action[] {
+  const hits = fallingHits(m, fall);
+  const need = woundNeed(3, modelStats(catalog, m)?.D ?? 4);
+  if (!hits || !need) return [];
+  const dice = Array.from({ length: hits }, d6);
+  const follow = need.then ? dice.filter(x => x >= need.target).map(d6) : undefined;
+  push(`Falling: ${hits} S3 hit${hits === 1 ? '' : 's'} on ${m.name} (${formatNeed(need)})`, dice, { target: need.target, against: m.id, ...(need.then ? { then: need.then, follow } : {}) });
+  const wounds = (need.then && follow ? follow.filter(x => x >= need.then!) : dice.filter(x => x >= need.target)).length;
+  return wounds ? [{ type: 'wound', id: m.id, count: wounds, how: 'other', group }] : [];
+}
 
 /**
  * Rolls the test for the crossing a model is stopped at. 1 fails (a climber falls and is Prone, a leaper falls into the
@@ -164,16 +185,7 @@ export function resolveCross(state: GameState, seat: Seat, id: string, d6: () =>
     rolls[0].note = c.test === 'Jump' ? `${m.name} stumbles at the ${terrainName(t)}` : `${m.name} falls and is Prone`;
     out.push({ type: 'crossed', id: m.id, stop: true });
     if (c.test !== 'Jump') out.push({ type: 'affect', id: m.id, patch: { prone: true } });
-    const hits = fallingHits(m, fall);
-    const d = modelStats(catalog, m)?.D ?? 4;
-    const need = woundNeed(3, d);
-    if (hits && need) {
-      const dice = Array.from({ length: hits }, d6);
-      const follow = need.then ? dice.filter(x => x >= need.target).map(d6) : undefined;
-      push(`Falling: ${hits} S3 hit${hits === 1 ? '' : 's'} on ${m.name} (${formatNeed(need)})`, dice, { target: need.target, against: m.id, ...(need.then ? { then: need.then, follow } : {}) });
-      const wounds = (need.then && follow ? follow.filter(x => x >= need.then!) : dice.filter(x => x >= need.target)).length;
-      if (wounds) out.push({ type: 'wound', id: m.id, count: wounds, how: 'other', group });
-    }
+    out.push(...fallDamage(catalog, m, fall, d6, push, group));
     return [...rolls.map((r): Action => ({ type: 'rolled', roll: r })), ...out];
   }
   const way = c.test === 'Leap' ? 'across' : c.test === 'Climb' ? 'up' : c.test === 'Climb down' ? 'down' : 'over';

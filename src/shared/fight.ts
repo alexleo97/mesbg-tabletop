@@ -163,8 +163,10 @@ export function duelLeader(rolls: DiceRoll[]): { winner: 0 | 1; how: 'dice' | 'f
 /**
  * Rolls the winner's strikes for a duel already rolled. `duel` is that duel's rolls, as the log now has them.
  * `cornered` says whether the model being struck can't back away, which doubles the strikes as `trapped` does.
+ * `defended` is set when the fight is over a defended wall, ledge or doorway: if the attackers' side wins, each of its
+ * strikes needs an In the Way roll (4+) before it can wound.
  */
-export function resolveStrikes(req: FightRequest, duel: DiceRoll[], d6: D6, by: Role, group: string, now = Date.now(), cornered?: (winner: 0 | 1, target: string) => boolean): { rolls: DiceRoll[]; outcome: FightOutcome } {
+export function resolveStrikes(req: FightRequest, duel: DiceRoll[], d6: D6, by: Role, group: string, now = Date.now(), cornered?: (winner: 0 | 1, target: string) => boolean, defended?: { attackers: 0 | 1; name: string }): { rolls: DiceRoll[]; outcome: FightOutcome } {
   const rolls: DiceRoll[] = [];
   const push = (label: string, dice: number[], extra: Partial<DiceRoll> = {}) =>
     rolls.push({ id: `${group}-${duel.length + rolls.length}`, by, label: label.slice(0, 80), dice, at: now, group, ...extra });
@@ -214,7 +216,16 @@ export function resolveStrikes(req: FightRequest, duel: DiceRoll[], d6: D6, by: 
       const need = base && target.defence ? { target: 6, ...(base.then ? { then: 6 } : {}) } : base;
       if (!need) continue;
       const trapped = isTrapped(target);
-      let dice = Array.from({ length: n * (trapped ? 2 : 1) }, d6);
+      let strikes = n * (trapped ? 2 : 1);
+      if (defended && defended.attackers === winner) {
+        // Striking over the defences: only those that get past them can wound.
+        const past = Array.from({ length: strikes }, d6);
+        const through = past.filter(d => d >= 4).length;
+        push(`In the Way: ${f.name} strikes over ${defended.name} (4+ gets past)`, past, { target: 4, model: f.id, ...(through ? {} : { note: `${defended.name[0].toUpperCase()}${defended.name.slice(1)} stops ${f.name}'s strikes` }) });
+        strikes = through;
+        if (!strikes) continue;
+      }
+      let dice = Array.from({ length: strikes }, d6);
       if (f.reroll) dice = dice.map(d => (d >= need.target ? d : d6()));
       const follow = need.then ? dice.filter(d => d >= need.target).map(d6).map(d => (f.reroll && d < need.then! ? d6() : d)) : undefined;
       const label = `${f.name} strikes ${target.name}${trapped ? ', trapped,' : ''}${f.reroll ? ', re-rolling misses,' : ''} (${formatNeed(need)})`;
@@ -224,7 +235,10 @@ export function resolveStrikes(req: FightRequest, duel: DiceRoll[], d6: D6, by: 
   const hits = losers.map(t => ({ target: t, wounds: strikeWounds(rolls.filter(r => r.against === t.id)) })).filter(h => rolls.some(r => r.against === h.target.id));
   const why = how === 'dice' ? 'higher roll' : how === 'fight' ? 'higher Fight' : req.draw ? 'drawn fight' : 'roll-off';
   const note = `${names(req.sides[winner])} wins the duel (${why})${idle.length ? `. No strikes from ${idle.join(', ')}` : ''}`;
-  if (rolls.some(r => r.against)) rolls[rolls.length - 1].note = note.slice(0, 200);
+  if (rolls.some(r => r.against || r.label.startsWith('In the Way'))) {
+    const last = rolls[rolls.length - 1];
+    last.note = (last.note ? `${note}. ${last.note}` : note).slice(0, 200);
+  }
   else push(idle.length ? `${names(req.sides[winner])} makes no strikes` : `${names(req.sides[winner])} can't wound ${main.name}`, [], { note });
   const first = hits[0];
   return { rolls, outcome: { winner, how, target: first?.target ?? main, wounds: first?.wounds ?? 0, hits } };

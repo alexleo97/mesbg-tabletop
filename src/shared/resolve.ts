@@ -1,9 +1,10 @@
-import { backAway } from './backAway.ts';
+import { backAway, separate, type Retreat } from './backAway.ts';
+import { defence, touchingEnemies, wallBetween } from './barriers.ts';
 import { canActivate } from './heroics.ts';
 import { modelStats, type Catalog } from './catalog.ts';
 import { missileWeapon } from './rules.ts';
 import { planShot, throwingPoint } from './shooting.ts';
-import { resolveCross } from './terrainTests.ts';
+import { fallDamage, resolveCross } from './terrainTests.ts';
 import { cleanFight, cleanShot, duelSettled, resolveDuel, resolveShot, resolveStrikes, type DrawRule, type Fighter, type FightRequest } from './fight.ts';
 import { combatFromKey, priorityChooser } from './flow.ts';
 import { hasElvenWeapon, sideOf } from './gear.ts';
@@ -146,18 +147,57 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       const req = fresh && adjustFight(state, fresh);
       // Strikes follow a duel that's still in the log, once.
       if (!req || !group.startsWith('f-') || !rolls.some(r => r.side !== undefined) || rolls.some(r => duelSettled(r))) return null;
-      // The losers back away 1" by themselves; one with nowhere to go is trapped, and takes double strikes.
-      let retreat: ReturnType<typeof backAway> | undefined;
       // Supporting models aren't in the fight: they neither back away nor get up.
       const ids = (side: 0 | 1) => req.sides[side].filter(f => !f.support).map(f => f.id).filter(id => state.models[id]);
+      // A fight over a defended wall, ledge or doorway: strikes come before anyone backs away, so no one is trapped
+      // (bar the Prone), the attacker's strikes must get past the defences, and only the attacker backs away.
+      const held = defence(state, [ids(0), ids(1)]);
+      const attackers = held ? ((ids(0).includes(held.attacker) ? 0 : 1) as 0 | 1) : undefined;
+      // Otherwise the losers back away 1" by themselves; one with nowhere to go is trapped, and takes double strikes.
+      let retreat: Retreat | undefined;
+      const trapped = new Set<string>();
+      const retreatFor = (winner: 0 | 1) => (retreat ??= held ? backAway(state, [held.attacker], [held.defender]) : backAway(state, ids((1 - winner) as 0 | 1).filter(id => !state.models[id].prone), ids(winner)));
       const cornered = (winner: 0 | 1, target: string) => {
-        retreat = backAway(state, ids((1 - winner) as 0 | 1), ids(winner));
         // A Prone model that loses is always trapped.
-        return retreat.trapped.includes(target) || !!state.models[target]?.prone;
+        const stuck = !!state.models[target]?.prone || (!held && retreatFor(winner).trapped.includes(target));
+        if (stuck) trapped.add(target);
+        return stuck;
       };
-      const { rolls: strikes, outcome } = resolveStrikes(req, rolls, d6, seat, group, now, cornered);
+      const { rolls: strikes, outcome } = resolveStrikes(req, rolls, d6, seat, group, now, cornered, held ? { attackers: attackers!, name: held.name } : undefined);
+      const back = retreatFor(outcome.winner);
+      const winners = ids(outcome.winner);
       // A Prone winner gets up instead of striking (unless Paralysed).
-      const rise = ids(outcome.winner).filter(id => state.models[id].prone && !under(state, state.models[id], 'Paralyse'));
+      const rise = winners.filter(id => state.models[id].prone && !under(state, state.models[id], 'Paralyse'));
+      const slain = (id: string) => (outcome.hits.find(h => h.target.id === id)?.wounds ?? 0) >= (state.models[id]?.wounds ?? 1);
+      const moves: Extract<Action, { type: 'backAway' }>['moves'] = [];
+      // A defender that falls lets its attacker take its place; otherwise the attacker backs away (when it can).
+      const crossing = (w: string, l: string) => moves.push({ id: w, x: state.models[l].x, y: state.models[l].y, ifSlain: l });
+      for (const mv of back.moves) {
+        const fell = back.falls.some(f => f.id === mv.id);
+        const friend = back.madeWay.some(f => f.id === mv.id);
+        moves.push({ ...mv, ...(held ? { unlessSlain: held.defender } : {}), ...(fell || friend ? {} : { pick: true }) });
+      }
+      if (held && attackers === outcome.winner) crossing(held.attacker, held.defender);
+      // Fighting across a wall without its protection (attacked from both sides), a winner touching only that foe still crosses.
+      if (!held)
+        for (const w of winners)
+          for (const l of ids((1 - outcome.winner) as 0 | 1))
+            if (wallBetween(state, state.models[w], state.models[l]) && touchingEnemies(state, state.models[w]).every(e => e.id === l)) crossing(w, l);
+      // The winners step apart from a trapped loser that lived through the strikes.
+      moves.push(...separate(state, [...trapped].filter(id => !slain(id)), winners));
+      // A loser pushed over the edge of a drop falls once the strikes are done, if it lived.
+      const extra: DiceRoll[] = [];
+      const push = (label: string, dice: number[], more: Partial<DiceRoll> = {}) => extra.push({ id: `${group}-fall${extra.length}`, by: seat, label: label.slice(0, 80), dice, at: now, group, ...more });
+      const falls = back.falls.filter(f => !slain(f.id)).flatMap(f => {
+        const m = state.models[f.id];
+        const hurt = fallDamage(catalog, m, f.drop, d6, push, group);
+        return [{ type: 'affect', id: f.id, patch: { prone: true } } as Action, ...hurt];
+      });
+      if (back.madeWay.length && strikes.length) {
+        const last = strikes[strikes.length - 1];
+        const note = back.madeWay.map(w => `${state.models[w.id].name} makes way for ${state.models[w.for].name}`).join('. ');
+        last.note = (last.note ? `${last.note}. ${note}` : note).slice(0, 200);
+      }
       // Wounds go first, so a loser they slay stays where it fell rather than backing away.
       return {
         apply: [
@@ -166,7 +206,9 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
             const at = strikes.filter(r => r.against === h.target.id);
             return woundAction(state, at, h.target.id, h.wounds, [...new Set(at.map(r => r.model!).filter(Boolean))], 'fight', group);
           }),
-          ...(retreat?.moves.length ? [{ type: 'backAway', moves: retreat.moves } as Action] : []),
+          ...(moves.length ? [{ type: 'backAway', moves } as Action] : []),
+          ...extra.map((roll): Action => ({ type: 'rolled', roll })),
+          ...falls,
           ...rise.map((id): Action => ({ type: 'affect', id, patch: { prone: false } })),
         ],
         ...(req.combat ? { record: { type: 'resolveCombat', key: req.combat } } : {}),

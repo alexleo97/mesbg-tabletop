@@ -1,5 +1,6 @@
 import { distanceBetween, halfExtents, mmToIn, type Point } from './geometry.ts';
 import { heightOfModel, moveCost, sightTo } from './sight.ts';
+import { overWallSpot, secondAttacker, touching, wallBetween } from './barriers.ts';
 import { combatFromKey, CONTACT_SLACK, type Combat } from './flow.ts';
 import { canActivate, phaseHeroics } from './heroics.ts';
 import { cannotAct } from './powers.ts';
@@ -32,7 +33,7 @@ export function moveAllowance(state: GameState, m: Model): number | null {
 
 /** Whether a model is in base contact with an enemy: Engaged in Combat. */
 export function engaged(state: GameState, m: Model, except?: string): boolean {
-  return Object.values(state.models).some(e => e.owner !== m.owner && e.id !== except && !e.dead && !e.waiting && !e.escaped && Math.abs(e.x - m.x) < 5 && Math.abs(e.y - m.y) < 5 && distanceBetween(m, e) <= CONTACT_SLACK);
+  return Object.values(state.models).some(e => e.owner !== m.owner && e.id !== except && !e.dead && !e.waiting && !e.escaped && Math.abs(e.x - m.x) < 5 && Math.abs(e.y - m.y) < 5 && touching(state, m, e));
 }
 
 /**
@@ -227,6 +228,13 @@ export function settleMove(state: GameState, m: Model, at: Point): Point {
   if (!best || best.d < 0.02) return at;
   // Only an enemy it could see when it set off can be charged; nor can a marching model charge.
   if (marchBonus(state, m) || sightTo(state, { ...m, ...moveStart(state, m) }, best.e) === 'hidden') return at;
+  // Across a wall it goes up to the wall, as close to the enemy as it can get (unless it's touching the wall already).
+  if (wallBetween(state, here, best.e)) return at;
+  const over = overWallSpot(state, m, best.e, at);
+  if (over) {
+    const reach = limitMove(state, moveStart(state, m), over, moveAllowance(state, m) ?? m.move, m.owner, m);
+    return Math.hypot(reach.x - over.x, reach.y - over.y) < 1e-3 ? over : at;
+  }
   // Step towards the enemy until the bases touch.
   const dx = best.e.x - at.x;
   const dy = best.e.y - at.y;
@@ -248,14 +256,28 @@ export function settleMove(state: GameState, m: Model, at: Point): Point {
  * can't it has to stay out of the zone.
  */
 export function finishCharge(state: GameState, m: Model, from: Point, to: Point, skip?: ReadonlySet<string>): Point {
-  const settled = settleMove(state, m, to);
+  const settled = oneOverTheWall(state, m, from, settleMove(state, m, to));
   if (settled !== to) return settled;
   const here = { ...m, ...to };
   const before = { ...m, ...from };
   const short = Object.values(state.models).some(e => {
     if (e.owner === m.owner || e.dead || e.waiting || e.escaped || e.prone || engaged(state, e, m.id)) return false;
     const d = distanceBetween(here, e);
-    return d > CONTACT_SLACK && d < 1 - 1e-3 && d < distanceBetween(before, e) - 1e-3;
+    return d > CONTACT_SLACK && d < 1 - 1e-3 && d < distanceBetween(before, e) - 1e-3 && !touching(state, here, e);
   });
   return short ? blockMove(state, m, from, to, skip, false) : to;
+}
+
+/**
+ * Only one model may charge a defender over a wall or up to a ledge: a second one is held back along its way, just
+ * out of reach. Returns where it ends up.
+ */
+function oneOverTheWall(state: GameState, m: Model, from: Point, to: Point): Point {
+  if (!secondAttacker(state, m, to)) return to;
+  for (let i = 1; i <= 40; i++) {
+    const f = 1 - i / 40;
+    const p = { x: from.x + (to.x - from.x) * f, y: from.y + (to.y - from.y) * f };
+    if (!secondAttacker(state, m, p)) return p;
+  }
+  return from;
 }

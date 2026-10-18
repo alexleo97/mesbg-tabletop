@@ -1,7 +1,6 @@
 // The turn sequence as the app runs it: who acts now, who rolls for priority, and which fights are on.
-import { distanceBetween } from './geometry.ts';
+import { touching } from './barriers.ts';
 import { heroicCombatWon } from './movement.ts';
-import { standingAt } from './sight.ts';
 import type { GameState, Model, Seat } from './types.ts';
 
 export const other = (s: Seat): Seat => (s === 'p1' ? 'p2' : 'p1');
@@ -19,7 +18,10 @@ export interface Combat {
   p2: string[];
 }
 
-/** Each model's enemies in base contact with it (models on different floors of a building aren't touching). */
+/**
+ * Each model's enemies in base contact with it: models on different floors of a building, or one far above the other,
+ * aren't touching; two touching a wall from opposite sides are (see barriers.ts).
+ */
 function contacts(models: Model[], state: GameState): Map<string, string[]> {
   const near = new Map<string, string[]>();
   const p1 = models.filter(m => m.owner === 'p1');
@@ -28,8 +30,7 @@ function contacts(models: Model[], state: GameState): Map<string, string[]> {
     for (const b of p2) {
       // Cheap reject first: no base is wider than about 4".
       if (Math.abs(a.x - b.x) > 5 || Math.abs(a.y - b.y) > 5) continue;
-      if (distanceBetween(a, b) > CONTACT_SLACK) continue;
-      if ((a.floor || b.floor) && Math.abs(standingAt(state, a) - standingAt(state, b)) >= 0.5) continue;
+      if (!touching(state, a, b)) continue;
       near.set(a.id, [...(near.get(a.id) ?? []), b.id]);
       near.set(b.id, [...(near.get(b.id) ?? []), a.id]);
     }

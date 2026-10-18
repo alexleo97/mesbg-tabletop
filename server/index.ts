@@ -287,6 +287,7 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
     case 'climb':
     case 'crawl':
     case 'lieDown':
+    case 'backAwayTo':
       return mine(action.id) ? action : null;
     case 'crossed': {
       // A player may only wade into a stream it was stopped at (passing the other tests is the server's to say).
