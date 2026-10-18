@@ -1,21 +1,24 @@
 import { mounted } from './cavalry.ts';
 import { modelStats, type Catalog } from './catalog.ts';
 import { fighterOf } from './wargear.ts';
-import { duelLeader, duelSettled, strikeWounds, woundsTaken, type Fighter, type FightRequest } from './fight.ts';
+import { duelLeader, duelSettled, strikeWounds, woundsTaken, type BrutalAttack, type Fighter, type FightRequest } from './fight.ts';
 import { supporters } from './support.ts';
 import { activeSeat, combats, CONTACT_SLACK, other, type Combat } from './flow.ts';
 import { distanceBetween, halfExtents, mmToIn, type Point } from './geometry.ts';
 import { canActivate, canDeclare, declared, heroicInfo, heroicTurn, heroicsSettled, mayActivate, orderRollLabel, orderRollNeeded, phaseHeroics } from './heroics.ts';
 import { canCast, castTargets, pendingSpell, powersOf, untargeted, type KnownPower } from './magic.ts';
-import { fightDone, limitMove, moveAllowance } from './movement.ts';
+import { brutalOptions } from './monsters.ts';
+import { fightDone, limitMove, moveAllowance, moveLeft } from './movement.ts';
 import { affected, basePower, cannotAct, effectsOn, isCavalry, isLinePower, under } from './powers.ts';
 import { carriedBy, exitEdges, markerActions, onTable, sanctuary } from './objects.ts';
 import { chance, fightOdds, woundChance, type Side } from './odds.ts';
 import { PICKS, pickOptions } from './picks.ts';
 import { scoreLines } from './scoring.ts';
+import { flooredAt, floorHeight } from './sight.ts';
 import { planShot, weaponFor } from './shooting.ts';
 import { atCrossing, crossBlocked, fallingHits } from './terrainTests.ts';
 import { armyStatus } from './status.ts';
+import { pushers } from './siege.ts';
 import { chargeAim, chargesDue, straightOn } from './trample.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
@@ -44,6 +47,11 @@ export interface BotMemo {
   pondered?: string[];
   /** Models that have tried a Jump, Climb or Leap test this phase. */
   tested?: string[];
+  /** Every Wound left on the table as the turn began, and how many turns in a row that hasn't changed: a standoff. */
+  health?: number;
+  quiet?: number;
+  /** Steps spent waiting for the other player to drive a Stampede this phase. */
+  waits?: number;
 }
 
 export const newMemo = (): BotMemo => ({ key: '', turn: 0, since: 0, acted: [], moved: {}, courage: {}, steps: 0 });
@@ -139,7 +147,12 @@ function sync(memo: BotMemo, state: GameState, now: number) {
   const key = `${state.flow.startedAt ?? 0}:${state.turn}:${state.phase}`;
   if (memo.key === key) return;
   const newTurn = memo.turn !== state.turn || !memo.key.startsWith(`${state.flow.startedAt ?? 0}:`);
-  Object.assign(memo, { key, turn: state.turn, since: now - 50, acted: [], steps: 0, pending: undefined, pondered: [] }, newTurn ? { moved: {}, courage: {} } : {});
+  Object.assign(memo, { key, turn: state.turn, since: now - 50, acted: [], steps: 0, pending: undefined, pondered: [], tested: [], waits: 0 }, newTurn ? { moved: {}, courage: {} } : {});
+  if (newTurn) {
+    const health = Object.values(state.models).reduce((n, m) => n + (m.dead ? 0 : m.wounds + (m.mountWounds ?? 0)), 0);
+    memo.quiet = memo.health === health ? (memo.quiet ?? 0) + 1 : 0;
+    memo.health = health;
+  }
 }
 
 /**
@@ -175,12 +188,31 @@ function phaseStep(ctx: Ctx): BotStep | null {
         return { action: { type: 'roll', count: 1, label: orderRollLabel(state) }, delay: DICE_PAUSE };
       }
       if (state.phase === 'fight') return fightStep(ctx);
-      if (activeSeat(state) !== seat) return null;
+      if (activeSeat(state) !== seat) return state.phase === 'move' ? stampedeStep(ctx) : null;
       return state.phase === 'move' ? moveStep(ctx) : shootStep(ctx);
     }
     default:
       return null;
   }
+}
+
+/**
+ * The other player's war beast Stampeding in their move: the computer drives it, off the table if it can get there
+ * (it's lost with everyone riding it), or else into the thick of its own side.
+ */
+function stampedeStep(ctx: Ctx): BotStep | null {
+  const { state, seat, memo } = ctx;
+  const beast = chargesDue(state, ctx.catalog, other(seat)).find(m => m.stampede && !memo.acted.includes(m.id));
+  if (!beast) return null;
+  memo.acted.push(beast.id);
+  const { w, h } = state.board;
+  const edges = [{ x: beast.x, y: -5 }, { x: beast.x, y: h + 5 }, { x: -5, y: beast.y }, { x: w + 5, y: beast.y }];
+  const edge = edges.sort((a, b) => centre(beast, a) - centre(beast, b))[0];
+  const near = Math.min(beast.x, beast.y, w - beast.x, h - beast.y);
+  const own = side(state, beast.owner).filter(m => m.id !== beast.id && !m.aboard);
+  const crowd = (p: Point) => own.filter(m => centre(m, p) <= 3).length;
+  const target = near <= beast.move ? edge : [...own].sort((a, b) => crowd(b) - crowd(a) || centre(beast, a) - centre(beast, b))[0];
+  return { action: { type: 'trample', id: beast.id, x: target?.x ?? edge.x, y: target?.y ?? edge.y }, delay: DICE_PAUSE };
 }
 
 /** Past the step limit something has gone wrong, so the computer finishes its part of the phase instead of looping. */
@@ -327,9 +359,17 @@ function moveStep(ctx: Ctx): BotStep {
   // War beasts and chariots go first, at the nearest enemy (a Stampede of its own bolts where a die sends it).
   for (const m of chargesDue(state, ctx.catalog, seat)) {
     if (memo.acted.includes(m.id)) continue;
+    // A Stampede is the other player's to drive: give them a while to, before a die picks the way.
+    if (m.stampede && ctx.person && (memo.waits = (memo.waits ?? 0) + 1) <= 20) return { delay: WAIT_PAUSE };
     memo.acted.push(m.id);
     const to = m.stampede ? straightOn(m) : chargeAim(state, ctx.catalog, m);
     return { action: { type: 'trample', id: m.id, ...to }, delay: DICE_PAUSE };
+  }
+  // A siege engine with nothing in its Arc of Sight turns to face the best target it could shoot instead.
+  for (const m of side(state, seat).filter(x => x.siege && !memo.acted.includes(x.id))) {
+    memo.acted.push(m.id);
+    const turn = engineTurn(ctx, m);
+    if (turn !== undefined) return { action: { type: 'moveModels', moves: [{ id: m.id, x: m.x, y: m.y, rot: turn }] }, delay: MOVE_PAUSE };
   }
   // Models that can charge go first, nearest the enemy leading, so others can join their fights; then the rest
   // from the back forward, so the line closes up rather than strings out.
@@ -352,8 +392,13 @@ function moveStep(ctx: Ctx): BotStep {
     const tested = state.flow.courage?.[m.id];
     if (tested !== undefined) memo.courage[m.id] ??= tested;
     if (broken && memo.courage[m.id] === undefined && !state.flow.braved?.includes(seat)) return courageTest(ctx, m, `Courage test: ${m.name}`);
+    const goal = goals.get(m.id);
+    if (goal?.foot && mounted(m) && centre(m, goal.at) <= 6 && !(memo.tested ??= []).includes(`d:${m.id}`)) {
+      memo.tested.push(`d:${m.id}`);
+      return { action: { type: 'dismount', id: m.id }, delay: DICE_PAUSE };
+    }
     memo.acted.push(m.id);
-    const to = planMove(ctx, m, goals.get(m.id));
+    const to = planMove(ctx, m, goal);
     if (!to) {
       memo.pending = { kind: 'marker', model: m.id };
       const act = markerStep(ctx, m);
@@ -392,6 +437,16 @@ function markerStep(ctx: Ctx, m: Model): BotStep | null {
     if (a.kind === 'uncover') return { action: { type: 'uncover', model: m.id, marker: a.marker!, intelligence: profile(ctx, m).i }, delay: DICE_PAUSE };
     return { action: { type: a.kind, model: m.id, marker: a.marker! }, delay: MOVE_PAUSE };
   }
+  // An archer in a building with floors climbs as high as it can while still able to shoot.
+  const t = profile(ctx, m).weapon && !mounted(m) && !m.prone ? flooredAt(state, m) : undefined;
+  const left = t ? moveLeft(state, m) : null;
+  if (t && left !== null) {
+    const used = m.move - left;
+    for (let to = t.floors ?? 0; to > (m.floor ?? 0); to--) {
+      const cost = floorHeight(t, to) - floorHeight(t, m.floor ?? 0);
+      if (cost <= left + 1e-6 && used + cost <= m.move / 2 + 1e-6) return { action: { type: 'climb', id: m.id, floor: to }, delay: MOVE_PAUSE };
+    }
+  }
   return null;
 }
 
@@ -401,12 +456,27 @@ interface Goal {
   pull: number;
   /** Stop this far short (to guard a marker rather than stand on it). */
   near?: number;
+  /** A rider sent where only those on foot can do the job, so it gets down when it's close. */
+  foot?: boolean;
 }
 
 /**
  * Sends models after what the scenario is about: objectives to hold, markers to find, pick up or destroy, enemy
  * carriers to stop, and for a model carrying something, the way off the table or to safety.
  */
+/** Which way an engine should turn to get a shot it hasn't got as it faces now; undefined to leave it be. */
+function engineTurn(ctx: Ctx, m: Model): number | undefined {
+  if (!pushers(ctx.state, m) || bestShot(ctx, m)) return undefined;
+  const turned = (rot: number): GameState => ({ ...ctx.state, models: { ...ctx.state.models, [m.id]: { ...m, rot } } });
+  let best: { rot: number; value: number } | undefined;
+  for (const e of side(ctx.state, other(m.owner))) {
+    const rot = (facing(m, e) + 360) % 360;
+    const shot = bestShot(ctx, { ...m, rot }, turned(rot));
+    if (shot && (!best || shot.value > best.value)) best = { rot, value: shot.value };
+  }
+  return best?.rot;
+}
+
 function assignGoals(ctx: Ctx): Map<string, Goal> {
   const { state, seat } = ctx;
   const out = new Map<string, Goal>();
@@ -450,6 +520,11 @@ function assignGoals(ctx: Ctx): Map<string, Goal> {
       .sort((a, b) => centre(a, want.at) - centre(b, want.at))
       .slice(0, want.need);
     for (const m of takers) out.set(m.id, { at: { x: want.at.x, y: want.at.y }, pull: want.pull, near: want.near });
+    // With nobody on foot to spare, a rider goes and dismounts to do it.
+    if (want.infantry && takers.length < want.need) {
+      const riders = free.filter(m => !out.has(m.id) && cavalry(m)).sort((a, b) => centre(a, want.at) - centre(b, want.at));
+      for (const m of riders.slice(0, want.need - takers.length)) out.set(m.id, { at: { x: want.at.x, y: want.at.y }, pull: want.pull, foot: true });
+    }
   }
 
   // Reconnoitre scores getting models off the far edge, so everyone else heads that way.
@@ -546,7 +621,8 @@ function scoreFor(ctx: Ctx, m: Model, at: Point, goal?: Goal, vpBefore?: number)
   // A fight it starts or joins: how much better that fight goes with this model in it.
   const foes = enemies.filter(e => Math.abs(e.x - at.x) < 5 && Math.abs(e.y - at.y) < 5 && distanceBetween(here, e) <= CONTACT_SLACK);
   if (foes.length) {
-    const helpers = friends.filter(f => foes.some(e => distanceBetween(f, e) <= CONTACT_SLACK));
+    // Friends already fighting them, and those yet to move this turn who could still join in.
+    const helpers = friends.filter(f => foes.some(e => distanceBetween(f, e) <= CONTACT_SLACK || (!ctx.memo.acted.includes(f.id) && !engagedWith(after, f).length && !f.siege && distanceBetween(f, e) <= f.move - 0.5)));
     const their = [...new Set([...foes, ...helpers.flatMap(f => engagedWith(after, f))])];
     const withUs = fightOdds(fighterSide(ctx, [here, ...helpers]), fighterSide(ctx, their));
     const without = helpers.length ? fightOdds(fighterSide(ctx, helpers), fighterSide(ctx, their)).score : 0;
@@ -562,7 +638,7 @@ function scoreFor(ctx: Ctx, m: Model, at: Point, goal?: Goal, vpBefore?: number)
       danger += Math.min(0, o.score) * (engagedWith(after, e).length ? 0.3 : 1);
     }
     const support = friends.filter(f => centre(f, at) <= 2.5).length;
-    score += danger * (support >= 2 ? 0.4 : support ? 0.7 : 1) * (p.weapon ? 1.5 : 1);
+    score += danger * (support >= 2 ? 0.4 : support ? 0.7 : 1) * (p.weapon ? 1.5 : 1) * (standoff(ctx) ? 0.15 : 1);
 
     // Archers want a target in range from a spot they can still shoot from; with none, they come closer.
     const shot = p.weapon && centre(moved, at) <= p.mv / 2 + 0.05 ? (bestShot(ctx, here, after)?.value ?? 0) : 0;
@@ -570,10 +646,11 @@ function scoreFor(ctx: Ctx, m: Model, at: Point, goal?: Goal, vpBefore?: number)
 
     // Closing in when the army is the stronger one; holding together otherwise.
     const near = (q: Point) => Math.min(...enemies.map(e => centre(q, e)), 60);
-    if (!p.weapon) score += (near(moved) - near(at)) * (aggressive(ctx) ? 0.22 : 0.06);
+    // Neither side giving ground for turns on end: the stronger one goes in (and in a long one, both do).
+    if (!p.weapon) score += (near(moved) - near(at)) * (standoff(ctx) ? 0.4 : aggressive(ctx) ? 0.22 : 0.06);
     else if (!shot && !bestShot(ctx, moved)) score += (near(moved) - near(at)) * 0.12;
     // Fast models and heroes don't run far ahead of the battle line on their own.
-    if (!goal) {
+    if (!goal && !standoff(ctx)) {
       const ahead = front(ctx, m) - 3 - near(at);
       if (ahead > 0) score -= ahead * (m.hero ? 0.45 : 0.3);
     }
@@ -608,6 +685,9 @@ function front(ctx: Ctx, m: Model): number {
   return gaps.length ? gaps[Math.floor(gaps.length / 2)] : 0;
 }
 
+/** No Wound lost for two turns while this side is the stronger, or for four whichever it is. */
+const standoff = (ctx: Ctx) => (ctx.memo.quiet ?? 0) >= 4 || ((ctx.memo.quiet ?? 0) >= 2 && aggressive(ctx));
+
 /** The stronger army presses forward; the weaker one picks its fights. */
 function aggressive(ctx: Ctx): boolean {
   const { state, seat } = ctx;
@@ -636,7 +716,8 @@ function bestShot(ctx: Ctx, m: Model, state = ctx.state): Shot | null {
     // A shot into a fight might hit a friend instead.
     const stray = plan.fight?.length ? 0.5 : 1;
     const hit = plan.shots * chance(plan.need) * Math.pow(0.5, obstacles) * stray * woundChance(p.weapon.s, profile(ctx, e).d);
-    const value = (hit * profile(ctx, e).value) / Math.max(1, e.wounds) / (e.hero && e.fate ? 2 : 1);
+    // (A siege engine's wound slays outright.)
+    const value = (hit * profile(ctx, e).value) / (m.siege ? 1 : Math.max(1, e.wounds)) / (e.hero && e.fate ? 2 : 1);
     if (!best || value > best.value) best = { target: e, obstacles, value };
   }
   return best;
@@ -960,7 +1041,42 @@ function fightRequest(ctx: Ctx, c: Combat, duel?: DiceRoll[]): FightRequest {
     }
     aims[ours[0].id] = list;
   }
-  return { sides: [side('p1'), side('p2')], targets: [targets.p1, targets.p2], trapped: false, combat: c.key, ...(Object.keys(aims).length ? { aims } : {}) };
+  // A winning monster's Brutal Power Attack, when it beats striking as normal.
+  const brutal = duel ? brutalPick(ctx, ours, theirs) : undefined;
+  return { sides: [side('p1'), side('p2')], targets: [targets.p1, targets.p2], trapped: false, combat: c.key, ...(Object.keys(aims).length ? { aims } : {}), ...(brutal ? { brutal } : {}) };
+}
+
+/**
+ * A Brutal Power Attack for the computer's monster, if one is worth more than striking: Rend against an enemy whose
+ * Strength is well below its Defence, or Hurl when the throw (two Strength 6 hits, and one more on whoever it lands on)
+ * beats what the whole side's strikes would do, since a Hurl ends the fight with no strikes.
+ */
+function brutalPick(ctx: Ctx, ours: Model[], theirs: Model[]): BrutalAttack | undefined {
+  const brute = ours.find(m => brutalOptions(ctx.state, ctx.catalog, m).length);
+  if (!brute || !theirs.length) return undefined;
+  const kinds = brutalOptions(ctx.state, ctx.catalog, brute);
+  const f = fighterFor(ctx, brute);
+  // Roughly how likely `n` tries at `p` each are to slay `t`, times what it's worth.
+  const worthOf = (t: Model, n: number, p: number) => (1 - Math.pow(1 - p, n / Math.max(1, t.wounds))) * profile(ctx, t).value;
+  const strikes = Math.max(...theirs.map(t => worthOf(t, f.a, woundChance(f.s, profile(ctx, t).d))));
+  const miss = (t: Model) => ours.reduce((q, m) => q * (1 - worthOf(t, fighterFor(ctx, m).a, woundChance(fighterFor(ctx, m).s, profile(ctx, t).d)) / profile(ctx, t).value), 1);
+  const all = Math.max(...theirs.map(t => (1 - miss(t)) * profile(ctx, t).value));
+  let best: { value: number; pick: BrutalAttack } = { value: strikes * 1.15, pick: { by: brute.id, kind: 'rend' } };
+  let picked = false;
+  if (kinds.includes('rend'))
+    for (const t of theirs) {
+      const v = worthOf(t, f.a, woundChance(f.s, profile(ctx, t).s));
+      if (v > best.value) [best, picked] = [{ value: v, pick: { by: brute.id, kind: 'rend', target: t.id } }, true];
+    }
+  if (kinds.includes('hurl')) {
+    const others = side(ctx.state, other(brute.owner)).filter(e => !theirs.includes(e) && distanceBetween(brute, e) <= 3);
+    for (const t of theirs.filter(x => profile(ctx, x).s < f.s)) {
+      const landOn = others.length ? Math.max(...others.map(e => worthOf(e, 1, woundChance(6, profile(ctx, e).d)))) * 0.5 : 0;
+      const v = worthOf(t, 2, woundChance(6, profile(ctx, t).d)) + landOn;
+      if (v > Math.max(best.value, all * 1.15)) [best, picked] = [{ value: v, pick: { by: brute.id, kind: 'hurl', target: t.id, ...(others[0] ? { at: others[0].id } : {}) } }, true];
+    }
+  }
+  return picked ? best.pick : undefined;
 }
 
 function strikeWorth(ctx: Ctx, strikers: Model[], t: Model): number {
