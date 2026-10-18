@@ -543,17 +543,20 @@ function rollGameEnd(room: Room) {
 
 /** How long a finished Fight or End phase stays up before play moves on, so the last result can be seen. */
 const ADVANCE_PAUSE = 1500;
+const RETREAT_PAUSE = 8000;
 
 /** Moves on from a Fight or End phase with nothing left to do in it, after a short pause. */
 function scheduleAdvance(room: Room) {
   if (room.advance || !phaseFinished(room.state)) return;
   const at = `${room.state.turn}:${room.state.phase}`;
+  // A player whose model just backed away gets a few seconds to send it another way first.
+  const picking = Object.keys(room.state.flow.retreat ?? {}).some(id => room.state.models[id] && room.state.models[id].owner !== room.state.bot);
   room.advance = setTimeout(() => {
     room.advance = undefined;
     // Only if it's still the same phase and still over (someone may have moved on, or backed a model into a fight).
     if (`${room.state.turn}:${room.state.phase}` === at && phaseFinished(room.state)) apply(room, { type: 'nextPhase' });
     else scheduleAdvance(room);
-  }, ADVANCE_PAUSE);
+  }, picking ? RETREAT_PAUSE : ADVANCE_PAUSE);
 }
 
 /**

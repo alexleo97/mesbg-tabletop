@@ -120,6 +120,8 @@ function TerrainMoves({ state, dispatch, m }: { state: GameState; dispatch: (a: 
 
 /** Arrows for the eight ways round, from straight right (the board's y runs down the screen). */
 const ARROWS = ['→', '↘', '↓', '↙', '←', '↖', '↑', '↗'];
+/** The arrows laid out as a compass, three by three, with the model in the middle. */
+const COMPASS = [5, 6, 7, 4, null, 0, 3, 2, 1];
 
 /** In the Fight phase, for a model that just backed away: its player may send it 1" another way instead. */
 function BackAwayPicker({ state, dispatch, m }: { state: GameState; dispatch: (a: Action) => void; m: Model }) {
@@ -128,12 +130,16 @@ function BackAwayPicker({ state, dispatch, m }: { state: GameState; dispatch: (a
   return (
     <div className="terrain-test">
       <p className="muted small">{m.name} backed away 1". Send it another way:</p>
-      <div className="row wrap">
-        {spots.map((p, k) => (
-          <button key={k} className="small" disabled={!p.ok || (Math.abs(p.x - m.x) < 0.02 && Math.abs(p.y - m.y) < 0.02)} title={p.ok ? 'Back away this way' : 'It can’t back away this way'} onClick={() => dispatch({ type: 'backAwayTo', id: m.id, x: p.x, y: p.y })}>
-            {ARROWS[k]}
-          </button>
-        ))}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 2.5rem)', gap: '0.25rem' }}>
+        {COMPASS.map((k, i) => {
+          const p = k === null ? null : spots[k];
+          if (!p || k === null) return <span key={i} />;
+          return (
+            <button key={i} className="small" disabled={!p.ok || (Math.abs(p.x - m.x) < 0.02 && Math.abs(p.y - m.y) < 0.02)} title={p.ok ? 'Back away this way' : 'It can’t back away this way'} onClick={() => dispatch({ type: 'backAwayTo', id: m.id, x: p.x, y: p.y })}>
+              {ARROWS[k]}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
