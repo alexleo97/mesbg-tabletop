@@ -123,7 +123,7 @@ function TerrainMoves({ state, dispatch, m }: { state: GameState; dispatch: (a: 
         </button>
       </div>
     );
-  if (!m.prone && !m.aboard && !immovable(null, m) && left !== null && left + 1e-6 >= m.move / 2 && !state.flow.stood?.includes(m.id) && !engaged(state, m))
+  if (!m.prone && !m.aboard && !m.siege && !immovable(null, m) && left !== null && left + 1e-6 >= m.move / 2 && !state.flow.stood?.includes(m.id) && !engaged(state, m))
     return (
       <div className="row wrap terrain-test">
         <button className="small" title={`Lying down costs half its Move and ends its move. Prone, it is half as tall for sight but has no Control Zone.`} onClick={() => dispatch({ type: 'lieDown', id: m.id })}>

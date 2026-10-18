@@ -706,7 +706,7 @@ function step(state: GameState, action: Action): GameState {
       // A standing model lies down for half its Move, and its move ends.
       const m = state.models[action.id];
       // Cavalry can't lie down.
-      if (!m || m.dead || m.prone || mounted(m) || !state.flow.started || state.phase !== 'move' || state.flow.stood?.includes(m.id)) return state;
+      if (!m || m.dead || m.prone || m.siege || mounted(m) || !state.flow.started || state.phase !== 'move' || state.flow.stood?.includes(m.id)) return state;
       const left = moveLeft(state, m);
       if (left === null || left + 1e-6 < m.move / 2) return state;
       return {
