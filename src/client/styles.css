@@ -148,6 +148,10 @@ h1, h3, h4, .topbar .room, .phases .turn, .roster-summary b, .name-input, .tabs 
 .terrain .gate-side.p1 { stroke: #8cb8f2; }
 .terrain .gate-side.p2 { stroke: #f08a82; }
 .terrain .gate-splinter { fill: #6b4a2b; stroke: #2e1f12; stroke-width: 0.03; }
+.terrain .barricade-spike { fill: #a07a4a; stroke: #2e1f12; stroke-width: 0.03; }
+.terrain .tower-ramp { fill: #8a6236; stroke: #2e1f12; stroke-width: 0.06; }
+.terrain .tower-beam { stroke: #2e1f12; stroke-width: 0.12; opacity: 0.7; pointer-events: none; }
+.terrain .tower-frame { fill: none; stroke: #2e1f12; stroke-width: 0.18; pointer-events: none; }
 .terrain .gear-hit { fill: #0000; }
 .terrain .ladder-rail { stroke: #8a6236; stroke-width: 0.12; stroke-linecap: round; }
 .terrain .ladder-rung { stroke: #8a6236; stroke-width: 0.08; }

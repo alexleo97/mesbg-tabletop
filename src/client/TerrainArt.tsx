@@ -20,6 +20,7 @@ const MATERIAL: Record<Terrain['kind'], Material> = {
   bridge: 'wall',
   road: 'dirt',
   gate: 'wall',
+  tower: 'wall',
 };
 
 function rand(seed: string, i: number) {
@@ -273,11 +274,64 @@ export function TerrainArt({ t, mat }: { t: Terrain; mat: Mat }) {
         </>
       );
     case 'wall':
+      if (t.barricade) {
+        // A wooden barricade: a row of logs, with stakes poking out both ways if it is spiked. Broken, only splinters.
+        const logs = Math.max(3, Math.round(t.w / 0.5));
+        if (t.gone)
+          return (
+            <>
+              {Array.from({ length: 6 }, (_, i) => (
+                <rect key={i} className="gate-splinter" x={-t.w / 2 + rand(t.id, i) * (t.w - 0.5)} y={-t.h / 2 + rand(t.id, i + 9) * t.h} width={0.5} height={0.12} transform={`rotate(${rand(t.id, i + 20) * 180 - 90} ${-t.w / 2 + rand(t.id, i) * (t.w - 0.5) + 0.25} ${-t.h / 2 + rand(t.id, i + 9) * t.h})`} />
+              ))}
+            </>
+          );
+        return (
+          <>
+            {t.barricade === 'spiked' &&
+              Array.from({ length: logs }, (_, i) => {
+                const x = -t.w / 2 + ((i + 0.5) * t.w) / logs;
+                return <path key={i} className="barricade-spike" d={`M ${x - 0.08} 0 L ${x} ${-t.h / 2 - 0.35} L ${x + 0.08} 0 L ${x} ${t.h / 2 + 0.35} Z`} />;
+              })}
+            <rect className="ground gate-leaf" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} rx={0.1} filter="url(#hard-shadow)" />
+            {Array.from({ length: logs - 1 }, (_, i) => {
+              const x = -t.w / 2 + ((i + 1) * t.w) / logs;
+              return <line key={i} className="gate-plank" x1={x} x2={x} y1={-t.h / 2} y2={t.h / 2} />;
+            })}
+          </>
+        );
+      }
       return (
         <>
           <rect className="ground wall-top" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} fill={tex} filter="url(#hard-shadow)" />
         </>
       );
+    case 'tower': {
+      // A siege tower from above: a timber deck with a cross of beams, and its ramp let down at the front once it
+      // reaches a wall. Broken, a heap of splinters.
+      if (t.gone)
+        return (
+          <>
+            {Array.from({ length: 12 }, (_, i) => (
+              <rect key={i} className="gate-splinter" x={-t.w / 2 + rand(t.id, i) * (t.w - 0.6)} y={-t.h / 2 + rand(t.id, i + 9) * (t.h - 0.2)} width={0.6} height={0.14} transform={`rotate(${rand(t.id, i + 20) * 180 - 90} ${-t.w / 2 + rand(t.id, i) * (t.w - 0.6) + 0.3} ${-t.h / 2 + rand(t.id, i + 9) * (t.h - 0.2)})`} />
+            ))}
+          </>
+        );
+      const planks = Math.max(4, Math.round(t.w / 0.4));
+      return (
+        <>
+          {t.raised && <rect className="tower-ramp" x={-t.w * 0.35} y={t.h / 2 - 0.1} width={t.w * 0.7} height={1.1} />}
+          <rect className="ground gate-leaf" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} filter="url(#hard-shadow)" />
+          {Array.from({ length: planks - 1 }, (_, i) => {
+            const x = -t.w / 2 + ((i + 1) * t.w) / planks;
+            return <line key={i} className="gate-plank" x1={x} x2={x} y1={-t.h / 2} y2={t.h / 2} />;
+          })}
+          <line className="tower-beam" x1={-t.w / 2} y1={-t.h / 2} x2={t.w / 2} y2={t.h / 2} />
+          <line className="tower-beam" x1={t.w / 2} y1={-t.h / 2} x2={-t.w / 2} y2={t.h / 2} />
+          <rect className="tower-frame" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} />
+          {t.side && <rect className={`gate-side ${t.side}`} x={-t.w / 2 + 0.15} y={-t.h / 2 + 0.15} width={t.w - 0.3} height={t.h - 0.3} />}
+        </>
+      );
+    }
     case 'field':
       return (
         <>
@@ -387,7 +441,7 @@ export function TerrainArt({ t, mat }: { t: Terrain; mat: Mat }) {
 }
 
 /** A letter on each kind of scenario marker, so you can tell them apart at a glance. */
-const GLYPHS: Record<NonNullable<Terrain['object']>, string> = { artefact: 'A', relic: 'R', heirloom: 'H', decoy: '✕', supply: 'S', ally: '+', ladder: 'L', ram: 'B' };
+const GLYPHS: Record<NonNullable<Terrain['object']>, string> = { artefact: 'A', relic: 'R', heirloom: 'H', decoy: '✕', supply: 'S', ally: '+', ladder: 'L', ram: 'B', rocks: '●', oil: '♨', rally: '⚑' };
 
 function star(r: number) {
   const pts: string[] = [];

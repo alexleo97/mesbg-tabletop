@@ -11,13 +11,13 @@ const IN_THE_WAY: ReadonlySet<TerrainKind> = new Set(['wood', 'ruin', 'wall', 'f
 const DIFFICULT: ReadonlySet<TerrainKind> = new Set(['wood', 'water', 'ruin']);
 
 /** (A gate or door hides what's behind it until it's broken down.) */
-export const blocksSight = (t: Terrain) => BLOCKS.has(t.kind) || t.kind === 'hill' || (t.kind === 'gate' && !t.gone);
+export const blocksSight = (t: Terrain) => BLOCKS.has(t.kind) || t.kind === 'hill' || ((t.kind === 'gate' || t.kind === 'tower') && !t.gone);
 
 /** How tall each kind of terrain usually is, in inches, unless set on the piece. Woods count their trees. */
-export const DEFAULT_HEIGHT: Partial<Record<TerrainKind, number>> = { hill: 2, rock: 2, building: 4, cliff: 6, wall: 1, ruin: 1.5, wood: 4, field: 1, gate: 3 };
+export const DEFAULT_HEIGHT: Partial<Record<TerrainKind, number>> = { hill: 2, rock: 2, building: 4, cliff: 6, wall: 1, ruin: 1.5, wood: 4, field: 1, gate: 3, tower: 5 };
 export const heightOf = (t: Terrain) => t.height ?? DEFAULT_HEIGHT[t.kind] ?? 0;
-/** Terrain a model can stand on top of: hills, and rocks, buildings and cliffs it has climbed. */
-const STANDABLE: ReadonlySet<TerrainKind> = new Set(['hill', 'rock', 'building', 'cliff']);
+/** Terrain a model can stand on top of: hills, rocks, buildings and cliffs it has climbed, and siege towers it rides. */
+const STANDABLE: ReadonlySet<TerrainKind> = new Set(['hill', 'rock', 'building', 'cliff', 'tower']);
 /** Rocks, buildings and cliffs are climbed, so going up or down them costs the height; hills are gentle slopes. */
 const CLIMBED: ReadonlySet<TerrainKind> = new Set(['rock', 'building', 'cliff']);
 
@@ -30,7 +30,7 @@ export const floorHeight = (t: Terrain, level: number) => (heightOf(t) * Math.ma
 /** How high the ground is at a point: the top of the tallest solid piece it stands on (inside a piece with floors, its ground floor). */
 export function groundAt(state: GameState, p: Point, kinds: ReadonlySet<TerrainKind> = STANDABLE): number {
   let h = 0;
-  for (const t of Object.values(state.terrain)) if (kinds.has(t.kind) && !hasFloors(t) && heightOf(t) > h && insidePolygon(outline(t), p)) h = heightOf(t);
+  for (const t of Object.values(state.terrain)) if (kinds.has(t.kind) && !t.gone && !hasFloors(t) && heightOf(t) > h && insidePolygon(outline(t), p)) h = heightOf(t);
   return h;
 }
 /** The piece with floors a point is inside, if any. */
@@ -172,7 +172,7 @@ export function obstructions(state: GameState, from: Model, to: Model): Obstruct
   const out: Obstruction[] = [];
   const [ha, hb] = [eyeOf(state, from), eyeOf(state, to)];
   for (const t of Object.values(state.terrain)) {
-    if (!IN_THE_WAY.has(t.kind)) continue;
+    if (!IN_THE_WAY.has(t.kind) || t.gone) continue;
     const poly = outline(t);
     // Cover the shooter stands in doesn't get in its own way, and a shot from well above low cover passes over it.
     if (insidePolygon(poly, from)) continue;

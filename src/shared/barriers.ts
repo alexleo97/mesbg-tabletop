@@ -3,6 +3,7 @@
 // Way roll, and the defender never backs away. If the defender falls, the attacker takes its place.
 import { distanceBetween, halfExtents, type Point } from './geometry.ts';
 import { CONTACT_SLACK } from './flow.ts';
+import { ladderAt } from './fortress.ts';
 import { climbedLevel, distanceToTerrain, heightOf, heightOfModel, insidePolygon, outline, standingAt } from './sight.ts';
 import type { GameState, Model, Terrain } from './types.ts';
 
@@ -26,8 +27,10 @@ export function wallBetween(state: GameState, a: Model, b: Model): Terrain | und
   const d = distanceBetween(a, b);
   if (d <= CONTACT_SLACK || d > REACH) return undefined;
   for (const t of Object.values(state.terrain)) {
-    if (t.kind !== 'wall' || !near(t, a, Math.max(t.w, t.h) / 2 + 3)) continue;
+    if (t.kind !== 'wall' || t.gone || !near(t, a, Math.max(t.w, t.h) / 2 + 3)) continue;
     if (distanceToTerrain(a, t) > CONTACT_SLACK || distanceToTerrain(b, t) > CONTACT_SLACK) continue;
+    // Nobody reaches the top of a sheer wall from its foot without a Siege Ladder or a siege tower's ramp.
+    if (t.sheer && !ladderAt(state, t.id, a) && !ladderAt(state, t.id, b)) continue;
     if (crosses(outline(t), a, b)) return t;
   }
   return undefined;
@@ -67,7 +70,7 @@ export interface Defence {
 }
 
 /** Terrain that closes off the sides of a doorway for a model of this height. */
-const shuts = (t: Terrain, tall: number) => t.kind === 'building' || t.kind === 'cliff' || ((t.kind === 'wall' || t.kind === 'rock' || t.kind === 'ruin') && heightOf(t) >= tall / 2);
+const shuts = (t: Terrain, tall: number) => !t.gone && (t.kind === 'building' || t.kind === 'cliff' || ((t.kind === 'wall' || t.kind === 'rock' || t.kind === 'ruin') && heightOf(t) >= tall / 2));
 
 /** How far along a ray from `p` the nearest edge of such terrain is (up to `max`). */
 function rayTo(state: GameState, p: Point, dir: Point, tall: number, max: number): number {
@@ -178,7 +181,7 @@ function clearOf(poly: Point[], p: Point, r: number): boolean {
  * (and, of the closest spots, the one nearest `from`). Null if there's no wall between them or no room.
  */
 export function overWallSpot(state: GameState, m: Model, e: Model, from: Point): Point | null {
-  const wall = Object.values(state.terrain).find(t => t.kind === 'wall' && near(t, e, Math.max(t.w, t.h) / 2 + 3) && distanceToTerrain(e, t) <= CONTACT_SLACK && crosses(outline(t), from, e));
+  const wall = Object.values(state.terrain).find(t => t.kind === 'wall' && !t.gone && near(t, e, Math.max(t.w, t.h) / 2 + 3) && distanceToTerrain(e, t) <= CONTACT_SLACK && crosses(outline(t), from, e));
   if (!wall) return null;
   const poly = outline(wall);
   const r = radius(m);

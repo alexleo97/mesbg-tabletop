@@ -5,7 +5,7 @@ import { ResultReport } from './ResultReport.tsx';
 import { MapsSection } from './Maps.tsx';
 import { DEFAULT_HEIGHT, FLOORED, heightOf, isDifficult } from '../shared/sight.ts';
 import { TERRAIN_GROUPS, TERRAIN_INFO, terrainRules } from '../shared/terrain.ts';
-import { DOORS } from '../shared/fortress.ts';
+import { breakable, DOORS } from '../shared/fortress.ts';
 import { useRef, useState } from 'react';
 import { objectiveMarkers, river, STARTER_BOARDS, starterTerrain } from '../shared/boards.ts';
 import { baseLabel, loadCatalog, parseBuilderExport, STAT_NAMES, startingPoints, statsWithOptions } from '../shared/catalog.ts';
@@ -577,7 +577,16 @@ const TERRAIN_PRESETS: { label: string; t: Omit<Terrain, 'id' | 'x' | 'y' | 'loc
   { label: 'Door', t: { kind: 'gate', shape: 'rect', w: 1.5, h: 0.5, rot: 0, door: 'heavy', height: 2 } },
   { label: 'Siege Ladder', t: { kind: 'objective', shape: 'circle', w: 1, h: 1, rot: 0, object: 'ladder' } },
   { label: 'Battering ram', t: { kind: 'objective', shape: 'circle', w: 1, h: 1, rot: 0, object: 'ram' } },
+  { label: 'Siege tower', t: { kind: 'tower', shape: 'rect', w: 4, h: 4, rot: 0 } },
+  { label: 'Barricade', t: { kind: 'wall', shape: 'rect', w: 3, h: 0.8, rot: 0, height: 1, barricade: 'plain' } },
+  { label: 'Spiked barricade', t: { kind: 'wall', shape: 'rect', w: 3, h: 0.8, rot: 0, height: 1, barricade: 'spiked' } },
+  { label: 'Pile of rocks', t: { kind: 'objective', shape: 'circle', w: 1, h: 1, rot: 0, object: 'rocks' } },
+  { label: 'Boiling oil', t: { kind: 'objective', shape: 'circle', w: 1.6, h: 1.6, rot: 0, object: 'oil' } },
+  { label: 'Rallying point', t: { kind: 'objective', shape: 'circle', w: 1, h: 1, rot: 0, object: 'rally' } },
 ];
+
+/** Markers that are siege gear rather than scenario objectives. */
+const SIEGE_GEAR = new Set(['ladder', 'ram', 'rocks', 'oil', 'rally']);
 
 /** Who holds a gate, or owns a ladder or ram: either player, or (for a gate) no one. */
 function SidePicker({ state, value, onChange, none }: { state: GameState; value?: Seat; onChange: (s: Seat | undefined) => void; none?: string }) {
@@ -631,7 +640,7 @@ export function TablePanel({
     if (fileRef.current) fileRef.current.value = '';
   };
 
-  const objectives = Object.values(state.terrain).filter(o => o.kind === 'objective' && o.object !== 'ladder' && o.object !== 'ram');
+  const objectives = Object.values(state.terrain).filter(o => o.kind === 'objective' && !SIEGE_GEAR.has(o.object ?? ''));
 
   return (
     <div className="panel-body">
@@ -747,7 +756,32 @@ export function TablePanel({
               )}
             </>
           )}
-          {(t.object === 'ladder' || t.object === 'ram') && (
+          {t.kind === 'wall' && (
+            <label>
+              Barricade
+              <select value={t.barricade ?? ''} onChange={e => patch({ barricade: (e.target.value || undefined) as Terrain['barricade'], wounds: undefined, gone: undefined })}>
+                <option value="">No, a wall</option>
+                <option value="plain">Barricade (Defence 7, 2 Wounds)</option>
+                <option value="spiked">Spiked barricade</option>
+              </select>
+            </label>
+          )}
+          {(t.kind === 'tower' || t.barricade) && (
+            <>
+              {t.kind === 'tower' && (
+                <label>
+                  Belongs to
+                  <SidePicker state={state} value={t.side} onChange={side => patch({ side })} none="Either side" />
+                </label>
+              )}
+              {t.gone ? (
+                <button onClick={() => patch({ gone: undefined, wounds: undefined, by: undefined })}>Repair it</button>
+              ) : (
+                <Stepper label="Wounds left" value={breakable(t)?.left ?? 1} min={1} max={breakable(t)?.w ?? 1} onChange={v => patch({ wounds: v })} />
+              )}
+            </>
+          )}
+          {(t.object === 'ladder' || t.object === 'ram' || t.object === 'rocks' || t.object === 'oil' || t.object === 'rally') && (
             <label>
               Belongs to
               <SidePicker state={state} value={t.side} onChange={side => patch({ side })} none="Either side" />

@@ -3,6 +3,7 @@ import type { Catalog } from './catalog.ts';
 import { CONTACT_SLACK, type Combat } from './flow.ts';
 import { hasPike, hasSpear } from './gear.ts';
 import { distanceBetween } from './geometry.ts';
+import { onLadder } from './defenders.ts';
 import { engaged } from './movement.ts';
 import { cannotAct, isCavalry } from './powers.ts';
 import type { GameState, Model, Seat } from './types.ts';
@@ -31,7 +32,8 @@ export function canSupport(state: GameState, catalog: Catalog | null, m: Model):
 export function supporters(state: GameState, catalog: Catalog | null, c: Combat): Record<Seat, string[]> {
   const out: Record<Seat, string[]> = { p1: [], p2: [] };
   for (const seat of ['p1', 'p2'] as const) {
-    const front = c[seat].map(id => state.models[id]).filter(m => m && !m.dead);
+    // Nobody can lend a spear to a model fighting from the top of a Siege Ladder.
+    const front = c[seat].map(id => state.models[id]).filter(m => m && !m.dead && !onLadder(state, m));
     const friends = Object.values(state.models).filter(m => m.owner === seat && !c[seat].includes(m.id) && front.some(f => Math.abs(f.x - m.x) < 8 && Math.abs(f.y - m.y) < 8));
     const able = friends.filter(m => canSupport(state, catalog, m));
     const first = able.filter(m => front.some(f => touching(m, f) && area(f) <= area(m)));

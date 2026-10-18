@@ -41,7 +41,7 @@ function step(state: GameState, models: Record<string, Model>, m: Model, at: Poi
     if (t.kind === 'objective') {
       if (!t.carrier && !t.gone && Math.hypot(t.x - at.x, t.y - at.y) < t.w / 2 + r - 0.05) return no;
     } else if (t.kind === 'building' && t !== inside && insidePolygon(outline(t), at)) return no;
-    else if (t.kind === 'wall' && heightOf(t) > tall / 2 && crosses(outline(t), m, at)) return no;
+    else if (t.kind === 'wall' && !t.gone && heightOf(t) > tall / 2 && crosses(outline(t), m, at)) return no;
     // Nor back through a gate shut to it.
     else if (shutTo(t, m.owner) && crosses(outline(t), m, at)) return no;
   }

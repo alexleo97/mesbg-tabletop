@@ -481,6 +481,7 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
               showNames={settings.names}
               marks={marks}
               animate={settings.animations && !reducedMotion}
+              role={role === 'p1' || role === 'p2' ? role : undefined}
               onMark={m => conn.mark(m)}
             />
 

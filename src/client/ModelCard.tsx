@@ -1,5 +1,6 @@
 import { useEffect, useState, type Ref } from 'react';
 import { breachOptions } from '../shared/breach.ts';
+import { hurlOptions } from '../shared/defenders.ts';
 import { laden } from '../shared/fortress.ts';
 import { loadRulesText, modelStats, pictureUrl, startingPoints, statsWithOptions, STAT_NAMES, type Catalog } from '../shared/catalog.ts';
 import { strikeWounds, woundsTaken } from '../shared/fight.ts';
@@ -197,6 +198,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
   const markers = markerActions(state, m).filter(a => a.kind === 'drop' || phaseAllows(state, m.owner, { type: a.kind }));
   const carried = carriedBy(state, m);
   const breaches = breachOptions(state, catalog, m);
+  const hurls = hurlOptions(state, m);
   const weapon = weaponOf(m, catalog);
   const patch = (p: Partial<Model>) => dispatch({ type: 'updateModel', id: m.id, patch: p });
   const photo = unit && pictureUrl(unit);
@@ -463,6 +465,15 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
           {breaches.map(b => (
             <button key={b.how + b.target} className="primary" onClick={() => dispatch({ type: 'breach', how: b.how, model: m.id, target: b.target })}>
               {b.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {mine && hurls.length > 0 && (
+        <div className="row wrap marker-actions">
+          {hurls.map(h => (
+            <button key={h.item + h.target} className="primary" onClick={() => dispatch({ type: 'hurl', how: h.how, model: m.id, item: h.item, target: h.target })}>
+              {h.label}
             </button>
           ))}
         </div>

@@ -1,6 +1,7 @@
 import { mounted } from './cavalry.ts';
 import { breachOptions } from './breach.ts';
-import { gateStanding, ladderable, nearestEdge, overThe } from './fortress.ts';
+import { gateStanding, ladderable, nearestEdge, overThe, TOWER, towerMove } from './fortress.ts';
+import { hurlOptions } from './defenders.ts';
 import { modelStats, type Catalog } from './catalog.ts';
 import { fighterOf } from './wargear.ts';
 import { duelLeader, duelSettled, strikeWounds, woundsTaken, type BrutalAttack, type Fighter, type FightRequest } from './fight.ts';
@@ -367,6 +368,13 @@ function moveStep(ctx: Ctx): BotStep {
     const to = m.stampede ? straightOn(m) : chargeAim(state, ctx.catalog, m);
     return { action: { type: 'trample', id: m.id, ...to }, delay: DICE_PAUSE };
   }
+  // Our siege tower, with enough hands on it, is pushed at the nearest wall.
+  for (const t of Object.values(state.terrain).filter(t => t.kind === 'tower' && !t.gone && !t.raised && t.side === seat)) {
+    if ((memo.tested ??= []).includes(`t:${t.id}`)) continue;
+    memo.tested.push(`t:${t.id}`);
+    const to = towerAim(state, t);
+    if (to && towerMove(state, t, seat, to, x => engagedWith(state, x).length > 0)) return { action: { type: 'pushTower', id: t.id, seat, x: to.x, y: to.y }, delay: MOVE_PAUSE };
+  }
   // A siege engine with nothing in its Arc of Sight turns to face the best target it could shoot instead.
   for (const m of side(state, seat).filter(x => x.siege && !memo.acted.includes(x.id))) {
     memo.acted.push(m.id);
@@ -437,6 +445,8 @@ function markerStep(ctx: Ctx, m: Model): BotStep | null {
     // Only its own side's ladders and rams are worth hauling about.
     const object = a.marker ? state.terrain[a.marker] : undefined;
     if (a.kind === 'pickUp' && (object?.object === 'ladder' || object?.object === 'ram') && object.side !== m.owner) continue;
+    // Rocks and oil are thrown from where they stand.
+    if (a.kind === 'pickUp' && (object?.object === 'rocks' || object?.object === 'oil')) continue;
     if (a.kind === 'escape') {
       // Leave the table with something worth carrying off, or in a scenario that scores getting models away.
       if (carriedBy(state, m).length || state.scenario === 'reconnoitre') return { action: { type: 'escape', model: m.id }, delay: MOVE_PAUSE };
@@ -485,6 +495,12 @@ function engineTurn(ctx: Ctx, m: Model): number | undefined {
   return best?.rot;
 }
 
+/** Where a siege tower should be pushed: the nearest point on the nearest tall wall. */
+function towerAim(state: GameState, t: Terrain): Point | undefined {
+  const walls = Object.values(state.terrain).filter(w => ladderable(w) && (w.sheer || heightOf(w) > 2));
+  return walls.map(w => nearestEdge(w, t)).sort((a, b) => centre(t, a) - centre(t, b))[0];
+}
+
 function assignGoals(ctx: Ctx): Map<string, Goal> {
   const { state, seat } = ctx;
   const out = new Map<string, Goal>();
@@ -518,6 +534,20 @@ function assignGoals(ctx: Ctx): Map<string, Goal> {
   }
 
   const wants: { at: Point; need: number; pull: number; near?: number; infantry?: boolean }[] = [];
+  // Our siege tower: a crew behind it to push it at the walls, then climbers up its ramp.
+  for (const t of Object.values(state.terrain).filter(t => t.kind === 'tower' && !t.gone && t.side === seat)) {
+    const wall = t.raised ? state.terrain[t.raised] : undefined;
+    if (wall) {
+      wants.push({ at: overThe(wall, t), need: 4, pull: 1, infantry: true });
+      continue;
+    }
+    const to = towerAim(state, t);
+    // (Only worth it with enough on foot to push it and still fight.)
+    if (!to || ours.filter(m => !cavalry(m)).length < TOWER.crew + 4) continue;
+    const d = Math.hypot(to.x - t.x, to.y - t.y) || 1;
+    const back = { x: t.x - ((to.x - t.x) / d) * (Math.max(t.w, t.h) / 2 + 0.5), y: t.y - ((to.y - t.y) / d) * (Math.max(t.w, t.h) / 2 + 0.5) };
+    wants.push({ at: back, need: TOWER.crew + 1, pull: 1.1, infantry: true });
+  }
   for (const t of onTable(state)) {
     if (t.object === 'ladder' || t.object === 'ram') {
       // Our own siege gear: hands to carry it (and a ram's second pair to share the load), then climbers up a raised
@@ -934,6 +964,9 @@ function shootStep(ctx: Ctx): BotStep {
     if (memo.acted.includes(m.id) || !mayActivate(state, m)) continue;
     memo.acted.push(m.id);
     const p = profile(ctx, m);
+    // A defender by a pile of rocks or a vat of oil drops it on the nearest attacker below.
+    const hurl = !cannotAct(state, m) && hurlOptions(state, m).sort((a, b) => Number(b.how === 'oil') - Number(a.how === 'oil'))[0];
+    if (hurl) return { action: { type: 'hurl', how: hurl.how, model: m.id, item: hurl.item, target: hurl.target }, delay: DICE_PAUSE };
     if (!p.weapon || engagedWith(state, m).length || m.prone || cannotAct(state, m)) continue;
     if (memo.courage[m.id] === false && armyStatus(state, seat).broken) continue;
     const shot = bestShot(ctx, m);

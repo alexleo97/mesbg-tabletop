@@ -1,5 +1,6 @@
 // Weapons, armour, equipment and the common special rules: what they do to a model's fights, shots, Courage and
 // movement, worked out from its profile so the server, the fight card and the computer player all agree.
+import { fromMarker, onTable } from './objects.ts';
 import { modelStats, type Catalog } from './catalog.ts';
 import type { Fighter } from './fight.ts';
 import { gearOf, hasGear } from './gear.ts';
@@ -246,7 +247,9 @@ export function courageBonus(state: GameState, catalog: Catalog | null | undefin
       const range = Number(/(\d+)/.exec(ruleArgs(catalog, o, 'Harbinger of Evil')[0] ?? '')?.[1]);
       return range > 0 && distanceBetween(o, m) <= range;
     });
-  return (horn ? 1 : 0) - (harbinger ? 1 : 0);
+  // Defenders within 6" of their Rallying Point take heart.
+  const rally = onTable(state).some(t => t.object === 'rally' && t.side === m.owner && fromMarker(m, t) <= 6);
+  return (horn ? 1 : 0) + (rally ? 1 : 0) - (harbinger ? 1 : 0);
 }
 
 /**
@@ -299,5 +302,9 @@ export function bannerFor(state: GameState, catalog: Catalog | null | undefined,
   const ours = rolls.filter(x => x.side === r.side && x.model).map(x => state.models[x.model!]).filter((m): m is Model => !!m && !m.dead);
   if (!ours.length || ours[0].owner !== seat) return undefined;
   if (duelLeader(rolls)?.winner === r.side) return undefined;
-  return Object.values(state.models).find(b => b.owner === seat && !b.dead && !b.escaped && !b.waiting && !b.prone && carriesBanner(catalog, b) && ours.some(m => (m.id === b.id || distanceBetween(b, m) <= BANNER_RANGE) && (m.id === b.id || sightTo(state, m, b) !== 'hidden')));
+  const flag = Object.values(state.models).find(b => b.owner === seat && !b.dead && !b.escaped && !b.waiting && !b.prone && carriesBanner(catalog, b) && ours.some(m => (m.id === b.id || distanceBetween(b, m) <= BANNER_RANGE) && (m.id === b.id || sightTo(state, m, b) !== 'hidden')));
+  if (flag) return flag;
+  // A Rallying Point is the defenders' banner.
+  const rally = onTable(state).find(t => t.object === 'rally' && t.side === seat && ours.some(m => fromMarker(m, t) <= BANNER_RANGE));
+  return rally ? { ...ours[0], id: rally.id, name: 'Rallying Point' } : undefined;
 }

@@ -195,6 +195,8 @@ export function resolveCross(state: GameState, seat: Seat, id: string, d6: () =>
   }
   if (ground.includes('cave') && roll < 6) roll++;
   const out: Action[] = [];
+  // Jumping a Spiked Barricade without a clean 6 snags the model on the stakes: a Strength 3 hit.
+  if (c.test === 'Jump' && t?.barricade === 'spiked' && roll < 6) out.push(...hitModel(m, modelStats(catalog, m)?.D ?? 4, 3, 'Spiked barricade', d6, seat, `${group}-sp`, now, group).actions);
   // The model is put where the test takes it (the Move it costs is counted from where it began the phase).
   const place = (p: Point): Action => ({ type: 'affect', id: m.id, patch: { x: p.x, y: p.y } });
   if (roll === 1) {
