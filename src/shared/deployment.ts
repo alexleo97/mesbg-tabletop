@@ -96,5 +96,21 @@ export function holdInZones(state: GameState, moves: Move[]): Move[] {
     const movedHere = [...out.values()].map(o => ({ ...state.models[o.id], x: o.x, y: o.y }));
     for (const g of placeNear(state, behind, zones[there], mv, [...placed, ...movedHere])) out.set(g.id, g);
   }
+  // A siege engine deploys wholly within 6" of a table edge.
+  for (const mv of out.values()) {
+    const m = state.models[mv.id];
+    if (m?.siege) Object.assign(mv, nearEdge(state, m, mv));
+  }
   return [...out.values()];
+}
+
+/** Where `p` comes to for a siege engine to stand wholly within 6" of the nearest table edge. */
+export function nearEdge(state: Pick<GameState, 'board'>, m: Model, p: Point): Point {
+  const r = Math.max(halfExtents(m.base).rx, halfExtents(m.base).ry);
+  const { w, h } = state.board;
+  const gaps = [p.x, w - p.x, p.y, h - p.y];
+  const k = gaps.indexOf(Math.min(...gaps));
+  if (gaps[k] + r <= 6) return { x: p.x, y: p.y };
+  const at = Math.max(r, 6 - r);
+  return k === 0 ? { x: at, y: p.y } : k === 1 ? { x: w - at, y: p.y } : k === 2 ? { x: p.x, y: at } : { x: p.x, y: h - at };
 }
