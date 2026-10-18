@@ -15,6 +15,7 @@ import { cleanMark } from '../src/shared/marks.ts';
 import { scenarioById } from '../src/shared/scenarios.ts';
 import { announceGame, closeVoiceRoom, discordEnabled, discordMember, openVoiceRoom, sweepVoiceRooms, voiceEnabled } from './discord.ts';
 import { saveResult, verifyToken } from './accounts.ts';
+import { loadRoom, pruneRooms, saveRoom, storeEnabled, type StoredRoom } from './store.ts';
 import { endRollDue, phaseFinished } from '../src/shared/autoPhase.ts';
 import { endRollLabel, gameWinner } from '../src/shared/status.ts';
 import { diffForUndo, mergeReverts, UNDOABLE } from '../src/shared/undo.ts';
@@ -81,6 +82,10 @@ interface Room {
   seen: number;
   /** How many actions have been sent out, so a browser can tell if it missed one. */
   seq: number;
+  /** Nothing has changed since the game was loaded, so it can be fetched again in case another server saved it since. */
+  fresh: boolean;
+  /** Saving to the shared store: changes not yet saved, the turn and phase last saved, the next save, and the save in flight. */
+  cloud: { dirty: boolean; mark?: string; timer?: NodeJS.Timeout; chain: Promise<void> };
 }
 
 interface UndoEntry {
@@ -96,40 +101,116 @@ const DRAG_GAP_MS = 2000;
 const rooms = new Map<string, Room>();
 mkdirSync(DATA, { recursive: true });
 
-function getRoom(id: string): Room {
-  let room = rooms.get(id);
-  if (!room) {
-    const file = join(DATA, `${id}.json`);
-    let state = initialState();
-    let invite: string | undefined;
-    let voice: string | undefined;
-    const blank = !existsSync(file);
-    if (!blank) {
-      try {
-        const saved = JSON.parse(readFileSync(file, 'utf8'));
-        state = loadState(saved);
-        if (typeof saved?._invite === 'string') invite = saved._invite;
-        if (typeof saved?._voice === 'string') voice = saved._voice;
-      } catch (err) {
-        console.warn(`Could not read saved room ${id}:`, err);
-      }
-    }
-    // A private game whose code was lost can't be joined by anyone, so it opens up again.
-    if (state.private && !invite) state = reduce(state, { type: 'setPrivate', private: false });
-    room = { id, state, clients: new Set(), touched: Date.now(), undo: { p1: [], p2: [] }, blank, invite, seen: Date.now(), voice: voice ? { id: voice } : undefined, seq: 0 };
-    rooms.set(id, room);
+/** This server's own copy of a game, used when the shared store isn't set up or can't be reached. */
+function readDisk(id: string): StoredRoom | null {
+  const file = join(DATA, `${id}.json`);
+  if (!existsSync(file)) return null;
+  try {
+    const saved = JSON.parse(readFileSync(file, 'utf8'));
+    return { state: saved, invite: saved?._invite, voice: saved?._voice };
+  } catch (err) {
+    console.warn(`Could not read saved room ${id}:`, err);
+    return null;
   }
-  return room;
 }
+
+/** Puts a saved game (or a new one) into a room. */
+function unpack(saved: StoredRoom | null) {
+  let state = initialState();
+  let invite: string | undefined;
+  let voice: string | undefined;
+  if (saved) {
+    try {
+      state = loadState(saved.state);
+      if (typeof saved.invite === 'string' && INVITE.test(saved.invite)) invite = saved.invite;
+      if (typeof saved.voice === 'string') voice = saved.voice;
+    } catch (err) {
+      console.warn('Could not read a saved game:', err);
+    }
+  }
+  // A private game whose code was lost can't be joined by anyone, so it opens up again.
+  if (state.private && !invite) state = reduce(state, { type: 'setPrivate', private: false });
+  return { state, invite, voice: voice ? { id: voice } : undefined, blank: !saved };
+}
+
+/** Rooms being fetched from the store right now, so people arriving together share one fetch. */
+const opening = new Map<string, Promise<Room>>();
+
+/**
+ * The room for a game: from memory, else from the shared store, else from this server's disk, else a new one. A room
+ * nothing has changed in yet is fetched again, because during a deploy the server going away saves its games as it
+ * stops, after this one may already have loaded them.
+ */
+function openRoom(id: string): Promise<Room> {
+  const room = rooms.get(id);
+  if (room && !(room.fresh && storeEnabled())) return Promise.resolve(room);
+  let pending = opening.get(id);
+  if (!pending) {
+    pending = (async () => {
+      const stored = await loadRoom(id);
+      const current = rooms.get(id);
+      if (current) {
+        if (stored && current.fresh) {
+          Object.assign(current, unpack(stored));
+          for (const c of current.clients) sendSnapshot(c.ws, current);
+        }
+        return current;
+      }
+      const made: Room = { id, clients: new Set(), touched: Date.now(), undo: { p1: [], p2: [] }, seen: Date.now(), seq: 0, fresh: true, cloud: { dirty: false, chain: Promise.resolve() }, ...unpack(stored ?? readDisk(id)) };
+      rooms.set(id, made);
+      return made;
+    })().finally(() => opening.delete(id));
+    opening.set(id, pending);
+  }
+  return pending;
+}
+
+/** The game and its private details, as saved. */
+const packed = (room: Room): StoredRoom => ({ state: room.state, ...(room.invite ? { invite: room.invite } : {}), ...(room.voice?.id ? { voice: room.voice.id } : {}) });
 
 function scheduleSave(room: Room) {
   room.touched = Date.now();
+  room.fresh = false;
+  scheduleCloudSave(room);
   if (room.saveTimer) return;
   room.saveTimer = setTimeout(() => {
     room.saveTimer = undefined;
-    const extra = { ...(room.invite ? { _invite: room.invite } : {}), ...(room.voice?.id ? { _voice: room.voice.id } : {}) };
-    writeFileSync(join(DATA, `${room.id}.json`), JSON.stringify({ ...room.state, ...extra }));
+    const { state, invite, voice } = packed(room);
+    writeFileSync(join(DATA, `${room.id}.json`), JSON.stringify({ ...(state as object), ...(invite ? { _invite: invite } : {}), ...(voice ? { _voice: voice } : {}) }));
   }, 2000);
+}
+
+/** At most this often while a game is changing, the shared store gets a fresh copy. */
+const CLOUD_SAVE_MS = Number(process.env.CLOUD_SAVE_MS ?? 5000);
+/** The turn and phase, so moving on to a new phase saves straight away. */
+const phaseMark = (s: GameState) => `${s.turn}:${s.phase}:${s.flow.started ? 1 : 0}:${s.result ? 1 : 0}`;
+
+function scheduleCloudSave(room: Room) {
+  if (!storeEnabled()) return;
+  room.cloud.dirty = true;
+  if (phaseMark(room.state) !== room.cloud.mark) {
+    void cloudSave(room);
+    return;
+  }
+  room.cloud.timer ??= setTimeout(() => void cloudSave(room), CLOUD_SAVE_MS);
+}
+
+/** Saves the room to the shared store if it has changed, after any save already on its way. */
+function cloudSave(room: Room): Promise<void> {
+  clearTimeout(room.cloud.timer);
+  room.cloud.timer = undefined;
+  room.cloud.chain = room.cloud.chain.then(async () => {
+    if (!room.cloud.dirty) return;
+    room.cloud.dirty = false;
+    const mark = phaseMark(room.state);
+    if (await saveRoom(room.id, packed(room))) room.cloud.mark = mark;
+    else {
+      // Try again shortly; the game carries on meanwhile.
+      room.cloud.dirty = true;
+      room.cloud.timer ??= setTimeout(() => void cloudSave(room), CLOUD_SAVE_MS * 2);
+    }
+  });
+  return room.cloud.chain;
 }
 
 const send = (ws: WebSocket, msg: ServerMessage) => ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify(msg));
@@ -610,7 +691,7 @@ const server = createServer((req, res) => {
 
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 1024 * 1024 });
 
-wss.on('connection', (ws, req) => {
+wss.on('connection', async (ws, req) => {
   const url = new URL(req.url ?? '/', 'http://localhost');
   const roomId = (url.searchParams.get('room') ?? '').toLowerCase();
   if (!ROOM_ID.test(roomId)) {
@@ -618,28 +699,48 @@ wss.on('connection', (ws, req) => {
     ws.close();
     return;
   }
-  if (!rooms.has(roomId) && rooms.size >= MAX_ROOMS) {
+  if (stopping) {
+    ws.close(1012, 'Server restarting');
+    return;
+  }
+  if (!rooms.has(roomId) && rooms.size + opening.size >= MAX_ROOMS) {
     send(ws, { type: 'error', message: 'The server is full right now. Try again in a few minutes.' });
     ws.close();
     return;
   }
-  const room = getRoom(roomId);
+  // Anything the browser sends while its game is being fetched waits its turn.
+  const early: import('ws').RawData[] = [];
+  const hold = (data: import('ws').RawData) => void (early.length < 100 && early.push(data));
+  ws.on('message', hold);
+  let room: Room;
+  try {
+    room = await openRoom(roomId);
+  } catch (err) {
+    console.warn(`Could not open room ${roomId}:`, err);
+    ws.close(1011);
+    return;
+  }
+  ws.off('message', hold);
+  if (ws.readyState !== WebSocket.OPEN) return;
   const client: Client = { ws, role: 'spectator', tokens: 120, alive: true };
   room.clients.add(client);
   sendSnapshot(ws, room);
   ws.on('pong', () => (client.alive = true));
 
-  ws.on('message', data => {
+  const handle = (data: import('ws').RawData) => {
     try {
       onMessage(data);
     } catch (err) {
       // One bad message must never take the server (and everyone's games) down.
       console.warn('Ignored a message that failed:', err);
     }
-  });
+  };
+  ws.on('message', handle);
 
   const onMessage = (data: import('ws').RawData) => {
     client.alive = true;
+    // While saving to stop, nothing more changes; the browser catches up from the new server.
+    if (stopping) return;
     // Simple rate limit: refills 60 messages per second, bursts up to 120.
     if (client.tokens <= 0) return;
     client.tokens--;
@@ -676,6 +777,8 @@ wss.on('connection', (ws, req) => {
       if (client.role !== 'spectator') sendUndoDepth(room, client.role);
       seatAccount(room, client);
       scheduleBot(room);
+      // A game loaded after a restart may have been about to move on from a finished phase.
+      scheduleAdvance(room);
       return;
     }
     if (msg.type === 'restore') {
@@ -754,6 +857,7 @@ wss.on('connection', (ws, req) => {
     room.clients.delete(client);
     broadcast(room, { type: 'presence', players: players(room) });
   });
+  for (const data of early) handle(data);
 });
 
 // Keep connections alive through proxies that drop idle sockets, and drop any that have stopped answering
@@ -778,6 +882,7 @@ setInterval(() => {
     if (room.voice?.id && (Date.now() > (room.voice.closeAt ?? Infinity) || Date.now() - room.seen > VOICE_ABANDONED_MS)) closeVoice(room);
     if (room.clients.size === 0 && Date.now() - room.touched > 1000 * 60 * 30) {
       closeVoice(room);
+      if (room.cloud.dirty) void cloudSave(room);
       rooms.delete(room.id);
     }
   }
@@ -792,6 +897,39 @@ setInterval(() => {
 // Forget rooms nobody has touched for two weeks.
 setInterval(() => {
   for (const room of rooms.values()) if (Date.now() - room.touched > ROOM_TTL_MS) rooms.delete(room.id);
+  void pruneRooms(ROOM_TTL_MS);
 }, 1000 * 60 * 60).unref();
+
+/**
+ * On a deploy or restart, Render asks the server to stop: save every game first, then tell browsers the server is
+ * restarting so they reconnect (to the new server, which loads the games just saved).
+ */
+let stopping = false;
+async function shutdown(signal: string) {
+  if (stopping) return;
+  stopping = true;
+  console.log(`${signal}: saving games before stopping`);
+  server.close();
+  for (const room of rooms.values()) {
+    if (room.saveTimer) {
+      clearTimeout(room.saveTimer);
+      room.saveTimer = undefined;
+      try {
+        const { state, invite, voice } = packed(room);
+        writeFileSync(join(DATA, `${room.id}.json`), JSON.stringify({ ...(state as object), ...(invite ? { _invite: invite } : {}), ...(voice ? { _voice: voice } : {}) }));
+      } catch (err) {
+        console.warn(`Could not save room ${room.id} to disk:`, err);
+      }
+    }
+    clearTimeout(room.advance);
+    if (room.bot?.timer) clearTimeout(room.bot.timer);
+  }
+  const saves = Promise.all([...rooms.values()].filter(r => r.cloud.dirty).map(r => cloudSave(r)));
+  await Promise.race([saves, new Promise(done => setTimeout(done, 20_000))]);
+  for (const c of wss.clients) c.close(1012, 'Server restarting');
+  setTimeout(() => process.exit(0), 500).unref();
+}
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
+process.on('SIGINT', () => void shutdown('SIGINT'));
 
 server.listen(PORT, () => console.log(`MESBG tabletop listening on http://localhost:${PORT}`));

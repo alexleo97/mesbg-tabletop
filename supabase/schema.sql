@@ -117,3 +117,17 @@ grant insert, update, delete on public.armies, public.maps to authenticated;
 revoke insert, delete on public.profiles from anon, authenticated;
 revoke insert, update, delete on public.results from anon, authenticated;
 revoke insert, update, delete on public.armies, public.maps from anon;
+
+-- Games in progress, so a deploy or restart doesn't lose them. Only the game server reads and writes these (with the
+-- service key); nobody else can see them, since a private game's invite code is kept here too.
+create table if not exists public.rooms (
+  id text primary key check (id ~ '^[a-z0-9-]{3,40}$'),
+  state jsonb not null check (pg_column_size(state) < 2000000),
+  invite text,
+  voice text,
+  updated_at timestamptz not null default now()
+);
+create index if not exists rooms_updated on public.rooms (updated_at);
+alter table public.rooms enable row level security;
+revoke all on public.rooms from anon, authenticated;
+grant select, insert, update, delete on public.rooms to service_role;
