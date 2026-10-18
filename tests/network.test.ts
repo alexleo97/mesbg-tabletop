@@ -1,12 +1,10 @@
-import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
 import { actionFits, staleBuild } from '../src/client/net.ts';
-import type { ServerMessage } from '../src/shared/types.ts';
+import { joinRoom, startServer, type TestServer } from './harness.ts';
 
 describe('keeping a browser in step with the server', () => {
   it('applies actions in order, skips repeats, and spots a missed one', () => {
@@ -27,62 +25,22 @@ describe('keeping a browser in step with the server', () => {
   });
 });
 
-/** A real game server on a spare port, with its own empty save folder and a fast heartbeat. */
-let server: ChildProcess;
-let port: number;
+/** A real game server with its own empty save folder and a fast heartbeat. */
+let server: TestServer;
 let dir: string;
-
-const freePort = () =>
-  new Promise<number>(done => {
-    const s = createServer().listen(0, () => {
-      const p = (s.address() as { port: number }).port;
-      s.close(() => done(p));
-    });
-  });
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), 'mesbg-net-'));
   writeFileSync(join(dir, 'build-id.txt'), 'build-42');
-  port = await freePort();
-  server = spawn(process.execPath, ['--import', 'tsx', 'server/index.ts'], {
-    env: { ...process.env, PORT: String(port), DATA_DIR: join(dir, 'rooms'), DIST_DIR: dir, HEARTBEAT_MS: '150', SUPABASE_URL: '', DISCORD_WEBHOOK_URL: '', DISCORD_BOT_TOKEN: '' },
-    stdio: ['ignore', 'pipe', 'inherit'],
-  });
-  await new Promise<void>((done, fail) => {
-    server.stdout!.on('data', d => String(d).includes('listening') && done());
-    server.on('exit', code => fail(new Error(`server exited with ${code}`)));
-  });
+  server = await startServer({ DATA_DIR: join(dir, 'rooms'), DIST_DIR: dir, HEARTBEAT_MS: '150' });
 }, 30_000);
 
-afterAll(() => {
-  server?.kill();
+afterAll(async () => {
+  await server?.stop();
   rmSync(dir, { recursive: true, force: true });
 });
 
-/** A browser in a room, keeping every message it is sent. */
-async function join_(room: string, opts: { autoPong?: boolean } = {}) {
-  const ws = new WebSocket(`ws://localhost:${port}/ws?room=${room}`, opts);
-  const got: ServerMessage[] = [];
-  const waiters: [(m: ServerMessage) => boolean, (m: ServerMessage) => void][] = [];
-  ws.on('message', d => {
-    const m = JSON.parse(String(d)) as ServerMessage;
-    got.push(m);
-    for (const w of [...waiters]) if (w[0](m)) {
-      waiters.splice(waiters.indexOf(w), 1);
-      w[1](m);
-    }
-  });
-  const next = (test: (m: ServerMessage) => boolean) =>
-    new Promise<ServerMessage>((done, fail) => {
-      const seen = got.find(test);
-      if (seen) return done(seen);
-      waiters.push([test, done]);
-      setTimeout(() => fail(new Error('nothing arrived')), 3000);
-    });
-  const send = (m: object) => ws.send(JSON.stringify(m));
-  await new Promise(done => ws.once('open', done));
-  return { ws, got, next, send };
-}
+const join_ = (room: string, opts: { autoPong?: boolean } = {}) => joinRoom(server.port, room, opts);
 
 describe('the game server link', () => {
   it('sends the whole game with its action count and build on joining', async () => {

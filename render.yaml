@@ -5,7 +5,8 @@ services:
     runtime: node
     plan: starter
     buildCommand: npm ci --include=dev && npm run build
-    startCommand: npm start
+    # Started directly, not through npm, so the server hears Render's stop signal and saves every game before a deploy.
+    startCommand: node --import tsx server/index.ts
     healthCheckPath: /healthz
     # Set these in the Render dashboard (Environment); never commit their values.
     envVars:
