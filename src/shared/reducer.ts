@@ -3,7 +3,8 @@ import { holdInZones } from './deployment.ts';
 import { heroicInfo } from './heroics.ts';
 import { pendingSpell } from './magic.ts';
 import { basePower, cannotAct, effectActive } from './powers.ts';
-import { limitMove, moveAllowance, movedTooFar, moveStart } from './movement.ts';
+import { limitMove, moveAllowance, movedTooFar, moveLeft, moveStart } from './movement.ts';
+import { FLOORED, floorHeight, flooredAt } from './sight.ts';
 import { canPickUp, markerUpkeep, syncCarried, touching, canEscape } from './objects.ts';
 import { endPhaseUpkeep } from './scoring.ts';
 import { BOT_NAME, BOT_SPEEDS, MARKER_OBJECTS, MATS, PHASES, PICK_KEYS, TERRAIN_KINDS, type Action, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type ModelEffect, type Phase, type Picks, type Seat, type SpellPending, type Terrain } from './types.ts';
@@ -66,7 +67,7 @@ function goToPhase(state: GameState, phase: Phase, turn: number, newTurn: boolea
       done: [],
       resolved: newTurn ? [] : state.flow.resolved,
       heroics: newTurn ? [] : state.flow.heroics,
-      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], cast: [], spell: undefined, held: [], stood: [], compel: undefined } : {}),
+      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], cast: [], spell: undefined, held: [], stood: [], climbed: {}, compel: undefined } : {}),
       ...(phase !== state.phase ? { compel: undefined } : {}),
       passed: [],
       lastHeroic: null,
@@ -170,6 +171,8 @@ export function cleanModel(m: Partial<Model>, prev?: Model): Model | null {
   const lostGear = 'lostGear' in m ? (Array.isArray(m.lostGear) ? [...new Set(m.lostGear.slice(0, 8).map(g => str(g, 60)))] : undefined) : base.lostGear;
   if (lostGear?.length) out.lostGear = lostGear;
   if ('dismounted' in m ? m.dismounted === true : base.dismounted) out.dismounted = true;
+  const floor = 'floor' in m ? int(m.floor, 0, 9, 0) : base.floor;
+  if (floor) out.floor = floor;
   return out.id ? out : null;
 }
 
@@ -246,6 +249,8 @@ function cleanTerrain(t: Partial<Terrain>, prev?: Terrain): Terrain | null {
   };
   const height = 'height' in t ? (t.height === undefined || t.height === null ? undefined : num(t.height, 0, 12, 0)) : base.height;
   if (height !== undefined) out.height = height;
+  const floors = 'floors' in t ? int(t.floors, 0, 6, 0) : base.floors;
+  if (floors && FLOORED.has(out.kind)) out.floors = floors;
   const difficult = 'difficult' in t ? t.difficult : base.difficult;
   if (typeof difficult === 'boolean') out.difficult = difficult;
   const path = cleanPath(t.path) ?? (base.path && prev && (out.w !== prev.w || out.h !== prev.h)
@@ -384,6 +389,7 @@ function step(state: GameState, action: Action): GameState {
       // Before the battle, models stay in their deployment zones (and a warband switching zones comes along whole).
       const moves = state.flow.started ? action.moves : holdInZones(state, action.moves.filter(mv => mv && models[mv.id]).map(mv => ({ id: String(mv.id), x: num(mv.x, -24, 200, models[mv.id].x), y: num(mv.y, -24, 200, models[mv.id].y), rot: mv.rot })));
       let stood = state.flow.stood;
+      let climbed = state.flow.climbed;
       for (const mv of moves) {
         const prev = mv && models[mv.id];
         if (!prev || prev.escaped || prev.waiting) continue;
@@ -401,6 +407,15 @@ function step(state: GameState, action: Action): GameState {
           if (!starts?.[prev.id]) starts = { ...starts, [prev.id]: [from.x, from.y] };
         }
         let next: Model = { ...prev, ...to, rot: mv.rot === undefined ? prev.rot : num(mv.rot, -360, 720, prev.rot) % 360 };
+        // Inside a building a model keeps to its floor; leaving it (or walking into another) takes it back to the
+        // ground, and climbing down from an upper floor costs the drop from its Move.
+        if (next.floor && moving) {
+          const was = flooredAt(state, prev);
+          if (!was || flooredAt(state, next) !== was) {
+            delete next.floor;
+            if (was && state.flow.started && state.phase === 'move') climbed = { ...climbed, [prev.id]: (climbed?.[prev.id] ?? 0) + floorHeight(was, prev.floor!) };
+          }
+        }
         // A Prone model that moves stands up first, which costs it half its Move this turn.
         if (prev.prone && allowance && moving && (to.x !== prev.x || to.y !== prev.y)) {
           next = { ...next, prone: undefined };
@@ -409,8 +424,26 @@ function step(state: GameState, action: Action): GameState {
         }
         models[prev.id] = next;
       }
-      const flow = starts !== state.flow.starts || stood !== state.flow.stood ? { flow: { ...state.flow, starts, ...(stood ? { stood } : {}) } } : {};
+      const flow = starts !== state.flow.starts || stood !== state.flow.stood || climbed !== state.flow.climbed ? { flow: { ...state.flow, starts, ...(stood ? { stood } : {}), ...(climbed ? { climbed } : {}) } } : {};
       return { ...state, models, ...flow };
+    }
+    case 'climb': {
+      // A model climbs between the floors of the building it's in, spending the height from its Move once the battle's on.
+      const m = state.models[action.id];
+      const t = m && !m.dead ? flooredAt(state, m) : undefined;
+      if (!t) return state;
+      const to = int(action.floor, 0, t.floors ?? 0, 0);
+      const cost = Math.abs(floorHeight(t, to) - floorHeight(t, m.floor ?? 0));
+      if (to === (m.floor ?? 0)) return state;
+      let flow = state.flow;
+      if (state.flow.started) {
+        const left = moveLeft(state, m);
+        if (state.phase !== 'move' || left === null || left + 1e-6 < cost || m.prone || state.flow.compel?.model === m.id) return state;
+        flow = { ...flow, climbed: { ...flow.climbed, [m.id]: (flow.climbed?.[m.id] ?? 0) + cost } };
+      }
+      const next: Model = { ...m, floor: to };
+      if (!to) delete next.floor;
+      return { ...state, models: { ...state.models, [m.id]: next }, flow };
     }
     case 'arrive': {
       // Waiting models come onto the table; the side has rolled for its arrivals this turn either way.
@@ -859,6 +892,7 @@ export function loadState(raw: unknown): GameState {
         ...(f.spell && typeof f.spell === 'object' ? { spell: cleanSpell(f.spell) } : {}),
         ...(Array.isArray(f.held) ? { held: f.held.slice(0, 200).map(x => String(x).slice(0, 80)) } : {}),
         ...(Array.isArray(f.stood) ? { stood: f.stood.slice(0, 400).map(x => String(x).slice(0, 80)) } : {}),
+        ...(f.climbed && typeof f.climbed === 'object' ? { climbed: Object.fromEntries(Object.entries(f.climbed).slice(0, 400).map(([k, v]) => [k.slice(0, 80), num(v, 0, 99, 0)])) } : {}),
         ...(Number.isFinite(f.recovered) ? { recovered: int(f.recovered, 0, 99, 0) } : {}),
         ...(Array.isArray(f.farMoved) ? { farMoved: f.farMoved.slice(0, 400).map(x => String(x).slice(0, 80)) } : {}),
         ...(Array.isArray(f.duels) ? { duels: f.duels.slice(0, 200).map(x => String(x).slice(0, 80)) } : {}),

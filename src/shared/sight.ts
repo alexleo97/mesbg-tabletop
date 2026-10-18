@@ -20,14 +20,29 @@ const STANDABLE: ReadonlySet<TerrainKind> = new Set(['hill', 'rock', 'building',
 /** Rocks, buildings and cliffs are climbed, so going up or down them costs the height; hills are gentle slopes. */
 const CLIMBED: ReadonlySet<TerrainKind> = new Set(['rock', 'building', 'cliff']);
 
-/** How high the ground is at a point: the top of the tallest piece it stands on. */
+/** Buildings and ruins can have floors inside (see Terrain.floors); a piece with floors is walked into, not climbed. */
+export const FLOORED: ReadonlySet<TerrainKind> = new Set(['building', 'ruin']);
+export const hasFloors = (t: Terrain) => FLOORED.has(t.kind) && (t.floors ?? 0) > 0;
+/** How high a floor of a piece is: level 0 the ground floor, level `floors` its roof. */
+export const floorHeight = (t: Terrain, level: number) => (heightOf(t) * Math.max(0, Math.min(level, t.floors ?? 0))) / (t.floors || 1);
+
+/** How high the ground is at a point: the top of the tallest solid piece it stands on (inside a piece with floors, its ground floor). */
 export function groundAt(state: GameState, p: Point, kinds: ReadonlySet<TerrainKind> = STANDABLE): number {
   let h = 0;
-  for (const t of Object.values(state.terrain)) if (kinds.has(t.kind) && heightOf(t) > h && insidePolygon(outline(t), p)) h = heightOf(t);
+  for (const t of Object.values(state.terrain)) if (kinds.has(t.kind) && !hasFloors(t) && heightOf(t) > h && insidePolygon(outline(t), p)) h = heightOf(t);
   return h;
 }
-/** A model's eye level: the ground it stands on plus its own height (taller on a horse). */
-export const eyeOf = (state: GameState, m: Model) => groundAt(state, m) + (m.base.h > m.base.w ? 1.6 : 1);
+/** The piece with floors a point is inside, if any. */
+export const flooredAt = (state: GameState, p: Point) => Object.values(state.terrain).find(t => hasFloors(t) && insidePolygon(outline(t), p));
+/** How high a model stands: the ground under it, or the floor it has climbed to inside a building. */
+export function standingAt(state: GameState, m: Model): number {
+  const t = m.floor ? flooredAt(state, m) : undefined;
+  return Math.max(groundAt(state, m), t ? floorHeight(t, m.floor!) : 0);
+}
+/** A model's eye level: where it stands plus its own height (taller on a horse). */
+export const eyeOf = (state: GameState, m: Model) => standingAt(state, m) + (m.base.h > m.base.w ? 1.6 : 1);
+/** The name of a floor, for the model card. */
+export const floorName = (t: Terrain, level: number) => (level >= (t.floors ?? 0) ? 'Roof' : level === 0 ? 'Ground floor' : `Floor ${level}`);
 
 /**
  * Whether a sight line from `a` (at height ha) to `b` (at height hb) clears a piece of terrain: it is blocked if the
@@ -188,7 +203,8 @@ export function moveCost(state: GameState, a: Point, b: Point, seat?: Seat): { c
 
 /** Inches spent climbing up and down rocks, buildings and cliffs along a straight move. */
 function climbCost(state: GameState, a: Point, b: Point): number {
-  const pieces = Object.values(state.terrain).filter(t => CLIMBED.has(t.kind) && heightOf(t) > 0);
+  // A piece with floors is walked into at ground level; climbing inside it is done floor by floor.
+  const pieces = Object.values(state.terrain).filter(t => CLIMBED.has(t.kind) && !hasFloors(t) && heightOf(t) > 0);
   const d = Math.hypot(b.x - a.x, b.y - a.y);
   if (!pieces.length || d === 0) return 0;
   const polys = pieces.map(t => ({ poly: outline(t), top: heightOf(t) }));
@@ -219,7 +235,7 @@ export const inDifficult = (state: GameState, p: Point, seat?: Seat) => {
 export function shadowPath(state: GameState, from: Point, far = 200): string {
   let d = '';
   // From up high you look over anything well below your eyes.
-  const eye = groundAt(state, from) + 1;
+  const eye = ((from as Partial<Model>).floor ? standingAt(state, from as Model) : groundAt(state, from)) + 1;
   for (const t of Object.values(state.terrain)) {
     if (!blocksSight(t) || heightOf(t) < eye - 0.5) continue;
     const poly = outline(t, 24);

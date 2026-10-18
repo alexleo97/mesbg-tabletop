@@ -16,7 +16,9 @@ export function moveAllowance(state: GameState, m: Model): number | null {
   if (state.phase === 'move') {
     // A model held by a power or a Compel stays put; one getting up from Prone has half its Move left.
     if (!canActivate(state, m.owner) || state.flow.courage?.[m.id] === false || cannotAct(state, m) || state.flow.held?.includes(m.id)) return 0;
-    return m.prone || state.flow.stood?.includes(m.id) ? m.move / 2 : m.move;
+    // Climbing between floors of a building spends Move too.
+    const climbed = state.flow.climbed?.[m.id] ?? 0;
+    return Math.max(0, (m.prone || state.flow.stood?.includes(m.id) ? m.move / 2 : m.move) - climbed);
   }
   if (state.phase === 'fight') return heroicCombatWon(state, m) ? m.move : 1;
   return 0;
@@ -64,9 +66,16 @@ export function movedTooFar(state: GameState): string[] {
   return Object.entries(state.flow.starts ?? {})
     .filter(([id, [x, y]]) => {
       const m = state.models[id];
-      return m && !m.dead && moveCost(state, { x, y }, m, m.owner).cost > m.move / 2 + 0.05;
+      return m && !m.dead && moveCost(state, { x, y }, m, m.owner).cost + (state.flow.climbed?.[id] ?? 0) > m.move / 2 + 0.05;
     })
-    .map(([id]) => id);
+    .map(([id]) => id)
+    .concat(Object.entries(state.flow.climbed ?? {}).filter(([id, c]) => !state.flow.starts?.[id] && state.models[id] && c > state.models[id].move / 2 + 0.05).map(([id]) => id));
+}
+
+/** How much of its Move a model still has this phase, after the ground it's walked and any floors it's climbed. */
+export function moveLeft(state: GameState, m: Model): number | null {
+  const allowance = moveAllowance(state, m);
+  return allowance === null ? null : Math.max(0, allowance - moveCost(state, moveStart(state, m), m, m.owner).cost);
 }
 
 /** Where a model stood when this Move phase began (where it is now, if it hasn't moved yet). */

@@ -71,6 +71,8 @@ export interface Model {
   lostGear?: string[];
   /** Its mount has fled or it was thrown, so it fights on foot. */
   dismounted?: boolean;
+  /** Which level it stands on inside a building with floors: 0 is the ground floor, the building's `floors` its roof. */
+  floor?: number;
 }
 
 /** A power at work on a model: which one, who cast it and the turn it was cast. */
@@ -107,6 +109,11 @@ export interface Terrain {
   path?: [number, number, number][];
   /** How tall it is in inches, when not the usual for its kind. */
   height?: number;
+  /**
+   * A building or ruin with floors inside: how many storeys below its roof. Models walk in at ground level and climb
+   * between floors and onto the roof. Unset, it's solid and models stand on its roof.
+   */
+  floors?: number;
   /** A scenario marker that means something: an artefact to dig up, a relic, a supply to guard, a wounded ally. */
   object?: MarkerObject;
   /** The side a relic, supply or wounded ally belongs to; for Writhing Vines, the side whose caster summoned them. */
@@ -286,6 +293,8 @@ export interface Flow {
   held?: string[];
   /** Models that stood up from Prone this turn, which costs half their Move. */
   stood?: string[];
+  /** Inches each model has spent climbing between floors this Move phase. */
+  climbed?: Record<string, number>;
   /** The turn Paralysed models last rolled to recover. */
   recovered?: number;
   starts?: Record<string, [number, number]>;
@@ -321,6 +330,8 @@ export type Action =
   | { type: 'affect'; id: string; patch: Partial<Omit<Model, 'id'>> }
   /** A Compel that worked (from the game), or (null) its caster's player has finished moving the model. */
   | { type: 'compel'; compel: Flow['compel'] | null }
+  /** A model climbs to another floor of the building it is in. */
+  | { type: 'climb'; id: string; floor: number }
   /** Paralysed models have rolled to recover this End phase (never sent by a player). */
   | { type: 'recovered' }
   | { type: 'arrive'; seat: Seat; moves: { id: string; x: number; y: number; rot: number }[] }

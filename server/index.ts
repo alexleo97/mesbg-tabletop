@@ -172,6 +172,7 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
     case 'declareHeroic':
       return mine(action.model) ? action : null;
     case 'takeWound':
+    case 'climb':
       return mine(action.id) ? action : null;
     case 'pickUp':
     case 'flip':

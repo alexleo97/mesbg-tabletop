@@ -2,7 +2,7 @@ import { scenarioById } from '../shared/scenarios.ts';
 import { armyStatus } from '../shared/status.ts';
 import { ResultReport } from './ResultReport.tsx';
 import { MapsSection } from './Maps.tsx';
-import { DEFAULT_HEIGHT, heightOf, isDifficult } from '../shared/sight.ts';
+import { DEFAULT_HEIGHT, FLOORED, heightOf, isDifficult } from '../shared/sight.ts';
 import { TERRAIN_GROUPS, TERRAIN_INFO, terrainRules } from '../shared/terrain.ts';
 import { useRef, useState } from 'react';
 import { objectiveMarkers, river, STARTER_BOARDS, starterTerrain } from '../shared/boards.ts';
@@ -629,6 +629,7 @@ export function TablePanel({
           <Stepper label="Width" value={Math.round(t.w)} min={1} max={48} onChange={v => patch({ w: v })} />
           <Stepper label="Depth" value={Math.round(t.h)} min={1} max={48} onChange={v => patch({ h: v })} />
           {DEFAULT_HEIGHT[t.kind] !== undefined && <Stepper label="Height" value={Math.round(heightOf(t))} min={0} max={12} onChange={v => patch({ height: v })} />}
+          {FLOORED.has(t.kind) && <Stepper label="Floors inside" value={t.floors ?? 0} min={0} max={6} onChange={v => patch({ floors: v })} />}
           <div className="row">
             <button onClick={() => patch({ rot: t.rot - 15 })}>⟲ 15°</button>
             <button onClick={() => patch({ rot: t.rot + 15 })}>⟳ 15°</button>

@@ -1,5 +1,6 @@
 // The turn sequence as the app runs it: who acts now, who rolls for priority, and which fights are on.
 import { distanceBetween } from './geometry.ts';
+import { standingAt } from './sight.ts';
 import type { GameState, Model, Seat } from './types.ts';
 
 export const other = (s: Seat): Seat => (s === 'p1' ? 'p2' : 'p1');
@@ -36,6 +37,8 @@ export function combats(state: GameState): Combat[] {
       // Cheap reject first: no base is wider than about 4".
       if (Math.abs(a.x - b.x) > 5 || Math.abs(a.y - b.y) > 5) continue;
       if (distanceBetween(a, b) > CONTACT_SLACK) continue;
+      // Models on different floors of a building aren't touching, however close they stand on the map.
+      if ((a.floor || b.floor) && Math.abs(standingAt(state, a) - standingAt(state, b)) >= 0.5) continue;
       engaged.add(a.id).add(b.id);
       parent.set(find(a.id), find(b.id));
     }
