@@ -226,7 +226,16 @@ export function deployList(entries: ListEntry[], owner: Seat, state: Pick<GameSt
   // Maelstrom of Battle: the army waits off the table and arrives warband by warband during the game.
   if (scenario?.deployment.type === 'maelstrom') {
     const at = offTable(owner, state.board);
-    return [...groups.values()].flat().map(m => ({ ...makeModel(m, owner, at.x, at.y), waiting: true }));
+    // Siege engines (and their crew) are set up before the battle instead, within 6" of the player's own table edge.
+    const engineUnits = new Set(entries.filter(e => e.siege).map(e => e.profileId));
+    let x = margin + 3;
+    return [...groups.values()].flat().map(m => {
+      if (!engineUnits.has(m.e.profileId)) return { ...makeModel(m, owner, at.x, at.y), waiting: true };
+      const y = owner === 'p1' ? boardH - margin - m.h / 2 - 1.5 : margin + m.h / 2 + 1.5;
+      const placedAt = makeModel(m, owner, x, y);
+      x += m.w + 1.5;
+      return placedAt;
+    });
   }
   // Scenarios with corner, semicircle or wedge zones get their armies packed into those zones instead.
   const zones = shapedZones(scenario, owner, boardW, boardH);

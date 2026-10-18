@@ -46,12 +46,12 @@ const first = (s: GameState, kind: Action['type'], seat: Seat = 'p2', memo: BotM
 
 describe('the computer and the newer rules', () => {
   it('turns a siege engine to face a target outside its Arc of Sight', () => {
-    const cat = mk('cat', 'p2', 20, 10, '[mordor] catapult', { name: 'Mordor War Catapult', siege: 'large', move: 0, wounds: 4, maxWounds: 4, base: { shape: 'rect', w: 60, h: 60 }, rot: 180 });
-    const crew = [mk('c1', 'p2', 18.3, 10, '[mordor] catapult', { name: 'Mordor Orc Siege Crew', crewOf: 'cat' }), mk('c2', 'p2', 21.7, 10, '[mordor] catapult', { name: 'Mordor Orc Siege Crew', crewOf: 'cat' }), mk('c3', 'p2', 20, 8.3, '[mordor] catapult', { name: 'Mordor Orc Siege Crew', crewOf: 'cat' })];
+    const cat = mk('cat', 'p2', 20, 4.5, '[mordor] catapult', { name: 'Mordor War Catapult', siege: 'large', move: 0, wounds: 4, maxWounds: 4, base: { shape: 'rect', w: 60, h: 60 }, rot: 180 });
+    const crew = [mk('c1', 'p2', 18.3, 4.5, '[mordor] catapult', { name: 'Mordor Orc Siege Crew', crewOf: 'cat' }), mk('c2', 'p2', 21.7, 4.5, '[mordor] catapult', { name: 'Mordor Orc Siege Crew', crewOf: 'cat' }), mk('c3', 'p2', 20, 2.8, '[mordor] catapult', { name: 'Mordor Orc Siege Crew', crewOf: 'cat' })];
     // The only enemy is off to its side, 25" away.
-    const s = begin([cat, ...crew, mk('w', 'p1', 45, 12, '[gondor] warrior')]);
+    const s = begin([cat, ...crew, mk('w', 'p1', 45, 7, '[gondor] warrior')]);
     const turn = first(s, 'moveModels') as Extract<Action, { type: 'moveModels' }>;
-    expect(turn.moves[0]).toMatchObject({ id: 'cat', x: 20, y: 10 });
+    expect(turn.moves[0]).toMatchObject({ id: 'cat', x: s.models.cat.x, y: s.models.cat.y });
     expect(turn.moves[0].rot).toBeCloseTo(94, -1);
     expect(run(s, turn).models.cat.rot).toBeCloseTo(turn.moves[0].rot!);
   });

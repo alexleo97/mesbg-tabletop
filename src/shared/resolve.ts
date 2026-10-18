@@ -374,7 +374,7 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       }
       if (shooter.siege && !bolts) {
         if (state.flow.shotPause) return null;
-        return { apply: fireEngine(state, catalog, { engine: shooter, target, need: plan.need, heads: !!req.heads && !!shooter.options?.includes('Severed Heads') }, d6, seat, `s-${uid()}`, now, uid) };
+        return { apply: fireEngine(state, catalog, { engine: shooter, target, need: plan.need, heads: !!req.heads && !!shooter.options?.includes('Severed Heads'), might: !req.keepMight }, d6, seat, `s-${uid()}`, now, uid) };
       }
       if (bolts) plan.shots = bolts.n;
       const stats = modelStats(catalog, target);

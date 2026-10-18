@@ -2,7 +2,7 @@ import { bookBase, round } from './bases.ts';
 import { mounted, mountProfile } from './cavalry.ts';
 import { boardCommanders, carried, howdahFor, howdahSpot } from './warBeasts.ts';
 import { assignCrew, pushers } from './siege.ts';
-import { holdInZones } from './deployment.ts';
+import { holdInZones, nearEdge } from './deployment.ts';
 import { heroicInfo, heroicNow, heroicQueue, mayActivate, shoutedFor, SHOUT_RANGE } from './heroics.ts';
 import { pendingSpell } from './magic.ts';
 import { basePower, cannotAct, effectActive } from './powers.ts';
@@ -514,11 +514,12 @@ function step(state: GameState, action: Action): GameState {
       for (const raw of action.models) {
         if (Object.keys(models).length >= MAX_MODELS) break;
         const m = cleanModel(raw ?? {});
-        if (m) models[m.id] = m;
+        // A siege engine is set up wholly within 6" of a table edge.
+        if (m) models[m.id] = m.siege && !m.waiting && !state.flow.started ? { ...m, ...nearEdge(state, m, m) } : m;
       }
       // A war beast's Commander rides on it.
       const added = action.models.map(raw => (raw && typeof raw === 'object' ? String(raw.id) : '')).filter(i => models[i]);
-      return { ...state, models: assignCrew(boardCommanders(models, added), added) };
+      return { ...state, models: assignCrew(boardCommanders(models, added), added, state.board) };
     }
     case 'moveModels': {
       if (!Array.isArray(action.moves)) return state;

@@ -14,7 +14,7 @@ import { mounted, mountLabel, mountOf } from '../shared/cavalry.ts';
 import { commanderStats, howdahFor, immovable } from '../shared/warBeasts.ts';
 import { BeastPanel } from './BeastPanel.tsx';
 import { SiegePanel } from './SiegePanel.tsx';
-import { rapidFire, siegeTarget } from '../shared/siege.ts';
+import { crewAt, rapidFire, siegeTarget } from '../shared/siege.ts';
 import { flooredAt, floorHeight, floorName, sightTo, standingAt } from '../shared/sight.ts';
 import RULES from '../data/special-rules.json';
 import { CastBox } from './MagicPanel.tsx';
@@ -170,6 +170,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
   const [atMount, setAtMount] = useState(false);
   const [atHowdah, setAtHowdah] = useState(false);
   const [heads, setHeads] = useState(false);
+  const [keepMight, setKeepMight] = useState(false);
   const seen = target ? sightTo(state, m, target) : null;
   const up = Math.round(standingAt(state, m) * 10) / 10;
   // Inside a building with floors, the model's player picks which level it stands on (climbing costs Move in the battle).
@@ -247,6 +248,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
       const steed = mountOf(target);
       const sharp = !!steed && steed.left > 0 && !!(m.profileId && catalog?.units[m.profileId]?.rules.includes('Sharpshooter'));
       const howdah = target.beast === 'war' && target.howdahWounds ? howdahFor(target.name) : undefined;
+      const veteran = m.siege ? crewAt(state, catalog, m).map(c => c.m).find(c => c.hero && c.might > 0) : undefined;
       action = (
         <div className="aim-card">
           <p>
@@ -279,7 +281,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
               onClick={() =>
                 dispatch({
                   type: 'shoot',
-                  shot: { shooter: { id: m.id, name: m.name, weapon: weapon.name, shoot: plan.printed, s: weapon.s, shots: plan.shots }, target: { id: target.id, name: target.name, d }, obstacles: plan.inWay.length, ...(charge ? { charge: true } : {}), ...(sharp && atMount ? { atMount: true } : {}), ...(howdah && atHowdah ? { atHowdah: true } : {}), ...(m.siege && heads && m.options?.includes('Severed Heads') ? { heads: true } : {}) },
+                  shot: { shooter: { id: m.id, name: m.name, weapon: weapon.name, shoot: plan.printed, s: weapon.s, shots: plan.shots }, target: { id: target.id, name: target.name, d }, obstacles: plan.inWay.length, ...(charge ? { charge: true } : {}), ...(sharp && atMount ? { atMount: true } : {}), ...(howdah && atHowdah ? { atHowdah: true } : {}), ...(m.siege && heads && m.options?.includes('Severed Heads') ? { heads: true } : {}), ...(m.siege && keepMight ? { keepMight: true } : {}) },
                 })
               }
             >
@@ -289,6 +291,11 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
             {sharp && (
               <label className="check small">
                 <input type="checkbox" checked={atMount} onChange={e => setAtMount(e.target.checked)} /> Sharpshooter: aim at the {mountLabel(steed!.name).toLowerCase()}
+              </label>
+            )}
+            {m.siege && veteran && (
+              <label className="check small" title="Unticked, the Siege Veteran spends its Might point on the first To Hit, Scatter or To Wound roll that 1 more would turn round.">
+                <input type="checkbox" checked={keepMight} onChange={e => setKeepMight(e.target.checked)} /> Siege Veteran keeps its Might
               </label>
             )}
             {m.siege && m.options?.includes('Severed Heads') && (

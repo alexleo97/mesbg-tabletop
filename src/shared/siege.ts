@@ -78,7 +78,7 @@ export function crewList(unitName: string): { name: string; hero: boolean; stats
  * Hands each crew member deployed with an engine to the nearest engine of the same profile still short of crew, so
  * the game knows whose crew they are.
  */
-export function assignCrew(models: Record<string, Model>, added: string[]): Record<string, Model> {
+export function assignCrew(models: Record<string, Model>, added: string[], board?: { w: number; h: number }): Record<string, Model> {
   const out = { ...models };
   const engines = added.map(id => out[id]).filter(m => m?.siege);
   const taken = new Map<string, number>();
@@ -97,13 +97,14 @@ export function assignCrew(models: Record<string, Model>, added: string[]): Reco
     const crew = Object.values(out).filter(m => m.crewOf === e.id && added.includes(m.id)).sort((a, b) => b.base.w - a.base.w);
     const { rx, ry } = halfExtents(e.base);
     const placed: Model[] = [];
-    const slots = (r: number) => [[0, ry + r], [-(rx + r), r + 0.03], [rx + r, r + 0.03], [-(rx + r), -(r + 0.03)], [rx + r, -(r + 0.03)]];
+    const slots = (r: number) => [[0, ry + r], [-(rx + r), r + 0.03], [rx + r, r + 0.03], [-(rx + r), -(r + 0.03)], [rx + r, -(r + 0.03)], [0, -(ry + r)]];
+    const onTable = (p: Point, r: number) => !board || (p.x - r >= 0 && p.y - r >= 0 && p.x + r <= board.w && p.y + r <= board.h);
     const a = (e.rot * Math.PI) / 180;
     for (const m of crew) {
       const r = halfExtents(m.base).rx + 0.01;
       const spot = slots(r)
         .map(([dx, dy]) => ({ ...m, x: e.x + dx * Math.cos(a) - dy * Math.sin(a), y: e.y + dx * Math.sin(a) + dy * Math.cos(a) }))
-        .find(p => !placed.some(o => distanceBetween(o, p) < 0.02));
+        .find(p => onTable(p, r) && !placed.some(o => distanceBetween(o, p) < 0.02));
       if (!spot) continue;
       placed.push(spot);
       out[m.id] = spot;
@@ -257,6 +258,8 @@ export interface SiegeShot {
   /** To Hit, after the engine was turned this turn. */
   need: number;
   heads?: boolean;
+  /** Whether its Siege Veteran may spend its Might on the shot (on the first roll a point would turn round). */
+  might?: boolean;
 }
 
 /**
@@ -279,26 +282,38 @@ export function fireEngine(state: GameState, catalog: Catalog | null, shot: Sieg
     return r;
   };
   const crew = firingCrew(state, catalog, engine);
+  // The Siege Veteran beside it may raise one To Hit, Scatter or To Wound roll by spending its Might point.
+  const vet = shot.might === false ? undefined : crewAt(state, catalog, engine).map(c => c.m).find(m => m.hero && m.might > 0 && (m.crewOf === engine.id || /veteran/i.test(m.name)));
+  let spent = false;
+  const raise = (d: number, need: number): [number, { might?: number; note?: string }] => {
+    if (!vet || spent || d !== need - 1) return [d, {}];
+    spent = true;
+    out.push({ type: 'affect', id: vet.id, patch: { might: vet.might - 1 } });
+    return [d + 1, { might: 1 }];
+  };
+  const vetNote = (x: { might?: number }) => (x.might ? ` ${vet!.name} spends Might.` : '');
   let hit = d6();
   const label = `${engine.name} shoots ${target.name} (${shot.need}+)`.slice(0, 80);
+  let hitMight: { might?: number } = {};
   if (hit < shot.need && crew?.troll && rules.includes('Troll Loader')) {
     log({ label, dice: [hit], target: shot.need, model: engine.id, note: 'The Siege Troll reloads: re-rolling the miss.' });
     hit = d6();
   }
+  if (hit < shot.need) [hit, hitMight] = raise(hit, shot.need);
   if (hit < shot.need) {
     log({ label, dice: [hit], target: shot.need, model: engine.id, note: 'The shot veers wildly off course and misses.' });
     return out;
   }
-  log({ label, dice: [hit], target: shot.need, model: engine.id, note: 'A hit.' });
+  log({ label, dice: [hit], target: shot.need, model: engine.id, ...hitMight, note: `A hit.${vetNote(hitMight)}` });
   // The Old Twirly Whirlies: the bolt trails a line from the engine to where it strikes, until the turn ends.
   const cable = (m: Model) => rules.includes('The Old Twirly Whirlies') && out.push({ type: 'cable', from: [engine.x, engine.y], to: [m.x, m.y] });
 
   // A Battlefield Target may not be the one it lands on.
   let actual: Model | undefined = target;
   if (!siegeTarget(target)) {
-    const roll = d6();
+    const [roll, scatterMight] = raise(d6(), 6);
     actual = scatter(state, catalog, engine, target, roll);
-    log({ label: `Scatter (${scatterRange(catalog, engine)}")`, dice: [roll], model: engine.id, note: roll === 6 ? `Dead on: it hits ${target.name}.` : actual ? `${roll === 1 ? 'Wide of the mark' : 'Slight deviation'}: it hits ${actual.name}.` : 'Wide of the mark: it misses completely.' });
+    log({ label: `Scatter (${scatterRange(catalog, engine)}")`, dice: [roll], model: engine.id, ...scatterMight, note: roll === 6 ? `Dead on: it hits ${target.name}.${vetNote(scatterMight)}` : actual ? `${roll === 1 ? 'Wide of the mark' : 'Slight deviation'}: it hits ${actual.name}.` : 'Wide of the mark: it misses completely.' });
     if (!actual) return out;
   }
 
@@ -352,13 +367,16 @@ export function fireEngine(state: GameState, catalog: Catalog | null, shot: Sieg
     if (big && rules.includes('Wall-breaker')) dice = [Math.max(dice[0], d6())];
     let ok = (x: number) => x >= need.target;
     if (!ok(dice[0]) && ((big && engine.options?.includes('Flaming Ammunition')) || (dice[0] === 1 && rules.includes('Bladed Bolts')))) dice = [d6()];
+    let raised: { might?: number } = {};
+    if (!ok(dice[0])) [dice[0], raised] = raise(dice[0], need.target);
     let then: number[] | undefined;
     if (need.then && ok(dice[0])) {
       then = [d6()];
+      if (then[0] < need.then && !spent) [then[0], raised] = raise(then[0], need.then);
       ok = () => then![0] >= need.then!;
     }
     const wounded = ok(dice[0]);
-    log({ label: `To wound ${who}: S${s} vs D${defence} (${need.target}+${need.then ? `/${need.then}+` : ''})`.slice(0, 80), dice, target: need.target, ...(then ? { then: need.then, follow: then } : {}), against: target2.id, model: engine.id, note: wounded ? `${who} is wounded.` : `${who} shrugs it off.` });
+    log({ label: `To wound ${who}: S${s} vs D${defence} (${need.target}+${need.then ? `/${need.then}+` : ''})`.slice(0, 80), dice, target: need.target, ...(then ? { then: need.then, follow: then } : {}), against: target2.id, model: engine.id, ...raised, note: `${wounded ? `${who} is wounded.` : `${who} shrugs it off.`}${vetNote(raised)}` });
     return wounded ? d : 0;
   };
   const credit = [engine.id];

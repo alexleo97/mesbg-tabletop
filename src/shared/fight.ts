@@ -111,6 +111,8 @@ export interface ShotRequest {
   atHowdah?: boolean;
   /** A Mordor War Catapult loosing Severed Heads instead of rocks. */
   heads?: boolean;
+  /** An engine's Siege Veteran keeps its Might rather than spending it on the shot. */
+  keepMight?: boolean;
   /** Things in the way (models or terrain): each needs a 4+ for the shot to get past. */
   obstacles: number;
   /** A throwing weapon thrown in the Move phase as the shooter charges its target. */
@@ -393,6 +395,7 @@ export function cleanShot(raw: unknown): ShotRequest | null {
     ...(o.atMount === true ? { atMount: true } : {}),
     ...(o.atHowdah === true ? { atHowdah: true } : {}),
     ...(o.heads === true ? { heads: true } : {}),
+    ...(o.keepMight === true ? { keepMight: true } : {}),
   };
 }
 

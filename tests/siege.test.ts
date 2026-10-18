@@ -125,24 +125,24 @@ describe('siege engines', () => {
   });
 
   it('is pushed by friends beside it, who go with it, no further than the slowest', () => {
-    const bow = mk('bow', 'p2', 20, 40, '[mordor] bow', { name: 'Mordor Siege Bow', siege: 'small', move: 0, wounds: 3, maxWounds: 3, base: { shape: 'rect', w: 40, h: 40 } });
-    const a = mk('a', 'p2', 18.72, 40, '[mordor] orc', { move: 5 });
-    const b = mk('b', 'p2', 21.28, 40, '[mordor] orc');
+    const bow = mk('bow', 'p2', 20, 44, '[mordor] bow', { name: 'Mordor Siege Bow', siege: 'small', move: 0, wounds: 3, maxWounds: 3, base: { shape: 'rect', w: 40, h: 40 } });
+    const a = mk('a', 'p2', 18.72, 44, '[mordor] orc', { move: 5 });
+    const b = mk('b', 'p2', 21.28, 44, '[mordor] orc');
     let s = begin([bow, a], 'move');
     expect(pushers(s, s.models.bow)).toBeUndefined();
     s = begin([bow, a, b], 'move');
     expect(pushers(s, s.models.bow)?.move).toBe(5);
-    s = run(s, { type: 'moveModels', moves: [{ id: 'bow', x: 20, y: 30 }] });
-    expect(s.models.bow.y).toBeCloseTo(35);
-    expect(s.models.a.y).toBeCloseTo(35);
-    expect(s.models.b.y).toBeCloseTo(35);
+    s = run(s, { type: 'moveModels', moves: [{ id: 'bow', x: 20, y: 34 }] });
+    expect(s.models.bow.y).toBeCloseTo(39);
+    expect(s.models.a.y).toBeCloseTo(39);
+    expect(s.models.b.y).toBeCloseTo(39);
   });
 
   it('turns to face a target, and then shoots 1 worse', () => {
-    const [cat, c1, c2, , ] = catapult(20, 40);
-    const c3 = mk('c3', 'p2', 20, 41.7, '[mordor] catapult', { name: 'Mordor Orc Siege Crew', crewOf: 'cat' });
-    let s = begin([cat, c1, c2, c3, mk('w', 'p1', 50, 40, '[gondor] warrior')], 'move');
-    s = run(s, { type: 'moveModels', moves: [{ id: 'cat', x: 20, y: 40, rot: 90 }] });
+    const [cat, c1, c2, , ] = catapult(20, 44);
+    const c3 = mk('c3', 'p2', 20, 45.7, '[mordor] catapult', { name: 'Mordor Orc Siege Crew', crewOf: 'cat' });
+    let s = begin([cat, c1, c2, c3, mk('w', 'p1', 46, 44, '[gondor] warrior')], 'move');
+    s = run(s, { type: 'moveModels', moves: [{ id: 'cat', x: 20, y: 44, rot: 90 }] });
     expect(s.models.cat.rot).toBe(90);
     expect(s.flow.turned).toContain('cat');
     s = run(s, { type: 'setPhase', phase: 'shoot' });
@@ -150,14 +150,14 @@ describe('siege engines', () => {
   });
 
   it("can't move a Static engine", () => {
-    const tre = mk('t', 'p2', 20, 40, '[gondor] trebuchet', { name: 'Battlecry Trebuchet', siege: 'large', move: 0, wounds: 4, maxWounds: 4, base: { shape: 'rect', w: 60, h: 60 } });
-    const s = begin([tre, mk('a', 'p2', 18.33, 40, '[mordor] orc'), mk('b', 'p2', 21.67, 40, '[mordor] orc'), mk('c', 'p2', 20, 41.67, '[mordor] orc')], 'move');
-    expect(run(s, { type: 'moveModels', moves: [{ id: 't', x: 20, y: 35 }] }).models.t.y).toBe(40);
+    const tre = mk('t', 'p2', 20, 44, '[gondor] trebuchet', { name: 'Battlecry Trebuchet', siege: 'large', move: 0, wounds: 4, maxWounds: 4, base: { shape: 'rect', w: 60, h: 60 } });
+    const s = begin([tre, mk('a', 'p2', 18.33, 44, '[mordor] orc'), mk('b', 'p2', 21.67, 44, '[mordor] orc'), mk('c', 'p2', 20, 45.67, '[mordor] orc')], 'move');
+    expect(run(s, { type: 'moveModels', moves: [{ id: 't', x: 20, y: 39 }] }).models.t.y).toBe(44);
   });
 
   it('is sabotaged as the turn ends by an enemy left beside it who did nothing else', () => {
-    const [cat] = catapult(20, 40);
-    let s = begin([cat, mk('w', 'p1', 20, 38.2, '[gondor] warrior')], 'move');
+    const [cat] = catapult(20, 44);
+    let s = begin([cat, mk('w', 'p1', 20, 42.2, '[gondor] warrior')], 'move');
     s = run(s, { type: 'setPhase', phase: 'end' });
     const acts = sabotageActions(s, uid);
     expect(run(s, ...acts).models.cat.dead).toBe(true);
@@ -168,6 +168,18 @@ describe('siege engines', () => {
     expect(planShot(s, catalog, s.models.a, s.models.w).why).toBeUndefined();
     s = run(s, { type: 'cable', from: [10, 32], to: [30, 32] });
     expect(planShot(s, catalog, s.models.a, s.models.w).why).toMatch(/line/);
+  });
+  it('lets its Siege Veteran spend Might on a roll 1 short, unless told to keep it', () => {
+    const [cat, c1, c2] = catapult(20, 44);
+    const vet = { ...c1, id: 'vet', name: 'Mordor Orc Siege Crew (Siege Veteran)', hero: true, might: 1, will: 1, fate: 1 };
+    const s = begin([cat, vet, c2, mk('w', 'p1', 20, 10, '[gondor] warrior')]);
+    // To Hit 3 (needs 4), raised by the Veteran's Might; dead on; wounded.
+    const after = shoot(s, 'cat', 'w', [3, 6, 6])!;
+    expect(after.models.w.dead).toBe(true);
+    expect(after.models.vet.might).toBe(0);
+    const kept = shoot(s, 'cat', 'w', [3, 6, 6], { keepMight: true })!;
+    expect(kept.models.w.dead).toBe(false);
+    expect(kept.models.vet.might).toBe(1);
   });
 });
 
@@ -181,5 +193,11 @@ describe('deploying an engine', () => {
     expect(crew).toHaveLength(4);
     expect(crew.every(m => distanceBetween(m, cat) < 0.2)).toBe(true);
     expect(firingCrew(s, catalog, cat)).toBeDefined();
+  });
+
+  it('stands wholly within 6" of a table edge', () => {
+    const s = run(initialState(), { type: 'addModels', models: [mk('bow', 'p2', 20, 20, '[mordor] bow', { name: 'Mordor Siege Bow', siege: 'small', base: { shape: 'rect', w: 40, h: 40 } })] });
+    const b = s.models.bow;
+    expect(Math.min(b.x, b.y, 48 - b.x, 48 - b.y) + 0.79).toBeLessThanOrEqual(6.01);
   });
 });
