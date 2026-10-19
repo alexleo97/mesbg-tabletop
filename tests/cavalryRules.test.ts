@@ -22,6 +22,7 @@ const catalog = {
     '[mordor] warg': unit('Warg Rider', 'Mordor', ['Armour', 'hand weapon', 'Warg'], [], ['6"', '3', '5+', '3', '4', '1', '1', '8', '8+']),
     '[mordor] orc': unit('Orc', 'Mordor', ['hand weapon']),
     '[mordor] spear': unit('Orc Spearman', 'Mordor', ['spear']),
+    '[mordor] pike': unit('Orc Pikeman', 'Mordor', ['pike']),
     '[mordor] troll': unit('Troll', 'Mordor', ['hand weapon'], ['Dominant (3)', 'Terror'], ['6"', '7', '5+', '7', '7', '3', '3', '6', '4+']),
   },
 } as unknown as Catalog;
@@ -176,6 +177,14 @@ describe('monsters', () => {
     s = ask(s, 'p1', { type: 'strikes', fight: req, group: group(s) }, [6, 6, 6, 6, 6])!;
     expect(s.log.some(r => r.against === 'sp' && r.label.includes('a free strike'))).toBe(true);
     expect(s.models.sp.dead).toBe(true);
+  });
+
+  it('gets a free strike on each pike in a chain behind the model it slays', () => {
+    let s = toFight(begin([mk('t', 'p1', 20, 20, '[mordor] troll', { base: { shape: 'round', w: 40, h: 40 }, wounds: 3, maxWounds: 3 }), mk('o', 'p2', 20, 21.3, '[mordor] orc'), mk('p', 'p2', 20, 22.3, '[mordor] pike'), mk('pp', 'p2', 20, 23.3, '[mordor] pike')]));
+    const req = { ...fight(['t'], ['o']), sides: [[fx('t')], [fx('o'), { ...fx('p'), support: true }, { ...fx('pp'), support: true }]] } as FightRequest;
+    s = ask(s, 'p1', { type: 'fight', fight: req }, [6, 1, 1, 2, 2, 2])!;
+    s = ask(s, 'p1', { type: 'strikes', fight: req, group: group(s) }, [6, 6, 6, 6, 6, 6, 6, 6])!;
+    expect(s.log.filter(r => r.label.includes('a free strike')).map(r => r.against).sort()).toEqual(['p', 'pp']);
   });
 
   it('lets only one spear support each model in the fight', () => {
