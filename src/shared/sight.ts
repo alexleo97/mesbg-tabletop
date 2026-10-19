@@ -204,6 +204,15 @@ function entersAt(poly: Point[], a: Point, b: Point): number {
 /** The names of what's between a shooter and its target, each needing an In the Way roll. */
 export const inTheWay = (state: GameState, from: Model, to: Model): string[] => obstructions(state, from, to).map(o => o.name);
 
+/** How far a point is from the nearest edge of an outline. */
+export const distanceToOutline = (poly: Point[], p: Point) => Math.min(...poly.map((q, j) => distanceToSegment(p, poly[(j || poly.length) - 1], q)));
+
+/** Terrain a model only gets onto by climbing it: a building with no floors to walk into, or a cliff. */
+export const isSolid = (t: Terrain) => !t.gone && ((t.kind === 'building' && !hasFloors(t)) || t.kind === 'cliff');
+
+/** Whether a base reaching `r` inches from `p` runs onto any of these outlines (by more than a hair). */
+export const onOutlines = (polys: Point[][], p: Point, r: number) => polys.some(poly => insidePolygon(poly, p) || distanceToOutline(poly, p) < r - 0.01);
+
 /** How far a model's base is from a piece of terrain's outline (0 if it stands on it). */
 export function distanceToTerrain(m: Model, t: Terrain): number {
   const poly = outline(t);
