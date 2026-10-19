@@ -66,7 +66,7 @@ export function SiteNav({ page }: { page: Page }) {
   return (
     <header className="site-nav">
       <a className="brand" href={pageUrl('play')}>
-        MESBG <span>Tabletop</span>
+        MESBG <span>VTT</span>
       </a>
       <nav aria-label="Main">
         {PAGES.filter(([p]) => enabled || p === 'play' || p === 'armies').map(([p, icon, label]) => (
@@ -76,9 +76,9 @@ export function SiteNav({ page }: { page: Page }) {
           </a>
         ))}
       </nav>
-      <SettingsMenu />
       <DiscordLink />
       <AccountButton />
+      <SettingsMenu />
     </header>
   );
 }

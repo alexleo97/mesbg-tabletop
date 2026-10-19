@@ -86,22 +86,16 @@ function Lobby() {
           <div className="hero-actions">
             <button className="menu-card start" onClick={() => go(randomRoom())}>
               <span className="menu-icon" aria-hidden>⚔</span>
-              <span>
-                <b>Start a new game</b>
-                <small>Set up a table and send a friend the room name.</small>
-              </span>
+              <b>Start a new game</b>
               <span className="menu-go" aria-hidden>→</span>
             </button>
             <button className="menu-card solo" onClick={() => (location.search = `?room=${randomRoom()}&vs=computer`)}>
               <span className="menu-icon" aria-hidden>🔮</span>
-              <span>
-                <b>Solo battle</b>
-                <small>Take on {BOT_NAME.replace(/^The /, 'the ')} whenever you like.</small>
-              </span>
+              <b>Solo battle</b>
               <span className="menu-go" aria-hidden>→</span>
             </button>
           </div>
-          <a className="menu-card learn" href="?learn">
+          <a className="menu-card learn-card" href="?learn">
             <span className="menu-icon" aria-hidden>📖</span>
             <span>
               <b>New to the game? Learn to play</b>

@@ -1196,4 +1196,4 @@ async function shutdown(signal: string) {
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
 process.on('SIGINT', () => void shutdown('SIGINT'));
 
-server.listen(PORT, () => console.log(`MESBG tabletop listening on http://localhost:${PORT}`));
+server.listen(PORT, () => console.log(`MESBG VTT listening on http://localhost:${PORT}`));

@@ -332,8 +332,6 @@ small.muted, p.small { font-size: 0.8rem; }
 .model-card .effects li { margin: 2px 0; }
 
 /* Training */
-.lobby .learn { border-color: var(--gold); background: transparent; line-height: 1.3; }
-.lobby .learn b { color: var(--gold); }
 .lesson {
   position: absolute; z-index: 15; top: 10px; right: 64px; width: min(400px, calc(100% - 140px));
   background: var(--panel); border: 1px solid var(--gold); border-radius: 12px; padding: 10px 14px; box-shadow: 0 8px 24px #0008;
@@ -723,7 +721,7 @@ details.finish summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
 .menu-card {
   --accent: var(--gold);
   display: flex; align-items: center; gap: 14px; padding: 14px 18px; border-radius: 14px; text-decoration: none; color: var(--text); font: inherit; text-align: left; cursor: pointer;
-  background: linear-gradient(120deg, color-mix(in srgb, var(--accent) 28%, var(--panel)), var(--panel) 75%); border: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  background: linear-gradient(120deg, color-mix(in srgb, var(--accent) 28%, var(--panel)), var(--panel) 75%) var(--panel); border: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
   transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
 }
 .menu-card:hover { transform: translateY(-2px); border-color: var(--accent); box-shadow: 0 0 20px 1px color-mix(in srgb, var(--accent) 35%, transparent); }
@@ -731,10 +729,12 @@ details.finish summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
 .menu-card b { display: block; font-size: 1.15rem; color: var(--accent); font-family: var(--font-head); }
 .menu-card small { color: var(--muted); font-size: 0.85rem; line-height: 1.35; }
 .menu-card .menu-go { margin-left: auto; font-size: 1.5rem; color: var(--accent); }
-.menu-card.start { background: linear-gradient(120deg, color-mix(in srgb, var(--accent) 55%, var(--panel)), color-mix(in srgb, var(--accent) 12%, var(--panel)) 80%); border-color: var(--accent); }
+.menu-card.start { background: linear-gradient(120deg, color-mix(in srgb, var(--accent) 55%, var(--panel)), color-mix(in srgb, var(--accent) 12%, var(--panel)) 80%) var(--panel); border-color: var(--accent); }
+.hero-actions .menu-card { padding: 12px 18px; }
+.hero-actions .menu-card b { white-space: nowrap; }
 .menu-card.start b, .menu-card.start .menu-go { color: var(--text); }
 .menu-card.solo { --accent: var(--p1); }
-.menu-card.learn { animation: learn-glow 2.6s ease-in-out 3; }
+.menu-card.learn-card { animation: learn-glow 2.6s ease-in-out 3; }
 @keyframes learn-glow { 50% { box-shadow: 0 0 22px 2px color-mix(in srgb, var(--accent) 45%, transparent); } }
 .site-main { width: 100%; max-width: 480px; margin: 0 auto; padding: 32px 16px 48px; display: flex; flex-direction: column; gap: 14px; text-align: center; }
 .site-main.wide { max-width: 980px; text-align: left; }
@@ -743,8 +743,6 @@ details.finish summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
 .site-main .big { font-size: 1.15rem; padding: 14px; }
 .site-main .join { display: flex; gap: 8px; }
 .site-main .fine { color: var(--muted); font-size: 0.8rem; margin-top: 24px; }
-.site-main .learn { border-color: var(--gold); background: transparent; line-height: 1.3; }
-.site-main .learn b { color: var(--gold); }
 .site-main .link { background: none; border: none; color: var(--muted); text-decoration: underline; }
 .site-main p { margin: 0; }
 .page-body { display: flex; flex-direction: column; gap: 14px; }
