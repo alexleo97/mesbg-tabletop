@@ -41,9 +41,11 @@ export const declared = (state: GameState, model: string, action: string) => sta
 export function canDeclare(state: GameState, seat: Seat): Model[] {
   if (state.phase !== 'move' && state.phase !== 'shoot' && state.phase !== 'fight') return [];
   const done = new Set(phaseHeroics(state).map(h => h.model));
+  // Every Fight phase heroic action is about the hero's own fight, so only heroes in one are asked.
+  const fighting = state.phase === 'fight' && state.flow.started && state.flow.pairs ? new Set(state.flow.pairs.flatMap(k => k.split(','))) : null;
   // A hero held by a power (Transfix, Paralyse) can't call one.
   // A model with a war drum can call a free Heroic March in the Move phase.
-  return Object.values(state.models).filter(m => m.owner === seat && !m.dead && !done.has(m.id) && !cannotAct(state, m) && ((m.hero && m.might > 0) || (m.drum && state.phase === 'move')));
+  return Object.values(state.models).filter(m => m.owner === seat && !m.dead && !done.has(m.id) && !cannotAct(state, m) && (!fighting || fighting.has(m.id)) && ((m.hero && m.might > 0) || (m.drum && state.phase === 'move')));
 }
 
 /** Both players have declared what they want (or have no one who could), so models can activate. */

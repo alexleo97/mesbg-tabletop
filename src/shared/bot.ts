@@ -65,6 +65,8 @@ export interface BotStep {
   delay: number;
 }
 
+/** The Palantír speed setting shortens every pause between the computer's steps (and its waits for the player). */
+export const BOT_PACE = { normal: 1, fast: 0.35, instant: 0.05 };
 const MOVE_PAUSE = 450;
 const DICE_PAUSE = 1100;
 const THINK_PAUSE = 700;
@@ -284,8 +286,9 @@ function priorityStep(ctx: Ctx): BotStep | null {
   const { state, seat, now, memo } = ctx;
   const f = state.flow;
   if (f.chooserTurn !== state.turn || !f.chooser) {
-    // Give the other player a moment to roll it themselves.
-    return now - memo.since < 2500 ? { delay: 2600 - (now - memo.since) } : { action: { type: 'rollPriority' }, delay: DICE_PAUSE };
+    // Give the other player a moment to roll it themselves (none at Instant speed).
+    const wait = 2500 * BOT_PACE[state.botSpeed ?? 'normal'];
+    return now - memo.since < wait ? { delay: wait + 100 - (now - memo.since) } : { action: { type: 'rollPriority' }, delay: DICE_PAUSE };
   }
   if (f.chooser !== seat || state.priority) return null;
   // Moving first is worth it when the armies are close enough to charge; otherwise let the enemy show its hand.
