@@ -172,6 +172,7 @@ export function entriesFor(id: string, unit: CatalogUnit, optionIds: string[], c
   const howdahRow = tramples ? unit.mwfw?.find(([n]) => /howdah/i.test(n)) : undefined;
   const howdah = howdahRow ? parseInt(howdahRow[1].split(':')[3], 10) || howdahFor(unit.name)?.w : howdahFor(unit.name)?.w;
   const parts = (unit.mwfw?.length ? unit.mwfw : [['', '']]).filter(p => p !== howdahRow);
+  const dominant = Number(unit.rules.map(r => /^Dominant ?\((\d+)\)/.exec(r)).find(Boolean)?.[1] ?? 1);
 
   return parts.map(([subName, mwfw]) => {
     const [might, will, fate, wounds] = (mwfw || '').split(':').map(v => parseInt(v, 10));
@@ -185,6 +186,7 @@ export function entriesFor(id: string, unit: CatalogUnit, optionIds: string[], c
       move: commander?.Mv ?? move,
       ...(beast ? { beast } : {}),
       ...(beast === 'war' && howdah ? { howdahWounds: howdah } : {}),
+      ...(dominant > 1 ? { dominant } : {}),
       wounds: Number.isFinite(wounds) && wounds > 0 ? wounds : Number.isFinite(statW) ? statW : 1,
       might: Number.isFinite(might) ? might : 0,
       will: Number.isFinite(will) ? will : 0,
