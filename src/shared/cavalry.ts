@@ -104,6 +104,10 @@ export function footStats(catalog: Catalog | null | undefined, m: Model) {
   return modelStats(catalog, { ...m, options: (m.options ?? []).filter(o => !MOUNT_OPTION.test(o)) });
 }
 
+/** Mordor and Isengard Warg Riders become Orc Warriors on foot, and swap their gear as the FAQ lays out. */
+const WARG_RIDER = /\b(mordor|isengard)-warg-rider$/;
+const WARG_RIDER_ON_FOOT: Record<string, string> = { 'shield and throwing spears': 'Shield', 'throwing spears': 'Spear' };
+
 /** How a rider gets down, or is thrown: what changes on the model, which then fights on foot. */
 export function onFoot(catalog: Catalog | null | undefined, m: Model): Partial<Model> {
   const unit = m.profileId ? catalog?.units[m.profileId] : undefined;
@@ -114,7 +118,7 @@ export function onFoot(catalog: Catalog | null | undefined, m: Model): Partial<M
     dismounted: true,
     base: footBase,
     move: footStats(catalog, m)?.Mv ?? 6,
-    options: (m.options ?? []).filter(o => !MOUNT_OPTION.test(o)),
+    options: (m.options ?? []).filter(o => !MOUNT_OPTION.test(o)).map(o => (WARG_RIDER.test(m.profileId ?? '') ? (WARG_RIDER_ON_FOOT[o.toLowerCase()] ?? o) : o)),
     mountWounds: undefined,
     throwPending: undefined,
     ...(lances.length ? { lostGear: [...new Set([...(m.lostGear ?? []), ...lances])] } : {}),
