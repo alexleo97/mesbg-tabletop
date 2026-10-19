@@ -45,6 +45,8 @@ export interface Model {
   /** What the model cost in the list, and its heroic tier (5 for a Hero of Legend), for scenarios that score them. */
   points?: number;
   tier?: number;
+  /** Dominant (X): it counts as X models where a scenario counts models, such as those escaping in Reconnoitre. */
+  dominant?: number;
   /** It has the Fly special rule (a Heroic March takes it 5" further rather than 3"). */
   fly?: boolean;
   /** It carries a war drum: it can call a free Heroic March for friends of its own army within 12". */

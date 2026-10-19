@@ -164,6 +164,8 @@ export function cleanModel(m: Partial<Model>, prev?: Model): Model | null {
   if (points) out.points = points;
   const tier = m.tier !== undefined ? int(m.tier, 0, 9, 0) : base.tier;
   if (tier) out.tier = tier;
+  const dominant = m.dominant !== undefined ? int(m.dominant, 0, 9, 0) : base.dominant;
+  if (dominant && dominant > 1) out.dominant = dominant;
   if ('fly' in m ? m.fly === true : base.fly) out.fly = true;
   if ('drum' in m ? m.drum === true : base.drum) out.drum = true;
   const ground = 'ground' in m ? (Array.isArray(m.ground) ? m.ground.filter(g => GROUND.includes(g)) : undefined) : base.ground;

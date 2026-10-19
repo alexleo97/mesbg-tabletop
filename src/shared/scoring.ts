@@ -1,5 +1,5 @@
 import { basePerimeter, distanceToBase, halfExtents, type Point } from './geometry.ts';
-import { fromMarker, inHalf, inZone, onTable, whollyIn, zonesOf } from './objects.ts';
+import { fromMarker, inHalf, inZone, onTable, touching, whollyIn, zonesOf } from './objects.ts';
 import { scenarioById, vpTotal, type Scenario } from './scenarios.ts';
 import { insidePolygon, outline } from './sight.ts';
 import { armyStatus } from './status.ts';
@@ -33,6 +33,8 @@ export function generalOf(models: Model[]): Model | undefined {
   return [...models.filter(m => m.hero)].sort((a, b) => (b.tier ?? 0) - (a.tier ?? 0) || (b.points ?? 0) - (a.points ?? 0) || b.maxWounds + b.might - (a.maxWounds + a.might))[0];
 }
 
+/** Models bought as one entry: the same profile and price, under different names (Shank and Wrot, or a war machine and its crew). */
+const partOf = (a: Model, b: Model) => a === b || (!!a.profileId && a.profileId === b.profileId && a.owner === b.owner && a.points === b.points && a.name !== b.name);
 const isBanner = (m: Model) => /banner/i.test(m.name) || !!m.options?.some(o => /banner/i.test(o));
 const hurt = (m: Model) => m.dead || m.wounds < m.maxWounds;
 
@@ -107,10 +109,12 @@ const COMMON: [RegExp, Scorer][] = [
     /^Opponent's most expensive non-General model/,
     (f, s, pts) => {
       const g = f.general[other(s)];
-      const rest = f.all[other(s)].filter(m => m !== g);
+      const rest = f.all[other(s)].filter(m => !g || !partOf(g, m));
       const top = Math.max(0, ...rest.map(m => m.points ?? 0));
       const target = top > 0 ? rest.find(m => m.points === top) : undefined;
-      return !target ? 0 : target.dead ? pts[1] : hurt(target) ? pts[0] : 0;
+      // A pair or group bought together (Shank & Wrot) must all be slain for the points.
+      const group = target ? rest.filter(m => partOf(target, m)) : [];
+      return !target ? 0 : group.every(m => m.dead) ? pts[1] : group.some(hurt) ? pts[0] : 0;
     },
   ],
 ];
@@ -245,6 +249,8 @@ function lead(mine: number, theirs: number): number {
   if (mine >= 2 && mine >= theirs * 2) return 2;
   return 1;
 }
+/** How many models these count as: a Dominant (X) model counts as X. */
+const headcount = (ms: Model[]) => ms.reduce((a, m) => a + (m.dominant ?? 1), 0);
 const objectsOf = (f: Facts, kind: string) => Object.values(f.state.terrain).filter(t => t.object === kind);
 /** The model carrying a marker, if it's on the table and carried by one of this side's models. */
 const heldBy = (f: Facts, s: Seat, t: Terrain) => {
@@ -325,7 +331,8 @@ const MARKER_LINES: Record<string, Record<number, Scorer>> = {
     0: (f, s, pts) => objectsOf(f, 'artefact').filter(t => heldBy(f, s, t)).length * pts[0],
   },
   reconnoitre: {
-    0: (f, s, pts) => pick(pts, lead(f.escaped[s].length, f.escaped[other(s)].length)),
+    // A Dominant (X) model counts as X models escaped, but as one Hero for the next line.
+    0: (f, s, pts) => pick(pts, lead(headcount(f.escaped[s]), headcount(f.escaped[other(s)]))),
     1: (f, s, pts) => Math.min(pts[1] ?? 3, f.escaped[s].filter(m => m.hero).length * pts[0]),
   },
   'storm-the-camp': {
@@ -343,8 +350,9 @@ const MARKER_LINES: Record<string, Record<number, Scorer>> = {
         .filter(t => t.side === s)
         .reduce((a, t) => {
           if (t.gone === 'rescued') return a + pts[1];
-          const m = heldBy(f, s, t);
-          return a + (m && !inHalf(f.state, s, m) ? pts[0] : 0);
+          // In the enemy half, touching a friend and no enemy.
+          const escorted = !t.gone && !inHalf(f.state, s, t) && f.live[s].some(m => touching(m, t)) && !f.live[other(s)].some(m => touching(m, t));
+          return a + (escorted ? pts[0] : 0);
         }, 0),
   },
   'fog-of-war': {

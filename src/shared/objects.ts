@@ -84,6 +84,12 @@ export function whollyIn(zones: Zone[], m: Model): boolean {
   return zones.some(z => corners.every(c => inZone(z, c)));
 }
 
+/** Whether a round marker lies wholly inside a zone. */
+export const markerWhollyIn = (z: Zone, t: Terrain) => {
+  const r = Math.max(t.w, t.h) / 2;
+  return Array.from({ length: 16 }, (_, i) => (i * Math.PI) / 8).every(a => inZone(z, { x: t.x + r * Math.cos(a), y: t.y + r * Math.sin(a) }));
+};
+
 /** In the half of the table a side deploys in. */
 export const inHalf = (state: GameState, seat: Seat, p: Point) => (seat === 'p1' ? p.y > state.board.h / 2 : p.y < state.board.h / 2);
 
@@ -188,8 +194,8 @@ export function syncCarried(state: GameState): GameState {
 }
 
 /**
- * End phase effects of markers: a standing enemy touching a Supply destroys it, and a Wounded Ally carried wholly
- * into its side's Sanctuary (within 12" of the far corners) is rescued.
+ * End phase effects of markers: a standing enemy touching a Supply destroys it, and a Wounded Ally is rescued when it
+ * and a friend touching it are both wholly inside one of its side's Sanctuaries (within 12" of the far corners).
  */
 export function markerUpkeep(state: GameState): GameState['terrain'] {
   let terrain = state.terrain;
@@ -206,9 +212,10 @@ export function markerUpkeep(state: GameState): GameState['terrain'] {
       const raider = models.find(m => m.owner !== t.side && touching(m, t) && !state.flow.shot?.includes(m.id) && !state.flow.cast?.includes(m.id) && !fought.has(m.id) && !m.effects?.length);
       if (raider) terrain = { ...terrain, [t.id]: { ...t, gone: 'destroyed', by: raider.owner } };
     }
-    if (t.object === 'ally' && t.carrier) {
-      const m = state.models[t.carrier];
-      if (m && whollyIn(sanctuary(state, m.owner), m)) terrain = { ...terrain, [t.id]: { ...t, gone: 'rescued', by: m.owner } };
+    if (t.object === 'ally' && t.side) {
+      const zones = sanctuary(state, t.side);
+      const friend = models.find(m => m.owner === t.side && touching(m, t) && zones.some(z => whollyIn([z], m) && markerWhollyIn(z, t)));
+      if (friend) terrain = { ...terrain, [t.id]: { ...t, gone: 'rescued', by: friend.owner } };
     }
   }
   return terrain;
@@ -254,7 +261,7 @@ export function markerNotes(t: Terrain): string[] {
     case 'supply':
       return ['An enemy model touching it in the End phase destroys it.'];
     case 'ally':
-      return ["A heavy object only its own side can carry. Carry it wholly into one of your Sanctuaries (within 12\" of the enemy's corners) to rescue it."];
+      return ["A heavy object only its own side can carry. It is rescued when it and a friend touching it are both wholly inside one of your Sanctuaries (within 12\" of the enemy's corners) in the End phase."];
     case 'ladder':
     case 'ram':
       return fortressNotes(t);

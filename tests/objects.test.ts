@@ -107,6 +107,46 @@ describe('scenario markers', () => {
     expect(line(s, 0).p1).toBe(4);
   });
 
+  it('scores an escorted Wounded Ally only while it touches a friend and no enemy', () => {
+    const a = mk('p1', 12, 37.3);
+    const foe = mk('p2', 40, 4);
+    let s = game('escort-the-wounded', [a, foe]);
+    // Picked up, carried into the enemy half and put down: it still counts while a friend stays by it.
+    s = tp(run(s, { type: 'pickUp', model: a.id, marker: 't0' }), a.id, 20, 20);
+    s = run(s, { type: 'drop', marker: 't0' });
+    expect(s.terrain.t0.carrier).toBeUndefined();
+    expect(line(s, 0).p1).toBe(2);
+    // An enemy touching it too spoils it.
+    s = tp(s, foe.id, s.terrain.t0.x - 1.3, s.terrain.t0.y);
+    expect(line(s, 0).p1).toBe(0);
+    // And so does leaving it alone.
+    s = tp(tp(s, foe.id, 40, 4), a.id, 30, 20);
+    expect(line(s, 0).p1).toBe(0);
+  });
+
+  it('rescues a Wounded Ally only when it and its friend are both wholly in the Sanctuary', () => {
+    const a = mk('p1', 12, 37.3);
+    let s = game('escort-the-wounded', [a, mk('p2', 40, 4)]);
+    s = run(s, { type: 'pickUp', model: a.id, marker: 't0' }, { type: 'drop', marker: 't0' });
+    // The friend is inside but the ally sticks out over the Sanctuary's edge.
+    s = { ...s, terrain: { ...s.terrain, t0: { ...s.terrain.t0, x: 8.5, y: 8.5 } } };
+    s = run(tp(s, a.id, 7.6, 7.6), { type: 'setPhase', phase: 'end' });
+    expect(s.terrain.t0.gone).toBeUndefined();
+    s = { ...s, phase: 'move', terrain: { ...s.terrain, t0: { ...s.terrain.t0, x: 4.5, y: 4.5 } } };
+    s = run(tp(s, a.id, 3.5, 3.5), { type: 'setPhase', phase: 'end' });
+    expect(s.terrain.t0).toMatchObject({ gone: 'rescued', by: 'p1' });
+    expect(line(s, 0).p1).toBe(4);
+  });
+
+  it('counts a Dominant hero as several models escaping in Reconnoitre, but one Hero', () => {
+    const troll = mk('p1', 10, 0.6, { hero: true, dominant: 3 });
+    let s = game('reconnoitre', [troll, mk('p2', 20, 0.6), mk('p2', 30, 0.6), mk('p2', 40, 47.4)]);
+    s = run(s, { type: 'escape', model: troll.id });
+    // 3 against none is the top band, and it's one Hero.
+    expect(line(s, 0).p1).toBe(12);
+    expect(line(s, 1).p1).toBe(1);
+  });
+
   it('counts models that leave by the enemy edge in Reconnoitre', () => {
     const hero = mk('p1', 10, 0.6, { hero: true });
     let s = game('reconnoitre', [hero, mk('p1', 20, 0.6), mk('p2', 40, 4)]);
@@ -118,6 +158,18 @@ describe('scenario markers', () => {
 });
 
 describe('secret picks and kills', () => {
+  it('needs every model of a pair bought together slain for the most expensive model', () => {
+    const pair = { profileId: 'x:shank_&_wrot', points: 150, hero: true, maxWounds: 2, wounds: 2 };
+    const shank = mk('p2', 10, 8, { ...pair, name: 'Shank' });
+    const wrot = mk('p2', 12, 8, { ...pair, name: 'Wrot' });
+    let s = game('breakthrough', [mk('p1', 10, 40, { hero: true, general: true }), mk('p2', 14, 8, { hero: true, general: true, points: 60 }), shank, wrot]);
+    const i = scoreLines(s).findIndex(l => /most expensive/.test(l.label));
+    s = run(s, { type: 'wound', id: shank.id, count: 2, by: ['nobody'], how: 'shoot' });
+    expect(line(s, i).p1).toBe(1);
+    s = run(s, { type: 'wound', id: wrot.id, count: 2, by: ['nobody'], how: 'shoot' });
+    expect(line(s, i).p1).toBe(2);
+  });
+
   it('scores the Assassination target by who wounded and slew it', () => {
     const assassin = mk('p1', 10, 40, { hero: true });
     const target = mk('p2', 10, 8, { hero: true, maxWounds: 2, wounds: 2 });

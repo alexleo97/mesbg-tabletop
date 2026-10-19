@@ -1540,14 +1540,14 @@
         "note": "y=36 row belongs to p1, y=12 row to p2"
       },
       "specialRules": [
-        "Wounded Allies: Heavy Objects; you can only carry your own. If a carrier is wholly inside a friendly Sanctuary in the End Phase, the ally is rescued and removed.",
+        "Wounded Allies: Heavy Objects; you can only carry your own. If, in the End Phase, a friendly model touches a wounded ally and both are wholly inside a friendly Sanctuary, the ally is rescued and removed.",
         "The Sanctuary: your Sanctuaries are the areas within 12\" of the two corners on the opponent's board edge (the corners not in your deployment zone).",
         "sanctuaries: p1 = quarter-circles r12 at (0,0) and (48,0); p2 = quarter-circles r12 at (0,48) and (48,48)"
       ],
       "gameEnd": "Ends at the end of any turn in which an army is down to 25% or fewer of its starting models; most VP wins, equal VP is a draw.",
       "scoring": [
         {
-          "label": "Each own Wounded Ally carried by you in the enemy half / rescued",
+          "label": "Each own Wounded Ally in the enemy half touching a friend and no enemy / rescued",
           "points": "2 / 4",
           "when": "end of game"
         },
