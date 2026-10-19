@@ -24,6 +24,8 @@ import { rollCast, rollResist } from './magic.ts';
 import { intelligenceWorse, noStrikes, under, witheredStrength } from './powers.ts';
 import { touching } from './objects.ts';
 import { brandRetreats } from './fire.ts';
+import { placingNow } from './placing.ts';
+import { fryingPans } from './sam.ts';
 import { mayCry, narrativeById, narrativeSetup } from './narrative.ts';
 import { ringRequest } from './ring.ts';
 import { MORGUL, morgulBlades } from './morgul.ts';
@@ -236,6 +238,8 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
     case 'fight': {
       // The player with Priority picks the order the fights are rolled in, so they start each one.
       if (state.flow.started && state.phase === 'fight' && state.priority && seat !== state.priority) return null;
+      // Not while a model from the last fight is still being placed.
+      if (state.flow.started && placingNow(state)) return null;
       const fresh = prepareFight(state, catalog, cleanFight(action.fight));
       const req = fresh && adjustFight(state, fresh, catalog);
       if (!req || (state.flow.started && req.combat && fightDone(state, combatFromKey(state, req.combat) ?? { key: req.combat, p1: [], p2: [] })) || duelOpen(state, req.sides.flat().map(f => f.id))) return null;
@@ -261,6 +265,9 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       // A Morgul Blade declared before the strikes: every strike its bearer makes goes at the one enemy it picked.
       const blades = morgulBlades(state, catalog, req);
       if (blades.length) req.aims = { ...req.aims, ...Object.fromEntries(blades.map(x => [x.by, Array(10).fill(x.target)])) };
+      // Sam swings his Frying Pan, if his side wins, instead of striking.
+      const pans = fryingPans(state, catalog, req);
+      for (const x of pans) for (const f of req.sides.flat()) if (f.id === x.by) f.noStrike = 'swings his Frying Pan';
       // A fight over a defended wall, ledge or doorway: strikes come before anyone backs away, so no one is trapped
       // (bar the Prone), the attacker's strikes must get past the defences, and only the attacker backs away.
       const held = defence(state, [ids(0), ids(1)]);
@@ -401,6 +408,15 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       const down = (id: string, flying: boolean): Action => ({ type: 'affect', id, patch: flying && mounted(state.models[id]) ? { throwPending: 'flying' } : { prone: true } });
       const knocks = outcome.ended ? { prone: [], flying: [] } : knocksFor(outcome.winner);
       const felled = [...knocks.prone.map(id => down(id, false)), ...knocks.flying.map(id => down(id, true)), ...(barge?.short ?? []).map(id => down(id, true))].filter(a => a.type === 'affect' && !slain(a.id));
+      // A Frying Pan swung by a winner: on a 4+ its target can't move next turn.
+      const panned: Action[] = [];
+      for (const x of outcome.ended ? [] : pans.filter(p => winners.includes(p.by))) {
+        const t = state.models[x.target];
+        if (slain(t.id)) continue;
+        const d = d6();
+        push(`Frying Pan: ${state.models[x.by].name} swings at ${t.name} (4+)`, [d], { target: 4, model: x.by, note: d >= 4 ? `${t.name} is stunned and can't move next turn.` : `${t.name} shakes it off.` });
+        if (d >= 4) panned.push({ type: 'affect', id: t.id, patch: { panned: state.turn + 1 } });
+      }
       // The monster's Brutal Power Attack: noted for the turn, then the Barge's free move or the Hurl itself.
       const brutalDone: Action[] = [];
       if (req.brutal && bm && req.sides[outcome.winner].some(f => f.id === bm.id)) {
@@ -433,6 +449,7 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
           ...falls,
           ...offLadder,
           ...brutalDone,
+          ...panned,
           ...rise.map((id): Action => ({ type: 'affect', id, patch: { prone: false } })),
         ],
         ...(req.combat ? { record: { type: 'resolveCombat', key: req.combat } } : {}),

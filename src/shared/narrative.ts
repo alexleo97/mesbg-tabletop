@@ -49,6 +49,8 @@ export interface Narrative {
   name: string;
   /** The book it comes from. */
   from: string;
+  /** A line on what happens, in our own words. */
+  blurb: string;
   board: { w: number; h: number; mat: Mat };
   /** The table's terrain; a piece's `id` is what the cast's placements refer to. */
   terrain: Terrain[];
@@ -68,6 +70,7 @@ export const NARRATIVES: Narrative[] = [
     id: 'weathertop',
     name: 'Weathertop',
     from: 'The Fellowship of the Ring',
+    blurb: 'Night on Amon Sûl: the Nine close in on Frodo and the Ring, and only burning brands and Strider stand in their way.',
     board: { w: 24, h: 24, mat: 'plains' },
     terrain: [
       piece({ id: 'amon-sul', kind: 'ruin', shape: 'circle', x: 12, y: 12, w: 12, h: 12, difficult: false, height: 1 }),
@@ -87,11 +90,11 @@ export const NARRATIVES: Narrative[] = [
     rules: [
       {
         name: 'Flaming Brands',
-        text: 'Aragorn, Sam, Merry and Pippin each carry a burning brand. A Ringwraith that loses a fight to one of them backs away as usual, then retreats a further D6" away from it. Once in the game Aragorn may throw his as a throwing weapon: if it hits, there is no roll To Wound, the model hit is Set Ablaze instead, and the brand is gone.',
+        text: 'Aragorn, Sam, Merry and Pippin each carry a burning brand. A Ringwraith that loses a fight to one of them backs away as usual, then retreats a further D6" away from it, whichever way its player chooses. Once in the game Aragorn may throw his as a throwing weapon: if it hits, there is no roll To Wound, the model hit is Set Ablaze instead, and the brand is gone.',
       },
       {
         name: 'Aragorn',
-        text: 'From turn 2, as the Good side finishes its move, it rolls a D6: on a 4+ Aragorn arrives touching the edge of the ruin. He can\'t move that turn but otherwise acts as normal.',
+        text: 'From turn 2, as the Good side finishes its move, it rolls a D6: on a 4+ Aragorn arrives, and the Good player places him anywhere touching the edge of the ruin. He can\'t move that turn but otherwise acts as normal.',
       },
       {
         name: 'Cry of the Nazgûl',
@@ -121,12 +124,12 @@ export const seatOf = (state: Pick<GameState, 'narrative'>, side: Side): Seat | 
 /** The model of the cast with this key (the first, where several share it). */
 export const castModel = (state: GameState, key: string): Model | undefined => Object.values(state.models).find(m => m.cast === key);
 
-const radius = (m: Pick<Model, 'base'>) => Math.max(halfExtents(m.base).rx, halfExtents(m.base).ry);
-const along = (c: Point, angle: number, d: number): Point => ({ x: c.x + Math.sin((angle * Math.PI) / 180) * d, y: c.y - Math.cos((angle * Math.PI) / 180) * d });
-const angleOf = (c: Point, p: Point) => (Math.atan2(p.x - c.x, c.y - p.y) * 180) / Math.PI;
+export const radius = (m: Pick<Model, 'base'>) => Math.max(halfExtents(m.base).rx, halfExtents(m.base).ry);
+export const along = (c: Point, angle: number, d: number): Point => ({ x: c.x + Math.sin((angle * Math.PI) / 180) * d, y: c.y - Math.cos((angle * Math.PI) / 180) * d });
+export const angleOf = (c: Point, p: Point) => (Math.atan2(p.x - c.x, c.y - p.y) * 180) / Math.PI;
 
 /** The round piece of terrain a placement's rim refers to, by its id in the scenario. */
-const rimPiece = (state: GameState, id: string) => state.terrain[`n-${id}`];
+export const rimPiece = (state: GameState, id: string) => state.terrain[`n-${id}`];
 
 /**
  * The scenario's table and both casts, ready to put down: Good for `good`, Evil for the other seat. Profiles come from
@@ -254,7 +257,7 @@ export function arrivalDue(state: GameState): boolean {
 
 /**
  * Rolls for Aragorn (no roll after the Cry) and, on a 4+, brings him on touching the edge of the ruin where he is
- * needed most: nearest the enemy closest to Frodo, clear of the enemy.
+ * needed most (nearest the enemy closest to Frodo, clear of the enemy), for the Good player to move round the edge.
  */
 export function rollArrival(state: GameState, d6: () => number, uid: () => string, now = Date.now()): Action[] {
   const ns = state.narrative!;
@@ -274,7 +277,8 @@ export function rollArrival(state: GameState, d6: () => number, uid: () => strin
   const out: Action[] = [{ type: 'rolled', roll }, { type: 'narrativeNote', rolled: state.turn }];
   if (!comes) return out;
   const spot = arrivalSpot(state, aragorn);
-  if (spot) out.push({ type: 'arrive', seat: ns.good, moves: [{ id: aragorn.id, ...spot }] });
+  // He comes on where he's needed most, and the Good player can then move him anywhere round the ruin's edge.
+  if (spot) out.push({ type: 'arrive', seat: ns.good, moves: [{ id: aragorn.id, ...spot }] }, { type: 'placing', placing: { model: aragorn.id, seat: ns.good, kind: 'arrive', from: [spot.x, spot.y], rim: 'amon-sul' } });
   return out;
 }
 

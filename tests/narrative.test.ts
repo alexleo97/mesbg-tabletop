@@ -10,6 +10,11 @@ import { resolveRequest } from '../src/shared/resolve.ts';
 import { sauronDue, sauronRoll } from '../src/shared/ring.ts';
 import { planShot } from '../src/shared/shooting.ts';
 import { gameWinner } from '../src/shared/status.ts';
+import { mightyBonus, mightyDue } from '../src/shared/mighty.ts';
+import { madeFearful, powerTakesEffect } from '../src/shared/powers.ts';
+import { longshanksDue, longshanksMove } from '../src/shared/sam.ts';
+import { canDeclare } from '../src/shared/heroics.ts';
+import { combats } from '../src/shared/flow.ts';
 import type { Action, GameState, Model, Seat } from '../src/shared/types.ts';
 import { play, seeded } from './botsim.ts';
 
@@ -74,7 +79,7 @@ describe('narrative scenarios: setting up Weathertop', () => {
 });
 
 describe('Weathertop rules', () => {
-  it('brings Aragorn on from turn 2 on a 4+, as the Good side finishes its move', () => {
+  it('brings Aragorn on from turn 2 on a 4+, as the Good side finishes its move, where the Good player places him', () => {
     let s = run(weathertop(1), { type: 'endActivation', seat: 'p1' });
     expect(arrivalDue(s)).toBe(false);
     s = run(weathertop(2), { type: 'endActivation', seat: 'p1' });
@@ -86,6 +91,24 @@ describe('Weathertop rules', () => {
     const a = who(s, 'aragorn');
     expect(a.waiting).toBeUndefined();
     expect(Math.hypot(a.x - 12, a.y - 12)).toBeCloseTo(6.5, 0);
+    // The Good player then places him anywhere touching the ruin's edge, and play waits until they have.
+    expect(s.flow.placing?.[0]).toMatchObject({ model: a.id, seat: 'p1', kind: 'arrive' });
+    expect(run(s, { type: 'nextPhase' }).phase).toBe('move');
+    expect(run(s, { type: 'endActivation', seat: 'p2' }).flow.done).not.toContain('p2');
+    const frodo = who(s, 'frodo');
+    s = run(s, { type: 'moveModels', moves: [{ id: a.id, x: 17.88, y: 3.91 }, { id: frodo.id, x: 13, y: 13 }] });
+    expect(Math.hypot(s.models[a.id].x - 12, s.models[a.id].y - 12)).toBeCloseTo(6.5, 0);
+    expect((Math.atan2(s.models[a.id].x - 12, 12 - s.models[a.id].y) * 180) / Math.PI).toBeCloseTo(36, 0);
+    expect(s.models[frodo.id]).toMatchObject({ x: frodo.x, y: frodo.y });
+    // Not inside the ruin, nor on top of a Ringwraith.
+    const wk = who(s, 'witch-king');
+    const held = run(s, { type: 'moveModels', moves: [{ id: a.id, x: 12, y: 13 }] }, { type: 'moveModels', moves: [{ id: a.id, x: wk.x, y: wk.y - 3 }] });
+    expect(Math.hypot(held.models[a.id].x - 12, held.models[a.id].y - 12)).toBeCloseTo(6.5, 0);
+    expect(distanceBetween(held.models[a.id], wk)).toBeGreaterThan(-0.05);
+    expect(run(s, { type: 'placed', seat: 'p2' }).flow.placing).toHaveLength(1);
+    s = run(s, { type: 'placed', seat: 'p1' });
+    expect(s.flow.placing).toEqual([]);
+    expect(run(s, { type: 'moveModels', moves: [{ id: a.id, x: 18, y: 6 }] }).models[a.id]).toMatchObject({ x: s.models[a.id].x, y: s.models[a.id].y });
   });
 
   it('lets the Evil side give the Cry once, making Good Courage 3 worse and calling Aragorn at once', () => {
@@ -105,7 +128,7 @@ describe('Weathertop rules', () => {
     expect(who(s, 'aragorn').waiting).toBeUndefined();
   });
 
-  it('drives a Ringwraith beaten by a flaming brand D6" further back', () => {
+  it('drives a Ringwraith beaten by a flaming brand D6" further back, which way its player chooses', () => {
     let s = weathertop(1);
     const sam = who(s, 'sam');
     const w = wraiths(s)[0];
@@ -118,6 +141,20 @@ describe('Weathertop rules', () => {
     s = ask(s, 'p1', { type: 'strikes', fight, group }, [4, 4, 5]);
     expect(s.log.some(r => r.label.startsWith('Flaming brand'))).toBe(true);
     expect(Math.hypot(s.models[w.id].x - before.x, s.models[w.id].y - before.y)).toBeGreaterThan(4.5);
+    // Its player picks the way it goes: the full D6", but never back towards the brand.
+    const p = s.flow.placing![0];
+    expect(p).toMatchObject({ model: w.id, seat: 'p2', kind: 'retreat', away: [sam.id] });
+    const from = { x: p.from[0], y: p.from[1] };
+    expect(ask(s, 'p1', { type: 'fight', fight }, [6, 1]).log).toHaveLength(s.log.length);
+    s = run(s, { type: 'moveModels', moves: [{ id: w.id, x: from.x + 0.5, y: from.y + 3 }] });
+    const to = s.models[w.id];
+    expect(Math.hypot(to.x - from.x, to.y - from.y)).toBeCloseTo(p.dist!, 1);
+    expect(distanceBetween(to, s.models[sam.id])).toBeGreaterThanOrEqual(distanceBetween({ ...to, ...from }, s.models[sam.id]) - 0.01);
+    expect(to.x).toBeGreaterThan(from.x + p.dist! - 0.2);
+    s = run(s, { type: 'moveModels', moves: [{ id: w.id, x: from.x + 1, y: from.y - 4 }] });
+    expect(Math.hypot(s.models[w.id].x - from.x, s.models[w.id].y - from.y)).toBeCloseTo(p.dist!, 1);
+    expect(run(s, { type: 'placed', seat: 'p1' }).flow.placing).toHaveLength(1);
+    expect(run(s, { type: 'placed', seat: 'p2' }).flow.placing).toEqual([]);
   });
 
   it('lets Aragorn throw his brand once: no roll To Wound, the target is Set Ablaze and burns in the End phase', () => {
@@ -220,4 +257,115 @@ describe('the computer plays Weathertop', () => {
       expect(out.state.result?.winner, `seed ${seed}`).toMatch(/p1|p2/);
     }
   }, 60_000);
+});
+
+describe("the Weathertop cast's own rules", () => {
+  const onTable = (s: GameState, m: Model): GameState => {
+    const out = { ...s, models: { ...s.models, [m.id]: { ...s.models[m.id] } } };
+    delete out.models[m.id].waiting;
+    return out;
+  };
+  const fightOf = (a: Model, b: Model) => ({ sides: [[{ id: a.id, name: a.name, f: 3, a: 1, s: 3, d: 4 }], [{ id: b.id, name: b.name, f: 3, a: 1, s: 3, d: 4 }]], targets: [b.id, a.id], trapped: false }) as never;
+
+  it('Andúril: Aragorn never needs worse than 4+ to wound, and 3+ two-handed', () => {
+    const base = weathertop(2);
+    const a = who(base, 'aragorn');
+    const w = wraiths(base)[0];
+    let s = place(onTable(only(base, [a, w]), a), { [a.id]: [5, 5], [w.id]: [5, 6] });
+    s = { ...s, phase: 'fight', flow: { ...s.flow, pairs: undefined } };
+    let t = s;
+    s = ask(s, 'p1', { type: 'fight', fight: fightOf(a, w) }, [6, 6, 6, 1]);
+    s = ask(s, 'p1', { type: 'strikes', fight: fightOf(a, w), group: s.log.at(-1)!.group! }, [1, 1, 1]);
+    expect(s.log.find(r => r.label.startsWith('Aragorn, Strider strikes'))?.label).toMatch(/\(4\+\)/);
+    t = run(t, { type: 'fightChoice', id: a.id, twoHanded: true });
+    t = ask(t, 'p1', { type: 'fight', fight: fightOf(a, w) }, [6, 6, 6, 1]);
+    t = ask(t, 'p1', { type: 'strikes', fight: fightOf(a, w), group: t.log.at(-1)!.group! }, [1, 1, 1]);
+    expect(t.log.find(r => r.label.startsWith('Aragorn, Strider strikes'))?.label).toMatch(/\(3\+\)/);
+  });
+
+  it('Mighty Hero: a bonus Might point each turn, lost if unspent', () => {
+    const base = weathertop(2);
+    let s = onTable(base, who(base, 'aragorn'));
+    const a = who(s, 'aragorn');
+    const might = a.might;
+    expect(mightyDue(s, catalog)).toBe(true);
+    s = run(s, ...mightyBonus(s, catalog, uid));
+    expect(s.models[a.id].might).toBe(might + 1);
+    expect(mightyDue(s, catalog)).toBe(false);
+    // Unspent: next turn it's still only one over.
+    s = run({ ...s, turn: 3 }, ...mightyBonus({ ...s, turn: 3 }, catalog, uid));
+    expect(s.models[a.id].might).toBe(might + 1);
+    // Spent: the bonus point goes first.
+    s = run(s, { type: 'affect', id: a.id, patch: { might: might } });
+    s = run({ ...s, turn: 4 }, ...mightyBonus({ ...s, turn: 4 }, catalog, uid));
+    expect(s.models[a.id].might).toBe(might + 1);
+  });
+
+  it('Ring of Barahir: a power that gets through still fails on Aragorn on a 6', () => {
+    const base = weathertop(2);
+    const s0 = onTable(base, who(base, 'aragorn'));
+    const a = who(s0, 'aragorn');
+    const wk = who(s0, 'witch-king');
+    const spell = { caster: wk.id, target: a.id, power: 'Transfix' };
+    const saved = run(s0, ...powerTakesEffect(s0, catalog, spell, dice([6]), uid, 1));
+    expect(saved.log.some(r => r.label.startsWith('Ring of Barahir') && r.dice[0] === 6)).toBe(true);
+    expect(saved.models[a.id].effects ?? []).toHaveLength(0);
+    const hit = run(s0, ...powerTakesEffect(s0, catalog, spell, dice([3]), uid, 1));
+    expect(hit.models[a.id].effects?.some(e => e.power === 'Transfix')).toBe(true);
+    // An aura cast near him: a 6 leaves him alone wherever he goes.
+    const fear = run(s0, ...powerTakesEffect(s0, catalog, { caster: wk.id, target: wk.id, power: 'Instill Fear' }, dice([6]), uid, 1));
+    const near = place(fear, { [a.id]: [wk.x, wk.y + 2] });
+    expect(madeFearful(near, near.models[a.id])).toBe(false);
+    expect(madeFearful(near, near.models[who(near, 'sam').id])).toBe(distanceBetween(near.models[who(near, 'sam').id], wk) <= 6);
+  });
+
+  it("Frying Pan: Sam stuns an enemy instead of striking, so it can't move next turn", () => {
+    let s = weathertop(1);
+    const sam = who(s, 'sam');
+    const w = wraiths(s)[0];
+    s = only(s, [sam, w]);
+    s = place(s, { [sam.id]: [5, 5], [w.id]: [5, 6] });
+    s = { ...s, phase: 'fight', flow: { ...s.flow, pairs: undefined } };
+    s = run(s, { type: 'fightChoice', id: sam.id, pan: w.id });
+    s = ask(s, 'p1', { type: 'fight', fight: fightOf(sam, w) }, [6, 6, 1]);
+    // (The first die is how far the brand drives it off.)
+    s = ask(s, 'p1', { type: 'strikes', fight: fightOf(sam, w), group: s.log.at(-1)!.group! }, [5, 5]);
+    s = run(s, { type: 'placed', seat: 'p2' });
+    expect(s.log.some(r => r.label.startsWith('Frying Pan') && r.dice[0] === 5)).toBe(true);
+    expect(s.log.some(r => r.label.startsWith('Samwise Gamgee strikes'))).toBe(false);
+    expect(s.models[w.id].panned).toBe(2);
+    s = { ...s, turn: 2, phase: 'move', flow: { ...s.flow, done: ['p1'] } };
+    const at = { x: s.models[w.id].x, y: s.models[w.id].y };
+    s = run(s, { type: 'moveModels', moves: [{ id: w.id, x: at.x + 3, y: at.y }] });
+    expect(s.models[w.id]).toMatchObject(at);
+  });
+
+  it('"Let him go or I\'ll have you, Longshanks!": a free Heroic Combat that takes Sam into Frodo\'s fight', () => {
+    let s = weathertop(1);
+    const [sam, frodo] = [who(s, 'sam'), who(s, 'frodo')];
+    const [w1, w2] = wraiths(s);
+    s = only(s, [sam, frodo, w1, w2]);
+    s = place(s, { [frodo.id]: [10, 10], [w1.id]: [10, 9], [sam.id]: [14, 10], [w2.id]: [15, 10] });
+    s = { ...s, phase: 'fight', priority: 'p1', models: { ...s.models, [sam.id]: { ...s.models[sam.id], might: 0 }, [w2.id]: { ...s.models[w2.id], stats: { D: 3 } } }, flow: { ...s.flow, heroics: [], passed: [], pairs: undefined } };
+    expect(canDeclare(s, 'p1').map(m => m.id)).toContain(sam.id);
+    s = run(s, { type: 'declareHeroic', model: sam.id, action: 'Heroic Combat' });
+    expect(s.flow.heroics.at(-1)).toMatchObject({ model: sam.id, free: true });
+    expect(s.models[sam.id].might).toBe(0);
+    const key = combats(s).find(c => c.p1.includes(sam.id))!.key;
+    const fight = { ...(fightOf(sam, w2) as object), combat: key } as never;
+    s = ask(s, 'p1', { type: 'fight', fight }, [6, 6, 1]);
+    s = ask(s, 'p1', { type: 'strikes', fight, group: s.log.at(-1)!.group! }, [6, 6, 6, 6]);
+    expect(s.models[w2.id].dead).toBe(true);
+    const due = longshanksDue(s)!;
+    expect(due.id).toBe(sam.id);
+    s = run(s, ...longshanksMove(s, due));
+    expect(distanceBetween(s.models[sam.id], s.models[w1.id])).toBeLessThan(0.1);
+    expect(s.flow.placing?.[0]).toMatchObject({ model: sam.id, kind: 'join' });
+    // Anywhere else in Frodo's fight is fine; out of it is not.
+    const here = { x: s.models[sam.id].x, y: s.models[sam.id].y };
+    expect(run(s, { type: 'moveModels', moves: [{ id: sam.id, x: 14, y: 14 }] }).models[sam.id]).toMatchObject(here);
+    s = run(s, { type: 'placed', seat: 'p1' });
+    expect(longshanksDue(s)).toBeUndefined();
+    expect(run(s, { type: 'moveModels', moves: [{ id: sam.id, x: here.x + 1, y: here.y }] }).models[sam.id]).toMatchObject(here);
+  });
 });

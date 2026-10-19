@@ -46,7 +46,8 @@ export function putOut(state: GameState, m: Model): boolean {
 
 /**
  * Flaming brands: every Ringwraith that lost the fight to a model carrying a brand, and lived, retreats D6" further
- * straight away from it once it has backed away (`after` holds where everyone stands by then).
+ * away from it once it has backed away (`after` holds where everyone stands by then). It goes straight back at first,
+ * and its player then picks the way it goes (see placing.ts).
  */
 export function brandRetreats(after: GameState, losers: string[], winners: string[], d6: () => number, by: Seat, group: string, now: number): Action[] {
   const brands = winners.map(id => after.models[id]).filter(w => w && !w.dead && w.brand);
@@ -64,6 +65,8 @@ export function brandRetreats(after: GameState, losers: string[], winners: strin
       out.push({ type: 'backAway', moves });
       state = { ...state, models: { ...state.models, [id]: { ...m, x: moves[0].x, y: moves[0].y } } };
     }
+    // Driven straight back to start with; its player then picks which way it goes.
+    out.push({ type: 'placing', placing: { model: id, seat: m.owner, kind: 'retreat', from: [m.x, m.y], dist: d, away: brands.map(b => b.id) } });
   }
   return out;
 }

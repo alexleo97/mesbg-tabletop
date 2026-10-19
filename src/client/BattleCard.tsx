@@ -63,7 +63,7 @@ export function SetupCard({ state, dispatch, role, tab, setTab, table }: { state
   const drag = useDraggable('setup-card');
   const [small, setSmall] = useState(false);
   const count = (s: 'p1' | 'p2') => Object.values(state.models).filter(m => m.owner === s).length;
-  const done: Record<SetupTab, boolean> = { map: Object.keys(state.terrain).length > 0, scenario: !!scenarioById(state.scenario) || !!state.narrative, army: count('p1') > 0 && count('p2') > 0 };
+  const done: Record<SetupTab, boolean> = { map: Object.keys(state.terrain).length > 0, scenario: !!scenarioById(state.scenario), army: count('p1') > 0 && count('p2') > 0 };
   const steps: [SetupTab, string][] = [
     ['map', '1 · Table'],
     ['scenario', '2 · Scenario'],
@@ -78,7 +78,14 @@ export function SetupCard({ state, dispatch, role, tab, setTab, table }: { state
           {small ? '▸' : '▾'}
         </button>
       </div>
-      {!small && (
+      {!small && state.narrative && (
+        // A narrative scenario sets the table and both casts: there is nothing to choose but the side.
+        <div className="battle-body narrative-setup">
+          <ScenarioPanel state={state} dispatch={dispatch} role={role} />
+          <NarrativeCast state={state} />
+        </div>
+      )}
+      {!small && !state.narrative && (
         <>
           <nav className="battle-tabs setup-steps-nav" aria-label="Set-up steps">
             {steps.map(([t, label]) => (
@@ -89,9 +96,9 @@ export function SetupCard({ state, dispatch, role, tab, setTab, table }: { state
             ))}
           </nav>
           <div className="battle-body">
-            {tab === 'map' && (state.narrative ? <p className="hint panel-body">The narrative scenario sets this table: {state.board.w}"×{state.board.h}" with its own terrain.</p> : table)}
+            {tab === 'map' && table}
             {tab === 'scenario' && <ScenarioPanel state={state} dispatch={dispatch} role={role} />}
-            {tab === 'army' && (state.narrative ? <NarrativeCast state={state} /> : <ArmyPanel state={state} dispatch={dispatch} role={role} />)}
+            {tab === 'army' && <ArmyPanel state={state} dispatch={dispatch} role={role} />}
           </div>
         </>
       )}

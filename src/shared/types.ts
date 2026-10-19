@@ -115,6 +115,8 @@ export interface Model {
   used?: string[];
   /** A Morgul Blade wounded it: the first wound it takes slays it outright (Fate can still save it). */
   slay?: boolean;
+  /** Stunned by Sam's Frying Pan: it can't move in this turn. */
+  panned?: number;
 }
 
 /** A power at work on a model: which one, who cast it and the turn it was cast. */
@@ -123,6 +125,8 @@ export interface ModelEffect {
   by: string;
   turn: number;
   duration: 'Temporary' | 'Exhaustion';
+  /** Enemies it doesn't touch (they rolled a 6 with the Ring of Barahir). */
+  spared?: string[];
 }
 
 export const TERRAIN_KINDS = ['wood', 'rock', 'building', 'water', 'hill', 'wall', 'ruin', 'cliff', 'field', 'objective', 'bridge', 'road', 'gate', 'tower'] as const;
@@ -328,6 +332,23 @@ export interface SpellPending {
   resistable?: boolean;
 }
 
+/**
+ * A model its player puts where they like, within limits: `arrive` anywhere touching the edge of terrain `rim`;
+ * `retreat` exactly `dist` from `from`, away from the models `away`; `join` anywhere in the fight of `away[0]` it can
+ * reach within `dist` of `from`.
+ */
+export interface Placing {
+  model: string;
+  seat: Seat;
+  kind: 'arrive' | 'retreat' | 'join';
+  from: [number, number];
+  rim?: string;
+  dist?: number;
+  away?: string[];
+  /** Nowhere better to go: it stays where the game put it. */
+  stay?: boolean;
+}
+
 export interface Flow {
   /** Setup is over and turns are being played. */
   started: boolean;
@@ -387,7 +408,7 @@ export interface Flow {
   /** A shot paused for its shooter's player to spend Might on the roll it just made: its roll group, and the shot. */
   shotPause?: { group: string; shot: ShotRequest };
   /** How models fight this phase, as their players chose: Shielding, or a weapon used two-handed. */
-  choices?: Record<string, { shielding?: boolean; twoHanded?: boolean; /** The enemy it strikes with its Morgul Blade. */ morgul?: string }>;
+  choices?: Record<string, { shielding?: boolean; twoHanded?: boolean; /** The enemy it strikes with its Morgul Blade. */ morgul?: string; /** The enemy it swings its Frying Pan at instead of striking. */ pan?: string }>;
   /** Who charged whom this turn (charger to the enemy it reached), so a fight over a wall knows who is defending. */
   charges?: Record<string, string>;
   /** Monsters that have made their one Brutal Power Attack this turn, and the models already hurled at. */
@@ -452,6 +473,15 @@ export interface Flow {
   /** Ringbearers that have rolled for Sauron's Will this turn, and those that have tried to take the Ring off. */
   sauron?: string[];
   ringTried?: string[];
+  /**
+   * Models a player must put where they choose before play goes on, first one first (a narrative scenario's arrival,
+   * or a retreat in a direction its player picks).
+   */
+  placing?: Placing[];
+  /** Models that have made a follow-up move the game placed (Sam joining Frodo's fight), and move no more this phase. */
+  joined?: string[];
+  /** Mighty Hero: the turn its bonus Might was last given, and each hero's own Might before it (see mighty.ts). */
+  mighty?: { turn: number; base: Record<string, number> };
 }
 
 export interface Heroic {
@@ -459,6 +489,8 @@ export interface Heroic {
   /** The heroic action's name, from heroics.ts. */
   action: string;
   phase: Phase;
+  /** Called at no cost (Sam's "Let him go or I'll have you, Longshanks!"). */
+  free?: boolean;
 }
 
 export type Action =
@@ -532,7 +564,7 @@ export type Action =
   /** Carry on with a shot paused for Might (see Flow.shotPause). */
   | { type: 'shotOn'; group: string }
   /** A player's choice for how one of its models fights this phase. */
-  | { type: 'fightChoice'; id: string; shielding?: boolean; twoHanded?: boolean; morgul?: string | null }
+  | { type: 'fightChoice'; id: string; shielding?: boolean; twoHanded?: boolean; morgul?: string | null; pan?: string | null }
   /** Request from a client: set up a narrative scenario, with `good` the seat playing Good (the server builds the casts). */
   | { type: 'setNarrative'; id: string; good: Seat }
   /** Server result of setNarrative: the scenario's table and both casts. */
@@ -547,6 +579,12 @@ export type Action =
   | { type: 'burned' }
   /** Server only: a Ringbearer has rolled for Sauron's Will, or tried to take the Ring off, this turn. */
   | { type: 'ringMark'; key: 'sauron' | 'ringTried'; id: string }
+  /** A model for a player to place (the game's). */
+  | { type: 'placing'; placing: Placing }
+  /** The player has put the first model waiting to be placed where they want it. */
+  | { type: 'placed'; seat: Seat }
+  /** Mighty Hero's bonus Might has been handed out this turn (the server's). */
+  | { type: 'mightyHero'; base: Record<string, number> }
   /** Asks to re-roll one duel die with a friendly banner nearby (the server rolls it). */
   | { type: 'banner'; roll: string; die: number }
   /** A rider gets down from its mount during its move (the game rolls the Courage test of a mount that fights). */
@@ -642,6 +680,8 @@ export interface RoomSummary {
   seated: Seat[];
   spectators: number;
   scenario: string | null;
+  /** A narrative scenario's id, when the game is one. */
+  narrative?: string;
   turn: number;
   models: number;
   /** The battle is under way, so its seats are taken even when no one is connected. */

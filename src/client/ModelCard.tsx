@@ -169,7 +169,9 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
   const left = building ? moveLeft(state, m) : null;
   const climbCost = (level: number) => (building ? Math.abs(floorHeight(building, level) - floorHeight(building, m.floor ?? 0)) : 0);
   const unit = m.profileId ? catalog?.units[m.profileId] : undefined;
-  const listed = unit && statsWithOptions(unit, unit.options.filter(o => m.options?.includes(o.name)).map(o => o.id));
+  // A narrative scenario's own characteristics (the Nazgûl at Weathertop fight with 1 Attack) replace the profile's.
+  const own = (k: (typeof STAT_NAMES)[number], v: string) => (m.stats?.[k] === undefined ? v : k === 'Mv' ? `${m.stats[k]}"` : k === 'Sv' || k === 'C' || k === 'I' ? `${m.stats[k]}+` : String(m.stats[k]));
+  const listed = unit && statsWithOptions(unit, unit.options.filter(o => m.options?.includes(o.name)).map(o => o.id))?.map((v, i) => own(STAT_NAMES[i], v));
   // A rider moves at its mount's pace, so show the Move it actually has.
   // A war beast's Commander has a profile of its own.
   const commander = unit?.rules.includes('Trample') ? commanderStats(unit.name, m.name) : undefined;
@@ -443,6 +445,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
           ))}
         </dl>
       )}
+      {m.panned === state.turn && state.flow.started && <p className="warn">{m.name} was stunned by Sam's Frying Pan, so it can't move this turn.</p>}
       {held ? (
         <p className="warn">{m.name} is {held === 'Thrown from its mount' ? 'thrown from its mount' : held}, so it can't move or act this turn.</p>
       ) : state.flow.compel?.model === m.id && state.flow.compel.ring ? (

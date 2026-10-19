@@ -1,4 +1,7 @@
 import { mounted } from './cavalry.ts';
+import { placingNow } from './placing.ts';
+import { woundNeed } from './rules.ts';
+import { hasFryingPan, longshanksFree, pannable } from './sam.ts';
 import { breachOptions } from './breach.ts';
 import { gateStanding, ladderable, nearestEdge, overThe, TOWER, towerMove } from './fortress.ts';
 import { hurlOptions } from './defenders.ts';
@@ -178,6 +181,9 @@ export function botStep(state: GameState, seat: Seat, catalog: Catalog | null, m
   const picks = picksStep(ctx);
   if (picks) return picks;
   if (!state.flow.started) return null;
+  // A model waiting to be placed: the game already put it where the computer would, so it just says so.
+  const place = placingNow(state);
+  if (place) return place.seat === seat ? { action: { type: 'placed', seat }, delay: THINK_PAUSE } : null;
   const spell = spellStep(ctx) ?? compelStep(ctx);
   if (spell) return spell;
   if (++memo.steps > MAX_STEPS) return finish(ctx);
@@ -316,6 +322,8 @@ function heroicStep(ctx: Ctx): BotStep {
     const ids = (s: Seat) => fight[s].map(id => state.models[id]).filter(Boolean);
     const odds = fightOdds(fighterSide(ctx, ids(seat)), fighterSide(ctx, ids(other(seat))));
     const declare = (action: string): BotStep => ({ action: { type: 'declareHeroic', model: h.id, action }, delay: DICE_PAUSE });
+    // Sam goes to Frodo's aid for nothing, whenever he can.
+    if (longshanksFree(state, h)) return declare('Heroic Combat');
     // A close duel is worth a Might point for D3 more Fight; a won duel that can't wound wants double Strength.
     if (has('Heroic Strike') && h.might >= 2 && odds.win > 0.2 && odds.win < 0.7) return declare('Heroic Strike');
     if (has('Heroic Strength') && h.might >= 2 && odds.win >= 0.6 && odds.dealt < 1) return declare('Heroic Strength');
@@ -1239,7 +1247,7 @@ function fightStep(ctx: Ctx): BotStep | null {
   if (raise) return raise;
   // Hold the strikes while the other player could still use Might; they roll the strikes themselves.
   if (ctx.person && humanCanRaise(state, other(seat), duel.rolls)) return { delay: WAIT_PAUSE };
-  const blade = morgulPick(ctx, c, duel.rolls);
+  const blade = morgulPick(ctx, c, duel.rolls) ?? panPick(ctx, c, duel.rolls);
   if (blade) return blade;
   return { action: { type: 'strikes', fight: fightRequest(ctx, c, duel.rolls), group: duel.group }, delay: DICE_PAUSE * 3 };
 }
@@ -1256,6 +1264,22 @@ function morgulPick(ctx: Ctx, c: Combat, rolls: DiceRoll[]): BotStep | null {
     .sort((a, b) => profile(ctx, b).value - profile(ctx, a).value)[0];
   if (!prey) return null;
   return { action: { type: 'fightChoice', id: bearer.id, ...state.flow.choices?.[bearer.id], morgul: prey.id }, delay: THINK_PAUSE };
+}
+
+/** Sam's Frying Pan, once he's won, at the foe his strikes would barely scratch: stunned, it can't chase Frodo next turn. */
+function panPick(ctx: Ctx, c: Combat, rolls: DiceRoll[]): BotStep | null {
+  const { state, seat } = ctx;
+  if (duelLeader(rolls)?.winner !== (seat === 'p1' ? 0 : 1)) return null;
+  const sam = c[seat].map(id => state.models[id]).find(m => m && isUp(m) && hasFryingPan(ctx.catalog, m) && !state.flow.choices?.[m.id]?.pan);
+  if (!sam) return null;
+  const s = modelStats(ctx.catalog, sam)?.S ?? 2;
+  const prey = c[other(seat)]
+    .map(id => state.models[id])
+    .filter(m => m && isUp(m) && pannable(ctx.catalog, m))
+    .filter(m => { const need = woundNeed(s, modelStats(ctx.catalog, m)?.D ?? 4); return !need || !!need.then || need.target >= 6; })
+    .sort((a, b) => profile(ctx, b).value - profile(ctx, a).value)[0];
+  if (!prey) return null;
+  return { action: { type: 'fightChoice', id: sam.id, ...state.flow.choices?.[sam.id], pan: prey.id }, delay: THINK_PAUSE };
 }
 
 /** Might on the computer's own duel dice, when a point or two turns a lost duel into a won one. */

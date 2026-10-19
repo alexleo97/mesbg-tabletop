@@ -784,6 +784,25 @@ details.finish summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
 .menu-card.start b, .menu-card.start .menu-go { color: var(--text); }
 .menu-card.solo { --accent: var(--p1); }
 .menu-card.learn-card { --accent: #4fae6a; animation: learn-glow 2.6s ease-in-out 3; }
+.menu-card.story-link { --accent: #c9864a; }
+/* The narrative scenario menu: scenario, side and opponent, then play. */
+.narrative-menu { display: flex; flex-direction: column; gap: 12px; }
+.narrative-menu header { display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; }
+.narrative-menu h2 { margin: 14px 0 0; font-size: 1.15rem; color: var(--gold); font-family: var(--font-head); }
+.story-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.story-card { display: flex; gap: 12px; align-items: flex-start; text-align: left; padding: 12px; border-radius: 12px; background: var(--panel); border: 2px solid var(--line); color: var(--text); font: inherit; cursor: pointer; }
+.story-card:hover { border-color: var(--gold); }
+.story-card.on { background: var(--panel); color: var(--text); border-color: var(--gold); box-shadow: 0 0 16px 1px color-mix(in srgb, var(--gold) 30%, transparent); }
+.story-card .map-preview { width: 92px; height: 92px; flex: none; border-radius: 6px; }
+.story-text { display: flex; flex-direction: column; gap: 4px; line-height: 1.35; }
+.story-text b { font-family: var(--font-head); color: var(--gold); font-size: 1.1rem; }
+.narrative-menu .narrative-sides { margin: 0; }
+.narrative-menu .side-card { padding: 14px; font-size: 1rem; }
+.story-brief { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
+.story-brief summary { cursor: pointer; color: var(--gold); }
+.story-brief p { margin: 6px 0 0; line-height: 1.4; }
+.story-start { align-self: flex-start; font-size: 1.1rem; padding: 12px 28px; margin-top: 8px; }
+.narrative-setup { max-height: 70vh; overflow-y: auto; }
 @keyframes learn-glow { 50% { box-shadow: 0 0 22px 2px color-mix(in srgb, var(--accent) 45%, transparent); } }
 .site-main { width: 100%; max-width: 480px; margin: 0 auto; padding: 32px 16px 48px; display: flex; flex-direction: column; gap: 14px; text-align: center; }
 .site-main.wide { max-width: 980px; text-align: left; }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { placeSpot, placingNow } from '../shared/placing.ts';
 import { distanceBetween, distanceToBase, formatInches, halfExtents, type Point } from '../shared/geometry.ts';
 import type { Action, GameState, Mark, Model, Seat, Terrain } from '../shared/types.ts';
 import { markerName, markerNotes } from '../shared/objects.ts';
@@ -460,6 +461,13 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
         const start = m && moveStart(state, m);
         pos[id] = m && left != null ? (Math.hypot(to.x - start!.x, to.y - start!.y) < 0.3 ? start! : limitMove(state, { x: m.x, y: m.y }, to, left, m.owner, m, moving)) : to;
       }
+      // A model being placed goes only where its placing allows, and nothing else moves meanwhile.
+      const placing = state.flow.started ? placingNow(state) : undefined;
+      if (placing)
+        for (const [id, o] of Object.entries(gesture.origin)) {
+          const m = state.models[id];
+          pos[id] = (id === placing.model && m && placeSpot(state, placing, m, { x: o.x + dx, y: o.y + dy })) || o;
+        }
       // Before the battle, models stop at the edge of their deployment zone, as the server would hold them there.
       if (!state.flow.started) for (const mv of holdInZones(state, Object.entries(pos).map(([id, p]) => ({ id, ...p })))) if (pos[mv.id]) pos[mv.id] = { x: mv.x, y: mv.y };
       setDragPos(pos);
