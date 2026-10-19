@@ -15,7 +15,7 @@ import { freeResistDice, isAreaPower, isLinePower } from '../shared/powers.ts';
 import { formatInches } from '../shared/geometry.ts';
 import { useCatalog } from './ListBuilder.tsx';
 import { isMaelstrom, waitingWarbands, warbandName } from '../shared/maelstrom.ts';
-import { scenarioById } from '../shared/scenarios.ts';
+import { objectivesMissing, scenarioById } from '../shared/scenarios.ts';
 import { scoreLines, vpTotals } from '../shared/scoring.ts';
 import { armyStatus, endCheck, endRollLabel } from '../shared/status.ts';
 import { PHASES, type Action, type GameState, type Model, type Role, type Seat } from '../shared/types.ts';
@@ -339,7 +339,8 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
     const count = (s: Seat) => Object.values(state.models).filter(m => m.owner === s).length;
     const scenario = scenarioById(state.scenario);
     // Both armies must be on the table first; a solo battle is always fought over a scenario.
-    const waiting = state.bot && !scenario ? 'Pick a scenario first.' : !count('p1') || !count('p2') ? 'Deploy both armies first.' : '';
+    const missing = objectivesMissing(state);
+    const waiting = state.bot && !scenario ? 'Pick a scenario first.' : missing ? `Place ${missing} more objective marker${missing === 1 ? '' : 's'} first.` : !count('p1') || !count('p2') ? 'Deploy both armies first.' : '';
     title = 'Set up the battle';
     body = (
       <>

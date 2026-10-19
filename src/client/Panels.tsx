@@ -5,25 +5,21 @@ import { ResultReport } from './ResultReport.tsx';
 import { MapsSection } from './Maps.tsx';
 import { DEFAULT_HEIGHT, FLOORED, heightOf, isDifficult } from '../shared/sight.ts';
 import { TERRAIN_GROUPS, TERRAIN_INFO, terrainRules } from '../shared/terrain.ts';
+import { markerNotes } from '../shared/objects.ts';
 import { breakable, DOORS } from '../shared/fortress.ts';
 import { useRef, useState } from 'react';
 import { objectiveMarkers, river, STARTER_BOARDS, starterTerrain } from '../shared/boards.ts';
-import { baseLabel, loadCatalog, parseBuilderExport, STAT_NAMES, startingPoints, statsWithOptions } from '../shared/catalog.ts';
-import { deployList, guessBase, newId, parseList, type ListEntry } from '../shared/importList.ts';
-import { BASE_SIZES } from '../shared/bases.ts';
+import { loadCatalog, parseBuilderExport, STAT_NAMES, statsWithOptions } from '../shared/catalog.ts';
+import { deployList, newId, parseList, type ListEntry } from '../shared/importList.ts';
 import { addSavedList, ListBuilder, loadSaved, SavedLists, Portrait, useCatalog } from './ListBuilder.tsx';
 import { PREMADE, premadeRoster } from '../shared/premade.ts';
 import { listEntries } from '../shared/warbands.ts';
 import { botRoster, playableArmies } from '../shared/botList.ts';
 import { parseAdmiral } from '../shared/admiral.ts';
-import { BOT_NAME, DOOR_TYPES, MATS, TERRAIN_KINDS, type Action, type Base, type DiceRoll, type DoorType, type GameState, type Mat, type Model, type Role, type Seat, type Terrain, type TerrainKind } from '../shared/types.ts';
+import { BOT_NAME, DOOR_TYPES, MATS, TERRAIN_KINDS, type Action, type DiceRoll, type DoorType, type GameState, type Mat, type Model, type Role, type Seat, type Terrain, type TerrainKind } from '../shared/types.ts';
 import { BODY_FONTS, HEADING_FONTS, THEMES, type Settings } from './settings.ts';
 
 type Dispatch = (a: Action) => void;
-
-const BASE_PRESETS: { label: string; base: Base }[] = BASE_SIZES.map(base => ({ label: `${baseLabel(base)} ${base.shape === 'oval' ? 'oval' : 'round'}`, base }));
-
-const baseKey = (b: Base) => `${b.shape}:${b.w}x${b.h}`;
 
 function Stepper({ label, value, min, max, onChange }: { label: string; value: number; min: number; max: number; onChange: (v: number) => void }) {
   return (
@@ -67,46 +63,19 @@ function StatCard({ m }: { m: Model }) {
   );
 }
 
-export function SelectionPanel({ state, selected, dispatch, clear }: { state: GameState; selected: Set<string>; dispatch: Dispatch; clear: () => void }) {
+export function SelectionPanel({ state, selected, dispatch }: { state: GameState; selected: Set<string>; dispatch: Dispatch; clear: () => void }) {
   const { catalog } = useCatalog();
   const ms = [...selected].map(id => state.models[id]).filter((m): m is Model => Boolean(m));
   if (ms.length === 0) return <p className="hint">Tap a model to select it. In Select mode, drag a box to pick a group.</p>;
 
-  const rotate = (d: number) => dispatch({ type: 'moveModels', moves: ms.map(m => ({ id: m.id, x: m.x, y: m.y, rot: m.rot + d })) });
-  const remove = () => {
-    dispatch({ type: 'removeModels', ids: ms.map(m => m.id) });
-    clear();
-  };
-  const kill = () => {
-    for (const m of ms) dispatch({ type: 'updateModel', id: m.id, patch: { dead: true } });
-    clear();
-  };
-  const setBase = (key: string) => {
-    const preset = BASE_PRESETS.find(p => baseKey(p.base) === key);
-    if (preset) for (const m of ms) dispatch({ type: 'updateModel', id: m.id, patch: { base: preset.base } });
-  };
-
+  // The game keeps wounds, Might, Will and Fate, casualties and bases right, so this only shows what models are.
   if (ms.length > 1) {
     return (
       <div className="panel-body">
         <h3>{ms.length} models selected</h3>
-        <div className="row">
-          <button onClick={() => rotate(-45)}>⟲ Turn</button>
-          <button onClick={() => rotate(45)}>⟳ Turn</button>
-        </div>
-        <label>
-          Base
-          <select value="" onChange={e => setBase(e.target.value)}>
-            <option value="">Set base for all…</option>
-            {BASE_PRESETS.map(p => (
-              <option key={p.label} value={baseKey(p.base)}>{p.label}</option>
-            ))}
-          </select>
-        </label>
-        <div className="row">
-          <button onClick={kill}>☠ Casualties</button>
-          <button className="danger" onClick={remove}>Delete</button>
-        </div>
+        {ms.map(m => (
+          <StatCard key={m.id} m={m} />
+        ))}
       </div>
     );
   }
@@ -114,33 +83,21 @@ export function SelectionPanel({ state, selected, dispatch, clear }: { state: Ga
   const m = ms[0];
   const patch = (p: Partial<Model>) => dispatch({ type: 'updateModel', id: m.id, patch: p });
   const fromList = !!(m.profileId && catalog?.units[m.profileId]);
-  const start = startingPoints(catalog, m);
+  // A model from a pasted text list has no profile: its owner fills in its stats before the battle.
+  const editable = !fromList && !state.flow.started;
   return (
     <div className="panel-body">
-      {fromList ? <h3>{m.name}</h3> : <input className="name-input" value={m.name} onChange={e => patch({ name: e.target.value })} aria-label="Model name" />}
+      {editable ? <input className="name-input" value={m.name} onChange={e => patch({ name: e.target.value })} aria-label="Model name" /> : <h3>{m.name}</h3>}
       <StatCard m={m} />
-      {fromList ? (
-        // Models from an army list play by their profile; the game spends Might, Will and Fate and tracks wounds.
-        start && (
-          <details className="fix-points">
-            <summary>Correct a mistake</summary>
-            <Stepper label="Wounds" value={m.wounds} min={0} max={m.maxWounds} onChange={v => patch({ wounds: v })} />
-            <Stepper label="Might" value={m.might} min={0} max={start.might} onChange={v => patch({ might: v })} />
-            <Stepper label="Will" value={m.will} min={0} max={start.will} onChange={v => patch({ will: v })} />
-            <Stepper label="Fate" value={m.fate} min={0} max={start.fate} onChange={v => patch({ fate: v })} />
-          </details>
-        )
-      ) : (
+      {editable && (
         <>
           <div className="row muted">
-            <span>{m.owner === 'p1' ? 'Player 1' : 'Player 2'}</span>
             <label className="check">
               <input type="checkbox" checked={m.hero} onChange={e => patch({ hero: e.target.checked })} /> Hero
             </label>
           </div>
           <Stepper label="Move" value={m.move} min={0} max={24} onChange={v => patch({ move: v })} />
-          <Stepper label="Wounds" value={m.wounds} min={0} max={m.maxWounds} onChange={v => patch({ wounds: v })} />
-          <Stepper label="Max wounds" value={m.maxWounds} min={1} max={30} onChange={v => patch({ maxWounds: v, wounds: m.wounds === m.maxWounds ? v : Math.min(m.wounds, v) })} />
+          <Stepper label="Wounds" value={m.maxWounds} min={1} max={30} onChange={v => patch({ maxWounds: v, wounds: v })} />
           {m.hero && (
             <>
               <Stepper label="Might" value={m.might} min={0} max={9} onChange={v => patch({ might: v })} />
@@ -150,23 +107,6 @@ export function SelectionPanel({ state, selected, dispatch, clear }: { state: Ga
           )}
         </>
       )}
-      <label>
-        Base
-        <select value={baseKey(m.base)} onChange={e => setBase(e.target.value)}>
-          {!BASE_PRESETS.some(p => baseKey(p.base) === baseKey(m.base)) && <option value={baseKey(m.base)}>{baseLabel(m.base)}</option>}
-          {BASE_PRESETS.map(p => (
-            <option key={p.label} value={baseKey(p.base)}>{p.label}</option>
-          ))}
-        </select>
-      </label>
-      <div className="row">
-        <button onClick={() => rotate(-45)}>⟲ Turn</button>
-        <button onClick={() => rotate(45)}>⟳ Turn</button>
-      </div>
-      <div className="row">
-        <button onClick={kill}>☠ Casualty</button>
-        <button className="danger" onClick={remove}>Delete</button>
-      </div>
     </div>
   );
 }
@@ -390,13 +330,11 @@ function ReadyMade({ state, owner, onDeploy }: { state: GameState; owner: Seat; 
 
 export function ArmyPanel({ state, dispatch, role }: { state: GameState; dispatch: Dispatch; role: Role }) {
   const [text, setText] = useState('');
-  const [chosen, setOwner] = useState<Seat>(role === 'p2' ? 'p2' : 'p1');
-  // In a solo game you only deploy your own army; the opponent's is picked above.
-  const owner: Seat = state.bot && role !== 'spectator' ? (role as Seat) : chosen;
+  // Each player deploys only their own army (in a solo game, the opponent's is picked above).
+  const owner: Seat = role === 'p2' ? 'p2' : 'p1';
   /** Seats deploying one warband at a time, who can keep adding warbands. */
   const [byWarband, setByWarband] = useState<Set<Seat>>(new Set());
   const [message, setMessage] = useState('');
-  const [single, setSingle] = useState('');
   const [mode, setMode] = useState<'lists' | 'ready' | 'build' | 'import'>('lists');
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -448,13 +386,6 @@ export function ArmyPanel({ state, dispatch, role }: { state: GameState; dispatc
     if (fileRef.current) fileRef.current.value = '';
   };
 
-  const addOne = () => {
-    if (!single.trim()) return;
-    const models = deployList([{ name: single.trim(), count: 1, hero: false }], owner, state, scenarioById(state.scenario));
-    dispatch({ type: 'addModels', models });
-    setSingle('');
-  };
-
   const casualties = Object.values(state.models).filter(m => m.dead);
   const alive = (seat: Seat) => Object.values(state.models).filter(m => m.owner === seat && !m.dead).length;
   const total = (seat: Seat) => Object.values(state.models).filter(m => m.owner === seat).length;
@@ -465,13 +396,6 @@ export function ArmyPanel({ state, dispatch, role }: { state: GameState; dispatc
 
   return (
     <div className="panel-body">
-      {!state.bot && <div className="row seg">
-        {(['p1', 'p2'] as const).map(s => (
-          <button key={s} className={owner === s ? 'on' : ''} onClick={() => setOwner(s)}>
-            {state.names[s] || (s === 'p1' ? 'Player 1' : 'Player 2')}
-          </button>
-        ))}
-      </div>}
       {role === 'spectator' && <p className="hint">Spectators can watch but can't deploy armies. Pick a player seat in the top bar to join in.</p>}
       {state.bot && role !== 'spectator' && <OpponentArmy state={state} dispatch={dispatch} seat={state.bot} />}
       {role !== 'spectator' && locked ? (
@@ -518,13 +442,6 @@ export function ArmyPanel({ state, dispatch, role }: { state: GameState; dispatc
         </>
       )}
 
-      <h4>Add a single model</h4>
-      <div className="row">
-        <input placeholder="Model name" value={single} onChange={e => setSingle(e.target.value)} onKeyDown={e => e.key === 'Enter' && addOne()} />
-        <button onClick={addOne}>Add</button>
-      </div>
-      {single && <p className="hint">Base: {baseLabel(guessBase(single))} (change it after placing)</p>}
-
       <h4>Forces</h4>
       <p className="muted">
         {(['p1', 'p2'] as const).map(s => `${state.names[s] || (s === 'p1' ? 'Player 1' : 'Player 2')}: ${alive(s)}/${total(s)}`).join(' · ')}
@@ -538,7 +455,6 @@ export function ArmyPanel({ state, dispatch, role }: { state: GameState; dispatc
             {casualties.map(m => (
               <li key={m.id} className={m.owner}>
                 <span>{m.name}</span>
-                <button onClick={() => dispatch({ type: 'updateModel', id: m.id, patch: { dead: false, wounds: m.maxWounds } })}>Return</button>
               </li>
             ))}
           </ul>
@@ -641,6 +557,34 @@ export function TablePanel({
   };
 
   const objectives = Object.values(state.terrain).filter(o => o.kind === 'objective' && !SIEGE_GEAR.has(o.object ?? ''));
+
+  // Once the battle starts (and always for spectators) the table is fixed: it only shows what the pieces are.
+  if (!editor && (state.flow.started || role === 'spectator'))
+    return (
+      <div className="panel-body">
+        <p className="hint">{state.flow.started ? "The table is set: it can't change once the battle has started." : 'Only the players set up the table.'} Tap a piece of terrain to see how it plays.</p>
+        {t && (
+          <>
+            <h4>{TERRAIN_INFO[t.kind].name}</h4>
+            <ul className="terrain-rules">
+              {(t.object ? markerNotes(t) : terrainRules(t)).map(r => (
+                <li key={r}>{r}</li>
+              ))}
+            </ul>
+          </>
+        )}
+        <h4>Game</h4>
+        <div className="row">
+          <button onClick={save}>Save game</button>
+        </div>
+        {state.flow.started && !state.result && role !== 'spectator' && (
+          <details className="finish">
+            <summary>Finish the game early</summary>
+            <ResultReport state={state} role={role} dispatch={dispatch} early />
+          </details>
+        )}
+      </div>
+    );
 
   return (
     <div className="panel-body">

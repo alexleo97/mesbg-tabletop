@@ -1,5 +1,5 @@
 import data from '../data/scenarios.json';
-import type { Seat, Terrain } from './types.ts';
+import type { GameState, Seat, Terrain } from './types.ts';
 
 // Matched play scenarios as game facts (deployment, objectives, scoring) in our own words.
 // Positions are inches on a 48"×48" board with the origin top-left; player 1 deploys at the bottom.
@@ -29,6 +29,17 @@ export const SELECTION_RULE: string = data.selection;
 
 export const scenarioById = (id: string | null) => SCENARIOS.find(s => s.id === id);
 
+/** Siege gear and other markers that aren't a scenario's objectives. */
+const NOT_OBJECTIVES = new Set(['ladder', 'ram', 'rocks', 'oil', 'rally']);
+
+/** How many of the scenario's objective markers still have to be put on the table before the battle can start. */
+export function objectivesMissing(state: GameState): number {
+  const s = scenarioById(state.scenario);
+  if (!s || !s.objectives.count || !['objective', 'heirloom', 'supply', 'relic', 'artefact', 'wounded-ally'].includes(s.objectives.markerKind)) return 0;
+  const have = Object.values(state.terrain).filter(t => t.kind === 'objective' && !t.vines && !NOT_OBJECTIVES.has(t.object ?? '')).length;
+  return Math.max(0, s.objectives.count - have);
+}
+
 /**
  * Picks a scenario from server-rolled dice: the first die picks the pool, the next die of 1-4
  * picks the scenario in it (the guide re-rolls 5s and 6s, so we roll spares up front).
@@ -42,6 +53,12 @@ export function scenarioFromDice(dice: number[]): Scenario | undefined {
 /** Objective markers for the scenario's fixed positions, scaled to the board size, set up as what they stand for. */
 export function scenarioMarkers(s: Scenario, w: number, h: number, newId: (p: string) => string, rand: () => number = Math.random): Terrain[] {
   const spots = (s.objectives.fixedPositions ?? []).map(([x, y]) => [(x / 48) * w, (y / 48) * h] as [number, number]);
+  // Markers the players place themselves (Domination's) start in legal spots: 12" from each other and 6" from the
+  // edges. Players can still drag them before the battle.
+  for (let tries = 0; spots.length < s.objectives.count && s.objectives.markerKind === 'objective' && tries < 500; tries++) {
+    const p: [number, number] = [6 + rand() * (w - 12), 6 + rand() * (h - 12)];
+    if (spots.every(([x, y]) => Math.hypot(x - p[0], y - p[1]) >= 12)) spots.push(p);
+  }
   const setup = markerSetup(s.id, s.objectives.markerKind, spots, h / 2, rand);
   return spots.map(([x, y], i) => ({
     id: newId('t'),

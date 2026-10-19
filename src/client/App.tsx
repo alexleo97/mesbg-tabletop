@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BOT_NAME, BOT_SPEEDS, PHASES, type Terrain, type Model, type Role, type RoomSummary, type Seat } from '../shared/types.ts';
+import { BOT_NAME, BOT_SPEEDS, type Terrain, type Model, type Role, type RoomSummary, type Seat } from '../shared/types.ts';
 import { Board, type Tool } from './Board.tsx';
 import { RoomConnection, useRoom, type Connection } from './net.ts';
 import { pictureUrl } from '../shared/catalog.ts';
@@ -30,8 +30,6 @@ import { LeaderboardPage } from './Leaderboard.tsx';
 import { useAuth } from './auth.ts';
 
 const DISCORD_INVITE = 'https://discord.gg/epNRWMxGws';
-
-const PHASE_LABEL: Record<(typeof PHASES)[number], string> = { priority: 'Priority', move: 'Move', shoot: 'Shoot', fight: 'Fight', end: 'End' };
 
 const storage = {
   get: (k: string) => {
@@ -466,7 +464,7 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
               }}
               dispatch={role === 'spectator' ? () => {} : dispatch}
               showZones={settings.zones}
-              showDeployment={settings.deployment}
+              showDeployment={settings.deployment && !state.flow.started}
               showGrid={settings.grid}
               photoFor={m => {
                 const unit = settings.photos && m.profileId ? catalog?.units[m.profileId] : undefined;
@@ -481,7 +479,7 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
               showNames={settings.names}
               marks={marks}
               animate={settings.animations && !reducedMotion}
-              role={role === 'p1' || role === 'p2' ? role : undefined}
+              role={role}
               onMark={m => conn.mark(m)}
             />
 
@@ -551,6 +549,7 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
             {single && (
               <ModelCard
                 key={single.id}
+                practice={!!practice}
                 state={state}
                 dispatch={dispatch}
                 role={role}
@@ -560,7 +559,6 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
                 clearTarget={() => setAimAt(null)}
                 combat={state.flow.started ? singleCombat : undefined}
                 openFight={setFightKey}
-                openTab={showTab}
                 close={() => setSelected(new Set())}
               />
             )}
@@ -653,23 +651,6 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
                     <input type="checkbox" checked={!!state.private} disabled={!seat || !conn.setPrivate} onChange={e => conn.setPrivate?.(e.target.checked)} />
                     Private game: only people you send the invite link to can take a seat. Anyone can still watch.
                   </label>
-                  )}
-                  {state.flow.started && role !== 'spectator' && (
-                    <label>
-                      Correct the phase
-                      <select value={`${state.turn}:${state.phase}`} onChange={e => {
-                        const [t, p] = e.target.value.split(':');
-                        dispatch({ type: 'setPhase', phase: p as (typeof PHASES)[number], turn: Number(t) });
-                      }}>
-                        {[state.turn - 1, state.turn].filter(t => t >= 1).flatMap(t =>
-                          PHASES.map(p => (
-                            <option key={`${t}:${p}`} value={`${t}:${p}`}>
-                              Turn {t}, {PHASE_LABEL[p]}
-                            </option>
-                          )),
-                        )}
-                      </select>
-                    </label>
                   )}
                   <div className="row wrap">
                     {!state.bot && <button onClick={() => void copyLink()}>{state.private ? 'Copy invite link (to play)' : 'Copy invite link'}</button>}
