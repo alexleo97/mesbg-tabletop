@@ -13,6 +13,7 @@ export const OBJECT_NAMES: Record<MarkerObject, string> = {
   heirloom: 'Heirloom',
   decoy: 'Heirloom',
   supply: 'Supply',
+  campfire: 'Campfire',
   ally: 'Wounded Ally',
   ladder: 'Siege Ladder',
   ram: 'Battering Ram',
