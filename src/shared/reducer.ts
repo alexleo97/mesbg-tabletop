@@ -248,8 +248,10 @@ export function cleanModel(m: Partial<Model>, prev?: Model): Model | null {
   for (const k of ['ablaze', 'ringOn', 'slay'] as const) if ((k in m ? m[k] === true : base[k]) && !out.dead) out[k] = true;
   const used = 'used' in m ? (Array.isArray(m.used) ? [...new Set(m.used.slice(0, 8).map(u => str(u, 40)))] : undefined) : base.used;
   if (used?.length) out.used = used;
-  const panned = 'panned' in m ? (m.panned === undefined ? undefined : int(m.panned, 0, 99, 0)) : base.panned;
-  if (panned) out.panned = panned;
+  for (const k of ['panned', 'noMove', 'chilled'] as const) {
+    const turn = k in m ? (m[k] === undefined ? undefined : int(m[k], 0, 99, 0)) : base[k];
+    if (turn) out[k] = turn;
+  }
   return out.id ? out : null;
 }
 
@@ -270,7 +272,7 @@ function cleanEffects(v: unknown): ModelEffect[] | undefined {
   return v
     .filter(e => e && typeof e === 'object')
     .slice(0, 12)
-    .map(e => ({ power: str(e.power, 60), by: id(e.by), turn: int(e.turn, 0, 99, 0), duration: e.duration === 'Temporary' ? ('Temporary' as const) : ('Exhaustion' as const), ...(Array.isArray(e.spared) ? { spared: e.spared.slice(0, 10).map(id) } : {}) }))
+    .map(e => ({ power: str(e.power, 60), by: id(e.by), turn: int(e.turn, 0, 99, 0), duration: e.duration === 'Temporary' ? ('Temporary' as const) : ('Exhaustion' as const), ...(Array.isArray(e.spared) ? { spared: e.spared.slice(0, 10).map(id) } : {}), ...(e.sack === true ? { sack: true } : {}) }))
     .filter(e => e.power && e.by);
 }
 
@@ -628,7 +630,7 @@ function step(state: GameState, action: Action): GameState {
         const prev = mv && models[mv.id];
         if (!prev || prev.escaped || prev.waiting) continue;
         // Sam, once the game has put him in Frodo's fight, and a model stunned by his Frying Pan, stay put.
-        if (state.flow.started && !placing && ((state.phase === 'fight' && state.flow.joined?.includes(prev.id)) || (state.phase === 'move' && prev.panned === state.turn))) continue;
+        if (state.flow.started && !placing && ((state.phase === 'fight' && state.flow.joined?.includes(prev.id)) || (state.phase === 'move' && (prev.panned === state.turn || prev.noMove === state.turn)))) continue;
         if (placing) {
           if (prev.id !== placing.model || prev.dead) continue;
           const spot = placeSpot(state, placing, prev, { x: num(mv.x, -24, 200, prev.x), y: num(mv.y, -24, 200, prev.y) });
