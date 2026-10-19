@@ -13,7 +13,6 @@ import { pairOff } from './flow.ts';
 import { crossingAhead } from './terrainTests.ts';
 import { distanceBetween } from './geometry.ts';
 import { touching as inContact, touchingEnemies } from './barriers.ts';
-import { canRetreatTo } from './backAway.ts';
 import { canPickUp, markerUpkeep, syncCarried, touching, canEscape } from './objects.ts';
 import { aboard, raiseLadders, towerMove } from './fortress.ts';
 import { endPhaseUpkeep } from './scoring.ts';
@@ -90,7 +89,7 @@ function goToPhase(state: GameState, phase: Phase, turn: number, newTurn: boolea
       starts: {},
       walked: {},
       paths: {},
-      ...(phase !== state.phase ? { crossed: {}, blocked: {}, stopped: [], crawling: [], lay: [], retreat: {}, heroicDone: [], heroicNow: undefined, heroicFirst: undefined, activated: [], shotPause: undefined, choices: undefined, barged: undefined } : {}),
+      ...(phase !== state.phase ? { crossed: {}, blocked: {}, stopped: [], crawling: [], lay: [], heroicDone: [], heroicNow: undefined, heroicFirst: undefined, activated: [], shotPause: undefined, choices: undefined, barged: undefined } : {}),
       ...farMoved,
       ...upkeep,
     },
@@ -787,23 +786,14 @@ function step(state: GameState, action: Action): GameState {
     case 'backAway': {
       if (!Array.isArray(action.moves)) return state;
       const models = { ...state.models };
-      // Who backed away after this fight, and from where, so their player can pick another way.
-      const retreat: Record<string, [number, number]> = {};
       for (const mv of action.moves) {
         const prev = mv && models[mv.id];
         if (!prev || prev.dead) continue;
         if (mv.ifSlain && !models[mv.ifSlain]?.dead) continue;
         if (mv.unlessSlain && models[mv.unlessSlain]?.dead) continue;
-        if (mv.pick) retreat[prev.id] = [prev.x, prev.y];
         models[prev.id] = { ...prev, x: num(mv.x, -24, 200, prev.x), y: num(mv.y, -24, 200, prev.y) };
       }
-      return { ...state, models, flow: { ...state.flow, retreat } };
-    }
-    case 'backAwayTo': {
-      const m = state.models[action.id];
-      const p = { x: num(action.x, -24, 200, NaN), y: num(action.y, -24, 200, NaN) };
-      if (!m || state.phase !== 'fight' || !canRetreatTo(state, m.id, p)) return state;
-      return { ...state, models: { ...state.models, [m.id]: { ...m, ...p } } };
+      return { ...state, models };
     }
     case 'courageTaken': {
       if (!action.results || typeof action.results !== 'object') return state;
@@ -1230,7 +1220,7 @@ function step(state: GameState, action: Action): GameState {
       if (shooter && r.charge && r.aim) flow = { ...flow, mustCharge: { model: shooter, target: r.aim } };
       if (r.id.startsWith('w-') && r.model && !flow.cast?.includes(r.model)) flow = { ...flow, cast: [...(flow.cast ?? []), r.model].slice(-200) };
       // So does a duel's first roll, for its fight (after any Heroic Strike roll).
-      if (r.group?.startsWith('f-') && r.side !== undefined && !flow.duels?.includes(r.group)) flow = { ...flow, duels: [...(flow.duels ?? []), r.group].slice(-200), retreat: {} };
+      if (r.group?.startsWith('f-') && r.side !== undefined && !flow.duels?.includes(r.group)) flow = { ...flow, duels: [...(flow.duels ?? []), r.group].slice(-200) };
       // A spear or pike that supports a fight can't support another this phase.
       if (r.support && r.model && !flow.supported?.includes(r.model)) flow = { ...flow, supported: [...(flow.supported ?? []), r.model].slice(-400) };
       // A hero's Heroic Strike bonus lasts the whole phase.
@@ -1415,7 +1405,6 @@ export function loadState(raw: unknown): GameState {
         ...(Array.isArray(f.turned) ? { turned: f.turned.slice(0, 100).map(x => str(x, 80)) } : {}),
         ...(Array.isArray(f.cables) ? { cables: f.cables.slice(0, 20).filter(Array.isArray).map(c => [0, 1, 2, 3].map(i => num((c as unknown[])[i], -24, 200, 0)) as [number, number, number, number]) } : {}),
         ...(f.barged && typeof f.barged === 'object' ? { barged: Object.fromEntries(Object.entries(f.barged).slice(0, 20).filter(([, v]) => Array.isArray(v)).map(([k, v]) => [str(k, 80), [num((v as unknown[])[0], 0, 12, 0), int((v as unknown[])[1], 0, 999, 0)] as [number, number]])) } : {}),
-        ...(f.retreat && typeof f.retreat === 'object' ? { retreat: Object.fromEntries(Object.entries(f.retreat).slice(0, 100).filter(([, v]) => Array.isArray(v)).map(([k, v]) => [str(k, 80), [num((v as unknown[])[0], -24, 200, 0), num((v as unknown[])[1], -24, 200, 0)] as [number, number]])) } : {}),
         ...(f.mustCharge && typeof f.mustCharge === 'object' ? { mustCharge: { model: str(f.mustCharge.model, 80), target: str(f.mustCharge.target, 80) } } : {}),
         ...(Array.isArray(f.duels) ? { duels: f.duels.slice(0, 200).map(x => String(x).slice(0, 80)) } : {}),
         ...(f.startFate && typeof f.startFate === 'object' ? { startFate: cleanCounts(f.startFate, 9) } : {}),

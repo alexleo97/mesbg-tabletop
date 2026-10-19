@@ -292,11 +292,7 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       const moves: Extract<Action, { type: 'backAway' }>['moves'] = [];
       // A defender that falls lets its attacker take its place; otherwise the attacker backs away (when it can).
       const crossing = (w: string, l: string) => moves.push({ id: w, x: state.models[l].x, y: state.models[l].y, ifSlain: l });
-      for (const mv of back.moves) {
-        const fell = back.falls.some(f => f.id === mv.id);
-        const friend = back.madeWay.some(f => f.id === mv.id);
-        moves.push({ ...mv, ...(held ? { unlessSlain: held.defender } : {}), ...(fell || friend || bargeOn ? {} : { pick: true }) });
-      }
+      for (const mv of back.moves) moves.push({ ...mv, ...(held ? { unlessSlain: held.defender } : {}) });
       if (held && attackers === outcome.winner) crossing(held.attacker, held.defender);
       // Fighting across a wall without its protection (attacked from both sides), a winner touching only that foe still crosses.
       if (!held)

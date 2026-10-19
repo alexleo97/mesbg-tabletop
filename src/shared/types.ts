@@ -376,8 +376,6 @@ export interface Flow {
    * had been fought when it did (so it can fight once more).
    */
   barged?: Record<string, [number, number]>;
-  /** Models that backed away after the last fight, and where from, so their player may pick another way. */
-  retreat?: Record<string, [number, number]>;
   /** A model that threw a weapon as it charged: unless its target fell, it must go on and charge that target. */
   mustCharge?: { model: string; target: string };
   /** Models that have cast a power this turn; each casts at most once. */
@@ -437,9 +435,8 @@ export type Action =
    * if that model died in the fight (an attacker crossing the wall), `unlessSlain` only if it didn't; `pick` lets the
    * model's player choose another way for it.
    */
-  | { type: 'backAway'; moves: { id: string; x: number; y: number; ifSlain?: string; unlessSlain?: string; pick?: boolean }[] }
+  | { type: 'backAway'; moves: { id: string; x: number; y: number; ifSlain?: string; unlessSlain?: string }[] }
   /** The player of a model that backed away puts it 1" another way from where it stood. */
-  | { type: 'backAwayTo'; id: string; x: number; y: number }
   | { type: 'spendWill'; id: string; count: number }
   | { type: 'spellPending'; spell: SpellPending | null }
   /** The caster's player lets a cast that fell short fail rather than spend Might on it. */
