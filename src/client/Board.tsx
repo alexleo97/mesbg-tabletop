@@ -50,7 +50,15 @@ interface Props {
   onMark?: (m: Pick<Mark, 'kind' | 'x' | 'y' | 'x2' | 'y2'>) => void;
   /** Glide moves and show wounds, deaths and shots as they happen. */
   animate?: boolean;
+  /** Models to zoom in on, such as the fight being rolled; the view glides there each time `key` changes. */
+  focus?: { key: string; ids: string[] } | null;
 }
+
+/** Room (px) left for the fight card when zooming to a fight, inches of table round it, the closest zoom, and how long the glide takes. */
+const FOCUS_INSET = 480;
+const FOCUS_PAD = 5;
+const FOCUS_MAX_ZOOM = 45;
+const FOCUS_GLIDE = 600;
 
 interface View {
   x: number;
@@ -153,7 +161,7 @@ function Arrow({ by, from, to, fontSize }: { by: string; from: Point; to: Point;
 
 const clipId = (m: Model) => `clip-${m.base.shape}-${m.base.w}-${m.base.h}`;
 
-export function Board({ state, tool, selected, setSelected, selectedTerrain, setSelectedTerrain, dispatch, showZones, showDeployment, showGrid, photoFor, onModelTap, links, fights, onFightTap, sightFrom, sightRange, showNames, marks, onMark, animate, role }: Props) {
+export function Board({ state, tool, selected, setSelected, selectedTerrain, setSelectedTerrain, dispatch, showZones, showDeployment, showGrid, photoFor, onModelTap, links, fights, onFightTap, sightFrom, sightRange, showNames, marks, onMark, animate, role, focus }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const tex = useMemo(() => textures(), []);
   const [view, setView] = useState<View>({ x: 0, y: 0, s: 10 });
@@ -212,6 +220,34 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
       fitted.current = true;
     }
   }, [fit]);
+
+  // Glide to the models in focus, leaving room on the left for the card that shows their fight.
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  useEffect(() => {
+    const el = svgRef.current;
+    const ms = (focus?.ids ?? []).map(id => state.models[id]).filter(m => m && !m.dead);
+    if (!el || !focus || !ms.length) return;
+    const r = el.getBoundingClientRect();
+    const left = r.width > 900 ? FOCUS_INSET : 0;
+    const x0 = Math.min(...ms.map(m => m.x)) - FOCUS_PAD;
+    const x1 = Math.max(...ms.map(m => m.x)) + FOCUS_PAD;
+    const y0 = Math.min(...ms.map(m => m.y)) - FOCUS_PAD;
+    const y1 = Math.max(...ms.map(m => m.y)) + FOCUS_PAD;
+    const s = Math.min(FOCUS_MAX_ZOOM, (r.width - left) / (x1 - x0), r.height / (y1 - y0));
+    const to = { s, x: left + (r.width - left) / 2 - ((x0 + x1) / 2) * s, y: r.height / 2 - ((y0 + y1) / 2) * s };
+    const from = viewRef.current;
+    const start = performance.now();
+    let frame = 0;
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / FOCUS_GLIDE);
+      const k = t * t * (3 - 2 * t);
+      setView({ s: from.s + (to.s - from.s) * k, x: from.x + (to.x - from.x) * k, y: from.y + (to.y - from.y) * k });
+      if (t < 1) frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [focus?.key]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

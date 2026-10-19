@@ -113,7 +113,8 @@ export function SelectionPanel({ state, selected, dispatch }: { state: GameState
 
 /** One roll in the shared log, including follow-up dice for 6+/4+ style wounds. */
 /** One roll in the dice log. With `dispatch`, a hero's player can spend its Might to raise its own dice. */
-export function RollRow({ r, state, role, dispatch }: { r: DiceRoll; state: GameState; role?: Role; dispatch?: Dispatch }) {
+/** `delay` holds a fresh roll back that long (ms) before it shows, when it comes in with others. */
+export function RollRow({ r, state, role, dispatch, delay = 0 }: { r: DiceRoll; state: GameState; role?: Role; dispatch?: Dispatch; delay?: number }) {
   const hits = r.target ? r.dice.filter(d => d >= r.target!).length : null;
   const wounds = r.then && r.follow ? r.follow.filter(d => d >= r.then!).length : null;
   const hero = r.model ? state.models[r.model] : undefined;
@@ -129,10 +130,10 @@ export function RollRow({ r, state, role, dispatch }: { r: DiceRoll; state: Game
   // A Courage test can be raised with Will as well as Might.
   const will = mine && hero!.will > 0 && r.sum !== undefined && /^Courage/.test(r.label);
   // Dice from a roll made in the last moment tumble before they land.
-  const [fresh] = useState(() => Date.now() - r.at < 2500);
+  const [fresh] = useState(() => Date.now() - r.at < 2500 + delay);
   const die = (d: number, i: number, target: number | undefined, follow: boolean) => (
     <span key={i} className="die-wrap">
-      <span className={`die ${target ? (d >= target ? 'hit' : 'miss') : ''} ${fresh ? 'tumble' : ''}`} style={fresh ? { animationDelay: `${(follow ? r.dice.length + i : i) * 45}ms` } : undefined}>
+      <span className={`die ${target ? (d >= target ? 'hit' : 'miss') : ''} ${fresh ? 'tumble' : ''}`} style={fresh ? { animationDelay: `${delay + (follow ? r.dice.length + i : i) * 45}ms` } : undefined}>
         {d}
       </span>
       {might && d < 6 && follow === (wounds !== null) && (
@@ -154,7 +155,7 @@ export function RollRow({ r, state, role, dispatch }: { r: DiceRoll; state: Game
   );
   const total = r.dice.reduce((a, b) => a + b, 0);
   return (
-    <li className={r.by}>
+    <li className={`${r.by} ${fresh && delay ? 'reveal' : ''}`} style={fresh && delay ? { animationDelay: `${delay}ms` } : undefined}>
       <div className="log-head">
         <b>{r.by === 'spectator' ? 'Spectator' : state.names[r.by] || (r.by === 'p1' ? 'Player 1' : 'Player 2')}</b>
         <span>{r.label}</span>
