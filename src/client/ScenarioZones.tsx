@@ -13,7 +13,7 @@ export function ScenarioZones({ s, w, h }: { s: Scenario; w: number; h: number }
   );
 }
 
-function ZoneArt({ z, sx, sy, w, h }: { z: Zone; sx: number; sy: number; w: number; h: number }) {
+export function ZoneArt({ z, sx, sy, w, h }: { z: Zone; sx: number; sy: number; w: number; h: number }) {
   const cls = `deploy-zone ${z.seat} ${z.label ? 'sub' : ''}`;
   switch (z.shape) {
     case 'rect':

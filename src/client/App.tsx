@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { BOT_NAME, BOT_SPEEDS, type Terrain, type Model, type Role, type RoomSummary, type Seat } from '../shared/types.ts';
+import { BOT_NAME, BOT_SPEEDS, type Action, type Terrain, type Model, type Role, type RoomSummary, type Seat } from '../shared/types.ts';
 import { Board, type Tool } from './Board.tsx';
 import { RoomConnection, useRoom, type Connection } from './net.ts';
 import { pictureUrl } from '../shared/catalog.ts';
@@ -15,14 +15,17 @@ import { engaged, fightDone } from '../shared/movement.ts';
 import { isThrowing } from '../shared/shooting.ts';
 import { waitingOnMight } from '../shared/bot.ts';
 import { distanceBetween, formatInches } from '../shared/geometry.ts';
-import { scenarioById } from '../shared/scenarios.ts';
+import { scenarioById, scenarioMarkers } from '../shared/scenarios.ts';
+import { reduce } from '../shared/reducer.ts';
+import { deployList, newId } from '../shared/importList.ts';
 import { vpTotals } from '../shared/scoring.ts';
 import { useSettings, type Settings } from './settings.ts';
 import { Tutorial } from './Tutorial.tsx';
 import { HeroArt } from './HeroArt.tsx';
 import { ProfilePage } from './Account.tsx';
-import { ArmiesCard, ArmiesPage, MapsCard, MapsPage, randomRoom, SitePage, TopPlayersCard } from './Home.tsx';
+import { ArmiesCard, ArmiesPage, MapsCard, MapsPage, SitePage, TopPlayersCard } from './Home.tsx';
 import { NarrativePage } from './NarrativePanel.tsx';
+import { BattleMenu, takeSetup } from './BattleMenu.tsx';
 import { narrativeById } from '../shared/narrative.ts';
 import { getMap } from './cloud.ts';
 import { MapEditor } from './MapEditor.tsx';
@@ -84,12 +87,12 @@ function Lobby() {
           <h1>Play Middle-earth battles online</h1>
           <p className="lead">Bring your army, pick a table and play a friend. The game keeps track of turns, rolls and rules for you.</p>
           <div className="hero-actions">
-            <button className="menu-card start" onClick={() => go(randomRoom())}>
+            <button className="menu-card start" onClick={() => (location.search = '?battle')}>
               <span className="menu-icon" aria-hidden>⚔</span>
               <b>Start a new game</b>
               <span className="menu-go" aria-hidden>→</span>
             </button>
-            <button className="menu-card solo" onClick={() => (location.search = `?room=${randomRoom()}&vs=computer`)}>
+            <button className="menu-card solo" onClick={() => (location.search = '?battle&vs=computer')}>
               <span className="menu-icon" aria-hidden>🔮</span>
               <b>Solo battle</b>
               <span className="menu-go" aria-hidden>→</span>
@@ -271,6 +274,32 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
     history.replaceState(null, '', url);
     if (!state.bot && !players.includes('p2')) dispatch({ type: 'setBot', seat: 'p2' });
   }, [seat, players.includes('p1'), status]);
+  // Arriving from the new battle menu: lay out its table, scenario and armies once you've sat down.
+  const fromMenu = useMemo(() => !practice && new URLSearchParams(location.search).has('setup'), []);
+  useEffect(() => {
+    if (!fromMenu || seat !== 'p1' || !players.includes('p1') || status !== 'online' || (vsComputer && !state.bot)) return;
+    const url = new URL(location.href);
+    url.searchParams.delete('setup');
+    history.replaceState(null, '', url);
+    const setup = takeSetup(room);
+    if (!setup || state.flow.started || Object.keys(state.models).length) return;
+    // Each step is worked out on the table as the ones before it leave it, so the armies stand clear of the terrain.
+    let next = state;
+    const send = (a: Action) => {
+      next = reduce(next, a);
+      dispatch(a);
+    };
+    if (setup.table) send({ type: 'setScenery', ...setup.table });
+    send({ type: 'setScenario', id: setup.scenario });
+    const scn = scenarioById(setup.scenario);
+    if (scn) for (const t of scenarioMarkers(scn, next.board.w, next.board.h, newId)) send({ type: 'addTerrain', terrain: t });
+    if (setup.army) send({ type: 'addModels', models: deployList(setup.army.entries, 'p1', next, scn) });
+    if (setup.foe && state.bot) {
+      send({ type: 'addModels', models: deployList(setup.foe.entries, state.bot, next, scn) });
+      send({ type: 'setName', seat: state.bot, name: `${BOT_NAME} (${setup.foe.name})` });
+    }
+    setSetupTab('army');
+  }, [seat, players.includes('p1'), status, !!state.bot]);
   // A duel rolled by either side opens its fight, so it can be followed as it happens.
   const seenDuels = useRef(new Set(state.log.map(r => r.id)));
   useEffect(() => {
@@ -613,16 +642,14 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
             )}
           </div>
 
-          {(!practice || setupCard || state.flow.started) && (
+          {(state.flow.started || (practice && setupCard)) && (
             <CoachBar
               state={state}
               dispatch={dispatch}
               role={role}
               combats={fights}
-              openTab={t => (state.flow.started ? t !== 'map' && setBattleTab(t) : setSetupTab(t))}
               openFight={setFightKey}
               auto={!practice}
-              lesson={!!practice}
               view={coachView}
               setView={setCoachView}
               table={tableView}
@@ -666,6 +693,7 @@ export function App() {
   if (params.has('armies')) return <ArmiesPage />;
   if (params.has('maps')) return <MapsPage />;
   if (params.has('narrative')) return <NarrativePage />;
+  if (params.has('battle')) return <BattleMenu />;
   if (params.has('mapeditor')) return <MapEditor settings={settings} />;
   if (params.has('leaderboard'))
     return (
@@ -680,6 +708,6 @@ export function App() {
       </SitePage>
     );
   if (params.has('learn'))
-    return <Tutorial settings={settings} updateSettings={updateSettings} onExit={() => (location.search = '')} onPlay={() => (location.search = `?room=${randomRoom()}`)} />;
+    return <Tutorial settings={settings} updateSettings={updateSettings} onExit={() => (location.search = '')} onPlay={() => (location.search = '?battle')} />;
   return room.length >= 3 ? <Game room={room} settings={settings} updateSettings={updateSettings} /> : <Lobby />;
 }
