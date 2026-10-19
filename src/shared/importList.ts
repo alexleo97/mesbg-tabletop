@@ -1,7 +1,8 @@
 import { bookBase, round } from './bases.ts';
 import { mmToIn } from './geometry.ts';
 import { offTable } from './maelstrom.ts';
-import { insidePolygon, outline } from './sight.ts';
+import { insidePolygon, onOutlines } from './sight.ts';
+import { solidOutlines } from './deployment.ts';
 import type { Scenario, Zone } from './scenarios.ts';
 import type { Base, GameState, Model, Seat } from './types.ts';
 
@@ -290,9 +291,13 @@ export function deployList(entries: ListEntry[], owner: Seat, state: Pick<GameSt
     } else bands.push({ w: b.w, d: b.d, spots: [...b.spots] });
   }
 
-  // Each band goes as near its deployment edge and the middle of the table as it fits without touching anything.
+  // Each band goes as near its deployment edge and the middle of the table as it fits without touching anything,
+  // nor standing any model on a building or cliff.
+  const solid = solidOutlines(state, true);
   const clear = (x0: number, x1: number, y0: number, y1: number) =>
     boxes.every(b => b.x1 + blockGap / 2 <= x0 || b.x0 - blockGap / 2 >= x1 || b.y1 + gap <= y0 || b.y0 - gap >= y1);
+  const spotOf = (s: Spot, left: number, back: number) => ({ x: Math.min(boardW - s.m.w / 2, left + s.x), y: back + inward * s.depth });
+  const offSolid = (spots: Spot[], left: number, back: number) => !solid.length || spots.every(s => !onOutlines(solid, spotOf(s, left, back), Math.max(s.m.w, s.m.h) / 2));
   for (const band of bands) {
     const centre = (boardW - band.w) / 2;
     const lefts = [centre];
@@ -304,15 +309,17 @@ export function deployList(entries: ListEntry[], owner: Seat, state: Pick<GameSt
       const b1 = b0 + inward * band.d;
       for (const l of lefts) {
         if (l < margin - 1e-6 || l + band.w > boardW - margin + 1e-6) continue;
-        if (clear(l, l + band.w, Math.min(b0, b1), Math.max(b0, b1))) {
+        if (clear(l, l + band.w, Math.min(b0, b1), Math.max(b0, b1)) && offSolid(band.spots, l, b0)) {
           left = l;
           back = b0;
           break search;
         }
       }
     }
-    for (const { m, x, depth } of band.spots) {
-      const model = makeModel(m, owner, Math.min(boardW - m.w / 2, left + x), back + inward * depth);
+    for (const s of band.spots) {
+      const { m } = s;
+      const at = spotOf(s, left, back);
+      const model = makeModel(m, owner, at.x, at.y);
       placed.push(model);
       const r = Math.max(m.w, m.h) / 2;
       boxes.push({ x0: model.x - r, x1: model.x + r, y0: model.y - r, y1: model.y + r });
@@ -426,7 +433,7 @@ function packIntoZones(
   boxes: { x0: number; x1: number; y0: number; y1: number }[],
 ): Model[] {
   const { w, h } = state.board;
-  const solid = Object.values(state.terrain ?? {}).filter(t => t.kind === 'building' || t.kind === 'cliff').map(t => outline(t));
+  const solid = solidOutlines(state, true);
   const gap = 0.15;
   const step = 0.25;
   const spots = zones.map(z => {
@@ -437,7 +444,7 @@ function packIntoZones(
   const fits = (z: number, x: number, y: number, r: number) =>
     x - r >= 0 && y - r >= 0 && x + r <= w && y + r <= h &&
     [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r], [r * 0.7, r * 0.7], [-r * 0.7, r * 0.7], [r * 0.7, -r * 0.7], [-r * 0.7, -r * 0.7]].every(([dx, dy]) => zones[z].inside(x + dx, y + dy)) &&
-    !solid.some(poly => insidePolygon(poly, { x, y })) &&
+    !onOutlines(solid, { x, y }, r) &&
     boxes.every(b => b.x1 + gap <= x - r || b.x0 - gap >= x + r || b.y1 + gap <= y - r || b.y0 - gap >= y + r);
   const placed: Model[] = [];
   groups.forEach((group, gi) => {

@@ -1,6 +1,6 @@
 import { difficultTimes, mounted } from './cavalry.ts';
-import { distanceBetween, halfExtents, mmToIn, type Point } from './geometry.ts';
-import { heightOfModel, moveCost, sightTo } from './sight.ts';
+import { distanceBetween, halfExtents, MM_PER_INCH, mmToIn, type Point } from './geometry.ts';
+import { flooredAt, heightOfModel, moveCost, sightTo } from './sight.ts';
 import { overWallSpot, secondAttacker, touching, wallBetween } from './barriers.ts';
 import { combatFromKey, CONTACT_SLACK, type Combat } from './flow.ts';
 import { canActivate, phaseHeroics } from './heroics.ts';
@@ -76,11 +76,58 @@ export function marchedBy(state: GameState, m: Model): Model | undefined {
   return undefined;
 }
 
-/** Whether two models' bases overlap (rather than just touch). */
-export function basesOverlap(a: Model, b: Model): boolean {
-  const shrink = (m: Model): Model => ({ ...m, base: { ...m.base, w: Math.max(1, m.base.w - 1.5), h: Math.max(1, m.base.h - 1.5) } });
-  if (Math.abs(a.x - b.x) > 4 || Math.abs(a.y - b.y) > 4) return false;
+/** How far (in inches) two bases may run into each other and still count as touching rather than overlapping. */
+export const OVERLAP_SLACK = 0.01;
+
+/** Whether two models' bases overlap (rather than just touch), by more than `slack` inches. */
+export function basesOverlap(a: Model, b: Model, slack = OVERLAP_SLACK): boolean {
+  const reach = reachOf(a) + reachOf(b);
+  if (Math.abs(a.x - b.x) > reach || Math.abs(a.y - b.y) > reach) return false;
+  if (a.base.shape === 'round' && b.base.shape === 'round') return Math.hypot(a.x - b.x, a.y - b.y) < reach - slack;
+  // Other shapes: shrink each base by half the slack all round, and see whether what's left still meets.
+  const shrink = (m: Model): Model => ({ ...m, base: { ...m.base, w: Math.max(1, m.base.w - slack * MM_PER_INCH), h: Math.max(1, m.base.h - slack * MM_PER_INCH) } });
   return distanceBetween(shrink(a), shrink(b)) === 0;
+}
+
+/** How far a model's base reaches from its centre at most. */
+const reachOf = (m: Model) => Math.max(halfExtents(m.base).rx, halfExtents(m.base).ry);
+
+/**
+ * Which level a model moving from where it stands would be on at `p`: the floor it is on while it stays in the same
+ * building, and the ground once it leaves it.
+ */
+function levelOnTheWay(state: GameState, m: Model): (p: Point) => number {
+  const inside = m.floor ? flooredAt(state, m) : undefined;
+  return p => (inside && flooredAt(state, p) === inside ? m.floor! : 0);
+}
+
+/** Whether a model set down at `p` would overlap another model there (one on another floor of a building aside). */
+export function crowded(state: GameState, m: Model, p: Point, skip?: ReadonlySet<string>): boolean {
+  const level = levelOnTheWay(state, m)(p);
+  const here = { ...m, x: p.x, y: p.y };
+  return Object.values(state.models).some(e => e.id !== m.id && !e.dead && !e.waiting && !e.escaped && !e.aboard && !skip?.has(e.id) && (e.floor ?? 0) === level && basesOverlap(here, e));
+}
+
+/**
+ * The moves of one drag in the order to make them: the models furthest along the way they're going first, so each
+ * steps into room the one ahead of it has left, and none ends up on top of another.
+ */
+export function frontFirst<T extends { id: string; x: number; y: number }>(state: GameState, moves: T[]): T[] {
+  if (!Array.isArray(moves) || moves.length < 2) return moves;
+  let dx = 0;
+  let dy = 0;
+  for (const mv of moves) {
+    const m = mv && state.models[mv.id];
+    if (m && Number.isFinite(mv.x) && Number.isFinite(mv.y)) {
+      dx += mv.x - m.x;
+      dy += mv.y - m.y;
+    }
+  }
+  const ahead = (mv: T) => {
+    const m = mv && state.models[mv.id];
+    return m ? m.x * dx + m.y * dy : -Infinity;
+  };
+  return [...moves].sort((a, b) => ahead(b) - ahead(a));
 }
 
 /**
@@ -104,7 +151,10 @@ export function blockMove(state: GameState, m: Model, from: Point, to: Point, sk
   const d = Math.hypot(to.x - from.x, to.y - from.y);
   if (d < 1e-6) return to;
   const at = (p: Point): Model => ({ ...m, x: p.x, y: p.y });
-  const near = (e: Model) => e.x > Math.min(from.x, to.x) - 5 && e.x < Math.max(from.x, to.x) + 5 && e.y > Math.min(from.y, to.y) - 5 && e.y < Math.max(from.y, to.y) + 5;
+  const near = (e: Model) => {
+    const reach = Math.max(5, reachOf(m) + reachOf(e) + 1.1);
+    return e.x > Math.min(from.x, to.x) - reach && e.x < Math.max(from.x, to.x) + reach && e.y > Math.min(from.y, to.y) - reach && e.y < Math.max(from.y, to.y) + reach;
+  };
   const all = Object.values(state.models).filter(e => e.id !== m.id && !e.dead && !e.waiting && !e.escaped && !e.aboard && !skip?.has(e.id) && near(e));
   // An Invisible model and those that can't see it pass through each other, though neither may stop on the other.
   const ghosts = all.filter(e => passesThrough(m, e));
@@ -124,20 +174,42 @@ export function blockMove(state: GameState, m: Model, from: Point, to: Point, sk
   const onMarker = (p: Point) => markers.some(t => Math.hypot(t.x - p.x, t.y - p.y) < t.w / 2 + mmToIn(m.base.w) / 2 - 0.05);
   // (A model already overlapping a gate, put there by hand, may step off it.)
   const gates = state.flow.started ? shutGates(state, m, from, to).filter(t => !overlapsPiece(m, t, from)) : [];
+  // Models on another floor of a building (one inside it on the ground, one on its roof) pass over and under each other.
+  const level = others.some(e => e.floor) || m.floor ? levelOnTheWay(state, m) : () => 0;
+  // A model already overlapping another (set down there by hand) may move off it, but not further onto it.
+  const overlapped = new Map(others.filter(e => basesOverlap(start, e)).map(e => [e.id, Math.hypot(e.x - from.x, e.y - from.y)]));
+  const bumps = (p: Point) => {
+    const here = at(p);
+    return others.some(e => (e.floor ?? 0) === level(p) && basesOverlap(here, e) && !(overlapped.has(e.id) && Math.hypot(e.x - p.x, e.y - p.y) >= overlapped.get(e.id)! - 1e-6));
+  };
+  const stops = (p: Point) => {
+    if (bumps(p) || gates.some(t => overlapsPiece(m, t, p))) return true;
+    const here = at(p);
+    if (sees && distanceBetween(here, sees) < 1) return false;
+    return zoned.some(e => {
+      const de = distanceBetween(here, e);
+      return de < 1 - 1e-3 && de < startD.get(e.id)! - 1e-3;
+    });
+  };
+  // It stops in base contact with a model it walks into, not on it (one it touches already holds it back only once
+  // they'd overlap by more than a hair).
+  const clearOf = others.filter(e => !basesOverlap(start, e, 0));
+  const halts = (p: Point) => stops(p) || clearOf.some(e => (e.floor ?? 0) === level(p) && basesOverlap(at(p), e, 0));
   const steps = Math.ceil(d / 0.05);
   let last = from;
   for (let i = 1; i <= steps; i++) {
     const f = i / steps;
     const p = { x: from.x + (to.x - from.x) * f, y: from.y + (to.y - from.y) * f };
-    const here = at(p);
-    if (others.some(e => basesOverlap(here, e))) break;
-    if (gates.some(t => overlapsPiece(m, t, p))) break;
-    if (!(sees && distanceBetween(here, sees) < 1)) {
-      if (zoned.some(e => {
-        const de = distanceBetween(here, e);
-        return de < 1 - 1e-3 && de < startD.get(e.id)! - 1e-3;
-      }))
-        break;
+    if (halts(p)) {
+      // Close the last small step exactly.
+      let [ok, bad] = [last, p];
+      for (let k = 0; k < 12; k++) {
+        const mid = { x: (ok.x + bad.x) / 2, y: (ok.y + bad.y) / 2 };
+        if (halts(mid)) bad = mid;
+        else ok = mid;
+      }
+      last = ok;
+      break;
     }
     last = p;
   }
