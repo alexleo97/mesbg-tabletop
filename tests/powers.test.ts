@@ -67,6 +67,18 @@ describe('power effects', () => {
     expect(s.models.orc.dead).toBe(true);
   });
 
+  it('leaves a war beast where it is and on its feet: no Call Winds, Transfix or knocking it down', () => {
+    const beast = { profileId: 'orc', beast: 'war' as const, base: { shape: 'rect' as const, w: 100, h: 150 }, wounds: 10, maxWounds: 10 };
+    let s = ask(game([caster(), mk('mumak', 'p2', 10, 20, beast)]), 'p1', cast('mumak', 'Call Winds'), [6, 3])!;
+    expect(s.models.mumak).toMatchObject({ x: 10, y: 20 });
+    expect(s.models.mumak.prone).toBeFalsy();
+    expect(s.log.at(-1)?.note).toMatch(/unaffected/);
+    s = ask(game([caster(), mk('mumak', 'p2', 10, 20, beast)]), 'p1', cast('mumak', 'Transfix'), [6])!;
+    expect(under(s, s.models.mumak, 'Transfix')).toBe(false);
+    s = ask(game([caster(), mk('mumak', 'p2', 10, 20, beast)]), 'p1', cast('mumak', 'Sorcerous Blast'), [6, 1])!;
+    expect(s.models.mumak.prone).toBeFalsy();
+  });
+
   it('Sorcerous Blast knocks a survivor Prone; standing up costs half its Move and a Prone loser is trapped', () => {
     let s = ask(game([caster(), mk('orc', 'p2', 10, 24, { profileId: 'orc' })]), 'p1', cast('orc', 'Sorcerous Blast'), [6, 1])!;
     expect(s.models.orc.prone).toBe(true);
