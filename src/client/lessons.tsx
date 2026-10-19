@@ -88,6 +88,7 @@ const moved = (s: GameState, start: GameState, id: string) => {
 /** Rolls made since the lesson started. */
 const newRolls = (s: GameState, start: GameState): DiceRoll[] => s.log.filter(r => !start.log.some(o => o.id === r.id));
 const rolled = (prefix: string) => (s: GameState, start: GameState) => newRolls(s, start).some(r => r.label.startsWith(prefix));
+const rolledWith = (text: string) => (s: GameState, start: GameState) => newRolls(s, start).some(r => r.label.includes(text));
 const fought = (s: GameState, start: GameState) => newRolls(s, start).some(r => r.group?.startsWith('f-') && (r.against || r.note));
 const shot = (s: GameState, start: GameState) => newRolls(s, start).some(r => r.group?.startsWith('s-'));
 
@@ -126,10 +127,10 @@ export const CHAPTERS: Chapter[] = [
         body: (
           <>
             <p>The game uses ordinary six-sided dice, called D6. When a roll says 4+, you need a 4, 5 or 6. A D3 is a D6 halved: 1-2 is 1, 3-4 is 2, 5-6 is 3.</p>
-            <p>The table rolls every die for you and shows the result in 🎲 Log at the top, so both players see the same thing. Fights, shots, Courage and Fate are rolled as they happen. For the odd test the game doesn't roll by itself, 📖 Rules has a roller.</p>
+            <p>The table rolls every die for you and shows the result in the Log on the turn guide card, so both players see the same thing. Fights, shots, Courage, Fate and every other test are rolled as they happen.</p>
           </>
         ),
-        task: 'Tap your Captain, open 📖 Rules and roll a Courage test for him.',
+        task: 'Tap your Captain and press Courage on his card to roll a Courage test.',
         setup: () => table(),
         done: rolled('Courage test'),
       },
@@ -203,12 +204,12 @@ export const CHAPTERS: Chapter[] = [
         body: (
           <>
             <p>Low obstacles, up to half a model's height, can be stepped over for free. Taller ones need a test: roll a D6 to Jump. On a 1 the model stumbles and stops. On 2-5 it gets over and stops on the far side. On a 6 it bounds over and keeps moving.</p>
-            <p>Climbing a wall or cliff and leaping a gap work the same way, each with its own table in the 📖 Rules tab.</p>
+            <p>Climbing a wall or cliff and leaping a gap work the same way, and the game rolls each one as the model reaches it.</p>
           </>
         ),
-        task: 'Open 📖 Rules at the top and roll a Jump test.',
-        setup: () => inPhase('move', { terrain: [...SCENERY(), piece('wall', 'wall', 9, 16, 8, 0.6, 'rect')] }),
-        done: rolled('Jump test'),
+        task: 'Move your Warrior up to the wall, then press Jump on his card.',
+        setup: () => inPhase('move', { terrain: [...SCENERY(), piece('wall', 'wall', 13.5, 17, 8, 0.6, 'rect')] }),
+        done: rolledWith(': Jump test'),
       },
       {
         title: 'Charging',
@@ -261,9 +262,9 @@ export const CHAPTERS: Chapter[] = [
             <p>Some results read like 6/4: roll a 6, then a 4+ on a second die. When you shoot or fight from the model card, the game works this out for you.</p>
           </>
         ),
-        task: 'In 📖 Rules, open Other rolls, set a Strength and Defence and roll to wound.',
+        task: 'Shoot at an Orc and watch the second row of dice: that is the roll to wound.',
         setup: () => inPhase('shoot'),
-        done: rolled('To wound'),
+        done: shot,
       },
       {
         title: 'Shooting into a fight',
@@ -497,7 +498,7 @@ export const CHAPTERS: Chapter[] = [
         body: (
           <>
             <p>Instant powers happen and are over, like a blast that knocks enemies down. Temporary ones last until the End phase. Exhaustion powers keep going until the caster runs out of Will.</p>
-            <p>Every active power ends at once if its caster is slain. The 📖 Rules tab lists every power and what it does.</p>
+            <p>Every active power ends at once if its caster is slain. A caster's card lists each of its powers and what it does.</p>
           </>
         ),
         setup: () => table(),
@@ -529,12 +530,10 @@ export const CHAPTERS: Chapter[] = [
         title: 'Thrown riders',
         body: (
           <>
-            <p>If a mount is slain or knocked down, its rider is thrown. Roll on the Thrown Rider table: a 1 means it takes a hit and lands on the ground, 2-5 means it stands up but loses the rest of the turn, and a 6 means it lands ready to fight.</p>
+            <p>If a mount is slain or knocked down, its rider is thrown, and the game rolls on the Thrown Rider table for you: a 1 means it takes a hit and lands on the ground, 2-5 means it stands up but loses the rest of the turn, and a 6 means it lands ready to fight.</p>
           </>
         ),
-        task: 'Open 📖 Rules and roll on the Thrown Rider table.',
         setup: () => inPhase('fight'),
-        done: rolled('Thrown Rider'),
       },
       {
         title: 'Monsters',
@@ -559,7 +558,7 @@ export const CHAPTERS: Chapter[] = [
         body: (
           <>
             <p>Agree a points limit with your opponent, then build an army on the Armies page. Every warband is led by a hero, and the hero's rank decides how many warriors can follow.</p>
-            <p>One hero leads the whole army. Your lists save themselves and can be deployed at any table in one tap from the ⚔ Army tab.</p>
+            <p>One hero leads the whole army. Your lists save themselves and can be deployed at any table in one tap from the Armies tab of the battle card on the left.</p>
           </>
         ),
         setup: () => table(),
@@ -568,7 +567,7 @@ export const CHAPTERS: Chapter[] = [
         title: 'Scenarios',
         body: (
           <>
-            <p>Every game is played as a scenario. It sets where each army deploys, what you're fighting over, when the game ends and how to score. Pick one in the ⛰ Table tab, or roll for one.</p>
+            <p>Every game is played as a scenario. It sets where each army deploys, what you're fighting over, when the game ends and how to score. Pick one in the Scenario tab of the battle card on the left, or roll for one.</p>
             <p>The table draws the deployment zones and objectives for you.</p>
           </>
         ),
@@ -589,7 +588,7 @@ export const CHAPTERS: Chapter[] = [
         body: (
           <>
             <p>That's the whole game. Start a game, send your opponent the link, deploy your armies and play. The turn guide walks you through every phase.</p>
-            <p>The 📖 Rules tab has the charts, magic and the fight helper whenever you need a reminder, and you can come back to any chapter here.</p>
+            <p>The game rolls every test and works out every chart for you, and you can come back to any chapter here whenever you need a reminder.</p>
           </>
         ),
         setup: () => table(),

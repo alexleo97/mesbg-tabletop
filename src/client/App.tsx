@@ -4,12 +4,10 @@ import { Board, type Tool } from './Board.tsx';
 import { RoomConnection, useRoom, type Connection } from './net.ts';
 import { pictureUrl } from '../shared/catalog.ts';
 import { useCatalog } from './ListBuilder.tsx';
-import { ArmyPanel, DicePanel, SelectionPanel, SettingsPanel, TablePanel } from './Panels.tsx';
-import { RulesPanel } from './RulesPanel.tsx';
-import { ScenarioPanel } from './ScenarioPanel.tsx';
+import { DicePanel, SelectionPanel, SettingsPanel, TablePanel } from './Panels.tsx';
 import { BrokenTags } from './BrokenTags.tsx';
-import { CoachBar } from './CoachBar.tsx';
-import { FightDock } from './FightPanel.tsx';
+import { CoachBar, type CoachView } from './CoachBar.tsx';
+import { BattleCard, type BattleTab } from './BattleCard.tsx';
 import { ModelCard, weaponOf } from './ModelCard.tsx';
 import { SightHint } from './SightHint.tsx';
 import { combatFromKey, combats, other } from '../shared/flow.ts';
@@ -153,8 +151,8 @@ function Lobby() {
   );
 }
 
-type PanelTab = 'model' | 'dice' | 'rules' | 'army' | 'table' | 'settings';
-const PANEL_TITLE: Record<PanelTab, string> = { army: 'Army', table: 'Table', rules: 'Rules', dice: 'Dice log', model: 'Selected models', settings: 'Look' };
+type PanelTab = 'model' | 'settings';
+const PANEL_TITLE: Record<PanelTab, string> = { model: 'Selected models', settings: 'Settings' };
 
 interface GameProps {
   room: string;
@@ -187,10 +185,17 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
   const [sight, setSight] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [selectedTerrain, setSelectedTerrain] = useState<string | null>(null);
-  const [tab, setTab] = useState<PanelTab>('army');
+  const [tab, setTab] = useState<PanelTab>('settings');
+  const [battleTab, setBattleTab] = useState<BattleTab>('army');
+  const [coachView, setCoachView] = useState<CoachView>('turn');
   const [panelOpen, setPanelOpen] = useState(false);
   const [aimAt, setAimAt] = useState<string | null>(null);
-  const [fightKey, setFightKey] = useState<string | null>(null);
+  const [fightKey, setFightKeyRaw] = useState<string | null>(null);
+  // Opening a fight shows it in the battle card; closing it goes back to the armies.
+  const setFightKey = (key: string | null) => {
+    setFightKeyRaw(key);
+    setBattleTab(t => (key ? 'fight' : t === 'fight' ? 'army' : t));
+  };
   const { catalog } = useCatalog();
   const [copied, setCopied] = useState(false);
 
@@ -305,17 +310,21 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
     );
   }
 
-  /** The game's link. In a private game, players can hand out one that lets the holder take a seat. */
-  const copyLink = async (withInvite = true) => {
+  /**
+   * The room name, which a friend types into Join on the home page. A private game's players copy its invite link
+   * instead, since only that lets the holder take a seat; `watch` copies a plain link to watch it.
+   */
+  const copyRoom = async (watch = false) => {
     const url = new URL(location.origin + location.pathname);
     url.searchParams.set('room', room);
-    if (withInvite && state.private && seat && invite) url.searchParams.set('invite', invite);
+    if (state.private && seat && invite && !watch) url.searchParams.set('invite', invite);
+    const text = url.href;
     try {
-      await navigator.clipboard.writeText(url.href);
+      await navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
-      prompt('Copy this link:', url.href);
+      prompt('Copy this:', text);
     }
   };
 
@@ -359,15 +368,111 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
     const unit = settings.photos && m.profileId ? catalog?.units[m.profileId] : undefined;
     return unit && pictureUrl(unit);
   };
+  const tableView = (
+    <>
+
+                <div className="panel-body game-panel">
+                  <h4>You</h4>
+                  <div className="row">
+                    {role !== 'spectator' && (
+                      <input
+                        value={state.names[role] ?? ''}
+                        placeholder={role === 'p1' ? 'Player 1' : 'Player 2'}
+                        onChange={e => dispatch({ type: 'setName', seat: role, name: e.target.value })}
+                        aria-label="Your name"
+                      />
+                    )}
+                    <select value={role} onChange={e => setRole(e.target.value as Role)} aria-label="Your seat">
+                      <option value="p1" disabled={state.bot === 'p1'}>Player 1</option>
+                      <option value="p2" disabled={state.bot === 'p2'}>Player 2</option>
+                      <option value="spectator">Spectator</option>
+                    </select>
+                  </div>
+                  {seat && !state.bot && !state.flow.started && !players.includes(other(seat)) && (
+                    <label className="check">
+                      <input type="checkbox" checked={false} onChange={e => dispatch({ type: 'setBot', seat: e.target.checked ? other(seat) : null })} />
+                      Let {BOT_NAME.replace(/^The /, 'the ')} play the other side
+                    </label>
+                  )}
+                  {state.bot && <p className="hint">A solo battle against {BOT_NAME.replace(/^The /, 'the ')}. Nobody else can join it.</p>}
+                  <h4>Game</h4>
+                  {!state.bot && (
+                  <label className="check">
+                    <input type="checkbox" checked={state.listed} disabled={role === 'spectator' || state.private} onChange={e => dispatch({ type: 'setListed', listed: e.target.checked })} />
+                    Show this game in the open games list
+                  </label>
+                  )}
+                  {!state.bot && (
+                  <label className="check">
+                    <input type="checkbox" checked={!!state.private} disabled={!seat || !conn.setPrivate} onChange={e => conn.setPrivate?.(e.target.checked)} />
+                    Private game: only people you send the invite link to can take a seat. Anyone can still watch.
+                  </label>
+                  )}
+                  <div className="row wrap">
+                    {!state.bot && state.private && seat && <button onClick={() => void copyRoom()}>Copy invite link (to play)</button>}
+                    {!state.bot && state.private && seat && <button onClick={() => void copyRoom(true)}>Copy link to watch</button>}
+                    <button onClick={leave}>Leave game</button>
+                  </div>
+                </div>
+                <TablePanel state={state} dispatch={dispatch} role={role} selectedTerrain={selectedTerrain} setSelectedTerrain={setSelectedTerrain} />
+              
+    </>
+  );
   const singleCombat = single ? fights.find(c => c.p1.includes(single.id) || c.p2.includes(single.id)) : undefined;
+
+  const tools = (
+    <div className="tool-bar" role="toolbar" aria-label="Tools">
+      {(
+        [
+          ['move', '✋', 'Drag'],
+          ['select', '⬚', 'Select'],
+          ['measure', '📏', 'Measure'],
+          ['mark', '📍', 'Mark'],
+        ] as const
+      ).map(([t, icon, label]) => (
+        <button
+          key={t}
+          className={tool === t ? 'on' : ''}
+          onClick={() => setTool(t)}
+          title={t === 'mark' ? 'Click to ping a spot, drag to draw an arrow (or hold Alt with any tool)' : label}
+          aria-label={label}
+        >
+          <span>{icon}</span>
+          <small>{label}</small>
+        </button>
+      ))}
+      <button className={sight ? 'on' : ''} onClick={() => setSight(v => !v)} title="Show what a model can see" aria-label="Line of sight" aria-pressed={sight}>
+        <span>👁</span>
+        <small>Sight</small>
+      </button>
+      <button className={settings.names ? 'on' : ''} onClick={() => updateSettings({ names: !settings.names })} title="Show each model's name under it" aria-label="Model names" aria-pressed={settings.names}>
+        <span>🏷</span>
+        <small>Models</small>
+      </button>
+      <button className={settings.terrainNames ? 'on' : ''} onClick={() => updateSettings({ terrainNames: !settings.terrainNames })} title="Show each terrain piece's name on it" aria-label="Terrain names" aria-pressed={settings.terrainNames}>
+        <span>⛰</span>
+        <small>Terrain</small>
+      </button>
+      {marks?.some(m => m.kind === 'arrow' && m.by === role) && (
+        <button onClick={() => conn.clearMarks()} title="Take your arrows off the table" aria-label="Clear arrows">
+          <span>✕</span>
+          <small>Arrows</small>
+        </button>
+      )}
+      <button onClick={() => dispatch({ type: 'undo' })} disabled={!canUndo} title="Undo your last change (Ctrl+Z)" aria-label="Undo">
+        <span>↶</span>
+        <small>Undo</small>
+      </button>
+    </div>
+  );
 
   return (
     <div className="game">
       <header className="topbar">
-        <button className="leave" onClick={leave} title="Leave this game and go back to the home screen" aria-label="Leave game">
-          ⟵
+        <button className="leave" onClick={leave} title="Leave this game and go back to the home screen" aria-label="Home">
+          🏠
         </button>
-        <button className="room" onClick={() => !state.bot && void copyLink()} title={state.bot ? 'Solo battle' : state.private && !seat ? 'Copy the link to watch this game' : 'Copy invite link'}>
+        <button className="room" onClick={() => !state.bot && void copyRoom()} title={state.bot ? 'Solo battle' : state.private && seat ? 'Copy the invite link (only it lets a friend take the seat)' : 'Copy the link to this game'}>
           {state.private && <span title="Private game: only invited players can take a seat">🔒</span>}
           <span className="room-name">{copied ? 'Link copied' : room}</span> <span className={`dot ${status}`} />
         </button>
@@ -391,25 +496,14 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
         )}
         <BrokenTags state={state} />
         {scenarioById(state.scenario) && (
-          <button className="vp-chip" onClick={() => openTab('table')} title={scenarioById(state.scenario)!.name}>
+          <button className="vp-chip" onClick={() => setBattleTab('scenario')} title={scenarioById(state.scenario)!.name}>
             VP <b className="p1">{vpTotals(state).p1}</b>–<b className="p2">{vpTotals(state).p2}</b>
           </button>
         )}
         <nav className="panel-buttons" aria-label="Panels">
-          {(
-            [
-              ['army', '⚔', 'Army'],
-              ['table', '⛰', 'Table'],
-              ['rules', '📖', 'Rules'],
-              ['dice', '🎲', 'Log'],
-              ['settings', '⚙', 'Look'],
-            ] as const
-          ).map(([t, icon, label]) => (
-            <button key={t} className={panelOpen && tab === t ? 'on' : ''} onClick={() => openTab(t)} aria-label={label} title={label}>
-              <span>{icon}</span>
-              <small>{label}</small>
-            </button>
-          ))}
+          <button className={panelOpen && tab === 'settings' ? 'on' : ''} onClick={() => openTab('settings')} aria-label="Settings" title="Settings">
+            <span>⚙</span>
+          </button>
         </nav>
       </header>
 
@@ -430,7 +524,7 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
               selectedTerrain={selectedTerrain}
               setSelectedTerrain={id => {
                 setSelectedTerrain(id);
-                if (id) showTab('table');
+                if (id) setCoachView('table');
               }}
               dispatch={role === 'spectator' ? () => {} : dispatch}
               showZones={settings.zones}
@@ -445,63 +539,14 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
               sightFrom={sight && single ? single.id : undefined}
               sightRange={sight && single ? weaponOf(single, catalog)?.range : undefined}
               showNames={settings.names}
+              showTerrainNames={settings.terrainNames}
               marks={marks}
               animate={settings.animations && !reducedMotion}
               role={role}
               onMark={m => conn.mark(m)}
             />
 
-            <div className="tool-rail" role="toolbar" aria-label="Tools">
-              {(
-                [
-                  ['move', '✋', 'Drag'],
-                  ['select', '⬚', 'Select'],
-                  ['measure', '📏', 'Measure'],
-                  ['mark', '📍', 'Mark'],
-                ] as const
-              ).map(([t, icon, label]) => (
-                <button
-                  key={t}
-                  className={tool === t ? 'on' : ''}
-                  onClick={() => setTool(t)}
-                  title={t === 'mark' ? 'Click to ping a spot, drag to draw an arrow (or hold Alt with any tool)' : label}
-                  aria-label={label}
-                >
-                  <span>{icon}</span>
-                  <small>{label}</small>
-                </button>
-              ))}
-              <button
-                className={sight ? 'on' : ''}
-                onClick={() => setSight(v => !v)}
-                title="Show what a model can see"
-                aria-label="Line of sight"
-                aria-pressed={sight}
-              >
-                <span>👁</span>
-                <small>Sight</small>
-              </button>
-              <button
-                className={settings.names ? 'on' : ''}
-                onClick={() => updateSettings({ names: !settings.names })}
-                title="Show unit names under models"
-                aria-label="Unit names"
-                aria-pressed={settings.names}
-              >
-                <span>🏷</span>
-                <small>Names</small>
-              </button>
-              {marks?.some(m => m.kind === 'arrow' && m.by === role) && (
-                <button onClick={() => conn.clearMarks()} title="Take your arrows off the table" aria-label="Clear arrows">
-                  <span>✕</span>
-                  <small>Arrows</small>
-                </button>
-              )}
-              <button onClick={() => dispatch({ type: 'undo' })} disabled={!canUndo} title="Undo your last change (Ctrl+Z)" aria-label="Undo">
-                <span>↶</span>
-                <small>Undo</small>
-              </button>
-            </div>
+            <BattleCard tools={tools} state={state} dispatch={dispatch} role={role} tab={battleTab} setTab={setBattleTab} fight={fight} fights={fights} openFight={setFightKey} photoFor={photoFor} />
 
             {refusedNote && (
               <button className="sight-hint" onClick={() => setRefusedNote(null)}>
@@ -537,7 +582,21 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
             )}
           </div>
 
-          {(!practice || setupCard || state.flow.started) && <CoachBar state={state} dispatch={dispatch} role={role} combats={fights} openTab={showTab} openFight={setFightKey} auto={!practice} />}
+          {(!practice || setupCard || state.flow.started) && (
+            <CoachBar
+              state={state}
+              dispatch={dispatch}
+              role={role}
+              combats={fights}
+              openTab={setBattleTab}
+              openFight={setFightKey}
+              auto={!practice}
+              view={coachView}
+              setView={setCoachView}
+              table={tableView}
+              log={<DicePanel state={state} dispatch={dispatch} role={role} />}
+            />
+          )}
           {!practice && status !== 'online' && (
             // Covers the table while the link is down, so nothing is clicked into the void; it fades in after a moment
             // so a quick reconnect doesn't flash it.
@@ -551,8 +610,6 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
           )}
         </div>
 
-        {fight && <FightDock state={state} dispatch={dispatch} role={role} fight={fight} fights={fights} open={setFightKey} photoFor={photoFor} />}
-
         {panelOpen && (
           <aside className="panel">
             <div className="panel-head">
@@ -563,64 +620,6 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
             </div>
             {tab === 'model' && <SelectionPanel state={state} selected={selected} dispatch={dispatch} clear={() => setSelected(new Set())} />}
             {tab === 'settings' && <SettingsPanel settings={settings} update={updateSettings} game={{ state, dispatch, role }} />}
-            {tab === 'dice' && <DicePanel state={state} dispatch={dispatch} role={role} />}
-            {tab === 'rules' && <RulesPanel state={state} dispatch={dispatch} role={role} selected={selected} />}
-            {tab === 'army' && <ArmyPanel state={state} dispatch={dispatch} role={role} />}
-            {tab === 'table' && (
-              <>
-                <div className="panel-body game-panel">
-                  <h4>You</h4>
-                  <div className="row">
-                    {role !== 'spectator' && (
-                      <input
-                        value={state.names[role] ?? ''}
-                        placeholder={role === 'p1' ? 'Player 1' : 'Player 2'}
-                        onChange={e => dispatch({ type: 'setName', seat: role, name: e.target.value })}
-                        aria-label="Your name"
-                      />
-                    )}
-                    <select value={role} onChange={e => setRole(e.target.value as Role)} aria-label="Your seat">
-                      <option value="p1" disabled={state.bot === 'p1'}>Player 1</option>
-                      <option value="p2" disabled={state.bot === 'p2'}>Player 2</option>
-                      <option value="spectator">Spectator</option>
-                    </select>
-                  </div>
-                  {seat && !state.bot && (
-                    <label className="check">
-                      <input
-                        type="checkbox"
-                        checked={false}
-                        disabled={players.includes(other(seat))}
-                        onChange={e => dispatch({ type: 'setBot', seat: e.target.checked ? other(seat) : null })}
-                      />
-                      Let {BOT_NAME.replace(/^The /, 'the ')} play the other side
-                      {players.includes(other(seat)) ? ' (someone is sitting there now)' : ''}
-                    </label>
-                  )}
-                  {state.bot && <p className="hint">A solo battle against {BOT_NAME.replace(/^The /, 'the ')}. Nobody else can join it.</p>}
-                  <h4>Game</h4>
-                  {!state.bot && (
-                  <label className="check">
-                    <input type="checkbox" checked={state.listed} disabled={role === 'spectator' || state.private} onChange={e => dispatch({ type: 'setListed', listed: e.target.checked })} />
-                    Show this game in the open games list
-                  </label>
-                  )}
-                  {!state.bot && (
-                  <label className="check">
-                    <input type="checkbox" checked={!!state.private} disabled={!seat || !conn.setPrivate} onChange={e => conn.setPrivate?.(e.target.checked)} />
-                    Private game: only people you send the invite link to can take a seat. Anyone can still watch.
-                  </label>
-                  )}
-                  <div className="row wrap">
-                    {!state.bot && <button onClick={() => void copyLink()}>{state.private ? 'Copy invite link (to play)' : 'Copy invite link'}</button>}
-                    {!state.bot && state.private && seat && <button onClick={() => void copyLink(false)}>Copy link to watch</button>}
-                    <button onClick={leave}>Leave game</button>
-                  </div>
-                </div>
-                <ScenarioPanel state={state} dispatch={dispatch} role={role} />
-                <TablePanel state={state} dispatch={dispatch} role={role} selectedTerrain={selectedTerrain} setSelectedTerrain={setSelectedTerrain} />
-              </>
-            )}
           </aside>
         )}
       </main>

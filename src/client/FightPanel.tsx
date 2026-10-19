@@ -1,4 +1,4 @@
-import { type Ref, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { modelStats } from '../shared/catalog.ts';
 import { duelLeader, duelSettled, strikeWounds, woundsTaken, type Fighter } from '../shared/fight.ts';
 import { combats, enemiesTouching, type Combat } from '../shared/flow.ts';
@@ -14,7 +14,6 @@ import { brutalOptions, chargeEffects } from '../shared/monsters.ts';
 import { BOT_NAME, type Action, type GameState, type Model, type Role, type Seat } from '../shared/types.ts';
 import { useCatalog } from './ListBuilder.tsx';
 import { RollRow } from './Panels.tsx';
-import { useDraggable } from './useDraggable.tsx';
 
 type Dispatch = (a: Action) => void;
 
@@ -399,32 +398,25 @@ function Portrait({ m, photo }: { m: Model; photo?: string }) {
 }
 
 /**
- * The fight being rolled, in a card beside the board rather than over it. Every fight on the table is listed at the
- * top, so the next one can be picked from here; once this one is done, a button moves on to the next.
+ * The fight being rolled, shown in the battle card beside the board. Every fight this turn is listed at the top, so the
+ * next one can be picked from here; once this one is done, a button moves on to the next.
  */
-export function FightDock({ state, dispatch, role, fight, fights, open, photoFor }: { state: GameState; dispatch: Dispatch; role: Role; fight: Combat; fights: Combat[]; open: (key: string | null) => void; photoFor?: (m: Model) => string | undefined }) {
-  const drag = useDraggable('fight-card');
+export function FightView({ state, dispatch, role, fight, fights, open, photoFor }: { state: GameState; dispatch: Dispatch; role: Role; fight: Combat; fights: Combat[]; open: (key: string | null) => void; photoFor?: (m: Model) => string | undefined }) {
   const battle = state.flow.started && state.phase === 'fight';
   // Named by the first model on each side, even once it has fallen.
   const name = (c: Combat) => c.key.split(',|,').map((ids, i) => state.models[(i ? c.p2 : c.p1)[0] ?? ids.split(',')[0]]?.name ?? 'the fallen').join(' vs ');
   const next = battle && fightDone(state, fight) ? fights.find(c => c.key !== fight.key && !fightDone(state, c)) : undefined;
   return (
-    <div ref={drag.ref as Ref<HTMLDivElement>} style={drag.style} className="fight-dock" role="dialog" aria-label="Fight">
-      <button className="close" onClick={() => open(null)} aria-label="Close">
-        ✕
-      </button>
-      {drag.controls && <span className="model-card-grip">{drag.controls}</span>}
-      <div className={`fight-dock-head ${drag.draggable ? 'grab' : ''}`} onPointerDown={drag.onPointerDown}>
-        {battle && fights.length > 1 && (
-          <div className="fight-list" aria-label="Fights this turn">
-            {fights.map((c, i) => (
-              <button key={c.key} className={`small ${c.key === fight.key ? 'on' : ''} ${fightDone(state, c) ? 'done' : ''}`} title={name(c)} onClick={() => open(c.key)}>
-                {fightDone(state, c) ? '✓' : '⚔'} {i + 1}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+    <div className="fight-view">
+      {battle && fights.length > 1 && (
+        <div className="fight-list" aria-label="Fights this turn">
+          {fights.map((c, i) => (
+            <button key={c.key} className={`small ${c.key === fight.key ? 'on' : ''} ${fightDone(state, c) ? 'done' : ''}`} title={name(c)} onClick={() => open(c.key)}>
+              {fightDone(state, c) ? '✓' : '⚔'} {i + 1}
+            </button>
+          ))}
+        </div>
+      )}
       <FightPanel state={state} dispatch={dispatch} role={role} ids={[...fight.p1, ...fight.p2]} combat={fight.key} title={name(fight)} photoFor={photoFor} />
       {next && (
         <button className="primary next-fight" onClick={() => open(next.key)}>

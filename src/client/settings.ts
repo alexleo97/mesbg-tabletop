@@ -122,11 +122,13 @@ export interface Settings {
   grid: boolean;
   /** Unit names shown under each model on the table. */
   names: boolean;
+  /** Each terrain piece's name written on it. */
+  terrainNames: boolean;
   /** Moves glide, dice tumble, and wounds, deaths and shots show on the table. */
   animations: boolean;
 }
 
-const DEFAULTS: Settings = { theme: 'classic', headingFont: 'cinzel', bodyFont: 'system', photos: true, zones: true, deployment: true, grid: true, names: false, animations: true };
+const DEFAULTS: Settings = { theme: 'classic', headingFont: 'cinzel', bodyFont: 'system', photos: true, zones: true, deployment: true, grid: true, names: false, terrainNames: false, animations: true };
 const KEY = 'mesbg-tabletop:settings';
 
 function load(): Settings {
