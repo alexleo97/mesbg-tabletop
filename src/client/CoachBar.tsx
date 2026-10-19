@@ -28,7 +28,7 @@ interface Props {
   role: Role;
   combats: Combat[];
   /** Opens a tab of the battle card on the left. */
-  openTab: (t: 'army' | 'scenario') => void;
+  openTab: (t: 'map' | 'army' | 'scenario') => void;
   /** What the card shows: the turn guide, or the table's settings or the dice log in its place. */
   view: CoachView;
   setView: (v: CoachView) => void;
@@ -352,13 +352,13 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
     body = (
       <>
         <ol className="setup-steps">
+          <li className={Object.keys(state.terrain).length ? 'ok' : ''}>
+            <span>{Object.keys(state.terrain).length ? `${Object.keys(state.terrain).length} pieces of terrain` : 'Lay out the terrain'}</span>
+            <button onClick={() => openTab('map')}>Table</button>
+          </li>
           <li className={scenario ? 'ok' : ''}>
             <span>{scenario ? scenario.name : state.bot ? 'Pick a scenario' : 'Pick a scenario, or play without one'}</span>
             <button onClick={() => openTab('scenario')}>Scenario</button>
-          </li>
-          <li className={Object.keys(state.terrain).length ? 'ok' : ''}>
-            <span>{Object.keys(state.terrain).length ? `${Object.keys(state.terrain).length} pieces of terrain` : 'Lay out the terrain'}</span>
-            <button onClick={() => setView('table')}>Board</button>
           </li>
           <li className={count('p1') && count('p2') ? 'ok' : ''}>
             <span>

@@ -563,6 +563,17 @@ div.strike-at select { width: auto; flex: 1 1 40%; }
   background: #26231ff5; border: 1px solid var(--gold); border-radius: 14px; padding: 8px 12px 12px; box-shadow: 0 10px 30px #0009;
 }
 .battle-card.small { overflow: visible; }
+.setup-card {
+  position: absolute; left: 10px; top: 96px; z-index: 5; width: min(380px, calc(100% - 20px)); max-height: calc(100% - 106px); overflow-y: auto;
+  background: #26231ff5; border: 1px solid var(--gold); border-radius: 14px; padding: 8px 12px 12px; box-shadow: 0 10px 30px #0009;
+}
+.setup-card.small { overflow: visible; }
+.battle-card .tool-bar:last-child { border-bottom: 0; margin-bottom: 0; padding-bottom: 0; }
+.setup-card .battle-head { top: -8px; }
+.setup-card h3 { margin: 0; flex: 1; color: var(--gold); font-size: 1.05rem; }
+.setup-steps-nav { margin: 4px 0 2px; }
+.setup-steps-nav button { flex: 1; }
+.setup-steps-nav button.done:not(.on) { border-color: var(--ok); color: var(--ok); }
 .battle-head { display: flex; align-items: center; gap: 6px; position: sticky; top: 46px; background: #26231f; padding: 4px 0; z-index: 1; }
 .battle-tabs { display: flex; gap: 4px; flex: 1; min-width: 0; }
 .battle-tabs button, .coach-views button { min-height: 30px; padding: 2px 10px; font-size: 0.85rem; }
