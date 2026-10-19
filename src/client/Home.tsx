@@ -6,6 +6,40 @@ import { leaderboard, signIn, useAuth, type Standing } from './auth.ts';
 import { deleteMap, listMaps, updateMap, type SavedMap } from './cloud.ts';
 import { ListBuilder, loadSaved, type Roster } from './ListBuilder.tsx';
 import { cloudLists, mergeLists } from './cloud.ts';
+import { SettingsPanel } from './Panels.tsx';
+import { useSettings } from './settings.ts';
+
+const DISCORD_INVITE = 'https://discord.gg/epNRWMxGws';
+
+/** Join the community, or for members, a shortcut straight into the server. */
+function DiscordLink() {
+  const { discordMember, discordGuild } = useAuth();
+  // Members go straight to the server; the invite would only ask them to accept it again.
+  const href = discordMember && discordGuild ? `https://discord.com/channels/${discordGuild}` : DISCORD_INVITE;
+  return (
+    <a className="nav-discord" href={href} target="_blank" rel="noreferrer">
+      {discordMember ? 'Open Discord' : 'Join Discord'}
+    </a>
+  );
+}
+
+/** Display settings, from a button in the top bar. */
+function SettingsMenu() {
+  const [settings, update] = useSettings();
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="nav-settings">
+      <button className={`icon-btn ${open ? 'on' : ''}`} onClick={() => setOpen(v => !v)} aria-expanded={open} aria-label="Display settings" title="Display settings">
+        ⚙
+      </button>
+      {open && (
+        <div className="nav-settings-panel">
+          <SettingsPanel settings={settings} update={update} />
+        </div>
+      )}
+    </div>
+  );
+}
 
 export type Page = 'play' | 'armies' | 'maps' | 'leaderboard' | 'profile';
 
@@ -32,7 +66,7 @@ export function SiteNav({ page }: { page: Page }) {
   return (
     <header className="site-nav">
       <a className="brand" href={pageUrl('play')}>
-        MESBG <span>Tabletop</span>
+        MESBG <span>VTT</span>
       </a>
       <nav aria-label="Main">
         {PAGES.filter(([p]) => enabled || p === 'play' || p === 'armies').map(([p, icon, label]) => (
@@ -42,7 +76,9 @@ export function SiteNav({ page }: { page: Page }) {
           </a>
         ))}
       </nav>
+      <DiscordLink />
       <AccountButton />
+      <SettingsMenu />
     </header>
   );
 }
@@ -223,11 +259,13 @@ export function MapsPage() {
 }
 
 /** A card on the home page with a heading, a link to its full page, and a short preview. */
-function DashCard({ title, more, href, children }: { title: string; more: string; href: string; children: ReactNode }) {
+function DashCard({ icon, title, more, href, children }: { icon: ReactNode; title: string; more: string; href: string; children: ReactNode }) {
   return (
     <section className="dash-card">
       <header>
-        <h2>{title}</h2>
+        <h2>
+          <span aria-hidden>{icon}</span> {title}
+        </h2>
         <a href={href}>{more} →</a>
       </header>
       {children}
@@ -244,7 +282,7 @@ export function ArmiesCard() {
   }, [profile?.id]);
   const ready = lists.filter(r => r.entries.length).slice(0, 4);
   return (
-    <DashCard title="Your armies" more={ready.length ? 'All armies' : 'Build one'} href="?armies">
+    <DashCard icon="🛡" title="Your armies" more={ready.length ? 'All armies' : 'Build one'} href="?armies">
       {ready.length ? (
         <ul className="dash-list">
           {ready.map(r => (
@@ -270,7 +308,7 @@ export function MapsCard() {
   }, [enabled]);
   if (!enabled) return null;
   return (
-    <DashCard title="Community maps" more="All maps" href="?maps">
+    <DashCard icon={<MapIcon />} title="Community maps" more="All maps" href="?maps">
       {maps === null ? (
         <p className="muted">Loading…</p>
       ) : maps.length === 0 ? (
@@ -298,7 +336,7 @@ export function TopPlayersCard() {
   }, [enabled]);
   if (!enabled) return null;
   return (
-    <DashCard title="Top players" more="Leaderboard" href="?leaderboard">
+    <DashCard icon="🏆" title="Top players" more="Leaderboard" href="?leaderboard">
       {rows === null ? (
         <p className="muted">Loading…</p>
       ) : rows.length === 0 ? (

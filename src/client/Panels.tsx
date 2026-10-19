@@ -830,7 +830,7 @@ export function SettingsPanel({ settings, update, game }: { settings: Settings; 
           </p>
         </>
       )}
-      <p className="hint">The rest only changes how the game looks for you.</p>
+      <p className="hint">{game ? 'The rest only changes' : 'These only change'} how the game looks for you.</p>
       <h4>Colour theme</h4>
       <div className="theme-swatches">
         {THEMES.map(t => (

@@ -98,6 +98,8 @@ interface Room {
   seats: Partial<Record<Seat, string>>;
   /** When someone last sat in each seat, so a seat left empty long enough opens up again. */
   seatSeen: Record<Seat, number>;
+  /** When a player was last at the table (not loaded from a save), so a game whose host stepped away stays in the list. */
+  lastSeated?: number;
   /** Nothing has changed since the game was loaded, so it can be fetched again in case another server saved it since. */
   fresh: boolean;
   /** Saving to the shared store: changes not yet saved, the turn and phase last saved, the next save, and the save in flight. */
@@ -438,10 +440,14 @@ function giveSeatKey(room: Room, seat: Seat, fresh = false) {
   for (const c of room.clients) if (c.role === seat) send(c.ws, { type: 'seatKey', seat, key: room.seats[seat]! });
 }
 
-/** Listed games with at least one player connected, most recently active first. */
+/** How long a listed game stays open after its last player stepped away (to the home page, say). */
+const OPEN_GRACE_MS = 15 * 60_000;
+
+/** Listed games with a player at the table now or in the last few minutes, most recently active first. */
 function openRooms(): RoomSummary[] {
+  const now = Date.now();
   return [...rooms.values()]
-    .filter(r => r.state.listed && !r.state.private && [...r.clients].some(c => c.role !== 'spectator'))
+    .filter(r => r.state.listed && !r.state.private && !r.state.result && ([...r.clients].some(c => c.role !== 'spectator') || now - (r.lastSeated ?? 0) < OPEN_GRACE_MS))
     .sort((a, b) => b.touched - a.touched)
     .slice(0, 50)
     .map(r => {
@@ -454,6 +460,7 @@ function openRooms(): RoomSummary[] {
         scenario: r.state.scenario,
         turn: r.state.turn,
         models: Object.keys(r.state.models).length,
+        started: r.state.flow.started,
       };
     });
 }
@@ -1110,6 +1117,7 @@ wss.on('connection', async (ws, req) => {
 
   ws.on('close', () => {
     room.clients.delete(client);
+    if (client.role !== 'spectator') room.lastSeated = Date.now();
     broadcast(room, { type: 'presence', players: players(room) });
   });
   for (const data of early) handle(data);
@@ -1133,7 +1141,7 @@ setInterval(() => {
 setInterval(() => {
   for (const room of rooms.values()) {
     for (const c of room.clients) c.tokens = Math.min(120, c.tokens + 60);
-    if ([...room.clients].some(c => c.role !== 'spectator')) room.seen = Date.now();
+    if ([...room.clients].some(c => c.role !== 'spectator')) room.seen = room.lastSeated = Date.now();
     for (const c of room.clients) if (c.role !== 'spectator') room.seatSeen[c.role] = Date.now();
     if (room.voice?.id && (Date.now() > (room.voice.closeAt ?? Infinity) || Date.now() - room.seen > VOICE_ABANDONED_MS)) closeVoice(room);
     if (room.clients.size === 0 && Date.now() - room.touched > 1000 * 60 * 30) {
@@ -1188,4 +1196,4 @@ async function shutdown(signal: string) {
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
 process.on('SIGINT', () => void shutdown('SIGINT'));
 
-server.listen(PORT, () => console.log(`MESBG tabletop listening on http://localhost:${PORT}`));
+server.listen(PORT, () => console.log(`MESBG VTT listening on http://localhost:${PORT}`));

@@ -1,4 +1,4 @@
-# MESBG Tabletop
+# MESBG VTT
 
 **Play the Middle-earth Strategy Battle Game in your browser: [mesbg-vtt.app](https://mesbg-vtt.app)**
 
