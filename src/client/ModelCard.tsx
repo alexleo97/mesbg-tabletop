@@ -2,7 +2,7 @@ import { useEffect, useState, type Ref } from 'react';
 import { breachOptions } from '../shared/breach.ts';
 import { hurlOptions } from '../shared/defenders.ts';
 import { laden } from '../shared/fortress.ts';
-import { loadRulesText, modelStats, pictureUrl, startingPoints, statsWithOptions, STAT_NAMES, type Catalog } from '../shared/catalog.ts';
+import { loadRulesText, modelStats, rulesFor, pictureUrl, startingPoints, statsWithOptions, STAT_NAMES, type Catalog } from '../shared/catalog.ts';
 import { strikeWounds, woundsTaken } from '../shared/fight.ts';
 import { CONTACT_SLACK, type Combat } from '../shared/flow.ts';
 import { engaged, fightDone, moveLeft, moveStart } from '../shared/movement.ts';
@@ -72,8 +72,8 @@ export function ruleSummary(name: string): string | undefined {
 
 /** The special rules on a model's profile. */
 export function rulesOf(m: Model, catalog: Catalog | null): string[] {
-  const unit = m.profileId ? catalog?.units[m.profileId] : undefined;
-  return unit?.rules ?? [];
+  // (Optional wargear our data lists among the rules shows only when taken.)
+  return rulesFor(catalog, m);
 }
 
 const TEST_HELP: Record<CrossTest, string> = {

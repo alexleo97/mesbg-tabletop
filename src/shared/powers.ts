@@ -3,7 +3,7 @@
 // odd ones that move models or put a marker down. The rest of the rules ask here whether a model is held by one.
 import { mounted } from './cavalry.ts';
 import magic from '../data/magic.json';
-import { modelStats, startingPoints, type Catalog } from './catalog.ts';
+import { modelStats, rulesFor, startingPoints, type Catalog } from './catalog.ts';
 import { combats } from './flow.ts';
 import { basePerimeter, distanceBetween, distanceToBase, type Point } from './geometry.ts';
 import { formatNeed, woundNeed } from './rules.ts';
@@ -41,7 +41,7 @@ export const isLinePower = (power: string) => basePower(power) === 'Tremor';
 // ---- What a model is ---------------------------------------------------------------------------------------------
 
 const unitOf = (catalog: Catalog | null, m: Model) => (m.profileId ? catalog?.units[m.profileId] : undefined);
-const hasRule = (catalog: Catalog | null, m: Model, re: RegExp) => !!unitOf(catalog, m)?.rules.some(r => re.test(r));
+const hasRule = (catalog: Catalog | null, m: Model, re: RegExp) => rulesFor(catalog, m).some(r => re.test(r));
 const MOUNT = /^(armoured )?(horse|steed|warg|pony|goat|war goat|camel|elk|boar|horses)$/i;
 const MOUNT_OPTION = /\b(horse|steed|warg|pony|goat|camel|elk|boar)\b/i;
 

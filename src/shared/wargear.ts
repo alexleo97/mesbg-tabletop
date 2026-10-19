@@ -1,7 +1,7 @@
 // Weapons, armour, equipment and the common special rules: what they do to a model's fights, shots, Courage and
 // movement, worked out from its profile so the server, the fight card and the computer player all agree.
 import { fromMarker, onTable } from './objects.ts';
-import { modelStats, type Catalog } from './catalog.ts';
+import { modelStats, rulesFor, type Catalog } from './catalog.ts';
 import type { Fighter } from './fight.ts';
 import { gearOf, hasGear } from './gear.ts';
 import { distanceBetween } from './geometry.ts';
@@ -16,11 +16,11 @@ import type { DiceRoll, GameState, Model, Seat } from './types.ts';
 const unitOf = (catalog: Catalog | null | undefined, m: Model) => (m.profileId ? catalog?.units[m.profileId] : undefined);
 
 /** Whether a model's profile has a special rule (by its name, with or without a bracketed value). */
-export const hasRule = (catalog: Catalog | null | undefined, m: Model, name: string) => !!unitOf(catalog, m)?.rules.some(r => r === name || r.startsWith(`${name} `) || r.startsWith(`${name}(`));
+export const hasRule = (catalog: Catalog | null | undefined, m: Model, name: string) => rulesFor(catalog, m).some(r => r === name || r.startsWith(`${name} `) || r.startsWith(`${name}(`));
 
 /** The bracketed values of a rule a model has, such as ["Man"] for Hatred (Man). */
 export const ruleArgs = (catalog: Catalog | null | undefined, m: Model, name: string) =>
-  (unitOf(catalog, m)?.rules ?? []).filter(r => r.startsWith(`${name} (`) || r.startsWith(`${name}(`)).map(r => r.slice(r.indexOf('(') + 1, r.lastIndexOf(')')).trim());
+  rulesFor(catalog, m).filter(r => r.startsWith(`${name} (`) || r.startsWith(`${name}(`)).map(r => r.slice(r.indexOf('(') + 1, r.lastIndexOf(')')).trim());
 
 // Our data has no keywords, so the kinds rules name (Elf, Dwarf, Orc, Man and so on) are told from the model's name,
 // army and the realm it comes from.
@@ -81,6 +81,10 @@ const heavyShield = (catalog: Catalog | null | undefined, m: Model) => gearOf(ca
 export const isUnarmed = (catalog: Catalog | null | undefined, m: Model) => gearOf(catalog, m).some(g => g === 'unarmed') || (m.lostGear?.length ? !melee(catalog, m).length : false);
 export const carriesBanner = (catalog: Catalog | null | undefined, m: Model) => hasGear(catalog, m, /\bbanner\b/);
 const missile = (catalog: Catalog | null | undefined, m: Model) => hasGear(catalog, m, /\bbows?\b|crossbow|sling|blowpipe/);
+
+/** Whether a model carries Andúril: as wargear (King Elessar), or as the option taken (Strider). */
+export const hasAnduril = (catalog: Catalog | null | undefined, m: Model) =>
+  !!m.options?.some(o => /^And[uú]ril\b/i.test(o)) || !!unitOf(catalog, m)?.wargear.some(g => /^And[uú]ril\b/i.test(g));
 
 /** Why a model can't use Shielding in a fight, or null if it can: it needs a shield and must be on foot. */
 export function cantShield(catalog: Catalog | null | undefined, m: Model): string | null {
@@ -160,8 +164,9 @@ export function fighterOf(state: GameState, catalog: Catalog | null | undefined,
     f.twoHanded = true;
     notes.push(hasRule(catalog, m, 'Burly') ? 'Two-handed: +1 to wound (Burly: no duel penalty)' : 'Two-handed: -1 duel (not on a 6), +1 to wound');
   }
-  // Andúril never needs worse than 4+ to wound (a two-handed blow still adds its +1).
-  if (unitOf(catalog, m)?.rules.some(r => /^And[uú]ril\b/i.test(r))) {
+  // Andúril never needs worse than 4+ to wound (a two-handed blow still adds its +1). Strider has it only when he
+  // takes it as an option (our data lists it among his rules either way).
+  if (hasAnduril(catalog, m)) {
     f.woundCap = 4;
     notes.push('Andúril: never worse than 4+ to wound');
   }

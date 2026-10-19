@@ -94,7 +94,7 @@ export const NARRATIVES: Narrative[] = [
       },
       {
         name: 'Aragorn',
-        text: 'From turn 2, as the Good side finishes its move, it rolls a D6: on a 4+ Aragorn arrives, and the Good player places him anywhere touching the edge of the ruin. He can\'t move that turn but otherwise acts as normal.',
+        text: 'From turn 2, as the Good side finishes its move, it rolls a D6: on a 4+ Aragorn arrives, and the Good player places him anywhere touching the edge of the ruin. That Move phase is over for him, but he shoots and fights as normal.',
       },
       {
         name: 'Cry of the Nazgûl',

@@ -208,6 +208,24 @@ export function entriesFor(id: string, unit: CatalogUnit, optionIds: string[], c
   });
 }
 
+/** Wargear that is an option wherever it appears, though some of our lists name it only among the rules. */
+const OPTIONAL_GEAR = ['anduril, flame of the west', 'sting', 'mithril coat', 'the oakenshield', 'morgul blade', 'crown of morgul'];
+
+const plain = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+
+/**
+ * The special rules a model has: its profile's, less any named after an option it hasn't taken. (Our data lists
+ * some optional wargear among the rules: Strider's Andúril, a Ringwraith's Morgul Blade, Frodo's Sting.)
+ */
+export function rulesFor(catalog: Catalog | null | undefined, m: { profileId?: string; options?: string[] }): string[] {
+  const unit = m.profileId ? catalog?.units[m.profileId] : undefined;
+  if (!unit) return [];
+  const taken = new Set((m.options ?? []).map(plain));
+  const untaken = new Set([...unit.options.filter(o => !o.included).map(o => plain(o.name)), ...OPTIONAL_GEAR].filter(n => !taken.has(n)));
+  const kept = new Set(unit.wargear.map(plain));
+  return unit.rules.filter(r => !untaken.has(plain(r)) || kept.has(plain(r)));
+}
+
 /** A hero's starting Might, Will and Fate from its profile, the most it can ever have; null for a model without one. */
 export function startingPoints(catalog: Catalog | null | undefined, m: { profileId?: string; name: string }): { might: number; will: number; fate: number } | null {
   const unit = m.profileId ? catalog?.units[m.profileId] : undefined;

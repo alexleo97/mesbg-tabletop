@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import catalogJson from '../src/data/mesbg-data.json';
-import { modelStats, type Catalog } from '../src/shared/catalog.ts';
+import { modelStats, rulesFor, type Catalog } from '../src/shared/catalog.ts';
 import { courageOf, willOfEvilToll } from '../src/shared/courage.ts';
 import { burnDue, burns } from '../src/shared/fire.ts';
 import { distanceBetween } from '../src/shared/geometry.ts';
@@ -267,11 +267,19 @@ describe("the Weathertop cast's own rules", () => {
   };
   const fightOf = (a: Model, b: Model) => ({ sides: [[{ id: a.id, name: a.name, f: 3, a: 1, s: 3, d: 4 }], [{ id: b.id, name: b.name, f: 3, a: 1, s: 3, d: 4 }]], targets: [b.id, a.id], trapped: false }) as never;
 
-  it('Andúril: Aragorn never needs worse than 4+ to wound, and 3+ two-handed', () => {
+  it('Andúril: Aragorn with it never needs worse than 4+ to wound, and 3+ two-handed', () => {
     const base = weathertop(2);
     const a = who(base, 'aragorn');
     const w = wraiths(base)[0];
-    let s = place(onTable(only(base, [a, w]), a), { [a.id]: [5, 5], [w.id]: [5, 6] });
+    // Weathertop's Strider has only his bow: no Andúril.
+    let plain = place(onTable(only(base, [a, w]), a), { [a.id]: [5, 5], [w.id]: [5, 6] });
+    plain = { ...plain, phase: 'fight', flow: { ...plain.flow, pairs: undefined } };
+    plain = ask(plain, 'p1', { type: 'fight', fight: fightOf(a, w) }, [6, 6, 6, 1]);
+    plain = ask(plain, 'p1', { type: 'strikes', fight: fightOf(a, w), group: plain.log.at(-1)!.group! }, [1, 1, 1]);
+    expect(plain.log.find(r => r.label.startsWith('Aragorn, Strider strikes'))?.label).not.toMatch(/\(4\+\)/);
+    // Taken as an option, it works.
+    const armed = { ...base, models: { ...base.models, [a.id]: { ...a, options: [...(a.options ?? []), 'Anduril, Flame of the West'] } } };
+    let s = place(onTable(only(armed, [a, w]), a), { [a.id]: [5, 5], [w.id]: [5, 6] });
     s = { ...s, phase: 'fight', flow: { ...s.flow, pairs: undefined } };
     let t = s;
     s = ask(s, 'p1', { type: 'fight', fight: fightOf(a, w) }, [6, 6, 6, 1]);
@@ -281,6 +289,21 @@ describe("the Weathertop cast's own rules", () => {
     t = ask(t, 'p1', { type: 'fight', fight: fightOf(a, w) }, [6, 6, 6, 1]);
     t = ask(t, 'p1', { type: 'strikes', fight: fightOf(a, w), group: t.log.at(-1)!.group! }, [1, 1, 1]);
     expect(t.log.find(r => r.label.startsWith('Aragorn, Strider strikes'))?.label).toMatch(/\(3\+\)/);
+  });
+
+  it('the cast carries only the wargear the scenario gives it', () => {
+    const base = weathertop(2);
+    const rules = (key: string) => rulesFor(catalog, who(base, key));
+    // Frodo has neither Sting nor his Mithril Coat yet, and Strider has no Andúril.
+    expect(rules('frodo')).not.toContain('Sting');
+    expect(rules('frodo')).not.toContain('Mithril Coat');
+    expect(rules('aragorn').some(r => /And[uú]ril/.test(r))).toBe(false);
+    expect(rules('aragorn')).toContain('Ring of Barahir');
+    // The Witch-king has his Morgul Blade but not the Crown; the other Ringwraiths have no blade.
+    expect(rules('witch-king')).toContain('Morgul Blade');
+    expect(rules('witch-king')).not.toContain('Crown of Morgul');
+    for (const w of wraiths(base).filter(m => m.cast === 'ringwraith')) expect(rulesFor(catalog, w)).not.toContain('Morgul Blade');
+    expect(who(base, 'aragorn').options).toContain('Bow');
   });
 
   it('Mighty Hero: a bonus Might point each turn, lost if unspent', () => {
