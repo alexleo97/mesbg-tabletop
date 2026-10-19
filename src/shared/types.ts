@@ -499,7 +499,7 @@ export interface Flow {
   /** Mighty Hero: the turn its bonus Might was last given, and each hero's own Might before it (see mighty.ts). */
   mighty?: { turn: number; base: Record<string, number> };
   /** A side's reinforcements moving onto the table now, from a point on the edge: they alone move, and can't charge. */
-  entering?: { seat: Seat; ids: string[]; from: [number, number]; turn: number };
+  entering?: { seat: Seat; ids: string[]; from: [number, number]; turn: number; on?: string; at?: [number, number] };
   /** The side that has asked to end its Move activation with reinforcements still to roll for (see mutton.ts). */
   reinforce?: Seat;
   /** Once-a-turn abilities used this turn, as `${key}:${model}` (Healing Herbs, Raising Spirits, Combat Synergy). */

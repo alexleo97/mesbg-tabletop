@@ -141,7 +141,7 @@ export function mayTend(state: GameState, catalog: Catalog | null | undefined, h
 }
 
 /** Rolls Healing Herbs or Raising Spirits: a 4+ heals a Wound, or gives back a Will point. */
-export function tend(state: GameState, catalog: Catalog | null | undefined, how: 'herbs' | 'spirits', m: Model, t: Model, d6: () => number, uid: () => string, now: number): Action[] {
+export function tend(how: 'herbs' | 'spirits', m: Model, t: Model, d6: () => number, uid: () => string, now: number): Action[] {
   const d = d6();
   const ok = d >= 4;
   const label = how === 'herbs' ? `Healing Herbs: ${m.name} tends ${t.name} (4+)` : `Raising Spirits: ${m.name} cheers ${t.name} (4+)`;

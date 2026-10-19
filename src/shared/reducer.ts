@@ -17,6 +17,7 @@ import { canPickUp, markerUpkeep, syncCarried, touching, canEscape } from './obj
 import { aboard, raiseLadders, towerMove } from './fortress.ts';
 import { endPhaseUpkeep } from './scoring.ts';
 import { arrivalDue, mayCry, narrativeById } from './narrative.ts';
+import { entering, isMutton, isTroll, nextEntering, onEdge, reinforcementsPending, stillEntering } from './mutton.ts';
 import { putOut } from './fire.ts';
 import { ringAfterMight } from './ring.ts';
 import { placeSpot, placingNow } from './placing.ts';
@@ -50,6 +51,31 @@ const GROUND = ['wood', 'rock', 'cave', 'spectral', 'swift', 'burly'];
 const newFlow = (): Flow => ({ started: false, chooser: null, chooserTurn: 0, roll: null, done: [], resolved: [], heroics: [], passed: [], lastHeroic: null });
 
 /** Moves to a phase (and turn), clearing who has finished; a new turn also clears fights and priority. */
+/** In Roast Mutton, a move by Bilbo into contact with a Troll is a charge: from then on the Trolls may strike him. */
+function bilboCharged(before: GameState, after: GameState): GameState {
+  if (!isMutton(after) || after.narrative?.bilbo || after.flow.charges === before.flow.charges) return after;
+  const bilbo = Object.values(after.models).find(m => m.cast === 'bilbo');
+  const foe = bilbo && after.flow.charges?.[bilbo.id] ? after.models[after.flow.charges[bilbo.id]] : undefined;
+  return foe && isTroll(foe) ? { ...after, narrative: { ...after.narrative!, bilbo: true } } : after;
+}
+
+/**
+ * Reinforcements step onto the table one at a time, at the middle of the west edge, once the way in is clear: the
+ * Move they have already used to get their base onto the table is counted from just off the edge.
+ */
+function comeOn(state: GameState): GameState {
+  const next = nextEntering(state);
+  if (!next) return state;
+  const { model, at } = next;
+  const { waiting: _, ...rest } = model;
+  const r = at.x;
+  return {
+    ...state,
+    models: { ...state.models, [model.id]: { ...rest, ...at, rot: 90 } },
+    flow: { ...state.flow, entering: { ...state.flow.entering!, on: model.id, at: [at.x, at.y] }, starts: { ...state.flow.starts, [model.id]: [-r, at.y] }, walked: { ...state.flow.walked, [model.id]: 2 * r }, paths: { ...state.flow.paths, [model.id]: [[-r, at.y], [at.x, at.y]] } },
+  };
+}
+
 /** Play is held for a model being placed, or for the Good player at Weathertop to say whether they roll for Aragorn. */
 const waitingOn = (state: GameState) => !!placingNow(state) || arrivalDue(state);
 
@@ -94,7 +120,7 @@ function goToPhase(state: GameState, phase: Phase, turn: number, newTurn: boolea
       done: [],
       resolved: newTurn ? [] : state.flow.resolved,
       heroics: newTurn ? [] : state.flow.heroics,
-      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], moved: [], cast: [], spell: undefined, held: [], stood: [], climbed: {}, compel: undefined, supported: [], strikeBonus: {}, charges: {}, brutal: [], hurledAt: [], breached: [], trampled: [], turned: [], cables: [], sauron: [], ringTried: [], sought: [], placing: [], joined: [] } : {}),
+      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], moved: [], cast: [], spell: undefined, held: [], stood: [], climbed: {}, compel: undefined, supported: [], strikeBonus: {}, charges: {}, brutal: [], hurledAt: [], breached: [], trampled: [], turned: [], cables: [], sauron: [], ringTried: [], sought: [], reinforce: undefined, placing: [], joined: [] } : {}),
       ...(phase !== state.phase ? { compel: undefined, mustCharge: undefined } : {}),
       // The fights are paired off as the Fight phase begins, and stay that way until it ends.
       ...(phase !== state.phase ? { pairs: phase === 'fight' && state.flow.started ? pairOff(livingModels(state), { ...state, phase: 'move' }, state.flow.pairChoices).map(c => c.key) : undefined, pairChoices: undefined } : {}),
@@ -667,6 +693,8 @@ function step(state: GameState, action: Action): GameState {
         if (state.flow.started && state.phase === 'move' && state.flow.stopped?.includes(prev.id) && (asked.x !== prev.x || asked.y !== prev.y)) continue;
         // Only the models whose activation it is may move (a hero's heroic activation goes first; see heroics.ts).
         const askedToMove = asked.x !== prev.x || asked.y !== prev.y;
+        // While reinforcements come on, the rest of their side has had its activation.
+        if (state.flow.started && state.phase === 'move' && askedToMove && state.flow.entering?.turn === state.turn && state.flow.entering.seat === prev.owner && !entering(state, prev)) continue;
         if (state.flow.started && state.phase === 'move' && askedToMove && !state.flow.compel && !mayActivate(state, prev)) continue;
         if (state.flow.started && state.phase === 'move' && askedToMove && !heroicStarted && heroicQueue(state).some(h => h.id === prev.id) && heroicNow(state)?.seat === prev.owner) heroicStarted = prev.id;
         let to = asked;
@@ -693,9 +721,11 @@ function step(state: GameState, action: Action): GameState {
           // back along the way it came, which gives back what it spent beyond that point.)
           const back = Math.hypot(to.x - from.x, to.y - from.y) < RETRACE / 2;
           const undone = back ? null : retrace(paths?.[prev.id], to);
-          to = back ? from : undone ? undone.at : limitMove(state, here, to, Math.max(0, allowance - spent(state, prev)), prev.owner, prev, together);
+          // (Reinforcements coming on may not charge.)
+          const arriving = state.phase === 'move' && entering(state, prev);
+          to = back ? from : undone ? undone.at : limitMove(state, here, to, Math.max(0, allowance - spent(state, prev)), prev.owner, prev, together, !arriving);
           // A model that stops inside an enemy's control zone is charging it: it must reach base contact, or stay out.
-          if (state.phase === 'move' || fightsAgain(state, prev)) to = finishCharge(state, prev, here, to, together);
+          if ((state.phase === 'move' || fightsAgain(state, prev)) && !arriving) to = finishCharge(state, prev, here, to, together);
           // A friend going with a hero (With Me, or At the Double) must end within 6" of it.
           const leader = state.phase === 'move' ? followed(state, prev, heroicStarted) : undefined;
           if (leader && !together.has(leader.id)) to = keepNear(prev, from, to, leader);
@@ -758,7 +788,7 @@ function step(state: GameState, action: Action): GameState {
         starts !== state.flow.starts || walked !== state.flow.walked || paths !== state.flow.paths || stood !== state.flow.stood || climbed !== state.flow.climbed || blocked !== state.flow.blocked || charges !== state.flow.charges || heroicStarted !== state.flow.heroicNow || turned !== state.flow.turned
           ? { flow: { ...state.flow, starts, ...(walked ? { walked } : {}), ...(paths ? { paths } : {}), ...(stood ? { stood } : {}), ...(climbed ? { climbed } : {}), ...(blocked ? { blocked } : {}), ...(charges ? { charges } : {}), ...(heroicStarted ? { heroicNow: heroicStarted } : {}), ...(turned ? { turned } : {}) } }
           : {};
-      return { ...state, models, ...flow };
+      return comeOn(bilboCharged(state, { ...state, models, ...flow }));
     }
     case 'trampled': {
       // A war beast or chariot has made its move (the game drove it; see warBeasts.ts): it moves no more this phase.
@@ -970,6 +1000,13 @@ function step(state: GameState, action: Action): GameState {
         const went = [hero.id, ...shoutedFor(state, hero).map(f => f.id)];
         return { ...state, flow: { ...state.flow, heroicDone: [...(state.flow.heroicDone ?? []), hero.id], heroicNow: undefined, activated: [...new Set([...(state.flow.activated ?? []), ...went])] } };
       }
+      // Roast Mutton: the Company still to come rolls (or comes) first, and moves on before the side is done.
+      if (state.flow.started && reinforcementsPending(state, action.seat)) return state.flow.reinforce === action.seat ? state : { ...state, flow: { ...state.flow, reinforce: action.seat } };
+      // Ending it with a newcomer still at the edge lets it stay there, and the next one comes on.
+      if (state.flow.started && state.flow.entering?.seat === action.seat && stillEntering(state)) {
+        const waved = onEdge(state) ? comeOn({ ...state, flow: { ...state.flow, entering: { ...state.flow.entering, on: undefined, at: undefined } } }) : state;
+        if (onEdge(waved) || nextEntering(waved)) return waved;
+      }
       const done = [...state.flow.done, action.seat];
       // Once both players have activated in the Move or Shoot phase, play moves on (unless they move on themselves),
       // after the Good side at Weathertop has had its chance to roll for Aragorn.
@@ -1132,7 +1169,17 @@ function step(state: GameState, action: Action): GameState {
     case 'narrativeNote': {
       if (!state.narrative) return state;
       const rolled = action.rolled === undefined ? state.narrative.rolled : [...new Set([...(state.narrative.rolled ?? []), int(action.rolled, 0, 99, 0)])];
-      return moveOn({ ...state, narrative: { ...state.narrative, ...(rolled ? { rolled } : {}) } });
+      const dawn = action.dawn === undefined ? state.narrative.dawn : int(action.dawn, 1, 99, 1);
+      return moveOn({ ...state, narrative: { ...state.narrative, ...(rolled ? { rolled } : {}), ...(dawn ? { dawn } : {}) } });
+    }
+    case 'entering': {
+      // Reinforcements have come on (see mutton.ts): they step onto the table one by one, and then the side is done.
+      if (!isSeat(action.seat) || !Array.isArray(action.ids) || state.flow.entering?.turn === state.turn) return state;
+      const ids = action.ids.filter(i => state.models[i]?.waiting && state.models[i].owner === action.seat).slice(0, 20);
+      const from: [number, number] = Array.isArray(action.from) ? [num(action.from[0], -24, 200, 0), num(action.from[1], -24, 200, 0)] : [0, state.board.h / 2];
+      const next = comeOn({ ...state, flow: { ...state.flow, entering: { seat: action.seat, ids, from, turn: state.turn } } });
+      // Nobody came: the side's move is over.
+      return ids.length ? next : step(next, { type: 'endActivation', seat: action.seat });
     }
     case 'burned':
       return { ...state, flow: { ...state.flow, burned: state.turn } };
@@ -1493,7 +1540,7 @@ export function loadState(raw: unknown): GameState {
   if (o.advance === 'click') out = { ...out, advance: 'click' };
   const n = o.narrative;
   if (n && typeof n === 'object' && narrativeById(n.id) && isSeat(n.good))
-    out = { ...out, narrative: { id: n.id, good: n.good, ...(Number.isFinite(n.cry) ? { cry: int(n.cry, 0, 99, 0) } : {}), ...(Array.isArray(n.rolled) ? { rolled: n.rolled.slice(0, 40).map(t => int(t, 0, 99, 0)) } : {}) } };
+    out = { ...out, narrative: { id: n.id, good: n.good, ...(Number.isFinite(n.cry) ? { cry: int(n.cry, 0, 99, 0) } : {}), ...(Array.isArray(n.rolled) ? { rolled: n.rolled.slice(0, 40).map(t => int(t, 0, 99, 0)) } : {}), ...(Number.isFinite(n.dawn) ? { dawn: int(n.dawn, 1, 99, 1) } : {}), ...(n.bilbo === true ? { bilbo: true } : {}) } };
   if (o.flow && typeof o.flow === 'object') {
     const f = o.flow as Partial<Flow>;
     const seats = (v: unknown) => (Array.isArray(v) ? [...new Set(v.filter(isSeat))] : []);
@@ -1572,6 +1619,8 @@ export function loadState(raw: unknown): GameState {
         ...(Array.isArray(f.sought) ? { sought: f.sought.slice(0, 40).map(x => str(x, 80)) } : {}),
         ...(f.mighty && typeof f.mighty === 'object' && f.mighty.base && typeof f.mighty.base === 'object' ? { mighty: { turn: int(f.mighty.turn, 0, 99, 0), base: cleanCounts(f.mighty.base, 9) } } : {}),
         ...(Array.isArray(f.joined) ? { joined: f.joined.slice(0, 20).map(x => str(x, 80)) } : {}),
+        ...(f.entering && typeof f.entering === 'object' && isSeat(f.entering.seat) && Array.isArray(f.entering.ids) ? { entering: { seat: f.entering.seat, ids: f.entering.ids.slice(0, 20).map(x => str(x, 80)), from: [num(f.entering.from?.[0], -24, 200, 0), num(f.entering.from?.[1], -24, 200, 0)] as [number, number], turn: int(f.entering.turn, 0, 99, 0), ...(typeof f.entering.on === 'string' && Array.isArray(f.entering.at) ? { on: str(f.entering.on, 80), at: [num(f.entering.at[0], -24, 200, 0), num(f.entering.at[1], -24, 200, 0)] as [number, number] } : {}) } } : {}),
+        ...(isSeat(f.reinforce) ? { reinforce: f.reinforce } : {}),
         ...(Array.isArray(f.placing) ? { placing: f.placing.map(p => cleanPlacing(p, out)).filter((p): p is Placing => !!p).slice(0, 20) } : {}),
       },
     };

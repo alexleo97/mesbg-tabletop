@@ -30,6 +30,7 @@ import { tierOf } from '../src/shared/warbands.ts';
 import { terrainRules } from '../src/shared/wargear.ts';
 import { gearOf } from '../src/shared/gear.ts';
 import { arrivalAuto, rollArrival } from '../src/shared/narrative.ts';
+import { dawnDue, reinforceDue, rollDawn, rollReinforcements as companyArrives } from '../src/shared/mutton.ts';
 import { sauronDue, sauronRoll } from '../src/shared/ring.ts';
 import { mightyBonus, mightyDue } from '../src/shared/mighty.ts';
 import { longshanksDue, longshanksMove } from '../src/shared/sam.ts';
@@ -676,12 +677,12 @@ function narrativeUpkeep(room: Room) {
     const s = room.state;
     const bearer = sauronDue(s);
     const sam = longshanksDue(s);
-    const out = mightyDue(s, CATALOG) ? mightyBonus(s, CATALOG, serverId) : sam ? longshanksMove(s, sam) : arrivalAuto(s) ? rollArrival(s, serverDice, serverId) : bearer ? sauronRoll(s, bearer, serverDice, serverId) : burnDue(s) ? burns(s, CATALOG, serverDice, serverId) : [];
+    const out = mightyDue(s, CATALOG) ? mightyBonus(s, CATALOG, serverId) : sam ? longshanksMove(s, sam) : arrivalAuto(s) ? rollArrival(s, serverDice, serverId) : reinforceDue(s) ? companyArrives(s, serverDice, serverId) : dawnDue(s) ? rollDawn(s, serverDice, serverId) : bearer ? sauronRoll(s, bearer, serverDice, serverId) : burnDue(s) ? burns(s, CATALOG, serverDice, serverId) : [];
     for (const a of out) apply(room, a);
   } finally {
     upkeeping = false;
   }
-  if (mightyDue(room.state, CATALOG) || longshanksDue(room.state) || arrivalAuto(room.state) || sauronDue(room.state) || burnDue(room.state)) narrativeUpkeep(room);
+  if (mightyDue(room.state, CATALOG) || longshanksDue(room.state) || arrivalAuto(room.state) || reinforceDue(room.state) || dawnDue(room.state) || sauronDue(room.state) || burnDue(room.state)) narrativeUpkeep(room);
 }
 
 /** In the End phase, Paralysed models roll to recover. */

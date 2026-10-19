@@ -30,7 +30,7 @@ export const SELECTION_RULE: string = data.selection;
 export const scenarioById = (id: string | null) => SCENARIOS.find(s => s.id === id);
 
 /** Siege gear and other markers that aren't a scenario's objectives. */
-const NOT_OBJECTIVES = new Set(['ladder', 'ram', 'rocks', 'oil', 'rally']);
+const NOT_OBJECTIVES = new Set(['ladder', 'ram', 'rocks', 'oil', 'rally', 'campfire']);
 
 /** How many of the scenario's objective markers still have to be put on the table before the battle can start. */
 export function objectivesMissing(state: GameState): number {

@@ -28,6 +28,7 @@ import { placingNow } from './placing.ts';
 import { fryingPans } from './sam.ts';
 import { arrivalAuto, arrivalDue, mayCry, narrativeById, narrativeSetup, rollArrival, skipArrival } from './narrative.ts';
 import { invisibleTo, ringRequest, seekRequest } from './ring.ts';
+import { spareFor } from './mutton.ts';
 import { MORGUL, morgulBlades } from './morgul.ts';
 import { MAX_DICE } from './reducer.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
@@ -171,6 +172,9 @@ export function adjustFight(state: GameState, req: FightRequest, catalog: Catalo
     const foes = req.sides.flat().filter(x => !x.support && state.models[x.id] && state.models[x.id].owner !== m.owner).map(x => x.id);
     const rival = (state.flow.challenges ?? []).map(c => (c.by === m.id ? c.target : c.target === m.id && c.accepted ? c.by : undefined)).find(id => id && foes.includes(id));
     if (rival && !f.support) Object.assign(out, { a: Math.min(10, out.a + 1), rival });
+    // Roast Mutton: the Trolls may not strike Bilbo at first.
+    const spare = spareFor(state, m);
+    if (spare.length) out.spare = [...new Set([...(out.spare ?? []), ...spare])];
     // Fighting an Invisible model that has no friends in the fight halves its Fight (rounding up); not the Nine's.
     const others = req.sides[1 - i].filter(x => !x.support).map(x => state.models[x.id]).filter(Boolean);
     if (!f.support && others.length === 1 && invisibleTo(others[0], m)) out.f = Math.ceil(out.f / 2);

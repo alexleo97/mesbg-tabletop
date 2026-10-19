@@ -14,6 +14,7 @@ import { listEntries } from '../src/shared/warbands.ts';
 import type { Action, GameState, Seat } from '../src/shared/types.ts';
 import { openDuel } from '../src/shared/bot.ts';
 import { arrivalAuto, rollArrival } from '../src/shared/narrative.ts';
+import { dawnDue, reinforceDue, rollDawn, rollReinforcements } from '../src/shared/mutton.ts';
 import { sauronDue, sauronRoll } from '../src/shared/ring.ts';
 import { burnDue, burns } from '../src/shared/fire.ts';
 import { willOfEvilDue, willOfEvilToll } from '../src/shared/courage.ts';
@@ -82,7 +83,7 @@ export function play(state: GameState, rand: () => number, maxSteps = 20000) {
     if (state.narrative) {
       for (let k = 0; k < 4; k++) {
         const bearer = sauronDue(state);
-        const out = arrivalAuto(state) ? rollArrival(state, d6, uid, now) : bearer ? sauronRoll(state, bearer, d6, uid, now) : burnDue(state) ? burns(state, catalog, d6, uid, now) : willOfEvilDue(state) ? willOfEvilToll(state, catalog, uid, now) : [];
+        const out = arrivalAuto(state) ? rollArrival(state, d6, uid, now) : reinforceDue(state) ? rollReinforcements(state, d6, uid, now) : dawnDue(state) ? rollDawn(state, d6, uid, now) : bearer ? sauronRoll(state, bearer, d6, uid, now) : burnDue(state) ? burns(state, catalog, d6, uid, now) : willOfEvilDue(state) ? willOfEvilToll(state, catalog, uid, now) : [];
         for (const a of out) state = reduce(state, a);
         if (!out.length) break;
       }

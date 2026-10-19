@@ -286,12 +286,12 @@ export function moveStart(state: GameState, m: Model): Point {
  * The furthest a model can get towards `to` from where it started this phase, spending at most `move` inches
  * (difficult terrain counts double). Returns `to` itself when it's in reach.
  */
-export function limitMove(state: GameState, from: Point, to: Point, move: number, seat?: Seat, m?: Model, skip?: ReadonlySet<string>): Point {
+export function limitMove(state: GameState, from: Point, to: Point, move: number, seat?: Seat, m?: Model, skip?: ReadonlySet<string>, charge = true): Point {
   // Terrain that needs a test stops the model at it first, whatever its Move would allow beyond.
   const ahead = m && state.flow.started && testsTerrain(state, m) ? crossingAhead(state, m, from, to) : null;
   if (ahead) to = ahead.stop;
   const reached = reachable(state, from, to, move, seat, m);
-  return m ? blockMove(state, m, from, reached, skip) : reached;
+  return m ? blockMove(state, m, from, reached, skip, charge) : reached;
 }
 
 function reachable(state: GameState, from: Point, to: Point, move: number, seat?: Seat, m?: Model): Point {
