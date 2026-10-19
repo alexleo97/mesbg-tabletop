@@ -6,7 +6,7 @@ import { holdInZones, nearEdge } from './deployment.ts';
 import { canActivate, heroicInfo, heroicNow, heroicQueue, mayActivate, shoutedFor, SHOUT_RANGE } from './heroics.ts';
 import { pendingSpell } from './magic.ts';
 import { basePower, cannotAct, effectActive } from './powers.ts';
-import { basesOverlap, costOf, engaged as engagedNow, finishCharge, fightsAgain, limitMove, marchedBy, marchRange, moveAllowance, movedAtAll, movedTooFar, moveLeft, moveStart, spent } from './movement.ts';
+import { basesOverlap, costOf, engaged as engagedNow, finishCharge, fightsAgain, limitMove, marchedBy, marchRange, moveAllowance, movedAtAll, movedTooFar, moveLeft, moveStart, retrace, RETRACE, spent } from './movement.ts';
 import { FLOORED, floorHeight, flooredAt, insidePolygon, isDifficult, outline } from './sight.ts';
 import { cleanPausedShot, woundsTaken } from './fight.ts';
 import { pairOff } from './flow.ts';
@@ -610,9 +610,11 @@ function step(state: GameState, action: Action): GameState {
           // Each move goes on from where the model is now, so it can go round things: what it may still spend is its
           // allowance less what it has walked so far.
           const here = { x: prev.x, y: prev.y };
-          // (Putting it back where it began the phase is always allowed, and gives its whole Move back.)
-          const back = Math.hypot(to.x - from.x, to.y - from.y) < 0.05;
-          to = back ? from : limitMove(state, here, to, Math.max(0, allowance - spent(state, prev)), prev.owner, prev, together);
+          // (Putting it back where it began the phase is always allowed, and gives its whole Move back; so is stepping
+          // back along the way it came, which gives back what it spent beyond that point.)
+          const back = Math.hypot(to.x - from.x, to.y - from.y) < RETRACE / 2;
+          const undone = back ? null : retrace(paths?.[prev.id], to);
+          to = back ? from : undone ? undone.at : limitMove(state, here, to, Math.max(0, allowance - spent(state, prev)), prev.owner, prev, together);
           // A model that stops inside an enemy's control zone is charging it: it must reach base contact, or stay out.
           if (state.phase === 'move' || fightsAgain(state, prev)) to = finishCharge(state, prev, here, to, together);
           // A friend going with a hero (With Me, or At the Double) must end within 6" of it.
@@ -625,9 +627,9 @@ function step(state: GameState, action: Action): GameState {
           const must = state.flow.mustCharge?.model === prev.id ? state.models[state.flow.mustCharge.target] : undefined;
           if (must && !must.dead && !inContact(state, { ...prev, ...to }, must)) to = { x: prev.x, y: prev.y };
           if (!starts?.[prev.id]) starts = { ...starts, [prev.id]: [from.x, from.y] };
-          walked = { ...walked, [prev.id]: back ? 0 : spent(state, prev) + costOf(state, prev, here, to) };
+          walked = { ...walked, [prev.id]: back ? 0 : undone ? undone.trail.slice(1).reduce((n, p, i) => n + costOf(state, prev, { x: undone.trail[i][0], y: undone.trail[i][1] }, { x: p[0], y: p[1] }), 0) : spent(state, prev) + costOf(state, prev, here, to) };
           // Its trail keeps a point where it turned (a straight run just stretches the last leg), up to 40 of them.
-          const trail: [number, number][] = back ? [] : (paths?.[prev.id] ?? [[from.x, from.y]]);
+          const trail: [number, number][] = back ? [] : undone ? undone.trail.slice(0, -1) : (paths?.[prev.id] ?? [[from.x, from.y]]);
           const [a, b] = [trail.at(-2), trail.at(-1)];
           const straight = a && b && Math.abs((b[0] - a[0]) * (to.y - b[1]) - (b[1] - a[1]) * (to.x - b[0])) < 0.05 * Math.hypot(b[0] - a[0], b[1] - a[1]);
           paths = { ...paths, [prev.id]: back ? [] : [...(straight ? trail.slice(0, -1) : trail), [to.x, to.y] as [number, number]].slice(-40) };

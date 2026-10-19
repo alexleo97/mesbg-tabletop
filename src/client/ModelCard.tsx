@@ -5,7 +5,7 @@ import { laden } from '../shared/fortress.ts';
 import { loadRulesText, modelStats, pictureUrl, startingPoints, statsWithOptions, STAT_NAMES, type Catalog } from '../shared/catalog.ts';
 import { strikeWounds, woundsTaken } from '../shared/fight.ts';
 import { CONTACT_SLACK, type Combat } from '../shared/flow.ts';
-import { engaged, fightDone, moveLeft } from '../shared/movement.ts';
+import { engaged, fightDone, moveLeft, moveStart } from '../shared/movement.ts';
 import { atCrossing, crossBlocked, fallingHits, terrainName, type CrossTest } from '../shared/terrainTests.ts';
 import { heroicInfo, phaseAllows } from '../shared/heroics.ts';
 import { carriedBy, markerActions, OBJECT_NAMES } from '../shared/objects.ts';
@@ -82,6 +82,19 @@ const TEST_HELP: Record<CrossTest, string> = {
 };
 
 /** In the Move phase: the test for terrain the model was stopped at, and crawling or lying down. */
+/** Takes a model back to where it began this Move phase, with its whole Move to try again (not once its move has ended). */
+function PutBack({ state, dispatch, m }: { state: GameState; dispatch: (a: Action) => void; m: Model }) {
+  const from = moveStart(state, m);
+  if (!state.flow.starts?.[m.id] || state.flow.stopped?.includes(m.id) || (from.x === m.x && from.y === m.y)) return null;
+  return (
+    <div className="row wrap">
+      <button className="small" title="Back to where it started this phase, with its whole Move. You can also drag it back along the way it came." onClick={() => dispatch({ type: 'moveModels', moves: [{ id: m.id, x: from.x, y: from.y }] })}>
+        ↶ Put it back
+      </button>
+    </div>
+  );
+}
+
 function TerrainMoves({ state, dispatch, m }: { state: GameState; dispatch: (a: Action) => void; m: Model }) {
   const at = atCrossing(state, m);
   const left = moveLeft(state, m);
@@ -421,6 +434,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
       <BeastPanel state={state} catalog={catalog} dispatch={dispatch} role={role} m={m} />
       <SiegePanel state={state} catalog={catalog} dispatch={dispatch} role={role} m={m} />
       {mine && state.phase === 'move' && state.flow.started && !held && <TerrainMoves state={state} dispatch={dispatch} m={m} />}
+      {mine && state.phase === 'move' && state.flow.started && !held && <PutBack state={state} dispatch={dispatch} m={m} />}
       {mine && state.phase === 'move' && <CastBox state={state} dispatch={dispatch} role={role} model={m} />}
       {carried.length > 0 && (
         <p className="muted carrying">
