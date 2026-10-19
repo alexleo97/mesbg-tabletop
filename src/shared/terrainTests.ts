@@ -3,8 +3,9 @@
 import { hitModel, mounted, mountOf } from './cavalry.ts';
 import { modelStats, type Catalog } from './catalog.ts';
 import { distanceBetween, halfExtents, type Point } from './geometry.ts';
-import { ladderAt } from './fortress.ts';
+import { HEAVY, helpers, ladderAt } from './fortress.ts';
 import { canActivate } from './heroics.ts';
+import { onTable } from './objects.ts';
 import { engaged, moveLeft, settleMove } from './movement.ts';
 import { formatNeed, woundNeed } from './rules.ts';
 import { climbedLevel, distanceToTerrain, heightOf, heightOfModel, insidePolygon, outline } from './sight.ts';
@@ -163,6 +164,22 @@ export function fallDamage(catalog: Catalog | null, m: Model, fall: number, d6: 
  * carry on.
  */
 export function resolveCross(state: GameState, seat: Seat, id: string, d6: () => number, uid: () => string, now: number, catalog: Catalog | null): Action[] | null {
+  const first = crossOne(state, seat, id, d6, uid, now, catalog);
+  if (!first) return null;
+  // Two models carrying a Heavy Object together, both at the crossing, make one roll for the pair (Rulebook FAQ).
+  const b = state.flow.blocked![id];
+  const load = onTable(state).find(t => HEAVY.has(t.object!) && t.carrier && [t.carrier, ...helpers(state, state.models[t.carrier], t).map(f => f.id)].includes(id));
+  const team = load ? [load.carrier!, ...helpers(state, state.models[load.carrier!], load).map(f => f.id)].filter(o => o !== id) : [];
+  const partner = team.find(o => {
+    const p = state.models[o];
+    const at = p && atCrossing(state, p);
+    return at && at.terrain === b.terrain && at.test === b.test;
+  });
+  const second = partner ? crossOne(state, seat, partner, d6, uid, now, catalog, { roll: first.roll, with: state.models[id].name }) : null;
+  return [...first.actions, ...(second?.actions ?? [])];
+}
+
+function crossOne(state: GameState, seat: Seat, id: string, d6: () => number, uid: () => string, now: number, catalog: Catalog | null, shared?: { roll: number; with: string }): { actions: Action[]; roll: number } | null {
   const m = state.models[id];
   const b = m && state.flow.blocked?.[id];
   if (!m || !b || m.owner !== seat || state.phase !== 'move' || !state.flow.started || !canActivate(state, seat) || state.flow.stopped?.includes(id)) return null;
@@ -181,19 +198,22 @@ export function resolveCross(state: GameState, seat: Seat, id: string, d6: () =>
     push(`${m.name} rides down the ${terrainName(t)}: ${hits} S3 hit${hits === 1 ? '' : 's'} on its mount`, []);
     const out: Action[] = [{ type: 'crossed', id: m.id, terrain: c.terrain }, { type: 'affect', id: m.id, patch: { x: c.landing.x, y: c.landing.y } }];
     for (let i = 0; i < hits && steed; i++) out.push(...hitModel(m, steed.d, 3, 'Riding down', d6, seat, `${group}-h${i}`, now, group, true).actions);
-    return [...rolls.map((r): Action => ({ type: 'rolled', roll: r })), ...out];
+    return { actions: [...rolls.map((r): Action => ({ type: 'rolled', roll: r })), ...out], roll: 6 };
   }
   // Spectral Walk always counts as a 6, as does Swift Movement over a wall or rock; Mountain Dwellers re-roll a
   // failure, and Cave Dwellers add 1.
   const ground = m.ground ?? [];
   const sure = ground.includes('spectral') ? 'Spectral Walk' : ground.includes('swift') && (c.test === 'Jump' || c.test === 'Climb') ? 'Swift Movement' : '';
-  let roll = sure ? 6 : d6();
-  push(`${m.name}: ${c.test} test, ${terrainName(t)} (1 fails, 6 carries on)${sure ? `: ${sure}` : ''}`, sure ? [] : [roll], { model: m.id });
-  if (roll === 1 && ground.includes('rock')) {
-    roll = d6();
-    push(`${m.name}: ${c.test} test re-rolled (Mountain Dweller)`, [roll], { model: m.id });
+  let roll = shared ? shared.roll : sure ? 6 : d6();
+  if (shared) push(`${m.name}: ${c.test} test, ${terrainName(t)}: the same roll as ${shared.with}, who carries the load with it`, [], { model: m.id });
+  else {
+    push(`${m.name}: ${c.test} test, ${terrainName(t)} (1 fails, 6 carries on)${sure ? `: ${sure}` : ''}`, sure ? [] : [roll], { model: m.id });
+    if (roll === 1 && ground.includes('rock')) {
+      roll = d6();
+      push(`${m.name}: ${c.test} test re-rolled (Mountain Dweller)`, [roll], { model: m.id });
+    }
+    if (ground.includes('cave') && roll < 6) roll++;
   }
-  if (ground.includes('cave') && roll < 6) roll++;
   const out: Action[] = [];
   // Jumping a Spiked Barricade without a clean 6 snags the model on the stakes: a Strength 3 hit.
   if (c.test === 'Jump' && t?.barricade === 'spiked' && roll < 6) out.push(...hitModel(m, modelStats(catalog, m)?.D ?? 4, 3, 'Spiked barricade', d6, seat, `${group}-sp`, now, group).actions);
@@ -218,17 +238,17 @@ export function resolveCross(state: GameState, seat: Seat, id: string, d6: () =>
       rolls[rolls.length - 1].note += ', and is thrown from its mount';
     } else if (c.test !== 'Jump') out.push({ type: 'affect', id: m.id, patch: { prone: true } });
     out.push(...fallDamage(catalog, m, fall, d6, push, group));
-    return [...rolls.map((r): Action => ({ type: 'rolled', roll: r })), ...out];
+    return { actions: [...rolls.map((r): Action => ({ type: 'rolled', roll: r })), ...out], roll };
   }
   const way = c.test === 'Leap' ? 'across' : c.test === 'Climb' ? 'up' : c.test === 'Climb down' ? 'down' : 'over';
-  rolls[rolls.length - 1].note = `${roll === 6 ? `${m.name} gets ${way} and may carry on` : `${m.name} gets ${way}; its move ends`}${ground.includes('cave') && !sure ? ' (Cave Dweller +1)' : ''}`;
+  rolls[rolls.length - 1].note = `${roll === 6 ? `${m.name} gets ${way} and may carry on` : `${m.name} gets ${way}; its move ends`}${ground.includes('cave') && !sure && !shared ? ' (Cave Dweller +1)' : ''}`;
   out.push({ type: 'crossed', id: m.id, terrain: c.terrain }, place(c.landing));
   // Landing within 1" of an enemy it can reach, it goes on to charge the nearest; otherwise a 2-5 ends its move.
   const after: GameState = { ...state, models: { ...state.models, [m.id]: { ...m, ...c.landing } }, flow: { ...state.flow, crossed: { ...state.flow.crossed, [m.id]: [...(state.flow.crossed?.[m.id] ?? []), c.terrain] } } };
   const settled = settleMove(after, after.models[m.id], c.landing);
   if (settled.x !== c.landing.x || settled.y !== c.landing.y) out.push({ type: 'moveModels', moves: [{ id: m.id, x: settled.x, y: settled.y }] });
   if (roll < 6) out.push({ type: 'crossed', id: m.id, stop: true });
-  return [...rolls.map((r): Action => ({ type: 'rolled', roll: r })), ...out];
+  return { actions: [...rolls.map((r): Action => ({ type: 'rolled', roll: r })), ...out], roll };
 }
 
 /** Whether a model is standing where it was stopped for a test, so the card can offer it. */

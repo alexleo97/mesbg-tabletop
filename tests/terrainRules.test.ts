@@ -47,6 +47,18 @@ describe('terrain tests', () => {
     expect(move(battle([mk('a', 'p1', 10, 24)], [low]), 'a', 10, 18).models.a.y).toBeCloseTo(18, 5);
   });
 
+  it('makes one Jump test for two models carrying a Heavy Object together', () => {
+    const ally = piece('ally', 'objective', 10.34, 23.66, 1, 1, { shape: 'circle', object: 'ally', side: 'p1', carrier: 'a' });
+    let s = battle([mk('a', 'p1', 10, 24), mk('b', 'p1', 11, 24)], [wall, ally]);
+    s = move(move(s, 'a', 10, 17), 'b', 11, 17);
+    expect([s.flow.blocked?.a?.test, s.flow.blocked?.b?.test]).toEqual(['Jump', 'Jump']);
+    const over = ask(s, 'p1', { type: 'cross', id: 'a' }, [3, 1])!;
+    expect([over.models.a.y, over.models.b.y].every(y => y < 19.8)).toBe(true);
+    expect(over.log.at(-1)?.label).toContain('the same roll as a');
+    const fail = ask(s, 'p1', { type: 'cross', id: 'a' }, [1, 6])!;
+    expect([fail.models.a.y, fail.models.b.y].every(y => y > 20.5)).toBe(true);
+  });
+
   it('needs a Climb test for a rock taller than the model, which cavalry can’t take, and counts climbing double', () => {
     const rock = piece('r', 'rock', 10, 16, 6, 6, { height: 2 });
     let s = move(battle([mk('a', 'p1', 10, 20)], [rock]), 'a', 10, 16);
