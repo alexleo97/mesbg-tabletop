@@ -453,6 +453,13 @@ small.muted, p.small { font-size: 0.8rem; }
 .scenario p { margin: 4px 0; line-height: 1.4; }
 .scenario .small, .scenario small { font-size: 0.85em; }
 .scenario ul { margin: 4px 0; padding-left: 18px; }
+.narrative-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 6px 0; }
+.side-card { display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 10px; }
+.side-card span { font-size: 0.85em; color: var(--muted); }
+.side-card small { font-size: 0.8em; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.side-card.on, .side-card.on:disabled { background: var(--panel-2); color: inherit; border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); }
+.side-card.on small { color: var(--gold); }
+.side-card:disabled { opacity: 1; cursor: default; }
 table.vp { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
 table.vp th, table.vp td { border-bottom: 1px solid var(--line); padding: 4px; vertical-align: middle; text-align: left; }
 table.vp th.p1 { color: var(--p1); }

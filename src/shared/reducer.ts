@@ -16,6 +16,9 @@ import { touching as inContact, touchingEnemies } from './barriers.ts';
 import { canPickUp, markerUpkeep, syncCarried, touching, canEscape } from './objects.ts';
 import { aboard, raiseLadders, towerMove } from './fortress.ts';
 import { endPhaseUpkeep } from './scoring.ts';
+import { mayCry, narrativeById } from './narrative.ts';
+import { putOut } from './fire.ts';
+import { ringAfterMight } from './ring.ts';
 import { BOT_NAME, BOT_SPEEDS, DOOR_TYPES, MARKER_OBJECTS, MATS, PHASES, PICK_KEYS, TERRAIN_KINDS, type Action, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type ModelEffect, type Phase, type Picks, type Seat, type SpellPending, type Terrain } from './types.ts';
 
 export const MAX_MODELS = 600;
@@ -80,7 +83,7 @@ function goToPhase(state: GameState, phase: Phase, turn: number, newTurn: boolea
       done: [],
       resolved: newTurn ? [] : state.flow.resolved,
       heroics: newTurn ? [] : state.flow.heroics,
-      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], moved: [], cast: [], spell: undefined, held: [], stood: [], climbed: {}, compel: undefined, supported: [], strikeBonus: {}, charges: {}, brutal: [], hurledAt: [], breached: [], trampled: [], turned: [], cables: [] } : {}),
+      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], moved: [], cast: [], spell: undefined, held: [], stood: [], climbed: {}, compel: undefined, supported: [], strikeBonus: {}, charges: {}, brutal: [], hurledAt: [], breached: [], trampled: [], turned: [], cables: [], sauron: [], ringTried: [] } : {}),
       ...(phase !== state.phase ? { compel: undefined, mustCharge: undefined } : {}),
       // The fights are paired off as the Fight phase begins, and stay that way until it ends.
       ...(phase !== state.phase ? { pairs: phase === 'fight' && state.flow.started ? pairOff(livingModels(state), { ...state, phase: 'move' }, state.flow.pairChoices).map(c => c.key) : undefined, pairChoices: undefined } : {}),
@@ -148,7 +151,8 @@ export function cleanModel(m: Partial<Model>, prev?: Model): Model | null {
     maxWounds: int(m.maxWounds, 1, 30, base.maxWounds),
     wounds: 0,
     might: int(m.might, 0, 9, base.might),
-    will: int(m.will, 0, 9, base.will),
+    // (The Witch-king has 10 Will at Weathertop.)
+    will: int(m.will, 0, 20, base.will),
     fate: int(m.fate, 0, 9, base.fate),
     hero: typeof m.hero === 'boolean' ? m.hero : base.hero,
     dead: typeof m.dead === 'boolean' ? m.dead : base.dead,
@@ -218,7 +222,26 @@ export function cleanModel(m: Partial<Model>, prev?: Model): Model | null {
   if (siege) out.siege = siege;
   const crewOf = 'crewOf' in m ? (m.crewOf ? id(m.crewOf) : undefined) : base.crewOf;
   if (crewOf) out.crewOf = crewOf;
+  const stats = 'stats' in m ? cleanStats(m.stats) : base.stats;
+  if (stats) out.stats = stats;
+  const cast = 'cast' in m ? (m.cast ? str(m.cast, 40) : undefined) : base.cast;
+  if (cast) out.cast = cast;
+  if ('brand' in m ? m.brand === true : base.brand) out.brand = true;
+  for (const k of ['ablaze', 'ringOn', 'slay'] as const) if ((k in m ? m[k] === true : base[k]) && !out.dead) out[k] = true;
+  const used = 'used' in m ? (Array.isArray(m.used) ? [...new Set(m.used.slice(0, 8).map(u => str(u, 40)))] : undefined) : base.used;
+  if (used?.length) out.used = used;
   return out.id ? out : null;
+}
+
+/** Characteristics a narrative scenario sets for a model, from untrusted JSON. */
+function cleanStats(v: unknown): Model['stats'] {
+  if (!v || typeof v !== 'object') return undefined;
+  const out: NonNullable<Model['stats']> = {};
+  for (const k of ['Mv', 'Fv', 'Sv', 'S', 'D', 'A', 'W', 'C', 'I'] as const) {
+    const n = (v as Record<string, unknown>)[k];
+    if (typeof n === 'number' && Number.isFinite(n)) out[k] = int(n, 0, 20, 0);
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 /** Powers at work on a model, from untrusted JSON. */
@@ -490,11 +513,13 @@ function keepNear(m: Model, from: { x: number; y: number }, to: { x: number; y: 
 
 /** Takes wounds off a model, removing it as a casualty when none are left. */
 function takeWounds(m: Model, n: number): Model {
-  const wounds = Math.max(0, m.wounds - n);
+  // A Morgul Blade's wound that gets through slays outright.
+  const wounds = m.slay && n > 0 ? 0 : Math.max(0, m.wounds - n);
   // Remember who did it, for scenarios that score kills by particular models.
   const hit = m.lastHit;
   const hurtBy = hit?.ids.length && n > 0 ? [...new Set([...(m.hurtBy ?? []), ...hit.ids])] : m.hurtBy;
   const out = { ...m, ...(hurtBy ? { hurtBy } : {}) };
+  delete out.slay;
   return wounds > 0 ? { ...out, wounds } : { ...out, wounds: 0, dead: true, pending: undefined, fateRoll: undefined, ...(hit ? { killedBy: hit } : {}) };
 }
 
@@ -507,6 +532,8 @@ function settle(m: Model): Model {
   if (!out.pending) {
     delete out.pending;
     delete out.fateRoll;
+    // Fate saved every wound, the Morgul Blade's included.
+    delete out.slay;
     return out;
   }
   if (out.fate > 0 || (out.fateRoll && out.might > 0)) return out;
@@ -666,6 +693,11 @@ function step(state: GameState, action: Action): GameState {
           const was = new Set(touchingEnemies(state, prev).map(e => e.id));
           const foe = touchingEnemies({ ...state, models }, next).find(e => !was.has(e.id));
           if (foe) charges = { ...charges, [prev.id]: foe.id };
+        }
+        // Crawling 1" while Prone, or getting into water, puts out the flames.
+        if (next.ablaze && state.flow.started && putOut({ ...state, flow: { ...state.flow, walked } }, next)) {
+          next = { ...next };
+          delete next.ablaze;
         }
         models[prev.id] = next;
         // Its Commander and any in its Howdah ride along.
@@ -875,6 +907,9 @@ function step(state: GameState, action: Action): GameState {
       return { ...goTo(state, state.phase === 'priority' ? 'move' : state.phase, state.turn), priority: action.seat };
     case 'endActivation': {
       if (!isSeat(action.seat) || state.flow.done.includes(action.seat) || state.flow.shotPause) return state;
+      // A Ringbearer in Sauron's grip is moved by its foes in its own side's activation, which waits for them.
+      const grip = state.flow.compel?.ring ? state.models[state.flow.compel.model] : undefined;
+      if (grip && grip.owner === action.seat && state.flow.started) return state;
       // Ending a hero's Heroic Move or Heroic Shoot: it and the friends it shouted for have had their activation.
       const heroic = state.flow.started ? heroicNow(state) : null;
       if (heroic) {
@@ -993,7 +1028,8 @@ function step(state: GameState, action: Action): GameState {
     case 'fightChoice': {
       const m = state.models[action.id];
       if (!m) return state;
-      const pick = { ...(action.shielding === true ? { shielding: true } : {}), ...(action.twoHanded === true ? { twoHanded: true } : {}) };
+      const morgul = typeof action.morgul === 'string' && state.models[action.morgul] && state.models[action.morgul].owner !== m.owner ? action.morgul : undefined;
+      const pick = { ...(action.shielding === true ? { shielding: true } : {}), ...(action.twoHanded === true ? { twoHanded: true } : {}), ...(morgul ? { morgul } : {}) };
       const { [m.id]: _, ...rest } = state.flow.choices ?? {};
       return { ...state, flow: { ...state.flow, choices: Object.keys(pick).length ? { ...rest, [m.id]: pick } : rest } };
     }
@@ -1017,6 +1053,37 @@ function step(state: GameState, action: Action): GameState {
       if (!state.models[s.caster] || !state.models[s.target]) return state;
       return { ...state, flow: { ...state.flow, spell: cleanSpell(s) } };
     }
+    case 'startNarrative': {
+      // A narrative scenario's own table and casts replace whatever was set up.
+      const n = narrativeById(action.id);
+      if (!n || state.flow.started || !isSeat(action.good) || !Array.isArray(action.models)) return state;
+      const models: Record<string, Model> = {};
+      for (const raw of action.models.slice(0, MAX_MODELS)) {
+        const m = raw && typeof raw === 'object' ? cleanModel(raw) : null;
+        if (m) models[m.id] = m;
+      }
+      const terrain: Record<string, Terrain> = {};
+      for (const raw of n.terrain) {
+        const t = cleanTerrain({ ...raw, id: `n-${raw.id}` });
+        if (t) terrain[t.id] = t;
+      }
+      return { ...state, board: { ...n.board }, models, terrain, scenario: null, vp: { p1: {}, p2: {} }, narrative: { id: n.id, good: action.good } };
+    }
+    case 'cry': {
+      if (!isSeat(action.seat) || !mayCry(state, action.seat) || !state.narrative) return state;
+      return { ...state, narrative: { ...state.narrative, cry: state.turn } };
+    }
+    case 'narrativeNote': {
+      if (!state.narrative) return state;
+      const rolled = action.rolled === undefined ? state.narrative.rolled : [...new Set([...(state.narrative.rolled ?? []), int(action.rolled, 0, 99, 0)])];
+      return { ...state, narrative: { ...state.narrative, ...(rolled ? { rolled } : {}) } };
+    }
+    case 'burned':
+      return { ...state, flow: { ...state.flow, burned: state.turn } };
+    case 'ringMark': {
+      if (action.key !== 'sauron' && action.key !== 'ringTried') return state;
+      return { ...state, flow: { ...state.flow, [action.key]: [...new Set([...(state.flow[action.key] ?? []), id(action.id)])] } };
+    }
     case 'affect': {
       const prev = state.models[action.id];
       if (!prev || !action.patch || typeof action.patch !== 'object') return state;
@@ -1031,7 +1098,7 @@ function step(state: GameState, action: Action): GameState {
       }
       const t = state.models[id(c.model)];
       if (!t || !state.models[id(c.caster)] || !Array.isArray(c.from)) return state;
-      const compel = { model: t.id, caster: id(c.caster), max: num(c.max, 0, 12, 0), from: [num(c.from[0], -24, 200, t.x), num(c.from[1], -24, 200, t.y)] as [number, number] };
+      const compel = { model: t.id, caster: id(c.caster), max: num(c.max, 0, 12, 0), from: [num(c.from[0], -24, 200, t.x), num(c.from[1], -24, 200, t.y)] as [number, number], ...(c.ring === true ? { ring: true } : {}) };
       // Once Compelled it can't move again this turn, whatever happens.
       return { ...state, flow: { ...state.flow, compel, held: [...new Set([...(state.flow.held ?? []), t.id])] } };
     }
@@ -1070,7 +1137,7 @@ function step(state: GameState, action: Action): GameState {
       if (hero.fateRoll === r.id && roll.dice[0] >= 4) hero = { ...hero, pending: (hero.pending ?? 1) - 1, fateRoll: undefined };
       // A Courage test that now passes counts as passed (a charge at a terrifying enemy can go ahead).
       const flow = courage && roll.dice[0] + roll.dice[1] >= roll.sum! && state.flow.courage?.[m.id] === false ? { ...state.flow, courage: { ...state.flow.courage, [m.id]: true } } : state.flow;
-      return afterMight({ ...state, log, flow, models: { ...state.models, [m.id]: settle(hero) } }, roll.id);
+      return ringAfterMight(afterMight({ ...state, log, flow, models: { ...state.models, [m.id]: settle(hero) } }, roll.id), roll);
     }
     case 'wound': {
       const m = state.models[action.id];
@@ -1102,7 +1169,7 @@ function step(state: GameState, action: Action): GameState {
         return { ...state, flow, models: { ...state.models, [m.id]: { ...m, wounds: keep }, [ridden.id]: { ...ridden, howdahWounds: Math.max(0, ridden.howdahWounds - (n - m.wounds + 1)) } } };
       }
       const by = Array.isArray(action.by) ? action.by.filter(i => typeof i === 'string' && state.models[i]) : [];
-      const struck = { ...m, ...(by.length ? { lastHit: cleanHit({ ids: by, how: action.how }) } : { lastHit: undefined }) };
+      const struck = { ...m, ...(by.length ? { lastHit: cleanHit({ ids: by, how: action.how }) } : { lastHit: undefined }), ...(action.slay === true ? { slay: true } : {}) };
       const taken = m.hero && m.fate > 0 ? { ...struck, pending: (m.pending ?? 0) + n } : takeWounds(struck, n);
       // A war beast tests for Stampede for every wound it takes (the game rolls it).
       const hit = m.beast === 'war' ? { ...taken, stampedeTests: (m.stampedeTests ?? 0) + Math.min(n, m.wounds) } : taken;
@@ -1185,7 +1252,9 @@ function step(state: GameState, action: Action): GameState {
       return { ...state, priority: isSeat(action.seat) ? action.seat : null };
     case 'setScenario': {
       const id = action.id === null ? null : str(action.id, 40) || null;
-      return { ...state, scenario: id, vp: { p1: {}, p2: {} } };
+      // Choosing a matched play scenario (or open play) leaves any narrative one behind.
+      const { narrative: _, ...rest } = state;
+      return { ...rest, scenario: id, vp: { p1: {}, p2: {} } };
     }
     case 'setVP': {
       if (!isSeat(action.seat)) return state;
@@ -1351,6 +1420,9 @@ export function loadState(raw: unknown): GameState {
   if (isSeat(o.bot)) out = { ...out, bot: o.bot };
   if (o.botSpeed) out = reduce(out, { type: 'setBotSpeed', speed: o.botSpeed });
   if (o.advance === 'click') out = { ...out, advance: 'click' };
+  const n = o.narrative;
+  if (n && typeof n === 'object' && narrativeById(n.id) && isSeat(n.good))
+    out = { ...out, narrative: { id: n.id, good: n.good, ...(Number.isFinite(n.cry) ? { cry: int(n.cry, 0, 99, 0) } : {}), ...(Array.isArray(n.rolled) ? { rolled: n.rolled.slice(0, 40).map(t => int(t, 0, 99, 0)) } : {}) } };
   if (o.flow && typeof o.flow === 'object') {
     const f = o.flow as Partial<Flow>;
     const seats = (v: unknown) => (Array.isArray(v) ? [...new Set(v.filter(isSeat))] : []);
@@ -1403,7 +1475,7 @@ export function loadState(raw: unknown): GameState {
         ...(Number.isFinite(f.willed) ? { willed: int(f.willed, 0, 99, 0) } : {}),
         ...(f.shotPause && typeof f.shotPause === 'object' && cleanPause(f.shotPause) ? { shotPause: cleanPause(f.shotPause) } : {}),
         ...(f.choices && typeof f.choices === 'object'
-          ? { choices: Object.fromEntries(Object.entries(f.choices as Record<string, { shielding?: unknown; twoHanded?: unknown }>).slice(0, 200).map(([k, v]) => [str(k, 80), { ...(v?.shielding === true ? { shielding: true } : {}), ...(v?.twoHanded === true ? { twoHanded: true } : {}) }])) }
+          ? { choices: Object.fromEntries(Object.entries(f.choices as Record<string, { shielding?: unknown; twoHanded?: unknown; morgul?: unknown }>).slice(0, 200).map(([k, v]) => [str(k, 80), { ...(v?.shielding === true ? { shielding: true } : {}), ...(v?.twoHanded === true ? { twoHanded: true } : {}), ...(typeof v?.morgul === 'string' ? { morgul: str(v.morgul, 80) } : {}) }])) }
           : {}),
         ...(Array.isArray(f.challenges) ? { challenges: f.challenges.slice(0, 20).filter(c => c && typeof c === 'object').map(c => ({ by: str(c.by, 80), target: str(c.target, 80), cap: int(c.cap, 0, 9, 3), ...(typeof c.accepted === 'boolean' ? { accepted: c.accepted } : {}) })) } : {}),
         ...(f.charges && typeof f.charges === 'object' ? { charges: Object.fromEntries(Object.entries(f.charges).slice(0, 400).map(([k, v]) => [str(k, 80), str(v, 80)])) } : {}),
@@ -1423,6 +1495,9 @@ export function loadState(raw: unknown): GameState {
         ...(f.fort && typeof f.fort === 'object' ? { fort: { p1: int(f.fort.p1, 0, 999, 0), p2: int(f.fort.p2, 0, 999, 0) } } : {}),
         ...(f.picks && typeof f.picks === 'object' ? { picks: { p1: cleanPicks(f.picks.p1), p2: cleanPicks(f.picks.p2) } } : {}),
         ...(Array.isArray(f.applied) ? { applied: f.applied.filter(g => typeof g === 'string').map(g => g.slice(0, 80)).slice(-60) } : {}),
+        ...(Number.isFinite(f.burned) ? { burned: int(f.burned, 0, 99, 0) } : {}),
+        ...(Array.isArray(f.sauron) ? { sauron: f.sauron.slice(0, 20).map(x => str(x, 80)) } : {}),
+        ...(Array.isArray(f.ringTried) ? { ringTried: f.ringTried.slice(0, 20).map(x => str(x, 80)) } : {}),
       },
     };
   }

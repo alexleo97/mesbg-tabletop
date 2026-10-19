@@ -15,7 +15,7 @@ import { missileWeapon, woundNeed } from './rules.ts';
 import { planShot, throwingPoint } from './shooting.ts';
 import { fallDamage, resolveCross } from './terrainTests.ts';
 import { heightOf } from './sight.ts';
-import { cleanFight, cleanShot, duelSettled, mightCouldHelp, resolveDuel, resolveShot, resolveStrikes, type DrawRule, type Fighter, type FightRequest, type ShotRequest } from './fight.ts';
+import { cleanFight, cleanShot, duelSettled, mightCouldHelp, resolveDuel, resolveShot, resolveStrikes, strikeWounds, type DrawRule, type Fighter, type FightRequest, type ShotRequest } from './fight.ts';
 import { combatFromKey, CONTACT_SLACK, other, priorityChooser } from './flow.ts';
 import { hasElvenWeapon, hasPike, sideOf } from './gear.ts';
 import { oneSpearEach, supporters } from './support.ts';
@@ -23,11 +23,15 @@ import { fightDone, foughtThisTurn } from './movement.ts';
 import { rollCast, rollResist } from './magic.ts';
 import { intelligenceWorse, noStrikes, under, witheredStrength } from './powers.ts';
 import { touching } from './objects.ts';
+import { brandRetreats } from './fire.ts';
+import { mayCry, narrativeById, narrativeSetup } from './narrative.ts';
+import { ringRequest } from './ring.ts';
+import { MORGUL, morgulBlades } from './morgul.ts';
 import { MAX_DICE } from './reducer.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
 /** Dice requests a player sends, which only whoever holds the dice (the server, or the browser in practice games) can answer. */
-export const DICE_REQUESTS = new Set<Action['type']>(['roll', 'fight', 'strikes', 'shoot', 'shotOn', 'banner', 'dismount', 'trample', 'cross', 'rollFate', 'rollPriority', 'uncover', 'cast', 'resist', 'breach', 'hurl']);
+export const DICE_REQUESTS = new Set<Action['type']>(['setNarrative', 'ring', 'cry', 'roll', 'fight', 'strikes', 'shoot', 'shotOn', 'banner', 'dismount', 'trample', 'cross', 'rollFate', 'rollPriority', 'uncover', 'cast', 'resist', 'breach', 'hurl']);
 
 export interface Resolved {
   /** Results everyone applies, in order. */
@@ -179,6 +183,22 @@ export function adjustFight(state: GameState, req: FightRequest, catalog: Catalo
 export function resolveRequest(state: GameState, seat: Seat, action: Action, d6: () => number, uid: () => string, now = Date.now(), catalog: Catalog | null = null): Resolved | null {
   const mine = (id: unknown) => typeof id === 'string' && state.models[id]?.owner === seat;
   switch (action.type) {
+    case 'setNarrative': {
+      // The casts are built from the bundled profiles, so only whoever holds them can set the scenario up.
+      const n = narrativeById(String(action.id));
+      if (!n || !catalog || state.flow.started || (action.good !== 'p1' && action.good !== 'p2')) return null;
+      const { models } = narrativeSetup(n, action.good, catalog, p => `${p}-${uid()}`);
+      return { apply: [{ type: 'startNarrative', id: n.id, good: action.good, models }] };
+    }
+    case 'ring': {
+      const out = ringRequest(state, catalog, seat, String(action.id), action.on === true, d6, uid, now);
+      return out && { apply: out };
+    }
+    case 'cry': {
+      if (!mayCry(state, seat)) return null;
+      const roll: DiceRoll = { id: `r-${uid()}`, by: seat, label: 'The Cry of the Nazgûl', dice: [], note: 'Good models take Courage tests 3 worse until the End phase.', at: now };
+      return { apply: [{ type: 'rolled', roll }, { type: 'cry', seat }] };
+    }
     case 'roll': {
       // The roll for which side's hero goes first, once, by the player with Priority: 1-3 Evil, 4+ Good.
       if (String(action.label ?? '') === orderRollLabel(state)) {
@@ -238,6 +258,9 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       const foeSide = brute && req.sides.findIndex(side => !side.includes(brute)) as 0 | 1;
       const hurled = b?.kind === 'hurl' && brute ? req.sides[foeSide as 0 | 1].find(f => f.id === b.target && !f.support && f.s < brute.s && !!state.models[f.id] && !immovable(catalog, state.models[f.id])) : undefined;
       if (!b || !bm || !brutalOptions(state, catalog, bm).includes(b.kind) || (b.kind === 'hurl' && !hurled)) delete req.brutal;
+      // A Morgul Blade declared before the strikes: every strike its bearer makes goes at the one enemy it picked.
+      const blades = morgulBlades(state, catalog, req);
+      if (blades.length) req.aims = { ...req.aims, ...Object.fromEntries(blades.map(x => [x.by, Array(10).fill(x.target)])) };
       // A fight over a defended wall, ledge or doorway: strikes come before anyone backs away, so no one is trapped
       // (bar the Prone), the attacker's strikes must get past the defences, and only the attacker backs away.
       const held = defence(state, [ids(0), ids(1)]);
@@ -299,6 +322,10 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       const barge = bargeOn ? pushBack(state, [...ids(loser), ...helpers(loser)].filter(id => !fixed(id)), ids(outcome.winner), 3) : undefined;
       const back = bargeOn ? { moves: barge!.moves, trapped: [], madeWay: [], falls: [] } : retreatFor(outcome.winner);
       const winners = ids(outcome.winner);
+      // The Morgul Blades that struck are used up; a wound one of them does that isn't prevented slays outright.
+      const bladed = bargeOn || outcome.ended ? [] : blades.filter(x => winners.includes(x.by) && req.sides[outcome.winner].some(f => f.id === x.by && !f.noStrike && !f.shielding));
+      const slays = new Set(bladed.filter(x => strikeWounds(strikes.filter(r => r.model === x.by && r.against === x.target)) > 0).map(x => x.target));
+      const bladeUsed = bladed.map((x): Action => ({ type: 'affect', id: x.by, patch: { used: [...(state.models[x.by].used ?? []), MORGUL] } }));
       // A Prone winner gets up instead of striking (unless Paralysed).
       const rise = winners.filter(id => state.models[id].prone && !under(state, state.models[id], 'Paralyse'));
       const slain = (id: string) => (outcome.hits.find(h => h.target.id === id)?.wounds ?? 0) >= (state.models[id]?.wounds ?? 1);
@@ -314,6 +341,18 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
             if (wallBetween(state, state.models[w], state.models[l]) && touchingEnemies(state, state.models[w]).every(e => e.id === l)) crossing(w, l);
       // The winners step apart from a trapped loser that lived through the strikes.
       if (!outcome.ended) moves.push(...separate(state, [...trapped].filter(id => !slain(id)), winners));
+      // Ringwraiths beaten by a flaming brand go on retreating, once they've backed away.
+      const fled = bargeOn
+        ? []
+        : brandRetreats(
+            { ...state, models: Object.fromEntries(Object.entries(state.models).map(([k, m]) => { const mv = back.moves.find(x => x.id === k); return [k, slain(k) ? { ...m, dead: true } : mv ? { ...m, x: mv.x, y: mv.y } : m]; })) },
+            ids(loser).filter(id => !slain(id) && !held),
+            winners,
+            d6,
+            seat,
+            group,
+            now,
+          );
       // A loser pushed over the edge of a drop falls once the strikes are done, if it lived.
       const extra: DiceRoll[] = [];
       if (standoff) extra.push(standoff);
@@ -384,9 +423,11 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
             const by = [...new Set(at.map(r => r.model!).filter(Boolean))];
             // Strikes at a rider's mount wound the mount.
             if (h.target.id.endsWith('#mount')) return woundAction(state, at, h.target.id.slice(0, -6), h.wounds, by, 'fight', group).map(a => ({ ...a, mount: true }) as Action);
-            return woundAction(state, at, h.target.id, h.wounds, by, 'fight', group);
+            return woundAction(state, at, h.target.id, h.wounds, by, 'fight', group).map(a => (slays.has(h.target.id) ? ({ ...a, slay: true } as Action) : a));
           }),
+          ...bladeUsed,
           ...(moves.length ? [{ type: 'backAway', moves } as Action] : []),
+          ...fled,
           ...felled,
           ...extra.map((roll): Action => ({ type: 'rolled', roll })),
           ...falls,
@@ -404,7 +445,7 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       if (!req || !shooter || !target || shooter.owner !== seat || !mayActivate(state, shooter)) return null;
       // The game works the shot out from the table: whether it can be taken, what it needs and what's in the way.
       const fallback = { weapon: missileWeapon([req.shooter.weapon]), shoot: req.shooter.shoot };
-      const plan = planShot(state, catalog, shooter, target, { charge: req.charge, fallback });
+      const plan = planShot(state, catalog, shooter, target, { charge: req.charge, brand: req.brand, fallback });
       if (plan.why || !plan.weapon) return null;
       // A siege engine's shot is worked out its own way (see siege.ts); the Avenger Bolt Thrower looses a D6 bolts
       // like a bow.
@@ -579,6 +620,8 @@ function shotActions(state: GameState, req: ShotRequest, shooter: Model, d6: () 
     return [...rolled, { type: 'shotPaused', pause: { group, shot: req } }];
   }
   const all = [...logged, ...shot.rolls];
+  // A thrown brand Sets Ablaze whatever it hit, and is gone from the thrower's wargear, hit or miss.
+  if (req.brand) return [...rolled, { type: 'affect', id: shooter.id, patch: { brand: false } }, ...(shot.ablaze ?? []).map((id): Action => ({ type: 'affect', id: id.replace(/#(mount|howdah)$/, ''), patch: { ablaze: true } }))];
   return [
     ...rolled,
     ...shot.hits.flatMap(h =>

@@ -10,13 +10,14 @@ import { sightTo } from './sight.ts';
 import { armyStatus } from './status.ts';
 import { courageBonus } from './wargear.ts';
 import { isChariot } from './warBeasts.ts';
+import { cryPenalty } from './narrative.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
 /** How close a hero's friends must be to share its Stand Fast! or Heroic Resolve. */
 export const STAND_FAST_RANGE = 6;
 
 /** The 2D6 total a model needs to pass a Courage test, after powers such as Drain Courage and Aura of Dismay, war horns and Harbingers of Evil. */
-const courageOf = (state: GameState, catalog: Catalog | null, m: Model) => Math.max(2, Math.min(13, (modelStats(catalog, m)?.C ?? 7) + courageWorse(state, m) - courageBonus(state, catalog, m)));
+export const courageOf = (state: GameState, catalog: Catalog | null, m: Model) => Math.max(2, Math.min(13, (modelStats(catalog, m)?.C ?? 7) + courageWorse(state, m) + cryPenalty(state, m) - courageBonus(state, catalog, m)));
 const isHero = (m: Model) => m.hero;
 export const causesTerror = (catalog: Catalog | null, m: Model, state?: GameState) =>
   !!(m.profileId && catalog?.units[m.profileId]?.rules.some(r => /^Terror\b/.test(r))) || (!!state && terrifying(state, m));
@@ -160,9 +161,17 @@ export const willOfEvilDue = (state: GameState) => state.flow.started && state.p
  */
 export function willOfEvilToll(state: GameState, catalog: Catalog | null, uid: () => string, now = Date.now()): Action[] {
   const fought = new Set(state.flow.resolved.flatMap(k => k.split(',')));
+  // A fight against nobody but a model wearing the One Ring costs no Will.
+  const foes = new Map<string, string[]>();
+  for (const k of state.flow.resolved) {
+    const [a, b] = k.split('|').map(x => x.split(',').filter(Boolean));
+    for (const id of a ?? []) foes.set(id, [...(foes.get(id) ?? []), ...(b ?? [])]);
+    for (const id of b ?? []) foes.set(id, [...(foes.get(id) ?? []), ...(a ?? [])]);
+  }
   const out: Action[] = [];
   for (const m of Object.values(state.models)) {
-    if (m.dead || m.escaped || !willOfEvil(catalog, m) || !fought.has(m.id)) continue;
+    const against = foes.get(m.id);
+    if (m.dead || m.escaped || !willOfEvil(catalog, m) || !fought.has(m.id) || (against?.length && against.every(id => state.models[id]?.ringOn))) continue;
     const will = Math.max(0, m.will - 1);
     out.push({ type: 'rolled', roll: { id: `c-${uid()}`, by: m.owner, label: `Will of Evil: ${m.name} gives up 1 Will`.slice(0, 80), dice: [], model: m.id, note: will ? `${will} Will left.` : `${m.name} has no Will left and is banished.`, at: now } });
     out.push({ type: 'affect', id: m.id, patch: will ? { will } : { will: 0, wounds: 0, dead: true } });

@@ -182,7 +182,6 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
   // A war beast or chariot being pointed where to charge, and the spot it's pointed at.
   const charging = useRef<{ id: string; toward: Point } | null>(null);
   const lastSend = useRef(0);
-  const fitted = useRef(false);
 
   // Models that left the table over an edge are off it.
   // (Those riding a war beast are drawn on top of it.)
@@ -216,11 +215,9 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
     setView({ s, x: (r.width - state.board.w * s) / 2, y: (r.height - state.board.h * s) / 2 });
   }, [state.board.w, state.board.h]);
 
+  // Fit the table to the screen at first, and again whenever its size changes (a narrative scenario sets its own).
   useLayoutEffect(() => {
-    if (!fitted.current) {
-      fit();
-      fitted.current = true;
-    }
+    fit();
   }, [fit]);
 
   // Glide to the models in focus, leaving room on the left for the card that shows their fight.

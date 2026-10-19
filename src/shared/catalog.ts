@@ -102,7 +102,13 @@ export function statsWithOptions(unit: CatalogUnit, optionIds: string[]): string
 export type StatName = (typeof STAT_NAMES)[number];
 
 /** A model's printed stats as numbers ("4+" becomes 4), with its options applied, when the unit is known. */
-export function modelStats(catalog: Catalog | null | undefined, m: { profileId?: string; options?: string[]; steed?: string; name?: string } | undefined): Partial<Record<StatName, number>> | null {
+export function modelStats(catalog: Catalog | null | undefined, m: { profileId?: string; options?: string[]; steed?: string; name?: string; stats?: Partial<Record<StatName, number>> } | undefined): Partial<Record<StatName, number>> | null {
+  const printed = profileStats(catalog, m);
+  // A narrative scenario can set some of a model's characteristics (the Weathertop Ringwraiths' single Attack).
+  return printed && m?.stats && !m.steed ? { ...printed, ...m.stats } : printed;
+}
+
+function profileStats(catalog: Catalog | null | undefined, m: { profileId?: string; options?: string[]; steed?: string; name?: string } | undefined): Partial<Record<StatName, number>> | null {
   // A mount fighting on without its rider has the mount's own numbers.
   if (m?.steed) return steedStats(m.steed);
   const unit = m?.profileId ? catalog?.units[m.profileId] : undefined;

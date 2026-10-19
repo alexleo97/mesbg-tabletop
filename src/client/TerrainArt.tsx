@@ -144,6 +144,22 @@ function trees(t: Terrain, mat: Mat): ReactElement[] {
 function ruinWalls(t: Terrain): ReactElement[] {
   const w = t.w / 2;
   const h = t.h / 2;
+  if (t.shape === 'circle') {
+    // A round ruin (a watchtower's ring): broken arcs of wall round its edge.
+    const len = Math.PI * (w + h);
+    const at = (d: number) => {
+      const a = (d / len) * Math.PI * 2;
+      return `${w * Math.cos(a)} ${h * Math.sin(a)}`;
+    };
+    const out: ReactElement[] = [];
+    let pos = 0;
+    for (let k = 0; pos < len; k++) {
+      const end = Math.min(len, pos + 0.8 + rand(t.id, k) * 1.8);
+      out.push(<path key={k} className="ruin-wall" stroke="url(#tex-wall)" fill="none" d={`M ${at(pos)} A ${w} ${h} 0 0 1 ${at(end)}`} />);
+      pos = end + (rand(t.id, k + 25) > 0.45 ? 0.5 + rand(t.id, k + 9) * 1.1 : 0);
+    }
+    return out;
+  }
   const sides: [Pt, Pt][] = [
     [[-w, -h], [w, -h]],
     [[w, -h], [w, h]],
@@ -266,8 +282,17 @@ export function TerrainArt({ t, mat }: { t: Terrain; mat: Mat }) {
     case 'ruin':
       return (
         <>
-          <rect className="ground ruin-floor" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} fill={tex} />
-          <rect className="tint" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} fill="#2a221a66" />
+          {t.shape === 'circle' ? (
+            <>
+              <ellipse className="ground ruin-floor" rx={t.w / 2} ry={t.h / 2} fill={tex} />
+              <ellipse className="tint" rx={t.w / 2} ry={t.h / 2} fill="#2a221a66" />
+            </>
+          ) : (
+            <>
+              <rect className="ground ruin-floor" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} fill={tex} />
+              <rect className="tint" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} fill="#2a221a66" />
+            </>
+          )}
           <g pointerEvents="none" filter="url(#hard-shadow)">
             {ruinWalls(t)}
           </g>

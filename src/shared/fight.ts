@@ -117,6 +117,8 @@ export interface ShotRequest {
   obstacles: number;
   /** A throwing weapon thrown in the Move phase as the shooter charges its target. */
   charge?: boolean;
+  /** A flaming brand thrown (Weathertop): a model it hits is Set Ablaze rather than wounded. */
+  brand?: boolean;
   /** What's in the way, nearest first, worked out by the game from the table; a model in the way that stops the shot is hit. */
   inWay?: { name: string; id?: string; d?: number }[];
   /** Shooting into a fight: the shooter's friend a stray shot hits instead (on a 1-3). */
@@ -392,6 +394,7 @@ export function cleanShot(raw: unknown): ShotRequest | null {
     target: { id: String(o.target.id ?? '').slice(0, 64), name: String(o.target.name ?? 'Model').slice(0, 40), d: clamp(o.target.d, 1, 10, 4) },
     obstacles: clamp(o.obstacles, 0, 5, 0),
     ...(o.charge === true ? { charge: true } : {}),
+    ...(o.brand === true ? { brand: true } : {}),
     ...(o.atMount === true ? { atMount: true } : {}),
     ...(o.atHowdah === true ? { atHowdah: true } : {}),
     ...(o.heads === true ? { heads: true } : {}),
@@ -433,7 +436,7 @@ export const mightCouldHelp = (r: DiceRoll, might: number) => r.target !== undef
  * A shot can stop after any roll that `pause` picks out, so a hero can spend Might on it; it then carries on from
  * `logged` (its rolls so far, as the log has them now), rolling only what comes after. `paused` says it stopped.
  */
-export function resolveShot(req: ShotRequest, d6: D6, by: Role, group: string, now = Date.now(), logged: DiceRoll[] = [], pause?: (r: DiceRoll) => boolean): { rolls: DiceRoll[]; wounds: number; hits: { id: string; wounds: number }[]; paused?: boolean } {
+export function resolveShot(req: ShotRequest, d6: D6, by: Role, group: string, now = Date.now(), logged: DiceRoll[] = [], pause?: (r: DiceRoll) => boolean): { rolls: DiceRoll[]; wounds: number; hits: { id: string; wounds: number }[]; paused?: boolean; ablaze?: string[] } {
   const rolls: DiceRoll[] = [];
   let k = 0;
   /** The next roll of the shot: the one already in the log, or a fresh one. */
@@ -517,6 +520,12 @@ export function resolveShot(req: ShotRequest, d6: D6, by: Role, group: string, n
     }
   }
   strike(target.id, target.name, target.d, flying);
+  // A flaming brand doesn't wound: whatever it hits is Set Ablaze.
+  if (req.brand) {
+    if (!rolls.length) rolls.push({ id: `${group}-${k}`, by, label: `${shooter.name}'s throw`, dice: [], at: now, group });
+    rolls[rolls.length - 1].note = struck.length ? `${struck.map(v => v.name).join(', ')} ${struck.length > 1 ? 'are' : 'is'} Set Ablaze` : stoppedBy ? `The brand hits the ${stoppedBy}` : `${shooter.name} misses ${target.name}`;
+    return { rolls, wounds: 0, hits: [], ablaze: struck.map(v => v.id) };
+  }
   const hits: { id: string; wounds: number }[] = [];
   for (const v of struck) {
     const need = woundNeed(shooter.s, v.d);

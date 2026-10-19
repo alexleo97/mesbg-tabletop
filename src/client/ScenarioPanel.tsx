@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { newId } from '../shared/importList.ts';
 import { COMMON_RULES, POOLS, SCENARIOS, scenarioById, scenarioFromDice, scenarioMarkers, SELECTION_RULE, vpTotal } from '../shared/scenarios.ts';
 import { PICKS, pickOptions } from '../shared/picks.ts';
+import { NarrativeOptions, NarrativePanel } from './NarrativePanel.tsx';
 import { scoreLines, vpTotals } from '../shared/scoring.ts';
 import { gameEnded } from '../shared/status.ts';
 import type { Action, GameState, Role, Seat } from '../shared/types.ts';
@@ -16,6 +17,9 @@ export function ScenarioPanel({ state, dispatch, role }: { state: GameState; dis
   const fixed = spectator || state.flow.started;
   const seatName = (seat: Seat) => state.names[seat] || (seat === 'p1' ? 'Player 1' : 'Player 2');
   const [waiting, setWaiting] = useState(false);
+  // A narrative scenario picked from the list but not yet set up (that waits for the player to choose a side).
+  const [story, setStory] = useState<string | null>(null);
+  const narrative = state.narrative?.id ?? story;
   const seen = useRef(new Set(state.log.map(r => r.id)));
 
   // When our scenario roll comes back from the server, pick the scenario it points to.
@@ -40,6 +44,7 @@ export function ScenarioPanel({ state, dispatch, role }: { state: GameState; dis
   };
 
   const choose = (id: string | null) => {
+    setStory(null);
     if (state.scenario && id !== state.scenario && vpTotal(state.vp.p1) + vpTotal(state.vp.p2) > 0 && !confirm('Change scenario? Victory points will reset.')) return;
     dispatch({ type: 'setScenario', id });
     if (id !== state.scenario) placeMarkers(scenarioById(id));
@@ -51,9 +56,9 @@ export function ScenarioPanel({ state, dispatch, role }: { state: GameState; dis
     <div className="panel-body scenario">
       <h4>Scenario</h4>
       <div className="row">
-        <select value={state.scenario ?? ''} onChange={e => choose(e.target.value || null)} disabled={fixed} aria-label="Scenario">
+        <select value={narrative ? `n:${narrative}` : (state.scenario ?? '')} onChange={e => (e.target.value.startsWith('n:') ? setStory(e.target.value.slice(2)) : choose(e.target.value || null))} disabled={fixed} aria-label="Scenario">
           {state.bot ? (
-            !state.scenario && (
+            !state.scenario && !narrative && (
               <option value="" disabled>
                 Pick a scenario…
               </option>
@@ -70,6 +75,7 @@ export function ScenarioPanel({ state, dispatch, role }: { state: GameState; dis
               ))}
             </optgroup>
           ))}
+          <NarrativeOptions />
         </select>
         <button
           disabled={fixed || waiting}
@@ -83,7 +89,8 @@ export function ScenarioPanel({ state, dispatch, role }: { state: GameState; dis
         </button>
       </div>
 
-      {s && (
+      {narrative && <NarrativePanel state={state} dispatch={dispatch} role={role} id={narrative} />}
+      {s && !narrative && (
         <>
           <p className="muted small">
             Pool {s.pool}: {POOLS[s.pool]}

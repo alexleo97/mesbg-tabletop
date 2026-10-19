@@ -23,6 +23,10 @@ import { atCrossing, crossBlocked, fallingHits } from './terrainTests.ts';
 import { armyStatus } from './status.ts';
 import { pushers } from './siege.ts';
 import { chargeAim, chargesDue, straightOn } from './trample.ts';
+import { castModel, mayCry } from './narrative.ts';
+import { willOfEvil } from './courage.ts';
+import { hasMorgulBlade } from './morgul.ts';
+import { canThrowBrand, FLAMING_BRAND } from './shooting.ts';
 import type { Action, DiceRoll, GameState, Model, Seat, Terrain } from './types.ts';
 
 // The computer player. Each call looks at the game and picks the one thing it would do next, so the server can play
@@ -117,7 +121,8 @@ function profile(ctx: Ctx, m: Model): Profile {
     weapon: unit ? weaponFor(ctx.catalog, m) : undefined,
     heroics: unit?.heroics ?? [],
     terror: !!unit?.rules.some(r => /^Terror\b/.test(r)),
-    value: worth(m),
+    // In Weathertop, Frodo is the whole game.
+    value: worth(m) * (m.cast === 'frodo' && ctx.state.narrative?.id === 'weathertop' ? 6 : 1),
   };
   ctx.profiles.set(m.id, p);
   return p;
@@ -356,6 +361,12 @@ function moveStep(ctx: Ctx): BotStep {
     if (!crossBlocked(state, m, c) && !(at.test === 'Climb down' && fallingHits(m, at.drop) >= m.wounds)) return { action: { type: 'cross', id: m.id }, delay: DICE_PAUSE };
   }
 
+  // The Cry of the Nazgûl, once Aragorn is here anyway (or late in the game): it would only bring him sooner.
+  if (mayCry(state, seat)) {
+    const aragorn = castModel(state, 'aragorn');
+    if (!aragorn || !aragorn.waiting || state.turn >= 4) return { action: { type: 'cry', seat }, delay: THINK_PAUSE };
+  }
+
   const cast = castStep(ctx);
   if (cast) return cast;
 
@@ -423,6 +434,9 @@ function moveStep(ctx: Ctx): BotStep {
     memo.pending = { kind: 'marker', model: m.id };
     return { action: { type: 'moveModels', moves: [{ id: m.id, x: to.at.x, y: to.at.y, rot: to.rot }] }, delay: MOVE_PAUSE };
   }
+  // Our Ringbearer is in Sauron's grip: the other side moves it before our move can end.
+  const grip = state.flow.compel?.ring ? state.models[state.flow.compel.model] : undefined;
+  if (grip?.owner === seat) return { delay: WAIT_PAUSE };
   return { action: { type: 'endActivation', seat }, delay: THINK_PAUSE };
 }
 
@@ -589,6 +603,23 @@ function assignGoals(ctx: Ctx): Map<string, Goal> {
     if (want.infantry && takers.length < want.need) {
       const riders = free.filter(m => !out.has(m.id) && cavalry(m)).sort((a, b) => centre(a, want.at) - centre(b, want.at));
       for (const m of riders.slice(0, want.need - takers.length)) out.set(m.id, { at: { x: want.at.x, y: want.at.y }, pull: want.pull, foot: true });
+    }
+  }
+
+  // Weathertop: the Nazgûl hunt Frodo; the Hobbits keep by him, and Aragorn goes for whichever is closest to him.
+  if (state.narrative?.id === 'weathertop') {
+    const frodo = castModel(state, 'frodo');
+    if (frodo && !frodo.dead) {
+      const hunters = side(state, other(seat)).filter(e => e.owner !== frodo.owner);
+      for (const m of ours) {
+        if (out.has(m.id)) continue;
+        if (m.owner !== frodo.owner) out.set(m.id, { at: { x: frodo.x, y: frodo.y }, pull: 1.2 });
+        else if (m.cast === 'aragorn') {
+          const foe = [...side(state, other(seat))].sort((a, b) => centre(a, frodo) - centre(b, frodo))[0];
+          if (foe) out.set(m.id, { at: { x: foe.x, y: foe.y }, pull: 1 });
+        } else if (m.id !== frodo.id) out.set(m.id, { at: { x: frodo.x, y: frodo.y }, pull: 0.8, near: 1.2 });
+        else if (hunters.length) out.set(m.id, { at: { x: state.board.w / 2, y: state.board.h / 2 }, pull: 0.3 });
+      }
     }
   }
 
@@ -817,7 +848,9 @@ function castStep(ctx: Ctx): BotStep | null {
       }
     }
     // Worth at least half a warrior, and the Will it costs (which also keeps its Exhaustion powers going).
-    if (!best || best.score < 0.6) continue;
+    // A Will of Evil caster spends its life with each point, so it casts only when it's well worth it (never on its last few).
+    const dear = willOfEvil(catalog, m) ? (m.will <= 3 ? Infinity : 2) : 0;
+    if (!best || best.score < 0.6 + dear) continue;
     const will = Math.max(1, Math.min(m.will - (m.will > 2 ? 1 : 0), best.power.cv >= 5 ? 2 : 1));
     return { action: { type: 'cast', model: m.id, target: best.target.id, power: best.power.name, cv: best.power.cv, will }, delay: DICE_PAUSE };
   }
@@ -970,6 +1003,18 @@ function shootStep(ctx: Ctx): BotStep {
     // A defender by a pile of rocks or a vat of oil drops it on the nearest attacker below.
     const hurl = !cannotAct(state, m) && hurlOptions(state, m).sort((a, b) => Number(b.how === 'oil') - Number(a.how === 'oil'))[0];
     if (hurl) return { action: { type: 'hurl', how: hurl.how, model: m.id, item: hurl.item, target: hurl.target }, delay: DICE_PAUSE };
+    // Aragorn's flaming brand, thrown at the best of the Nazgûl not already burning.
+    if (canThrowBrand(m) && !engagedWith(state, m).length && !m.prone && !cannotAct(state, m)) {
+      const prey = side(state, other(seat))
+        .filter(e => !e.ablaze && distanceBetween(m, e) <= FLAMING_BRAND.range + 0.01)
+        .map(e => ({ e, plan: planShot(state, ctx.catalog, m, e, { brand: true }) }))
+        .filter(x => !x.plan.why)
+        .sort((a, b) => profile(ctx, b.e).value - profile(ctx, a.e).value)[0];
+      if (prey) {
+        memo.pending = { kind: 'shot', model: m.id };
+        return { action: { type: 'shoot', shot: { shooter: { id: m.id, name: m.name, weapon: FLAMING_BRAND.name, shoot: p.shoot, s: FLAMING_BRAND.s, shots: 1 }, target: { id: prey.e.id, name: prey.e.name, d: profile(ctx, prey.e).d }, obstacles: Math.min(5, prey.plan.inWay.length), brand: true } }, delay: DICE_PAUSE };
+      }
+    }
     if (!p.weapon || engagedWith(state, m).length || m.prone || cannotAct(state, m)) continue;
     if (memo.courage[m.id] === false && armyStatus(state, seat).broken) continue;
     const shot = bestShot(ctx, m);
@@ -1194,7 +1239,23 @@ function fightStep(ctx: Ctx): BotStep | null {
   if (raise) return raise;
   // Hold the strikes while the other player could still use Might; they roll the strikes themselves.
   if (ctx.person && humanCanRaise(state, other(seat), duel.rolls)) return { delay: WAIT_PAUSE };
+  const blade = morgulPick(ctx, c, duel.rolls);
+  if (blade) return blade;
   return { action: { type: 'strikes', fight: fightRequest(ctx, c, duel.rolls), group: duel.group }, delay: DICE_PAUSE * 3 };
+}
+
+/** A Morgul Blade drawn once its bearer has won the duel, at the enemy hero it would most like to slay outright. */
+function morgulPick(ctx: Ctx, c: Combat, rolls: DiceRoll[]): BotStep | null {
+  const { state, seat } = ctx;
+  if (duelLeader(rolls)?.winner !== (seat === 'p1' ? 0 : 1)) return null;
+  const bearer = c[seat].map(id => state.models[id]).find(m => m && isUp(m) && hasMorgulBlade(ctx.catalog, m) && !state.flow.choices?.[m.id]?.morgul);
+  if (!bearer) return null;
+  const prey = c[other(seat)]
+    .map(id => state.models[id])
+    .filter(m => m && isUp(m) && (m.cast === 'frodo' || (m.hero && m.wounds >= 2)))
+    .sort((a, b) => profile(ctx, b).value - profile(ctx, a).value)[0];
+  if (!prey) return null;
+  return { action: { type: 'fightChoice', id: bearer.id, ...state.flow.choices?.[bearer.id], morgul: prey.id }, delay: THINK_PAUSE };
 }
 
 /** Might on the computer's own duel dice, when a point or two turns a lost duel into a won one. */

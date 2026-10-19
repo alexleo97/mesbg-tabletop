@@ -11,8 +11,10 @@ import { heroicInfo, phaseAllows } from '../shared/heroics.ts';
 import { carriedBy, markerActions, OBJECT_NAMES } from '../shared/objects.ts';
 import { causesTerror } from '../shared/courage.ts';
 import { effectNotes, heldBy } from '../shared/powers.ts';
-import { isThrowing, planShot, shooterBlocked, throwingPoint, weaponFor } from '../shared/shooting.ts';
+import { canThrowBrand, FLAMING_BRAND, isThrowing, planShot, shooterBlocked, throwingPoint, weaponFor } from '../shared/shooting.ts';
 import { cloaked, stones } from '../shared/wargear.ts';
+import { fireLine } from '../shared/fire.ts';
+import { cantRemove, cantWear, ringbearer } from '../shared/ring.ts';
 import { mounted, mountLabel, mountOf } from '../shared/cavalry.ts';
 import { commanderStats, howdahFor, immovable } from '../shared/warBeasts.ts';
 import { BeastPanel } from './BeastPanel.tsx';
@@ -159,6 +161,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
   const [atHowdah, setAtHowdah] = useState(false);
   const [heads, setHeads] = useState(false);
   const [keepMight, setKeepMight] = useState(false);
+  const [useBrand, setUseBrand] = useState(false);
   const seen = target ? sightTo(state, m, target) : null;
   const up = Math.round(standingAt(state, m) * 10) / 10;
   // Inside a building with floors, the model's player picks which level it stands on (climbing costs Move in the battle).
@@ -205,32 +208,35 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
   const held = state.flow.started && state.phase === 'move' ? heldBy(state, m) : null;
 
   let action: React.ReactNode = null;
+  // Aragorn's flaming brand (Weathertop) is thrown in place of a shot.
+  const brandOn = useBrand && canThrowBrand(m) && state.phase === 'shoot';
+  const shotWeapon = brandOn ? FLAMING_BRAND : weapon;
   const throwing = state.phase === 'move' && !!weapon && isThrowing(weapon);
   const mustCharge = state.flow.mustCharge?.model === m.id ? state.models[state.flow.mustCharge.target] : undefined;
   if (state.phase === 'move' && mine && mustCharge && !mustCharge.dead && distanceBetween(m, mustCharge) > CONTACT_SLACK) {
     action = <p className="hint">{m.name} threw at {mustCharge.name}, so it must now finish its charge: move it into contact with {mustCharge.name}.</p>;
-  } else if ((state.phase === 'shoot' || (throwing && target)) && mine && weapon && state.flow.started) {
+  } else if ((state.phase === 'shoot' || (throwing && target)) && mine && shotWeapon && state.flow.started) {
     const charge = state.phase === 'move';
     const hasShot = !!state.flow.shot?.includes(m.id);
     const held = heldBy(state, m);
-    const blocked = shooterBlocked(state, m, weapon, charge);
+    const blocked = shooterBlocked(state, m, shotWeapon, charge);
     if (held) action = <p className="hint">{m.name} is {held === 'Thrown from its mount' ? 'thrown from its mount' : held}, so it can't shoot this turn.</p>;
     else if (blocked && (!target || hasShot)) action = <p className="hint">{m.name} {blocked}{hasShot ? '. Each model shoots once a turn.' : ', so it can’t shoot this turn.'}</p>;
     else if (!target)
       action = (
         <p className="hint">
-          Tap an enemy model to aim the {weapon.name.toLowerCase()} ({weapon.range}", S{weapon.s}).
+          Tap an enemy model to aim the {shotWeapon.name.toLowerCase()} ({shotWeapon.range}", S{shotWeapon.s}).
           {state.flow.moved?.includes(m.id) ? ' It moved this turn, so it shoots 1 worse.' : ''}
         </p>
       );
     else {
-      const plan = planShot(state, catalog, m, target, { charge });
+      const plan = planShot(state, catalog, m, target, { charge, brand: brandOn });
       const tStats = modelStats(catalog, target);
       const d = plan.d ?? tStats?.D ?? 4;
-      const need = woundNeed(weapon.s, d);
+      const need = woundNeed(shotWeapon.s, d);
       const stand = charge ? throwingPoint(state, m, target) : null;
       const why = plan.why ?? (charge && !stand ? `can’t get within 1" of ${target.name} to throw` : undefined);
-      const ok = !why && !!need && phaseAllows(state, role, { type: 'shoot', shot: { shooter: { id: m.id }, charge } });
+      const ok = !why && (brandOn || !!need) && phaseAllows(state, role, { type: 'shoot', shot: { shooter: { id: m.id }, charge } });
       const cloak = cloaked(catalog, target);
       const harder = [plan.moved ? '1 worse for moving' : '', cloak ? '1 worse for its Elven cloak' : '', plan.need > plan.printed + (plan.moved ? 1 : 0) + (cloak ? 1 : 0) ? 'a power makes it harder' : ''].filter(Boolean).join(', ');
       const stray = plan.fight?.[0] ? state.models[plan.fight[0]] : undefined;
@@ -241,7 +247,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
       action = (
         <div className="aim-card">
           <p>
-            {charge ? 'Throw at' : 'At'} <b>{target.name}</b>: {formatInches(plan.dist)} of {weapon.range}". Hits on {plan.need}+{harder ? ` (${harder})` : ''}, wounds on {formatNeed(need)}
+            {charge ? 'Throw at' : 'At'} <b>{target.name}</b>: {formatInches(plan.dist)} of {shotWeapon.range}". Hits on {plan.need}+{harder ? ` (${harder})` : ''}, {brandOn ? 'and a hit Sets it Ablaze' : `wounds on ${formatNeed(need)}`}
             {m.siege && rapidFire(catalog, m) ? ', D6 bolts (rolled when it shoots)' : ''}
             {m.siege && !rapidFire(catalog, m) ? (siegeTarget(target) ? (rulesOf(m, catalog).includes('Wall-breaker') ? ', and Wall-breaker makes each wound D3' : '') : `, and a wound slays ${target.maxWounds >= 10 ? 'half its Wounds' : 'it outright'}`) : ''}
             {plan.shots > 1 ? (m.beast === 'war' ? `, ${plan.shots} shots (one for each Wound the Howdah has left)` : `, ${plan.shots} shots (it didn't move)`) : ''}.
@@ -270,7 +276,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
               onClick={() =>
                 dispatch({
                   type: 'shoot',
-                  shot: { shooter: { id: m.id, name: m.name, weapon: weapon.name, shoot: plan.printed, s: weapon.s, shots: plan.shots }, target: { id: target.id, name: target.name, d }, obstacles: plan.inWay.length, ...(charge ? { charge: true } : {}), ...(sharp && atMount ? { atMount: true } : {}), ...(howdah && atHowdah ? { atHowdah: true } : {}), ...(m.siege && heads && m.options?.includes('Severed Heads') ? { heads: true } : {}), ...(m.siege && keepMight ? { keepMight: true } : {}) },
+                  shot: { shooter: { id: m.id, name: m.name, weapon: shotWeapon.name, shoot: plan.printed, s: shotWeapon.s, shots: plan.shots }, target: { id: target.id, name: target.name, d }, obstacles: plan.inWay.length, ...(charge ? { charge: true } : {}), ...(sharp && atMount ? { atMount: true } : {}), ...(howdah && atHowdah ? { atHowdah: true } : {}), ...(m.siege && heads && m.options?.includes('Severed Heads') ? { heads: true } : {}), ...(m.siege && keepMight ? { keepMight: true } : {}), ...(brandOn ? { brand: true } : {}) },
                 })
               }
             >
@@ -404,6 +410,29 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
           ))}
         </ul>
       )}
+      {!!(m.brand || m.ablaze || m.ringOn || m.used?.length) && !m.dead && (
+        <ul className="effects">
+          {m.brand && <li>✦ Carries a flaming brand{canThrowBrand(m) ? ', thrown once in place of a shot' : ''}. A Ringwraith it beats in a fight flees D6" after backing away.</li>}
+          {m.ablaze && <li>🔥 {fireLine(m)}</li>}
+          {m.ringOn && <li>💍 Wears the One Ring: invisible to all but the Nine. It rolls for Sauron's Will each time it activates.</li>}
+          {m.used?.map(u => (
+            <li key={u}>✦ {u} used up.</li>
+          ))}
+        </ul>
+      )}
+      {mine && ringbearer(catalog, m) && !m.dead && state.flow.started && (
+        <div className="row wrap">
+          {m.ringOn ? (
+            <button disabled={!!cantRemove(state, m)} title={cantRemove(state, m) ? `${m.name} ${cantRemove(state, m)}.` : 'Takes a Courage test; one try a turn.'} onClick={() => dispatch({ type: 'ring', id: m.id, on: false })}>
+              Take off the Ring
+            </button>
+          ) : (
+            <button disabled={!!cantWear(state, catalog, m)} title={cantWear(state, catalog, m) ? `${m.name} ${cantWear(state, catalog, m)}.` : 'Invisible to all but the Nine, but Sauron may take hold of it.'} onClick={() => dispatch({ type: 'ring', id: m.id, on: true })}>
+              Put on the Ring
+            </button>
+          )}
+        </div>
+      )}
       {rules.length > 0 && (
         <dl className="rule-list">
           {rules.map(r => (
@@ -416,6 +445,8 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
       )}
       {held ? (
         <p className="warn">{m.name} is {held === 'Thrown from its mount' ? 'thrown from its mount' : held}, so it can't move or act this turn.</p>
+      ) : state.flow.compel?.model === m.id && state.flow.compel.ring ? (
+        <p className="warn">Sauron's Will holds {m.name}: {state.models[state.flow.compel.caster]?.owner === role ? 'you move' : 'your opponent moves'} it up to {formatInches(state.flow.compel.max)} this turn, charging if it can.</p>
       ) : state.flow.compel?.model === m.id ? (
         <p className="warn">{m.name} is Compelled: {state.models[state.flow.compel.caster]?.name ?? 'the caster'}'s player moves it up to {formatInches(state.flow.compel.max)}.</p>
       ) : state.flow.held?.includes(m.id) && state.phase === 'move' ? (
@@ -431,6 +462,11 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
         )
       )}
       {action}
+      {mine && state.flow.started && state.phase === 'shoot' && canThrowBrand(m) && !state.flow.shot?.includes(m.id) && (
+        <label className="check small" title="Thrown once a game, in place of a shot. A hit sets the target Ablaze rather than wounding it.">
+          <input type="checkbox" checked={useBrand} onChange={e => setUseBrand(e.target.checked)} /> Throw the flaming brand ({FLAMING_BRAND.range}") instead of shooting
+        </label>
+      )}
       <BeastPanel state={state} catalog={catalog} dispatch={dispatch} role={role} m={m} />
       <SiegePanel state={state} catalog={catalog} dispatch={dispatch} role={role} m={m} />
       {mine && (state.phase === 'move' || atCrossing(state, m)) && state.flow.started && !held && <TerrainMoves state={state} dispatch={dispatch} m={m} />}
