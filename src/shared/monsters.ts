@@ -106,7 +106,8 @@ export type Brutal = { by: string; kind: 'rend' | 'barge' | 'hurl'; target?: str
 
 /** Whether a model may make a Brutal Power Attack this turn, and which: one a turn, and no Barge or Hurl after a Heroic Combat. */
 export function brutalOptions(state: GameState, catalog: Catalog | null | undefined, m: Model): Brutal['kind'][] {
-  if (!isMonster(catalog, m) || state.flow.brutal?.includes(m.id)) return [];
+  // A Prone monster that wins its fight simply stands up (Rulebook FAQ).
+  if (!isMonster(catalog, m) || m.prone || state.flow.brutal?.includes(m.id)) return [];
   return declared(state, m.id, 'Heroic Combat') ? ['rend'] : ['rend', 'barge', 'hurl'];
 }
 

@@ -193,6 +193,16 @@ describe('monsters', () => {
     expect(moveAllowance(s, s.models.t)).toBe(5);
   });
 
+  it('makes no Brutal Power Attack while Prone, and stands up instead', () => {
+    let s = toFight(begin([mk('t', 'p1', 20, 20, '[mordor] troll', { base: { shape: 'round', w: 40, h: 40 }, wounds: 3, maxWounds: 3, prone: true }), mk('o', 'p2', 20, 21.3, '[mordor] orc')]));
+    const req = fight(['t'], ['o'], { brutal: { by: 't', kind: 'barge' } });
+    s = ask(s, 'p1', { type: 'fight', fight: req }, [6, 1, 1, 2])!;
+    s = ask(s, 'p1', { type: 'strikes', fight: req, group: group(s) }, [4, 1, 1])!;
+    expect(s.models.o.y).not.toBeCloseTo(24.3, 1);
+    expect(s.flow.brutal ?? []).not.toContain('t');
+    expect(s.models.t.prone).toBeFalsy();
+  });
+
   it('can Hurl a weaker foe at another enemy', () => {
     let s = toFight(begin([mk('t', 'p1', 20, 20, '[mordor] troll', { base: { shape: 'round', w: 40, h: 40 }, wounds: 3, maxWounds: 3 }), mk('o', 'p2', 20, 21.3, '[mordor] orc', { wounds: 3, maxWounds: 3 }), mk('x', 'p2', 24, 20, '[mordor] orc', { wounds: 3, maxWounds: 3 })]));
     const req = fight(['t'], ['o'], { brutal: { by: 't', kind: 'hurl', target: 'o' } });
