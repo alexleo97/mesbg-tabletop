@@ -832,8 +832,7 @@
       "specialRules": [
         "Dark of Night",
         "Maelstrom of Battle",
-        "Strange Aura: at the start of each Priority Phase roll a D6; until end of turn, models within 3\" of any objective get: 1-2 ignore each Wound on a natural 6 (rolled before Fate, no Might); 3-4 auto-pass Courage tests; 4-6 re-roll To Wound rolls of 1 when Striking.",
-        "The printed bands overlap (3-4 and 4-6); a result of 4 is ambiguous, 5-6 was probably meant for the last band. (the printed table overlaps here; check the book)"
+        "Strange Aura: at the start of each Priority Phase roll a D6; until end of turn, models within 3\" of any objective get: 1-2 ignore each Wound on a natural 6 (rolled before Fate, no Might); 3-4 auto-pass Courage tests; 5-6 re-roll To Wound rolls of 1 when Striking."
       ],
       "gameEnd": "Ends at the end of any turn in which an army is down to 25% or fewer of its starting models; most VP wins, equal VP is a draw.",
       "scoring": [
