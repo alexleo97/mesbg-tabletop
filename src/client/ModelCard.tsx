@@ -39,8 +39,9 @@ interface Props {
   clearTarget: () => void;
   combat: Combat | undefined;
   openFight: (key: string) => void;
-  openTab: (t: 'model' | 'rules') => void;
   close: () => void;
+  /** In a lesson, where the reader rolls a Courage test themselves to see how it works. */
+  practice?: boolean;
 }
 
 /** What the gear of a model says it can shoot with, if anything. */
@@ -165,10 +166,9 @@ function BackAwayPicker({ state, dispatch, m }: { state: GameState; dispatch: (a
 }
 
 /** A selected model's card: its profile at a glance and the actions that make sense in this phase. */
-export function ModelCard({ state, dispatch, role, model: m, catalog, target, clearTarget, combat, openFight, openTab, close }: Props) {
+export function ModelCard({ state, dispatch, role, model: m, catalog, target, clearTarget, combat, openFight, close, practice }: Props) {
   const drag = useDraggable('model-card');
   const [photoFailed, setPhotoFailed] = useState(false);
-  const [openRule, setOpenRule] = useState<string | null>(null);
   /** A Sharpshooter's pick: aim at a rider's mount rather than the rider. */
   const [atMount, setAtMount] = useState(false);
   const [atHowdah, setAtHowdah] = useState(false);
@@ -200,7 +200,6 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
   const breaches = breachOptions(state, catalog, m);
   const hurls = hurlOptions(state, m);
   const weapon = weaponOf(m, catalog);
-  const patch = (p: Partial<Model>) => dispatch({ type: 'updateModel', id: m.id, patch: p });
   const photo = unit && pictureUrl(unit);
 
   // This model's latest shot, so its wounds can be taken off the target in one tap.
@@ -363,9 +362,9 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
       <div className="row wrap counters">
         <span className="wound-pips" aria-label={`${m.wounds} of ${m.maxWounds} wounds`}>
           {Array.from({ length: m.maxWounds }, (_, i) => (
-            <button key={i} className={i < m.wounds ? 'on' : ''} disabled={!mine} onClick={() => patch(i < m.wounds ? { wounds: i } : { wounds: i + 1 })} aria-label={`Set wounds to ${i < m.wounds ? i : i + 1}`}>
+            <span key={i} className={i < m.wounds ? 'on' : ''}>
               ♥
-            </button>
+            </span>
           ))}
         </span>
         {m.hero && (
@@ -421,17 +420,14 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
         </ul>
       )}
       {rules.length > 0 && (
-        <div className="rule-chips">
-          {rules.map(r => {
-            const known = explain(r);
-            return (
-              <button key={r} className={`rule-chip ${openRule === r ? 'on' : ''} ${known ? '' : 'plain'}`} onClick={() => setOpenRule(openRule === r ? null : r)} aria-expanded={openRule === r}>
-                {r}
-              </button>
-            );
-          })}
-          {openRule && <p className="rule-text">{explain(openRule) ?? (Object.keys(rulesText).length ? 'We have no explanation for this rule yet.' : 'Loading…')}</p>}
-        </div>
+        <dl className="rule-list">
+          {rules.map(r => (
+            <div key={r}>
+              <dt>{r}</dt>
+              <dd>{explain(r) ?? (Object.keys(rulesText).length ? 'No explanation for this rule yet.' : 'Loading…')}</dd>
+            </div>
+          ))}
+        </dl>
       )}
       {held ? (
         <p className="warn">{m.name} is {held === 'Thrown from its mount' ? 'thrown from its mount' : held}, so it can't move or act this turn.</p>
@@ -506,17 +502,11 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
           <RollRow r={recent} state={state} role={role} dispatch={dispatch} />
         </ol>
       )}
-      <div className="row wrap card-actions">
-        {mine && (
+      {practice && mine && (
+        <div className="row wrap card-actions">
           <button onClick={() => dispatch({ type: 'roll', count: 2, label: `Courage test: ${m.name}`, model: m.id, ...(stats?.C ? { sum: stats.C } : {}) })}>Courage</button>
-        )}
-        {mine && (
-          <button onClick={() => patch(m.wounds > 0 ? { wounds: 0, dead: true } : { dead: true })} title="Move to the casualty pile">
-            Slain
-          </button>
-        )}
-        <button onClick={() => openTab('model')}>More</button>
-      </div>
+        </div>
+      )}
     </div>
   );
 }

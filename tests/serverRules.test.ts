@@ -38,6 +38,8 @@ async function battle(room: string) {
   p1.send({ type: 'action', action: { type: 'addModels', models: [{ id: 'a1', owner: 'p1', name: 'Aragorn', x: 5, y: 5, wounds: 3, maxWounds: 3 }] } });
   p2.send({ type: 'action', action: { type: 'addModels', models: [{ id: 'b1', owner: 'p2', name: 'Orc', x: 40, y: 40, wounds: 1, maxWounds: 1 }] } });
   p1.send({ type: 'action', action: { type: 'setName', seat: 'p1', name: 'Alex' } });
+  // Both armies are down before the battle starts (no models are added after that).
+  await p1.next(m => m.type === 'action' && m.action.type === 'addModels' && m.action.models[0]?.id === 'b1');
   p1.send({ type: 'action', action: { type: 'startGame' } });
   p1.send({ type: 'action', action: { type: 'rollPriority' } });
   const chooser = (await stateOf(p1)).flow.chooser!;
@@ -64,6 +66,22 @@ describe('what each player may change once the battle starts', () => {
     expect(s.models.x).toBeUndefined();
     expect(s.names.p1).toBe('Alex');
     expect(s.flow.done).not.toContain('p1');
+    p1.ws.close();
+    p2.ws.close();
+  }, 30_000);
+
+  it('fixes the table, the scenario and the turn once the battle starts', async () => {
+    const { p1, p2 } = await battle('rules-fixed');
+    p1.send({ type: 'action', action: { type: 'addTerrain', terrain: { id: 'w', kind: 'wall', shape: 'rect', x: 10, y: 10, w: 4, h: 1, rot: 0, locked: false } } });
+    p1.send({ type: 'action', action: { type: 'setScenario', id: 'domination' } });
+    p1.send({ type: 'action', action: { type: 'setPhase', phase: 'fight' } });
+    p1.send({ type: 'action', action: { type: 'updateModel', id: 'a1', patch: { base: { shape: 'round', w: 60, h: 60 } } } });
+    await pause(300);
+    const s = await stateOf(p2);
+    expect(s.terrain.w).toBeUndefined();
+    expect(s.scenario).toBeNull();
+    expect(s.phase).toBe('move');
+    expect(s.models.a1.base.w).toBe(25);
     p1.ws.close();
     p2.ws.close();
   }, 30_000);

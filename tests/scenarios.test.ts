@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SCENARIOS, scenarioFromDice, scenarioMarkers } from '../src/shared/scenarios.ts';
+import { objectivesMissing, SCENARIOS, scenarioById, scenarioFromDice, scenarioMarkers } from '../src/shared/scenarios.ts';
 import { initialState, loadState, reduce } from '../src/shared/reducer.ts';
 
 describe('matched play scenarios', () => {
@@ -37,5 +37,24 @@ describe('matched play scenarios', () => {
     expect(loadState(JSON.parse(JSON.stringify(st))).vp).toEqual(st.vp);
     st = reduce(st, { type: 'setScenario', id: 'breakthrough' });
     expect(st.vp).toEqual({ p1: {}, p2: {} });
+  });
+});
+
+describe('objective markers before the battle', () => {
+  it("puts all of Domination's markers in legal spots, and won't start without them", () => {
+    let n = 0;
+    const s = scenarioById('domination')!;
+    const marks = scenarioMarkers(s, 48, 48, p => `${p}${n++}`);
+    expect(marks).toHaveLength(5);
+    for (const a of marks) {
+      expect(Math.min(a.x, a.y, 48 - a.x, 48 - a.y)).toBeGreaterThanOrEqual(6);
+      for (const b of marks) if (a !== b) expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThanOrEqual(12);
+    }
+    let st = reduce(initialState(), { type: 'setScenario', id: 'domination' });
+    expect(objectivesMissing(st)).toBe(5);
+    for (const t of marks.slice(0, 4)) st = reduce(st, { type: 'addTerrain', terrain: t });
+    expect(objectivesMissing(st)).toBe(1);
+    st = reduce(st, { type: 'addTerrain', terrain: marks[4] });
+    expect(objectivesMissing(st)).toBe(0);
   });
 });

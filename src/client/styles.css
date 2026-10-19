@@ -289,6 +289,10 @@ small.muted, p.small { font-size: 0.8rem; }
 .rule-chip { min-height: 26px; padding: 1px 8px; font-size: 0.78rem; border-radius: 999px; border-color: #c9a22777; }
 .rule-chip.plain { border-color: var(--line); color: var(--muted); }
 .rule-chip.on { background: var(--gold); color: var(--ink); }
+.rule-list { margin: 4px 0 0; display: grid; gap: 4px; }
+.rule-list > div { background: var(--panel-2); border-radius: 8px; padding: 5px 8px; }
+.rule-list dt { font-weight: 600; font-size: 0.82rem; color: var(--gold); }
+.rule-list dd { margin: 1px 0 0; font-size: 0.82rem; }
 .rule-text { flex: 1 1 100%; margin: 2px 0 0; font-size: 0.85rem; background: var(--panel-2); border-radius: 8px; padding: 6px 8px; }
 .terror { color: #ffb08a; }
 
@@ -558,8 +562,8 @@ div.strike-at select { width: auto; flex: 1 1 40%; }
 .counters { gap: 8px; }
 .row.wrap.counters > * { flex: 0 0 auto; }
 .wound-pips { display: inline-flex; gap: 2px; }
-.wound-pips button { min-height: 30px; width: 30px; padding: 0; color: var(--muted); background: none; border-color: transparent; }
-.wound-pips button.on { color: #e06c5a; }
+.wound-pips span { display: inline-grid; place-items: center; min-height: 30px; width: 22px; color: var(--muted); }
+.wound-pips span.on { color: #e06c5a; }
 .counter { display: inline-flex; align-items: center; gap: 4px; font-size: 0.85rem; }
 .counter button { min-height: 30px; width: 30px; padding: 0; }
 .counter b { color: var(--gold); }

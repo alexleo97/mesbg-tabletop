@@ -20,7 +20,7 @@ export type Tool = 'move' | 'select' | 'measure' | 'mark';
 interface Props {
   state: GameState;
   /** The viewer's seat, for pushing their siege tower once the battle is on. */
-  role?: Seat;
+  role?: Seat | 'spectator';
   tool: Tool;
   selected: Set<string>;
   setSelected: (s: Set<string>) => void;
@@ -161,7 +161,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
   const [dragPos, setDragPos] = useState<Record<string, Point> | null>(null);
   // A siege tower being pushed: shown where it is dragged, and only sent (as a push) when let go.
   const [towerAt, setTowerAt] = useState<{ id: string } & Point | null>(null);
-  const pushing = (id: string) => !!role && state.flow.started && state.terrain[id]?.kind === 'tower';
+  const pushing = (id: string) => (role === 'p1' || role === 'p2') && state.flow.started && state.terrain[id]?.kind === 'tower';
   const [hover, setHover] = useState<{ id: string; x: number; y: number } | null>(null);
   const [pinned, setPinned] = useState<{ id: string; x: number; y: number } | null>(null);
   const [ruler, setRuler] = useState<{ start: Point; end: Point; from?: string } | null>(null);
@@ -338,7 +338,10 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
         const beast = state.models[state.models[id]?.aboard ?? ''];
         return beast && !beast.dead ? beast.id : id;
       };
-      for (const id of [...group].map(ridden)) if (state.models[id]) origin[id] = { x: state.models[id].x, y: state.models[id].y };
+      // Only your own models move (and the Palantír's in a solo game, and a model your caster has Compelled).
+      const compel = state.flow.compel;
+      const movable = (id: string) => !role || state.models[id].owner === role || state.models[id].owner === state.bot || (compel?.model === id && state.models[compel.caster]?.owner === role);
+      for (const id of [...group].map(ridden)) if (state.models[id] && movable(id)) origin[id] = { x: state.models[id].x, y: state.models[id].y };
       setGesture({ kind: 'drag', start: p, origin, moved: false, tapId: hit.id, multi, wasSelected });
       return;
     }
@@ -464,7 +467,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
       setDragPos(null);
     } else if (gesture.kind === 'terrain') {
       setTowerAt(null);
-      if (gesture.moved && pushing(gesture.id)) dispatch({ type: 'pushTower', id: gesture.id, seat: role!, x: gesture.origin.x + p.x - gesture.start.x, y: gesture.origin.y + p.y - gesture.start.y });
+      if (gesture.moved && pushing(gesture.id)) dispatch({ type: 'pushTower', id: gesture.id, seat: role as Seat, x: gesture.origin.x + p.x - gesture.start.x, y: gesture.origin.y + p.y - gesture.start.y });
       else if (gesture.moved)
         dispatch({ type: 'updateTerrain', id: gesture.id, patch: { x: gesture.origin.x + p.x - gesture.start.x, y: gesture.origin.y + p.y - gesture.start.y } });
       else setPinned({ id: gesture.id, ...tipAt(e) });

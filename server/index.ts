@@ -16,7 +16,7 @@ import { settleSpell, spellReady } from '../src/shared/magic.ts';
 import { recoveryDue, recoveryRolls } from '../src/shared/powers.ts';
 import { arrivalsDue, rollArrivals } from '../src/shared/maelstrom.ts';
 import { cleanMark } from '../src/shared/marks.ts';
-import { scenarioById } from '../src/shared/scenarios.ts';
+import { objectivesMissing, scenarioById } from '../src/shared/scenarios.ts';
 import { announceGame, closeVoiceRoom, discordEnabled, discordMember, openVoiceRoom, sweepVoiceRooms, voiceEnabled } from './discord.ts';
 import { saveResult, verifyToken } from './accounts.ts';
 import { loadRoom, pruneRooms, saveRoom, storeEnabled, type StoredRoom } from './store.ts';
@@ -278,7 +278,20 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
     case 'gameOver':
       return null;
     case 'startGame':
-      return { type: 'startGame', at: Date.now() };
+      // Not until the scenario's objectives are on the table.
+      return objectivesMissing(state) ? null : { type: 'startGame', at: Date.now() };
+    case 'addTerrain':
+    case 'updateTerrain':
+    case 'removeTerrain':
+    case 'setScenery':
+    case 'setBoard':
+    case 'setScenario':
+    case 'setPhase':
+    case 'setPriority':
+    case 'loadState':
+      // The table, the scenario and the turn are fixed once the battle starts: the game keeps them right from then on.
+      if (state.flow.started) return null;
+      return action.type === 'loadState' ? { type: 'loadState', state: { ...loadState(action.state), log: [], accounts: state.accounts, result: undefined, private: state.private, listed: state.private ? false : loadState(action.state).listed } } : action;
     case 'proposeResult':
     case 'concede':
     case 'answerResult': {
@@ -362,9 +375,9 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
     case 'passHeroic':
       return action.seat === client.role ? action : null;
     case 'moveModels':
-      // Once the battle is under way, each player moves only their own models (and the Palantír's, in a solo game,
-      // so they can back its models away after a fight).
-      if (!state.flow.started || !Array.isArray(action.moves)) return action;
+      // Each player moves only their own models (and the Palantír's, in a solo game, so they can deploy it and back its
+      // models away after a fight).
+      if (!Array.isArray(action.moves)) return null;
       return {
         ...action,
         moves: action.moves.filter(mv => {
@@ -375,13 +388,15 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
         }),
       };
     case 'updateModel':
-      // Once the battle is under way, each player changes only their own models (and the Palantír's, in a solo game).
-      return !state.flow.started || ours(action.id) ? action : null;
+      // Each player changes only their own models (and the Palantír's, in a solo game), and never a base size.
+      return ours(action.id) && !(action.patch && typeof action.patch === 'object' && 'base' in action.patch) ? action : null;
     case 'removeModels':
-      if (!state.flow.started || !Array.isArray(action.ids)) return action;
+      // Taking models off is for setting up: once the battle starts the game decides who is slain.
+      if (state.flow.started || !Array.isArray(action.ids)) return null;
       return action.ids.every(ours) ? action : null;
     case 'addModels':
-      if (!state.flow.started || !Array.isArray(action.models)) return action;
+      // Each player deploys only their own army (and the Palantír's, in a solo game); reinforcements arrive by the game.
+      if (state.flow.started || !Array.isArray(action.models)) return null;
       return action.models.every(m => m?.owner === client.role || (!!state.bot && m?.owner === state.bot)) ? action : null;
     case 'wound':
       // Wounds go on your own model, or on an enemy your models struck.
@@ -394,9 +409,6 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
     case 'choosePriority':
       // Only the player who won the roll decides who has Priority.
       return !state.flow.chooser || state.flow.chooser === client.role ? action : null;
-    case 'loadState':
-      // A loaded save keeps its board, but not its dice history or a result, so neither can be forged.
-      return { type: 'loadState', state: { ...loadState(action.state), log: [], accounts: state.accounts, result: undefined, private: state.private, listed: state.private ? false : loadState(action.state).listed } };
     default:
       return action;
   }

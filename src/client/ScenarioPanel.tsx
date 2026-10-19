@@ -12,6 +12,8 @@ const ROLL_LABEL = 'Scenario roll (pool, then scenario)';
 export function ScenarioPanel({ state, dispatch, role }: { state: GameState; dispatch: Dispatch; role: Role }) {
   const s = scenarioById(state.scenario);
   const spectator = role === 'spectator';
+  // The scenario and its markers are settled before the battle starts.
+  const fixed = spectator || state.flow.started;
   const seatName = (seat: Seat) => state.names[seat] || (seat === 'p1' ? 'Player 1' : 'Player 2');
   const [waiting, setWaiting] = useState(false);
   const seen = useRef(new Set(state.log.map(r => r.id)));
@@ -29,17 +31,18 @@ export function ScenarioPanel({ state, dispatch, role }: { state: GameState; dis
     }
   }, [state.log]);
 
+  /** Clears the old scenario's markers and puts the new one's on the table, ready to nudge before the battle. */
+  const placeMarkers = (next = s) => {
+    Object.values(state.terrain)
+      .filter(t => t.kind === 'objective' && !['ladder', 'ram', 'rocks', 'oil', 'rally'].includes(t.object ?? ''))
+      .forEach(t => dispatch({ type: 'removeTerrain', id: t.id }));
+    if (next) scenarioMarkers(next, state.board.w, state.board.h, newId).forEach(t => dispatch({ type: 'addTerrain', terrain: t }));
+  };
+
   const choose = (id: string | null) => {
     if (state.scenario && id !== state.scenario && vpTotal(state.vp.p1) + vpTotal(state.vp.p2) > 0 && !confirm('Change scenario? Victory points will reset.')) return;
     dispatch({ type: 'setScenario', id });
-  };
-
-  const placeMarkers = () => {
-    if (!s) return;
-    Object.values(state.terrain)
-      .filter(t => t.kind === 'objective')
-      .forEach(t => dispatch({ type: 'removeTerrain', id: t.id }));
-    scenarioMarkers(s, state.board.w, state.board.h, newId).forEach(t => dispatch({ type: 'addTerrain', terrain: t }));
+    if (id !== state.scenario) placeMarkers(scenarioById(id));
   };
 
   const common = s ? COMMON_RULES.filter(c => s.specialRules.some(r => r.toLowerCase().includes(c.name.toLowerCase()))) : [];
@@ -48,7 +51,7 @@ export function ScenarioPanel({ state, dispatch, role }: { state: GameState; dis
     <div className="panel-body scenario">
       <h4>Scenario</h4>
       <div className="row">
-        <select value={state.scenario ?? ''} onChange={e => choose(e.target.value || null)} disabled={spectator} aria-label="Scenario">
+        <select value={state.scenario ?? ''} onChange={e => choose(e.target.value || null)} disabled={fixed} aria-label="Scenario">
           {state.bot ? (
             !state.scenario && (
               <option value="" disabled>
@@ -69,7 +72,7 @@ export function ScenarioPanel({ state, dispatch, role }: { state: GameState; dis
           ))}
         </select>
         <button
-          disabled={spectator || waiting}
+          disabled={fixed || waiting}
           title={SELECTION_RULE}
           onClick={() => {
             setWaiting(true);
@@ -145,9 +148,8 @@ export function ScenarioPanel({ state, dispatch, role }: { state: GameState; dis
                 <b>Markers ({s.objectives.count}):</b> {s.objectives.placement}
               </p>
               {!!s.objectives.fixedPositions?.length && (
-                <button disabled={spectator} onClick={placeMarkers}>
-                  Place {s.objectives.fixedPositions.length === s.objectives.count ? 'the' : `${s.objectives.fixedPositions.length} fixed`} marker
-                  {s.objectives.fixedPositions.length === 1 ? '' : 's'}
+                <button disabled={fixed} onClick={() => placeMarkers()}>
+                  {s.objectives.count === 1 ? 'Place the marker' : 'Place the markers'}
                 </button>
               )}
             </>
