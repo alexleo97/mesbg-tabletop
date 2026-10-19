@@ -880,8 +880,8 @@ function step(state: GameState, action: Action): GameState {
         return { ...state, flow: { ...state.flow, heroicDone: [...(state.flow.heroicDone ?? []), hero.id], heroicNow: undefined, activated: [...new Set([...(state.flow.activated ?? []), ...went])] } };
       }
       const done = [...state.flow.done, action.seat];
-      // Once both players have activated in the Move or Shoot phase, play moves on.
-      if (done.length === 2 && (state.phase === 'move' || state.phase === 'shoot')) return goTo(state, state.phase === 'move' ? 'shoot' : 'fight', state.turn);
+      // Once both players have activated in the Move or Shoot phase, play moves on (unless they move on themselves).
+      if (done.length === 2 && (state.phase === 'move' || state.phase === 'shoot') && state.advance !== 'click') return goTo(state, state.phase === 'move' ? 'shoot' : 'fight', state.turn);
       // A Compel ends with its caster's side's move.
       const compel = state.flow.compel && state.models[state.flow.compel.caster]?.owner === action.seat ? undefined : state.flow.compel;
       return { ...state, flow: { ...state.flow, done, compel } };
@@ -1171,6 +1171,10 @@ function step(state: GameState, action: Action): GameState {
       // Nobody else can join a solo game, so it leaves the open games list.
       return { ...state, bot: action.seat, listed: false, names: { ...state.names, [action.seat]: state.names[action.seat] || BOT_NAME } };
     }
+    case 'setAdvance': {
+      const { advance: _, ...rest } = state;
+      return action.click ? { ...rest, advance: 'click' } : rest;
+    }
     case 'setBotSpeed':
       return BOT_SPEEDS.includes(action.speed) ? { ...state, botSpeed: action.speed === 'normal' ? undefined : action.speed } : state;
     case 'setPriority':
@@ -1342,6 +1346,7 @@ export function loadState(raw: unknown): GameState {
   if (o.private === true) out = { ...out, private: true, listed: false };
   if (isSeat(o.bot)) out = { ...out, bot: o.bot };
   if (o.botSpeed) out = reduce(out, { type: 'setBotSpeed', speed: o.botSpeed });
+  if (o.advance === 'click') out = { ...out, advance: 'click' };
   if (o.flow && typeof o.flow === 'object') {
     const f = o.flow as Partial<Flow>;
     const seats = (v: unknown) => (Array.isArray(v) ? [...new Set(v.filter(isSeat))] : []);

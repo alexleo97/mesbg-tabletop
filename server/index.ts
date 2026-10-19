@@ -23,7 +23,7 @@ import { loadRoom, pruneRooms, saveRoom, storeEnabled, type StoredRoom } from '.
 import { endRollDue, phaseFinished } from '../src/shared/autoPhase.ts';
 import { endRollLabel, gameWinner } from '../src/shared/status.ts';
 import { diffForUndo, mergeReverts, UNDOABLE } from '../src/shared/undo.ts';
-import { botStep, newMemo, type BotMemo } from '../src/shared/bot.ts';
+import { BOT_PACE, botStep, newMemo, type BotMemo } from '../src/shared/bot.ts';
 import { startingPoints, type Catalog } from '../src/shared/catalog.ts';
 import catalogJson from '../src/data/mesbg-data.json';
 import { tierOf } from '../src/shared/warbands.ts';
@@ -356,6 +356,8 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
       return state.priority === client.role ? action : null;
     case 'setBotSpeed':
       return action;
+    case 'setAdvance':
+      return client.role === 'p1' || client.role === 'p2' ? action : null;
     case 'compel':
       // The game starts a Compel; the caster's player says when they've finished moving the model.
       return action.compel === null && state.flow.compel && state.models[state.flow.compel.caster]?.owner === client.role ? action : null;
@@ -676,14 +678,14 @@ const ADVANCE_PAUSE = 1500;
 
 /** Moves on from a Fight or End phase with nothing left to do in it, after a short pause. */
 function scheduleAdvance(room: Room) {
-  if (room.advance || !phaseFinished(room.state)) return;
+  if (room.advance || room.state.advance === 'click' || !phaseFinished(room.state)) return;
   const at = `${room.state.turn}:${room.state.phase}`;
   room.advance = setTimeout(() => {
     room.advance = undefined;
     // Only if it's still the same phase and still over (someone may have moved on, or backed a model into a fight).
     if (`${room.state.turn}:${room.state.phase}` === at && phaseFinished(room.state)) apply(room, { type: 'nextPhase' });
     else scheduleAdvance(room);
-  }, ADVANCE_PAUSE);
+  }, ADVANCE_PAUSE * (room.state.bot ? BOT_PACE[room.state.botSpeed ?? 'normal'] : 1));
 }
 
 /**
@@ -706,8 +708,6 @@ function testTerror(room: Room, action: Action): Action | null {
 }
 
 const BOT_PAUSE = 500;
-/** The Palantír speed setting shortens every pause between the computer's steps. */
-const BOT_PACE = { normal: 1, fast: 0.35, instant: 0.05 };
 
 /** Lines up the computer's next step, if it plays in this game and someone is here to see it. */
 function scheduleBot(room: Room, delay = BOT_PAUSE) {

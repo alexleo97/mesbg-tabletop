@@ -298,6 +298,8 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
       if (seenDuels.current.has(r.id)) continue;
       seenDuels.current.add(r.id);
       if (!state.flow.started || state.phase !== 'fight' || !r.group?.startsWith('f-') || r.side === undefined || !r.model || r.support || Date.now() - r.at > 5000) continue;
+      // At Instant speed the computer's fights are over before they could be watched.
+      if (state.bot && r.by === state.bot && state.botSpeed === 'instant') continue;
       const c = combats(state).find(x => x.p1.includes(r.model!) || x.p2.includes(r.model!));
       if (c) setFightKey(c.key);
     }
@@ -607,7 +609,7 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
               </button>
             </div>
             {tab === 'model' && <SelectionPanel state={state} selected={selected} dispatch={dispatch} clear={() => setSelected(new Set())} />}
-            {tab === 'settings' && <SettingsPanel settings={settings} update={updateSettings} />}
+            {tab === 'settings' && <SettingsPanel settings={settings} update={updateSettings} game={{ state, dispatch, role }} />}
             {tab === 'dice' && <DicePanel state={state} dispatch={dispatch} role={role} />}
             {tab === 'rules' && <RulesPanel state={state} dispatch={dispatch} role={role} selected={selected} />}
             {tab === 'army' && <ArmyPanel state={state} dispatch={dispatch} role={role} />}

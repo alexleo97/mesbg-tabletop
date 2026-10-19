@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { endRollDue, phaseFinished } from '../src/shared/autoPhase.ts';
+import { heroicsSettled } from '../src/shared/heroics.ts';
 import { initialState, reduce } from '../src/shared/reducer.ts';
 import type { Action, GameState, Model, Seat } from '../src/shared/types.ts';
 
@@ -23,10 +24,27 @@ describe('moving on from finished phases', () => {
     expect(phaseFinished(s)).toBe(true);
   });
 
-  it('waits for heroic actions to be declared first', () => {
+  it('asks no one for heroic actions when there are no fights', () => {
     const s = run(game([mk('a', 'p1', 10, 40, { hero: true, might: 1 }), mk('b', 'p2', 10, 8)]), { type: 'setPhase', phase: 'fight' });
-    expect(phaseFinished(s)).toBe(false);
-    expect(phaseFinished(run(s, { type: 'passHeroic', seat: 'p1' }))).toBe(true);
+    expect(heroicsSettled(s)).toBe(true);
+    expect(phaseFinished(s)).toBe(true);
+  });
+
+  it('waits for a click to leave the Move phase when the players chose to', () => {
+    const base = run(game([mk('a', 'p1', 10, 40), mk('b', 'p2', 10, 8)]), { type: 'setPhase', phase: 'move' });
+    const done = (s: GameState) => run(s, { type: 'endActivation', seat: 'p1' }, { type: 'endActivation', seat: 'p2' });
+    expect(done(base).phase).toBe('shoot');
+    const click = done(run(base, { type: 'setAdvance', click: true }));
+    expect(click.phase).toBe('move');
+    expect(run(click, { type: 'nextPhase' }).phase).toBe('shoot');
+    expect(phaseFinished(run(click, { type: 'setPhase', phase: 'end' }))).toBe(true);
+  });
+
+  it('waits for heroic actions from heroes in a fight', () => {
+    const R = 25 / 25.4 / 2;
+    const s = run(game([mk('a', 'p1', 10, 40, { hero: true, might: 1 }), mk('b', 'p2', 10, 40 - 2 * R)]), { type: 'setPhase', phase: 'fight' });
+    expect(heroicsSettled(s)).toBe(false);
+    expect(heroicsSettled(run(s, { type: 'passHeroic', seat: 'p1' }))).toBe(true);
   });
 
   it('starts the next turn from the End phase unless the game end roll is due or the game is over', () => {

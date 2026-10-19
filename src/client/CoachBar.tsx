@@ -220,9 +220,9 @@ function HeroicStep({ state, dispatch, role, name }: { state: GameState; dispatc
                 )}
               </div>
               {pickedAction && <p className="muted small">{pickedAction.tip}</p>}
-              <div className="row wrap">
+              <div className="row choice-pair">
                 <button
-                  className="primary"
+                  className="go"
                   disabled={!pickedAction || (challenge && !pickedRival)}
                   onClick={() =>
                     pickedAction &&
@@ -231,7 +231,7 @@ function HeroicStep({ state, dispatch, role, name }: { state: GameState; dispatc
                 >
                   Declare
                 </button>
-                <button onClick={() => dispatch({ type: 'passHeroic', seat: me })}>{declaredNow.some(h => state.models[h.model]?.owner === me) ? 'No more' : 'Pass'}</button>
+                <button className="go" onClick={() => dispatch({ type: 'passHeroic', seat: me })}>{declaredNow.some(h => state.models[h.model]?.owner === me) ? 'No more' : 'Pass'}</button>
               </div>
             </>
           )}
@@ -404,11 +404,13 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
             <Who s={c} /> {c === role ? 'choose' : 'chooses'} who has Priority.
           </p>
           {me === c && (
-            <div className="row">
+            <div className="row choice-pair">
               <button className="primary go" onClick={() => dispatch({ type: 'choosePriority', seat: c })}>
                 Take priority
               </button>
-              <button onClick={() => dispatch({ type: 'choosePriority', seat: other(c) })}>Give it to {name(other(c))}</button>
+              <button className="go" onClick={() => dispatch({ type: 'choosePriority', seat: other(c) })}>
+                Give it to {name(other(c))}
+              </button>
             </div>
           )}
         </>
@@ -462,6 +464,16 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
           <p className="muted">Waiting for {name(act)} to finish {verb}.</p>
         )}
       </>
+    ) : state.flow.done.length === 2 ? (
+      // Both sides are done, and the players move on themselves.
+      <>
+        <p>Both sides have finished {verb}.</p>
+        {me && (
+          <button className="primary go" onClick={() => dispatch({ type: 'nextPhase' })}>
+            Go to the {state.phase === 'move' ? 'Shoot' : 'Fight'} phase
+          </button>
+        )}
+      </>
     ) : null;
   } else if (state.phase === 'fight') {
     title = `Fight · ${says(state.priority ?? 'p1', 'pick the order', 'picks the order')}`;
@@ -489,7 +501,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
             ))}
           </div>
         )}
-        {auto && phaseFinished(state) && <p className="muted">Nothing left to fight: moving on to the End phase.</p>}
+        {auto && state.advance !== 'click' && phaseFinished(state) && <p className="muted">Nothing left to fight: moving on to the End phase.</p>}
         {me && (
           <button className={open.length ? 'go' : 'primary go'} onClick={() => dispatch({ type: 'nextPhase' })}>
             {open.length ? `End fights (${open.length} not rolled)` : 'End the Fight phase'}
@@ -532,7 +544,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
           me &&
           (!check?.rollNeeded || endRoll) && (
             <>
-              {auto && phaseFinished(state) && <p className="muted">Turn {state.turn + 1} starts in a moment.</p>}
+              {auto && state.advance !== 'click' && phaseFinished(state) && <p className="muted">Turn {state.turn + 1} starts in a moment.</p>}
               <button className="primary go" onClick={() => dispatch({ type: 'nextPhase' })}>
                 Start turn {state.turn + 1}
               </button>

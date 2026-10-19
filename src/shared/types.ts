@@ -260,6 +260,8 @@ export interface GameState {
   bot?: Seat;
   /** How quickly the computer plays its turn: Normal unless set. */
   botSpeed?: BotSpeed;
+  /** 'click' when the players move on to the next phase themselves; otherwise a finished phase moves on by itself. */
+  advance?: 'click';
 }
 
 export type BotSpeed = 'normal' | 'fast' | 'instant';
@@ -545,6 +547,7 @@ export type Action =
   /** The computer takes this seat, or (null) leaves the game to two people again. */
   | { type: 'setBot'; seat: Seat | null }
   | { type: 'setBotSpeed'; speed: BotSpeed }
+  | { type: 'setAdvance'; click: boolean }
   /** Request from a client: the server rolls a Fate point for a hero's pending wound. */
   | { type: 'rollFate'; id: string }
   | { type: 'fateRolled'; id: string; roll: DiceRoll }

@@ -811,10 +811,26 @@ export function TablePanel({
   );
 }
 
-export function SettingsPanel({ settings, update }: { settings: Settings; update: (p: Partial<Settings>) => void }) {
+export function SettingsPanel({ settings, update, game }: { settings: Settings; update: (p: Partial<Settings>) => void; game?: { state: GameState; dispatch: Dispatch; role: Role } }) {
+  const click = game?.state.advance === 'click';
   return (
     <div className="panel-body">
-      <p className="hint">These only change how the game looks for you.</p>
+      {game && (
+        <>
+          <h4>Moving on</h4>
+          <div className="row" role="radiogroup" aria-label="Moving on to the next phase">
+            {([false, true] as const).map(c => (
+              <button key={String(c)} className={click === c ? 'on' : ''} aria-pressed={click === c} disabled={game.role === 'spectator'} onClick={() => game.dispatch({ type: 'setAdvance', click: c })}>
+                {c ? 'When I click' : 'By itself'}
+              </button>
+            ))}
+          </div>
+          <p className="fine">
+            {click ? 'Each phase waits until a player moves on, so the last move or fight can be looked over.' : 'A phase moves on as soon as both sides have finished it.'} This is for both players.
+          </p>
+        </>
+      )}
+      <p className="hint">The rest only changes how the game looks for you.</p>
       <h4>Colour theme</h4>
       <div className="theme-swatches">
         {THEMES.map(t => (

@@ -590,6 +590,8 @@ div.strike-at select { width: auto; flex: 1 1 40%; }
 .coach-body .warn { color: #ffb08a; flex-basis: 100%; }
 .coach-body .result { font-family: var(--font-head); color: var(--gold); font-size: 1.1rem; }
 .coach-body .go { min-width: 180px; min-height: 46px; font-size: 1.02rem; }
+.coach-body .row.choice-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; flex: 1 1 100%; }
+.coach-body .choice-pair .go { min-width: 0; }
 .coach-body .row { flex: 0 0 auto; }
 .coach .p1 { color: var(--p1); }
 .coach .p2 { color: var(--p2); }
