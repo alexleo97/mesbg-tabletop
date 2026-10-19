@@ -30,14 +30,14 @@ import { arrivalAuto, arrivalDue, mayCry, narrativeById, narrativeSetup, rollArr
 import { invisibleTo, ringRequest, seekRequest } from './ring.ts';
 import { isTroll, spareFor } from './mutton.ts';
 import { bag, roast, sneeze, steadyAgainst, trollSacks } from './trolls.ts';
-import { AXE_FREED, axeMastery, axeTest, canHeadbutt, deadeye, goodSort, hasMattock, hasOakenshield, longbeard, loyalTo, mayAxeTest, mayLongbeard, maySwap, mayTend, rerollFor, tend, trumpet, trumpetDue } from './company.ts';
+import { AXE_FREED, axeMastery, axeTest, canHeadbutt, deadeye, goodSort, hasMattock, hasOakenshield, longbeard, loyalTo, mayAxeTest, mayLongbeard, maySwap, mayTend, rerollFor, spentPoints, tend, trumpet, trumpetDue } from './company.ts';
 import { tierOf } from './warbands.ts';
 import { MORGUL, morgulBlades } from './morgul.ts';
 import { MAX_DICE } from './reducer.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
 /** Dice requests a player sends, which only whoever holds the dice (the server, or the browser in practice games) can answer. */
-export const DICE_REQUESTS = new Set<Action['type']>(['setNarrative', 'ring', 'cry', 'aragorn', 'seek', 'roll', 'fight', 'strikes', 'shoot', 'shotOn', 'banner', 'dismount', 'trample', 'cross', 'rollFate', 'rollPriority', 'uncover', 'cast', 'resist', 'breach', 'hurl', 'swap', 'reroll', 'tend', 'longbeard', 'trumpet', 'axeTest']);
+export const DICE_REQUESTS = new Set<Action['type']>(['setNarrative', 'ring', 'cry', 'aragorn', 'seek', 'roll', 'fight', 'strikes', 'shoot', 'shotOn', 'banner', 'dismount', 'trample', 'cross', 'rollFate', 'rollPriority', 'uncover', 'cast', 'resist', 'breach', 'hurl', 'swap', 'reroll', 'tend', 'longbeard', 'trumpet', 'axeTest', 'chronicled']);
 
 export interface Resolved {
   /** Results everyone applies, in order. */
@@ -75,7 +75,7 @@ function freshFighters(state: GameState, req: FightRequest | null): FightRequest
  * (once its duel is rolled, it must have rolled in it) and lends one die; a Heroic Strike keeps the bonus rolled at
  * the hero's first fight this phase; and a tie between Good and Evil is settled by the Good/Evil roll.
  */
-function prepareFight(state: GameState, catalog: Catalog | null, req: FightRequest | null, duel?: DiceRoll[]): FightRequest | null {
+export function prepareFight(state: GameState, catalog: Catalog | null, req: FightRequest | null, duel?: DiceRoll[]): FightRequest | null {
   const fresh = freshFighters(state, req);
   if (!fresh) return null;
   const front = fresh.sides.map(side => side.filter(f => !f.support).map(f => f.id));
@@ -705,7 +705,7 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       const m = state.models[String(action.model)];
       const t = state.models[String(action.target)];
       const how = action.how === 'spirits' ? 'spirits' : 'herbs';
-      if (!m || m.owner !== seat || !mayActivate(state, m) || mayTend(state, catalog, how, m, t)) return null;
+      if (!m || m.owner !== seat || !canActivate(state, seat) || !mayActivate(state, m) || mayTend(state, catalog, how, m, t)) return null;
       return { apply: tend(how, m, t!, d6, uid, now) };
     }
     case 'longbeard': {
@@ -720,6 +720,23 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       const tierOk = (o: Model, t: Model) => tierOf(o.profileId ? catalog?.units[o.profileId] : undefined) <= tierOf(t.profileId ? catalog?.units[t.profileId] : undefined) && t.hero;
       const out = trumpet(state, catalog, action.listen === true, d6, uid, now, tierOk);
       return out && { apply: out };
+    }
+    case 'chronicled': {
+      // Ori's Chronicler: the friend the player picks takes back a point it has spent (or the player lets it go).
+      const due = state.flow.chronicles?.[0];
+      if (!due || due.seat !== seat) return null;
+      if (!action.point) return { apply: [{ type: 'chronicle', done: true }] };
+      const m = state.models[String(action.model)];
+      const point = action.point === 'will' ? 'will' : action.point === 'fate' ? 'fate' : 'might';
+      if (!m || !due.ids.includes(m.id) || !spentPoints(catalog, m).includes(point)) return null;
+      const name = point === 'might' ? 'Might' : point === 'will' ? 'Will' : 'Fate';
+      return {
+        apply: [
+          { type: 'rolled', roll: { id: `r-${uid()}`, by: seat, label: `Chronicler: Ori records the deed, and ${m.name} gets back a ${name} point`.slice(0, 80), dice: [], model: m.id, at: now } },
+          { type: 'affect', id: m.id, patch: { [point]: m[point] + 1 } },
+          { type: 'chronicle', done: true },
+        ],
+      };
     }
     case 'axeTest': {
       const m = state.models[String(action.model)];

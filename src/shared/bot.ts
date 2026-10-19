@@ -30,7 +30,7 @@ import { chargeAim, chargesDue, straightOn } from './trample.ts';
 import { arrivalAuto, arrivalDue, castModel, mayCry } from './narrative.ts';
 import { willOfEvil } from './courage.ts';
 import { hasMorgulBlade } from './morgul.ts';
-import { AXE_FREED, canHeadbutt, hasMattock, longbeardFor, mayAxeTest, mayTend, rerollFor, swapPair, trumpetDue } from './company.ts';
+import { AXE_FREED, canHeadbutt, hasMattock, longbeardFor, mayAxeTest, mayTend, rerollFor, spentPoints, swapPair, trumpetDue } from './company.ts';
 import { fitsSack, keepsForLater, lingeringCold } from './trolls.ts';
 import { canThrowBrand, FLAMING_BRAND } from './shooting.ts';
 import type { Action, DiceRoll, GameState, Model, Seat, Terrain } from './types.ts';
@@ -1248,9 +1248,16 @@ function sackPick(ctx: Ctx, c: Combat, rolls: DiceRoll[]): BotStep | null {
   const taken = new Set(Object.values(state.flow.choices ?? {}).map(x => x.sack).filter(Boolean));
   for (const troll of c[seat].map(id => state.models[id]).filter(m => m && isUp(m) && keepsForLater(ctx.catalog, m))) {
     if (state.flow.choices?.[troll.id]?.sack) continue;
+    // (Not one Bill would more likely than not mince to death: dead, it can't be got out of the sack.)
+    const minced = (t: Model) => {
+      if (!brutalOptions(state, ctx.catalog, troll).includes('mince') || declared(state, t.id, 'Heroic Defence')) return 0;
+      let p = 0;
+      for (let a = 1; a <= 6; a++) for (let b = 1; b <= 6; b++) if (a + profile(ctx, troll).s - (b + profile(ctx, t).s) >= t.wounds) p += 1 / 36;
+      return p;
+    };
     const prey = c[other(seat)]
       .map(id => state.models[id])
-      .filter(m => m && isUp(m) && fitsSack(m) && !taken.has(m.id))
+      .filter(m => m && isUp(m) && fitsSack(m) && !taken.has(m.id) && minced(m) < 0.5)
       .sort((a, b) => profile(ctx, b).value - profile(ctx, a).value)[0];
     if (prey) return { action: { type: 'fightChoice', id: troll.id, ...state.flow.choices?.[troll.id], sack: prey.id }, delay: THINK_PAUSE };
   }
@@ -1312,6 +1319,12 @@ function rerollInDuel(ctx: Ctx, rolls: DiceRoll[]): BotStep | null {
  */
 function companyStep(ctx: Ctx): BotStep | null {
   const { state, seat } = ctx;
+  // Ori's Chronicler: the point goes to whoever it may, Might first.
+  const deed = state.flow.chronicles?.[0];
+  if (deed?.seat === seat) {
+    const m = deed.ids.map(id => state.models[id]).find(m => m && spentPoints(ctx.catalog, m).length);
+    return { action: { type: 'chronicled', ...(m ? { model: m.id, point: spentPoints(ctx.catalog, m)[0] } : {}) }, delay: THINK_PAUSE };
+  }
   const balin = longbeardFor(state, ctx.catalog, seat);
   if (balin) return { action: { type: 'longbeard', model: balin.id, ...(state.flow.chooser === seat ? { skip: true } : {}) }, delay: DICE_PAUSE };
   const due = trumpetDue(state, ctx.catalog);
@@ -1320,7 +1333,7 @@ function companyStep(ctx: Ctx): BotStep | null {
   if (bifur) return { action: { type: 'axeTest', model: bifur.id }, delay: DICE_PAUSE };
   const twins = swapPair(state, ctx.catalog, seat);
   if (twins && state.phase === 'fight' && twins.every(m => engagedWith(state, m).length)) return { action: { type: 'swap', a: twins[0].id, b: twins[1].id }, delay: THINK_PAUSE };
-  if ((state.phase === 'move' || state.phase === 'shoot') && activeSeat(state) === seat)
+  if (state.phase === 'move' && canActivate(state, seat))
     for (const m of side(state, seat)) {
       if (!mayActivate(state, m)) continue;
       for (const how of ['herbs', 'spirits'] as const) {

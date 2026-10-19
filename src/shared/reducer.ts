@@ -120,7 +120,7 @@ function goToPhase(state: GameState, phase: Phase, turn: number, newTurn: boolea
       done: [],
       resolved: newTurn ? [] : state.flow.resolved,
       heroics: newTurn ? [] : state.flow.heroics,
-      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], moved: [], cast: [], spell: undefined, held: [], stood: [], climbed: {}, compel: undefined, supported: [], strikeBonus: {}, charges: {}, brutal: [], hurledAt: [], breached: [], trampled: [], turned: [], cables: [], sauron: [], ringTried: [], sought: [], reinforce: undefined, usedTurn: [], heard: [], freeMove: [], placing: [], joined: [] } : {}),
+      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], moved: [], cast: [], spell: undefined, held: [], stood: [], climbed: {}, compel: undefined, supported: [], strikeBonus: {}, charges: {}, brutal: [], hurledAt: [], breached: [], trampled: [], turned: [], cables: [], sauron: [], ringTried: [], sought: [], reinforce: undefined, usedTurn: [], heard: [], freeMove: [], chronicles: undefined, placing: [], joined: [] } : {}),
       ...(phase !== state.phase ? { compel: undefined, mustCharge: undefined } : {}),
       // The fights are paired off as the Fight phase begins, and stay that way until it ends.
       ...(phase !== state.phase ? { pairs: phase === 'fight' && state.flow.started ? pairOff(livingModels(state), { ...state, phase: 'move' }, state.flow.pairChoices).map(c => c.key) : undefined, pairChoices: undefined } : {}),
@@ -1206,6 +1206,11 @@ function step(state: GameState, action: Action): GameState {
       const key = str(action.key, 120);
       return { ...state, flow: { ...state.flow, heard: [...(state.flow.heard ?? []), key].slice(-40), listen: state.flow.listen === key ? undefined : state.flow.listen } };
     }
+    case 'chronicle': {
+      const add = (action.add ?? []).filter(c => isSeat(c.seat) && Array.isArray(c.ids)).map(c => ({ seat: c.seat, ids: c.ids.filter(id => state.models[id]).slice(0, 20) })).filter(c => c.ids.length);
+      const left = [...(state.flow.chronicles ?? []).slice(action.done ? 1 : 0), ...add].slice(0, 10);
+      return { ...state, flow: { ...state.flow, chronicles: left.length ? left : undefined } };
+    }
     case 'listen':
       return { ...state, flow: { ...state.flow, listen: str(action.key, 120) } };
     case 'freeHeroic': {
@@ -1656,6 +1661,7 @@ export function loadState(raw: unknown): GameState {
         ...(Array.isArray(f.freeMove) ? { freeMove: f.freeMove.slice(0, 20).map(x => str(x, 80)) } : {}),
         ...(Number.isFinite(f.synergy) ? { synergy: int(f.synergy, 0, 99, 0) } : {}),
         ...(isSeat(f.lastChooser) ? { lastChooser: f.lastChooser } : {}),
+        ...(Array.isArray(f.chronicles) ? { chronicles: f.chronicles.slice(0, 10).filter(c => c && isSeat(c.seat) && Array.isArray(c.ids)).map(c => ({ seat: c.seat, ids: c.ids.slice(0, 20).map(x => str(x, 80)) })) } : {}),
         ...(f.shotPause && typeof f.shotPause === 'object' && cleanPause(f.shotPause) ? { shotPause: cleanPause(f.shotPause) } : {}),
         ...(f.choices && typeof f.choices === 'object'
           ? { choices: Object.fromEntries(Object.entries(f.choices as Record<string, Record<string, unknown>>).slice(0, 200).map(([k, v]) => [str(k, 80), { ...(v?.shielding === true ? { shielding: true } : {}), ...(v?.twoHanded === true ? { twoHanded: true } : {}), ...Object.fromEntries(FIGHT_TARGETS.filter(t => typeof v?.[t] === 'string').map(t => [t, str(v[t], 80)])) }])) }

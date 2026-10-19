@@ -135,7 +135,8 @@ export function mayTend(state: GameState, catalog: Catalog | null | undefined, h
   const re = how === 'herbs' ? /^Healing Herbs$/ : /^Raising Spirits$/;
   if (!rule(catalog, m, re)) return 'not his rule';
   if (state.flow.usedTurn?.includes(`${how}:${m.id}`)) return 'once a turn';
-  if (!state.flow.started || (state.phase !== 'move' && state.phase !== 'shoot')) return 'only in his activation';
+  // (A model's Activation is its turn to act in its side's Move phase.)
+  if (!state.flow.started || state.phase !== 'move') return 'only in his activation';
   // (A model is always within range of itself, so Bombur can cheer himself up.)
   if (!inCompany(catalog, t)) return 'only a friend of the Company';
   if (how === 'herbs' && (t.id === m.id || distanceBetween(m, t) > 0.05)) return 'must be touching him';
@@ -192,30 +193,30 @@ export function longbeard(state: GameState, m: Model, d6: () => number, uid: () 
 /** Ori's Deadeye: a natural 6 to hit with his sling wounds without In the Way tests or a roll To Wound. */
 export const deadeye = (catalog: Catalog | null | undefined, m: Model, weapon: string) => /sling/i.test(weapon) && rule(catalog, m, /^Deadeye$/);
 
+/** The points a model has spent that it could get back, best first. */
+export function spentPoints(catalog: Catalog | null | undefined, m: Model): ('might' | 'will' | 'fate')[] {
+  const full = startingPoints(catalog, m);
+  return full ? (['might', 'fate', 'will'] as const).filter(p => m[p] < full[p]) : [];
+}
+
 /**
- * Ori's Chronicler: a friend of the Company within 6" of Ori, that he can see, slays an enemy Hero or Monster and
- * gets back a point of Might, Will or Fate it has spent; if it has spent none, another friend near Ori does.
- * Worked out as the models fall (see reducer.ts). Returns the changes to make.
+ * Ori's Chronicler: a friend of the Company within 6" of Ori, that he can see, slays an enemy Hero or Monster and may
+ * get back a point of Might, Will or Fate it has spent (its player's pick); if it has spent none, its player may pick
+ * another friend near Ori to have it. Worked out as the models fall (see server apply): for each such deed, the
+ * models that may take the point.
  */
-export function chronicled(before: GameState, after: GameState, catalog: Catalog | null | undefined, big: (m: Model) => boolean): { id: string; patch: Partial<Model> }[] {
-  const out: { id: string; patch: Partial<Model> }[] = [];
+export function chronicled(before: GameState, after: GameState, catalog: Catalog | null | undefined, big: (m: Model) => boolean): { seat: Seat; ids: string[] }[] {
+  const out: { seat: Seat; ids: string[] }[] = [];
   const fallen = Object.values(after.models).filter(m => m.dead && before.models[m.id] && !before.models[m.id].dead && (m.hero || big(m)));
   for (const f of fallen) {
     const killers = (f.killedBy?.ids ?? []).map(id => after.models[id]).filter((k): k is Model => !!k && k.owner !== f.owner);
     for (const k of killers) {
       const ori = Object.values(after.models).find(o => o.owner === k.owner && onTable(o) && rule(catalog, o, /^Chronicler$/) && (o.id === k.id || (distanceBetween(o, k) <= 6 && sightTo(after, o, k) !== 'hidden')));
       if (!ori || !inCompany(catalog, k)) continue;
-      const near = [k, ...Object.values(after.models).filter(o => o.owner === k.owner && o.id !== k.id && onTable(o) && inCompany(catalog, o) && (o.id === ori.id || (distanceBetween(o, ori) <= 6 && sightTo(after, ori, o) !== 'hidden')))];
-      for (const m of near) {
-        const full = startingPoints(catalog, m);
-        const now = out.find(x => x.id === m.id)?.patch ?? {};
-        const cur = { might: now.might ?? m.might, will: now.will ?? m.will, fate: now.fate ?? m.fate };
-        const key = full ? (['might', 'fate', 'will'] as const).find(p => cur[p] < full[p]) : undefined;
-        if (!key) continue;
-        const prev = out.find(x => x.id === m.id);
-        if (prev) prev.patch = { ...prev.patch, [key]: cur[key] + 1 };
-        else out.push({ id: m.id, patch: { [key]: cur[key] + 1 } });
-        break;
+      if (!k.dead && spentPoints(catalog, k).length) out.push({ seat: k.owner, ids: [k.id] });
+      else {
+        const near = Object.values(after.models).filter(o => o.owner === k.owner && o.id !== k.id && onTable(o) && inCompany(catalog, o) && (o.id === ori.id || (distanceBetween(o, ori) <= 6 && sightTo(after, ori, o) !== 'hidden')) && spentPoints(catalog, o).length);
+        if (near.length) out.push({ seat: k.owner, ids: near.map(o => o.id) });
       }
       break;
     }

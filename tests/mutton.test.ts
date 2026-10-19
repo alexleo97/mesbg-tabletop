@@ -175,3 +175,18 @@ describe('Roast Mutton: Bilbo, the dawn and the result', () => {
     expect(gameWinner(bagged)).toBe('p2');
   });
 });
+
+describe('the computer plays Roast Mutton', () => {
+  it('plays either side to a result', async () => {
+    const { play, seeded } = await import('./botsim.ts');
+    for (const seed of [1, 2, 3, 4]) {
+      const rand = seeded(seed);
+      let s = ask(initialState(), 'p1', { type: 'setNarrative', id: 'roast-mutton', good: seed % 2 ? 'p1' : 'p2' });
+      s = run(s, { type: 'startGame', at: 1 });
+      const out = play(s, rand, 30000);
+      expect(out.state.result?.winner, `seed ${seed}`).toMatch(/p1|p2|draw/);
+      // The whole Company came on.
+      expect(offTable(out.state), `seed ${seed}`).toHaveLength(0);
+    }
+  }, 120_000);
+});

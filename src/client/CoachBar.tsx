@@ -7,7 +7,7 @@ import { fightDone } from '../shared/movement.ts';
 import { canDeclare, GOES_FIRST, heroicInfo, heroicNow, heroicsSettled, heroicTurn, HEROICS, mayDeclare, orderRollLabel, orderRollNeeded, phaseHeroics, shoutedFor } from '../shared/heroics.ts';
 import { distanceBetween } from '../shared/geometry.ts';
 import { rulesFor, startingPoints } from '../shared/catalog.ts';
-import { longbeardFor, mayAxeTest, swapPair, trumpetDue } from '../shared/company.ts';
+import { longbeardFor, mayAxeTest, spentPoints, swapPair, trumpetDue } from '../shared/company.ts';
 import { onEdge, reinforceDue } from '../shared/mutton.ts';
 import { tierOf } from '../shared/warbands.ts';
 import { RollRow } from './Panels.tsx';
@@ -195,9 +195,24 @@ function CompanyStep({ state, dispatch, role, name }: { state: GameState; dispat
   const bifur = me ? Object.values(state.models).find(m => m.owner === me && mayAxeTest(state, catalog, m)) : undefined;
   const coming = onEdge(state);
   const caller = heard ? state.models[heard.heroic.model] : undefined;
-  if (!heard && !twins && !bifur && !coming && !reinforceDue(state)) return null;
+  const deed = state.flow.chronicles?.[0];
+  if (!heard && !twins && !bifur && !coming && !deed && !reinforceDue(state)) return null;
+  const POINT = { might: 'Might', will: 'Will', fate: 'Fate' } as const;
   return (
     <div className="spell-step">
+      {deed && (deed.seat === me ? (
+        <>
+          <p>Chronicler: Ori has seen the deed. {deed.ids.length === 1 && state.models[deed.ids[0]] ? `${state.models[deed.ids[0]].name} may get back a point spent earlier.` : 'The hero who did it has nothing spent, so another friend near Ori may get back a point instead.'}</p>
+          {deed.ids.map(id => state.models[id]).filter(Boolean).flatMap(m => spentPoints(catalog, m).map(p => (
+            <button key={`${m.id}-${p}`} onClick={() => dispatch({ type: 'chronicled', model: m.id, point: p })}>
+              {deed.ids.length > 1 ? `${m.name}: ` : ''}a {POINT[p]} point
+            </button>
+          )))}
+          <button onClick={() => dispatch({ type: 'chronicled' })}>Let it go</button>
+        </>
+      ) : (
+        <p>{name(deed.seat)} is choosing who gets a point back from Ori's Chronicler.</p>
+      ))}
       {heard && caller && (heard.oin.owner === me ? (
         <>
           <p>

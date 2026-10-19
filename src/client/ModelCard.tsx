@@ -7,7 +7,7 @@ import { strikeWounds, woundsTaken } from '../shared/fight.ts';
 import { CONTACT_SLACK, type Combat } from '../shared/flow.ts';
 import { engaged, fightDone, moveLeft, moveStart } from '../shared/movement.ts';
 import { atCrossing, crossBlocked, fallingHits, terrainName, type CrossTest } from '../shared/terrainTests.ts';
-import { heroicInfo, mayActivate, phaseAllows } from '../shared/heroics.ts';
+import { canActivate, heroicInfo, mayActivate, phaseAllows } from '../shared/heroics.ts';
 import { carriedBy, markerActions, OBJECT_NAMES } from '../shared/objects.ts';
 import { causesTerror } from '../shared/courage.ts';
 import { effectNotes, heldBy } from '../shared/powers.ts';
@@ -157,7 +157,7 @@ function TerrainMoves({ state, dispatch, m }: { state: GameState; dispatch: (a: 
 function Tend({ state, dispatch, m, catalog }: { state: GameState; dispatch: (a: Action) => void; m: Model; catalog: Catalog | null }) {
   const friends = Object.values(state.models).filter(t => t.owner === m.owner);
   const picks = (['herbs', 'spirits'] as const).flatMap(how => friends.filter(t => !mayTend(state, catalog, how, m, t)).map(t => ({ how, t })));
-  if (!picks.length || !mayActivate(state, m)) return null;
+  if (!picks.length || !canActivate(state, m.owner) || !mayActivate(state, m)) return null;
   return (
     <div className="row wrap terrain-test">
       {picks.map(({ how, t }) => (

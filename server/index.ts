@@ -297,6 +297,7 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
     case 'heard':
     case 'dieRerolled':
     case 'listen':
+    case 'chronicle':
       return null; // only the server produces dice results, undo changes and account details
     case 'gameOver':
       return null;
@@ -538,14 +539,11 @@ function apply(room: Room, action: Action) {
   room.state = reduce(room.state, action);
   broadcastAction(room, action);
   scheduleSave(room);
-  // Ori's Chronicler: a friend of the Company near him that slays an enemy hero or monster gets a point back.
-  if (Object.values(room.state.models).some(m => m.dead && before.models[m.id] && !before.models[m.id].dead))
-    for (const c of chronicled(before, room.state, CATALOG, m => isMonster(CATALOG, m))) {
-      const m = room.state.models[c.id];
-      const what = Object.keys(c.patch)[0];
-      apply(room, { type: 'rolled', roll: { id: `r-${serverId()}`, by: m.owner, label: `Chronicler: Ori records the deed, and ${m.name} gets back a ${what === 'might' ? 'Might' : what === 'will' ? 'Will' : 'Fate'} point`.slice(0, 80), dice: [], model: m.id, at: Date.now() } });
-      apply(room, { type: 'affect', id: c.id, patch: c.patch });
-    }
+  // Ori's Chronicler: a friend of the Company near him that slays an enemy hero or monster may get a point back.
+  if (Object.values(room.state.models).some(m => m.dead && before.models[m.id] && !before.models[m.id].dead)) {
+    const deeds = chronicled(before, room.state, CATALOG, m => isMonster(CATALOG, m));
+    if (deeds.length) apply(room, { type: 'chronicle', add: deeds });
+  }
   // The game declares its own winner as soon as it's over (and corrects it if the score changes before both confirm).
   if (action.type !== 'gameOver') {
     const winner = gameWinner(room.state);

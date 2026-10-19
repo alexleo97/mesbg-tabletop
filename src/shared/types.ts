@@ -518,6 +518,8 @@ export interface Flow {
   freeMove?: string[];
   /** Who chose Priority the turn before this one's roll (a tie goes against them). */
   lastChooser?: Seat;
+  /** Ori's Chronicler: deeds he has seen, each with the friends who may take a point back; the first is up now. */
+  chronicles?: { seat: Seat; ids: string[] }[];
 }
 
 /**
@@ -664,6 +666,10 @@ export type Action =
   | { type: 'trumpet'; listen: boolean }
   /** Request: Bifur, his axe freed, tests his Intelligence for a free Heroic Move this turn. */
   | { type: 'axeTest'; model: string }
+  /** Server only: Ori has seen a deed for his chronicle (see company.chronicled); `done` clears the first one. */
+  | { type: 'chronicle'; add?: { seat: Seat; ids: string[] }[]; done?: boolean }
+  /** A friend takes the point back that Ori's Chronicler gives, or (with no `point`) the player lets it go. */
+  | { type: 'chronicled'; model?: string; point?: 'might' | 'will' | 'fate' }
   /** A die of a duel roll re-rolled by a model's rule, worked out by the game (never sent by a player). */
   | { type: 'dieRerolled'; roll: string; die: number; value: number; by: string; why: 'synergy' | 'portents' }
   /** Server only: the fires of models Set Ablaze have burned this turn. */

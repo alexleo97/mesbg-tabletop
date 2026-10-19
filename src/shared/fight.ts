@@ -344,7 +344,7 @@ export function resolveStrikes(req: FightRequest, duel: DiceRoll[], d6: D6, by: 
   const brute = req.brutal && req.sides[winner].find(f => f.id === req.brutal!.by && f.monster && !f.support);
   const ended = brute && (req.brutal!.kind === 'barge' || req.brutal!.kind === 'hurl') ? req.brutal!.kind : undefined;
   /** One batch of strikes by `f` at `target`, rolled and logged; the wounds they do. */
-  const strike = (f: Fighter, target: Fighter, n: number, free = false, opt: { s?: number; single?: boolean; label?: string } = {}) => {
+  const strike = (f: Fighter, target: Fighter, n: number, free = false, opt: { s?: number; single?: boolean; label?: string; loyal?: boolean } = {}) => {
     const trapped = !opt.single && isTrapped(target);
     // Its wargear and rules against this enemy (two-handed weapons, Hatred and so on), a Heroic Challenge's rival,
     // and Backstabbers against a trapped enemy.
@@ -366,7 +366,8 @@ export function resolveStrikes(req: FightRequest, duel: DiceRoll[], d6: D6, by: 
       if (!strikes) return 0;
     }
     // Misses are re-rolled (Enchant Blades, Bane of Kings), or else just 1s (Poisoned Attacks, Ancient Enemies).
-    const again = (d: number, at: number) => (f.reroll && !opt.s ? (d >= at ? d : d6()) : vs.ones && !opt.s && d === 1 ? d6() : d);
+    // (A headbutt is still a Strike, so Thorin's Loyalty re-rolls its 1s: see `loyal`.)
+    const again = (d: number, at: number) => (f.reroll && !opt.s ? (d >= at ? d : d6()) : ((vs.ones && !opt.s) || (opt.loyal && f.ones)) && d === 1 ? d6() : d);
     const dice = Array.from({ length: strikes }, d6).map(d => again(d, need.target));
     const follow = need.then ? dice.filter(d => d >= need.target).map(d6).map(d => again(d, need.then!)) : undefined;
     const plain2 = !opt.s;
@@ -445,7 +446,7 @@ export function resolveStrikes(req: FightRequest, duel: DiceRoll[], d6: D6, by: 
     // Bifur's headbutt: one Strength 4 strike, never doubled.
     const butt = f.headbutt ? pool.find(t => t.id === f.headbutt) : undefined;
     if (butt) {
-      strike(f, butt, 1, false, { s: 4, single: true, label: `${f.name} headbutts ${butt.name}, S4` });
+      strike(f, butt, 1, false, { s: 4, single: true, loyal: true, label: `${f.name} headbutts ${butt.name}, S4` });
       continue;
     }
     // Its strikes, each at the model it chose (any not aimed go at the main target).

@@ -165,7 +165,7 @@ export function planShot(
   const onBeast = (id: string) => !!state.models[id]?.aboard || id === target.aboard;
   let inWay = obstructions(state, shooter, target).filter(o => !leanOn(o) && !(o.model && (shoulders.some(f => f.id === o.model) || onBeast(o.model))));
   // A Large Target stands over everything but monsters, war beasts and siege engines.
-  if (hasRule(catalog, target, 'Large Target')) inWay = inWay.filter(o => !o.model || isMonster(catalog, state.models[o.model]) || !!state.models[o.model].beast || !!state.models[o.model].siege);
+  if (hasRule(catalog, target, 'Large Target')) inWay = inWay.filter(o => !o.model || isMonster(catalog, state.models[o.model]) || state.models[o.model].beast === 'war' || !!state.models[o.model].siege);
 
   const fight = engaged(state, target) ? combats(state).find(c => c.p1.includes(target.id) || c.p2.includes(target.id)) : undefined;
   const side = sideOf(catalog, shooter);
