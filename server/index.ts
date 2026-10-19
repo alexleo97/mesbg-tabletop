@@ -32,7 +32,7 @@ import { gearOf } from '../src/shared/gear.ts';
 import { arrivalAuto, rollArrival } from '../src/shared/narrative.ts';
 import { dawnDue, reinforceDue, rollDawn, rollReinforcements as companyArrives } from '../src/shared/mutton.ts';
 import { isMonster } from '../src/shared/monsters.ts';
-import { chronicled, listenDue, listenFor, trumpetDue } from '../src/shared/company.ts';
+import { chronicled, listenDue, listenFor, longbeardFor, trumpetDue } from '../src/shared/company.ts';
 import { sauronDue, sauronRoll } from '../src/shared/ring.ts';
 import { mightyBonus, mightyDue } from '../src/shared/mighty.ts';
 import { longshanksDue, longshanksMove } from '../src/shared/sam.ts';
@@ -435,7 +435,9 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
       // Your own name, and the end of your own move or shooting.
       return !state.flow.started || action.seat === client.role || action.seat === state.bot ? action : null;
     case 'choosePriority':
-      // Only the player who won the roll decides who has Priority.
+      // Only the player who won the roll decides who has Priority (once the other has said whether Balin re-rolls it).
+      if (client.role !== 'p1' && client.role !== 'p2') return null;
+      if (longbeardFor(state, CATALOG, client.role === 'p1' ? 'p2' : 'p1')) return null;
       return !state.flow.chooser || state.flow.chooser === client.role ? action : null;
     default:
       return action;

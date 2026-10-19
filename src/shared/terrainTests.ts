@@ -214,6 +214,10 @@ function crossOne(state: GameState, seat: Seat, id: string, d6: () => number, ui
       roll = d6();
       push(`${m.name}: ${c.test} test re-rolled (Mountain Dweller)`, [roll], { model: m.id });
     }
+    if (roll === 6 && !sure && ground.includes('lumbering')) {
+      roll = d6();
+      push(`${m.name}: ${c.test} test, a 6 rolled again (Lumbering)`, [roll], { model: m.id });
+    }
     if (ground.includes('cave') && roll < 6) roll++;
   }
   const out: Action[] = [];

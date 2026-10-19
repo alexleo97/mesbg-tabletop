@@ -168,9 +168,15 @@ export function effectNotes(state: GameState, catalog: Catalog | null, m: Model)
   for (const e of effectsOn(state, m)) {
     const caster = state.models[e.by];
     const by = caster && caster.id !== m.id ? ` (${caster.name})` : '';
+    if (e.sack) {
+      out.push(`In ${caster?.name ?? 'a Troll'}'s sack: Paralysed until it rolls a 6 in the End phase`);
+      continue;
+    }
     const until = e.duration === 'Temporary' ? 'until the End phase' : 'while its caster has Will';
     out.push(`${e.power}${by}, ${until}`);
   }
+  if (m.chilled === state.turn) out.push('Lingering Cold: Fight halved this turn');
+  if (m.noMove === state.turn) out.push("Can't move this turn");
   if (m.prone) out.push('Prone: standing up costs half its Move');
   if (m.stunned === state.turn) out.push('Thrown from its mount: does nothing more this turn');
   if (m.drained) out.push(`Courage ${m.drained} worse (Drain Courage)`);

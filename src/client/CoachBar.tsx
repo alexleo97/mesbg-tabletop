@@ -7,6 +7,8 @@ import { fightDone } from '../shared/movement.ts';
 import { canDeclare, GOES_FIRST, heroicInfo, heroicNow, heroicsSettled, heroicTurn, HEROICS, mayDeclare, orderRollLabel, orderRollNeeded, phaseHeroics, shoutedFor } from '../shared/heroics.ts';
 import { distanceBetween } from '../shared/geometry.ts';
 import { rulesFor, startingPoints } from '../shared/catalog.ts';
+import { longbeardFor, mayAxeTest, swapPair, trumpetDue } from '../shared/company.ts';
+import { onEdge, reinforceDue } from '../shared/mutton.ts';
 import { tierOf } from '../shared/warbands.ts';
 import { RollRow } from './Panels.tsx';
 import { useDraggable } from './useDraggable.tsx';
@@ -176,6 +178,54 @@ function PlacingStep({ state, dispatch, role, name }: { state: GameState; dispat
         <button className="primary" onClick={() => dispatch({ type: 'placed', seat: p.seat })}>
           {p.kind === 'retreat' ? `Done moving ${m.name}` : `${m.name} stands here`}
         </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Roast Mutton and Thorin's Company: Óin's Hearing Trumpet when an enemy hero calls a heroic action near him, Kíli and
+ * Fíli swapping places as a phase starts, Bifur's test for a free Heroic Move, and the Company coming on from the west.
+ */
+function CompanyStep({ state, dispatch, role, name }: { state: GameState; dispatch: Dispatch; role: Role; name: (s: Seat) => string }) {
+  const { catalog } = useCatalog();
+  const me = role === 'spectator' ? null : role;
+  const heard = trumpetDue(state, catalog);
+  const twins = me ? swapPair(state, catalog, me) : null;
+  const bifur = me ? Object.values(state.models).find(m => m.owner === me && mayAxeTest(state, catalog, m)) : undefined;
+  const coming = onEdge(state);
+  const caller = heard ? state.models[heard.heroic.model] : undefined;
+  if (!heard && !twins && !bifur && !coming && !reinforceDue(state)) return null;
+  return (
+    <div className="spell-step">
+      {heard && caller && (heard.oin.owner === me ? (
+        <>
+          <p>
+            {caller.name} calls a {heard.heroic.action} within 6" of {heard.oin.name}. Listen through the Hearing Trumpet? On a 5+ he calls the same for nothing; on a 1 he loses a Will point ({heard.oin.will ? `he has ${heard.oin.will}` : "he has none, so he can't move this turn"}).
+          </p>
+          <button className="primary" onClick={() => dispatch({ type: 'trumpet', listen: true })}>Listen (roll a D6)</button>
+          <button onClick={() => dispatch({ type: 'trumpet', listen: false })}>Let it pass</button>
+        </>
+      ) : (
+        <p>{name(heard.oin.owner)} is deciding whether {heard.oin.name} listens through his Hearing Trumpet.</p>
+      ))}
+      {twins && (
+        <>
+          <p>Combat Synergy: before any heroic action this phase, {twins[0].name} and {twins[1].name} may swap places (not a move). If they do, each may re-roll a die in his duels this turn.</p>
+          <button onClick={() => dispatch({ type: 'swap', a: twins[0].id, b: twins[1].id })}>Swap {twins[0].name} and {twins[1].name}</button>
+        </>
+      )}
+      {bifur && (
+        <>
+          <p>Embedded Axe: with the axe out of his head, {bifur.name} may take an Intelligence test now; passed, he can declare a Heroic Move this turn for nothing.</p>
+          <button onClick={() => dispatch({ type: 'axeTest', model: bifur.id })}>Test {bifur.name}'s Intelligence</button>
+        </>
+      )}
+      {reinforceDue(state) && <p>Rolling for the rest of the Company…</p>}
+      {coming && (
+        <p>
+          {coming.owner === me ? 'Move' : `${name(coming.owner)} is moving`} {coming.name} on from the west edge (no charging). {coming.owner === me ? 'End the move to leave him at the edge.' : ''} The next Dwarf steps on when he has moved.
+        </p>
       )}
     </div>
   );
@@ -391,6 +441,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
   const says = (s: Seat, you: string, them: string) => (s === role || name(s) === 'You' ? `You ${you}` : `${name(s)} ${them}`);
   const me = role === 'spectator' ? null : role;
   const { flow } = state;
+  const { catalog } = useCatalog();
 
   let title: React.ReactNode;
   let body: React.ReactNode;
@@ -478,6 +529,8 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
     } else if (!state.priority) {
       const c = flow.chooser!;
       const tie = flow.roll && flow.roll[0] === flow.roll[1];
+      // Balin's Longbeard: his side may have its die rolled again before the choice is made.
+      const balin = longbeardFor(state, catalog, 'p1') ?? longbeardFor(state, catalog, 'p2');
       body = (
         <>
           <p>
@@ -489,7 +542,18 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
             )}
             <Who s={c} /> {c === role ? 'choose' : 'chooses'} who has Priority.
           </p>
-          {me === c && (
+          {balin && balin.owner === me && (
+            <div className="row choice-pair">
+              <button className="primary go" onClick={() => dispatch({ type: 'longbeard', model: balin.id })} title="Longbeard: Balin spends a Will point and your Priority die is rolled again">
+                Balin: re-roll our die (1 Will)
+              </button>
+              <button className="go" onClick={() => dispatch({ type: 'longbeard', model: balin.id, skip: true })}>
+                Keep the roll
+              </button>
+            </div>
+          )}
+          {balin && balin.owner !== me && <p className="hint">Waiting for <Who s={balin.owner} /> to say whether Balin has the roll made again.</p>}
+          {me === c && !balin && (
             <div className="row choice-pair">
               <button className="primary go" onClick={() => dispatch({ type: 'choosePriority', seat: c })}>
                 Take priority
@@ -698,6 +762,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
               )}
             </div>
           )}
+          {flow.started && <CompanyStep state={state} dispatch={dispatch} role={role} name={name} />}
           {flow.started && <ShotPauseStep state={state} dispatch={dispatch} role={role} name={name} />}
           {flow.started && <FateStep state={state} dispatch={dispatch} role={role} name={name} />}
           {flow.started && <Reinforcements state={state} name={name} />}
