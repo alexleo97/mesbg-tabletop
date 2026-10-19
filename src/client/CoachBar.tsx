@@ -14,7 +14,7 @@ import { pendingSpell } from '../shared/magic.ts';
 import { freeResistDice, isAreaPower, isLinePower } from '../shared/powers.ts';
 import { formatInches } from '../shared/geometry.ts';
 import { useCatalog } from './ListBuilder.tsx';
-import { mayCry, narrativeById } from '../shared/narrative.ts';
+import { arrivalAuto, arrivalDue, mayCry, narrativeById } from '../shared/narrative.ts';
 import { placingNow } from '../shared/placing.ts';
 import { longshanksFree } from '../shared/sam.ts';
 import { isMaelstrom, waitingWarbands, warbandName } from '../shared/maelstrom.ts';
@@ -554,7 +554,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
       // Both sides are done, and the players move on themselves.
       <>
         <p>Both sides have finished {verb}.</p>
-        {me && (
+        {me && !placingNow(state) && !arrivalDue(state) && (
           <button className="primary go" onClick={() => dispatch({ type: 'nextPhase' })}>
             Go to the {state.phase === 'move' ? 'Shoot' : 'Fight'} phase
           </button>
@@ -683,6 +683,19 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
             <div className="spell-step">
               <p>Once a game, before anyone moves, the Nazgûl can give their Cry: every Good model's Courage is 3 worse this turn, and Aragorn comes at once.</p>
               <button onClick={() => dispatch({ type: 'cry', seat: role })}>Give the Cry of the Nazgûl</button>
+            </div>
+          )}
+          {flow.started && arrivalDue(state) && !arrivalAuto(state) && (
+            <div className="spell-step">
+              {role === state.narrative?.good ? (
+                <>
+                  <p>Your move is done. You may roll a D6 for Aragorn: on a 4+ he arrives at the edge of the ruin.</p>
+                  <button className="primary" onClick={() => dispatch({ type: 'aragorn', roll: true })}>Roll for Aragorn</button>
+                  <button onClick={() => dispatch({ type: 'aragorn', roll: false })}>Not this turn</button>
+                </>
+              ) : (
+                <p>{name(state.narrative!.good)} is deciding whether to roll for Aragorn.</p>
+              )}
             </div>
           )}
           {flow.started && <ShotPauseStep state={state} dispatch={dispatch} role={role} name={name} />}

@@ -146,7 +146,8 @@ export const intelligenceWorse = (state: GameState, m: Model) => (auras(state, m
 
 /** Free dice a model rolls to resist a power: Fortify Spirit, Resistant to Magic, and a friendly hero's Heroic Resolve. */
 export function freeResistDice(state: GameState, catalog: Catalog | null, m: Model): number {
-  const resolve = state.flow.heroics.some(h => h.action === 'Heroic Resolve' && state.models[h.model] && state.models[h.model].owner === m.owner && distanceBetween(state.models[h.model], m) <= AURA_RANGE);
+  // (Not from an Invisible hero, whose friends can't benefit from its heroic actions.)
+  const resolve = state.flow.heroics.some(h => h.action === 'Heroic Resolve' && state.models[h.model] && state.models[h.model].owner === m.owner && (h.model === m.id || !state.models[h.model].ringOn) && distanceBetween(state.models[h.model], m) <= AURA_RANGE);
   return (under(state, m, 'Fortify Spirit') ? 1 : 0) + (hasRule(catalog, m, /^Resistant to Magic/) ? 1 : 0) + (resolve ? 1 : 0);
 }
 

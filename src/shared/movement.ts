@@ -7,6 +7,7 @@ import { canActivate, phaseHeroics } from './heroics.ts';
 import { cannotAct } from './powers.ts';
 import { laden, overlapsPiece, shutGates } from './fortress.ts';
 import { crossingAhead } from './terrainTests.ts';
+import { invisibleTo, mayChargeAt } from './ring.ts';
 import type { GameState, Model, Seat } from './types.ts';
 
 /**
@@ -65,6 +66,8 @@ export function marchedBy(state: GameState, m: Model): Model | undefined {
   for (const h of phaseHeroics(state)) {
     const hero = h.action === 'Heroic March' ? state.models[h.model] : undefined;
     if (!hero || hero.owner !== m.owner || hero.dead) continue;
+    // Nobody marches with an Invisible hero.
+    if (hero.ringOn && hero.id !== m.id) continue;
     if (!state.flow.starts?.[hero.id] && (engaged(state, hero) || cannotAct(state, hero))) continue;
     // A war drum's March reaches 12", but only friends of the drummer's own army.
     if (hero.drum && !hero.hero && hero.id !== m.id && armyOf(hero) !== armyOf(m)) continue;
@@ -90,6 +93,9 @@ export function basesOverlap(a: Model, b: Model): boolean {
  *   fight or lying Prone has no zone, and a model that starts inside a zone may move off without getting closer.
  * `skip` lists models moving alongside this one, which don't block it.
  */
+/** Whether two models may move through each other: one is Invisible to the other (see ring.ts). */
+export const passesThrough = (a: Model, b: Model) => invisibleTo(a, b) || invisibleTo(b, a);
+
 export function blockMove(state: GameState, m: Model, from: Point, to: Point, skip?: ReadonlySet<string>, charge = true): Point {
   if (Math.hypot(to.x - from.x, to.y - from.y) < 1e-6) return to;
   // Terrain that needs a Jump, Climb or Leap test stops the model at it, to take the test (see terrainTests.ts).
@@ -99,11 +105,15 @@ export function blockMove(state: GameState, m: Model, from: Point, to: Point, sk
   if (d < 1e-6) return to;
   const at = (p: Point): Model => ({ ...m, x: p.x, y: p.y });
   const near = (e: Model) => e.x > Math.min(from.x, to.x) - 5 && e.x < Math.max(from.x, to.x) + 5 && e.y > Math.min(from.y, to.y) - 5 && e.y < Math.max(from.y, to.y) + 5;
-  const others = Object.values(state.models).filter(e => e.id !== m.id && !e.dead && !e.waiting && !e.escaped && !e.aboard && !skip?.has(e.id) && near(e));
+  const all = Object.values(state.models).filter(e => e.id !== m.id && !e.dead && !e.waiting && !e.escaped && !e.aboard && !skip?.has(e.id) && near(e));
+  // An Invisible model and those that can't see it pass through each other, though neither may stop on the other.
+  const ghosts = all.filter(e => passesThrough(m, e));
+  const others = all.filter(e => !ghosts.includes(e));
   const zonesApply = state.phase === 'move' || fightsAgain(state, m);
   const enemies = zonesApply ? others.filter(e => e.owner !== m.owner) : [];
-  // (A siege engine has no control zone.)
-  const zoned = enemies.filter(e => !e.prone && !e.siege && !engaged(state, e, m.id));
+  // (A siege engine has no control zone, nor has an Invisible model, and an Invisible model ignores those of foes
+  // that can't see it.)
+  const zoned = enemies.filter(e => !e.prone && !e.siege && !engaged(state, e, m.id) && !invisibleTo(m, e));
   const start = at(from);
   const startD = new Map(zoned.map(e => [e.id, distanceBetween(start, e)]));
   // The enemy being charged: the nearest one the move ends within 1" of, if this model may charge and could see it.
@@ -131,7 +141,22 @@ export function blockMove(state: GameState, m: Model, from: Point, to: Point, sk
     }
     last = p;
   }
-  // Nor may it end its move on top of an objective marker.
+  // Nor may it end its move on top of a model it passed through, nor touching an Invisible foe it hasn't passed the
+  // test to charge, nor on an objective marker.
+  const unseen = zonesApply ? ghosts.filter(e => e.owner !== m.owner && !mayChargeAt(state, m, e) && distanceBetween(start, e) > CONTACT_SLACK) : [];
+  const onGhost = (p: Point) => ghosts.some(e => basesOverlap(at(p), e)) || unseen.some(e => distanceBetween(at(p), e) <= CONTACT_SLACK + 0.02);
+  if (onGhost(last)) {
+    const back = last;
+    for (let i = steps; i >= 0; i--) {
+      const f = i / steps;
+      const p = { x: from.x + (back.x - from.x) * f, y: from.y + (back.y - from.y) * f };
+      if (!onGhost(p)) {
+        last = p;
+        break;
+      }
+      if (i === 0) last = from;
+    }
+  }
   if (markers.length && onMarker(last)) {
     for (let i = steps; i >= 0; i--) {
       const f = i / steps;
@@ -171,7 +196,8 @@ export function heroicCombatWon(state: GameState, m: Model): boolean {
     if (!c) return false;
     const ours = m.owner === 'p1' ? c.p1 : c.p2;
     const theirs = m.owner === 'p1' ? c.p2 : c.p1;
-    return ours.includes(m.id) && ours.some(id => heroes.includes(id)) && theirs.every(id => state.models[id].dead);
+    // Friends of an Invisible hero don't get to move on with it.
+    return ours.includes(m.id) && ours.some(id => heroes.includes(id) && (id === m.id || !state.models[id].ringOn)) && theirs.every(id => state.models[id].dead);
   });
 }
 
@@ -291,8 +317,8 @@ export function settleMove(state: GameState, m: Model, at: Point): Point {
   const here = { ...m, ...at };
   let best: { e: Model; d: number } | null = null;
   for (const e of Object.values(state.models)) {
-    // A Prone enemy has no Control Zone.
-    if (e.owner === m.owner || e.dead || e.prone) continue;
+    // A Prone enemy has no Control Zone, nor has an Invisible one, and an Invisible model ignores them.
+    if (e.owner === m.owner || e.dead || e.prone || passesThrough(m, e)) continue;
     const d = distanceBetween(here, e);
     if (d < 1 && (!best || d < best.d)) best = { e, d };
   }
@@ -332,7 +358,7 @@ export function finishCharge(state: GameState, m: Model, from: Point, to: Point,
   const here = { ...m, ...to };
   const before = { ...m, ...from };
   const short = Object.values(state.models).some(e => {
-    if (e.owner === m.owner || e.dead || e.waiting || e.escaped || e.prone || e.siege || engaged(state, e, m.id)) return false;
+    if (e.owner === m.owner || e.dead || e.waiting || e.escaped || e.prone || e.siege || passesThrough(m, e) || engaged(state, e, m.id)) return false;
     const d = distanceBetween(here, e);
     return d > CONTACT_SLACK && d < 1 - 1e-3 && d < distanceBetween(before, e) - 1e-3 && !touching(state, here, e);
   });

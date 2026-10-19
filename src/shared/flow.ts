@@ -159,12 +159,26 @@ export function priorityChooser(dice: [number, number], turn: number, lastChoose
   return other(lastChooser);
 }
 
+/**
+ * Weathertop: the Good side has finished its move, from turn 2 (or in the turn of the Cry), and Aragorn hasn't come
+ * yet, so its player may roll for him (once a turn) before anyone else acts.
+ */
+export function arrivalDue(state: GameState): boolean {
+  const ns = state.narrative;
+  if (ns?.id !== 'weathertop' || !state.flow.started || state.phase !== 'move' || !state.flow.done.includes(ns.good) || ns.rolled?.includes(state.turn)) return false;
+  const aragorn = Object.values(state.models).find(m => m.cast === 'aragorn');
+  if (!aragorn?.waiting || aragorn.dead) return false;
+  return state.turn >= 2 || ns.cry === state.turn;
+}
+
 /** In the Move and Shoot phases, the player who should be activating models now (priority first). */
 export function activeSeat(state: GameState): Seat | null {
   if (state.phase !== 'move' && state.phase !== 'shoot') return null;
   // Heroes making a Heroic Move or Heroic Shoot go before everyone else.
   const heroic = state.flow.started ? heroicNow(state) : null;
   if (heroic) return heroic.seat;
+  // Nobody activates while the Good side at Weathertop decides whether to roll for Aragorn.
+  if (arrivalDue(state)) return null;
   const first = state.priority ?? 'p1';
   if (!state.flow.done.includes(first)) return first;
   const second = other(first);
