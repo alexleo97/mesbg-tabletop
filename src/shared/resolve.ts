@@ -18,7 +18,7 @@ import { heightOf } from './sight.ts';
 import { cleanFight, cleanShot, duelSettled, mightCouldHelp, resolveDuel, resolveShot, resolveStrikes, type DrawRule, type Fighter, type FightRequest, type ShotRequest } from './fight.ts';
 import { combatFromKey, CONTACT_SLACK, other, priorityChooser } from './flow.ts';
 import { hasElvenWeapon, sideOf } from './gear.ts';
-import { supporters } from './support.ts';
+import { oneSpearEach, supporters } from './support.ts';
 import { fightDone, foughtThisTurn } from './movement.ts';
 import { rollCast, rollResist } from './magic.ts';
 import { intelligenceWorse, noStrikes, under, witheredStrength } from './powers.ts';
@@ -95,6 +95,12 @@ function prepareFight(state: GameState, catalog: Catalog | null, req: FightReque
         return { ...built, ...(built.strike && state.flow.strikeBonus?.[f.id] ? { strikeBonus: state.flow.strikeBonus[f.id] } : {}) };
       }),
   ) as [Fighter[], Fighter[]];
+  // One spear behind each fighter.
+  if (!duel)
+    sides.forEach((side, i) => {
+      const kept = new Set(oneSpearEach(state, catalog, front[i], side.filter(f => f.support).map(f => f.id)));
+      sides[i] = side.filter(f => !f.support || kept.has(f.id));
+    });
   const sideOfFight = (i: 0 | 1) => {
     const found = new Set(front[i].map(id => state.models[id] && sideOf(catalog, state.models[id])));
     return found.size === 1 ? [...found][0] : undefined;

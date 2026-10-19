@@ -127,16 +127,25 @@ export function terrorAhead(state: GameState, m: Model, to: { x: number; y: numb
 
 /** The Courage test to charge a terrifying enemy (or any, when Fearful). A model that fails stays where it is for the rest of the turn. */
 export function terrorTest(m: Model, enemy: Model, catalog: Catalog | null, d6: () => number, uid: () => string, now = Date.now(), state?: GameState): { actions: Action[]; pass: boolean } {
-  const why = state && isFearful(state, catalog, m) ? 'Fearful' : 'Terror';
+  const fearful = !!state && isFearful(state, catalog, m);
+  // A Fearful model charging a terrifying one tests once for each rule (Rulebook FAQ).
+  const whys = fearful && state && !causesTerror(catalog, m, state) && causesTerror(catalog, enemy, state) ? ['Fearful', 'Terror'] : [fearful ? 'Fearful' : 'Terror'];
   const auto = state && courageAuto(state, catalog, m);
   if (auto) {
-    const note: DiceRoll = { id: `c-${uid()}`, by: m.owner, label: `Courage to charge ${enemy.name} (${why}): ${m.name}`.slice(0, 80), dice: [], note: `Passes without a roll (${auto}).`, model: m.id, at: now };
+    const note: DiceRoll = { id: `c-${uid()}`, by: m.owner, label: `Courage to charge ${enemy.name} (${whys.join(' and ')}): ${m.name}`.slice(0, 80), dice: [], note: `Passes without a roll (${auto}).`, model: m.id, at: now };
     return { actions: [{ type: 'rolled', roll: note }, { type: 'courageTaken', results: { [m.id]: true } }], pass: true };
   }
   const need = state ? courageOf(state, catalog, m) : (modelStats(catalog, m)?.C ?? 7);
-  const d = roll(m, need, `Courage to charge ${enemy.name} (${why}): ${m.name}`, { d6, uid, now, by: m.owner });
-  const pass = passed(d);
-  return { actions: [{ type: 'rolled', roll: d }, { type: 'courageTaken', results: { [m.id]: pass } }], pass };
+  const actions: Action[] = [];
+  let pass = true;
+  // The second test is only taken if the first is passed.
+  for (const why of whys) {
+    if (!pass) break;
+    const d = roll(m, need, `Courage to charge ${enemy.name} (${why}): ${m.name}`, { d6, uid, now, by: m.owner });
+    pass = passed(d);
+    actions.push({ type: 'rolled', roll: d });
+  }
+  return { actions: [...actions, { type: 'courageTaken', results: { [m.id]: pass } }], pass };
 }
 
 /** Will of Evil: the model fades away when it runs out of Will. */

@@ -53,7 +53,8 @@ export function chargeBonus(state: GameState, catalog: Catalog | null | undefine
   // (it knocks down the weaker foes it beats).
   if (isChariot(catalog, m)) return 'chariot';
   if (isWarBeast(catalog, m)) return state.flow.trampled?.includes(m.id) ? 'beast' : undefined;
-  if (under(state, m, 'Transfix') || inDifficult(state, m, m.owner)) return undefined;
+  // Spectral Walk and the like don't count the ground as difficult, so keep their charge bonuses (Rulebook FAQ).
+  if (under(state, m, 'Transfix') || inDifficult(state, m, m.owner, m.ground)) return undefined;
   if (mounted(m)) return foes.length && foes.every(f => isInfantry(catalog, f)) ? 'cavalry' : undefined;
   return rules(catalog, m).includes('Monstrous Charge') ? 'monster' : undefined;
 }
@@ -72,7 +73,7 @@ const CHARGE_NOTES = {
 
 export function chargeEffects(state: GameState, catalog: Catalog | null | undefined, m: Model, foes: Model[], overWall: boolean): { bonus?: 'cavalry' | 'monster' | 'chariot' | 'beast'; lance: boolean; notes: string[] } {
   const bonus = chargeBonus(state, catalog, m, foes, overWall);
-  const lance = mounted(m) && !isChariot(catalog, m) && !!state.flow.charges?.[m.id] && !overWall && !inDifficult(state, m, m.owner) && hasLance(catalog, m);
+  const lance = mounted(m) && !isChariot(catalog, m) && !!state.flow.charges?.[m.id] && !overWall && !inDifficult(state, m, m.owner, m.ground) && hasLance(catalog, m);
   const notes = [
     ...(bonus ? [CHARGE_NOTES[bonus]] : []),
     ...(lance ? ['Lance: +1 to wound on the charge'] : []),
@@ -106,7 +107,8 @@ export type Brutal = { by: string; kind: 'rend' | 'barge' | 'hurl'; target?: str
 
 /** Whether a model may make a Brutal Power Attack this turn, and which: one a turn, and no Barge or Hurl after a Heroic Combat. */
 export function brutalOptions(state: GameState, catalog: Catalog | null | undefined, m: Model): Brutal['kind'][] {
-  if (!isMonster(catalog, m) || state.flow.brutal?.includes(m.id)) return [];
+  // A Prone monster that wins its fight simply stands up (Rulebook FAQ).
+  if (!isMonster(catalog, m) || m.prone || state.flow.brutal?.includes(m.id)) return [];
   return declared(state, m.id, 'Heroic Combat') ? ['rend'] : ['rend', 'barge', 'hurl'];
 }
 

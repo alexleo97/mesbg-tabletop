@@ -8,6 +8,7 @@ import { combats } from './flow.ts';
 import { basePerimeter, distanceBetween, distanceToBase, type Point } from './geometry.ts';
 import { formatNeed, woundNeed } from './rules.ts';
 import { insidePolygon, outline } from './sight.ts';
+import { isWarBeast } from './warBeasts.ts';
 import { guards } from './wargear.ts';
 import type { Action, DiceRoll, GameState, Model, ModelEffect, Seat, SpellPending } from './types.ts';
 
@@ -330,6 +331,8 @@ function throwRider(ctx: Ctx, m: Model, why: string) {
 
 /** Knocks a model Prone; a rider is knocked flying instead. */
 function knockDown(ctx: Ctx, m: Model, why: string) {
+  // A war beast is never knocked down: it would stop it moving its full Move.
+  if (isWarBeast(ctx.catalog, m)) return;
   if (isCavalry(ctx.catalog, m)) return throwRider(ctx, m, why);
   if (!m.prone) patch(ctx, m, { prone: true });
 }
@@ -356,6 +359,8 @@ function blowAway(ctx: Ctx, m: Model, inches: number): Point {
 }
 
 const d3 = (d6: () => number) => Math.ceil(d6() / 2);
+/** Powers that would move a model or stop it acting. */
+const UNMOVED = new Set(['Call Winds', 'Compel', 'Transfix', 'Paralyse']);
 
 /**
  * Everything a power does once it has worked, as actions to apply: log entries, effects put on models, hits rolled,
@@ -379,6 +384,12 @@ export function powerTakesEffect(
   const label = `${spell.power}${t && t.id !== caster.id ? ` on ${t.name}` : ''}`;
   const say = (text: string, m?: Model) => note(ctx, label, text, m);
   const pts = (m: Model) => startingPoints(catalog, m);
+
+  // A war beast is unaffected by anything that would move it or stop it acting (Rulebook errata, Immovable Object).
+  if (t && UNMOVED.has(name) && isWarBeast(catalog, t)) {
+    say(`${t.name} is a war beast, an Immovable Object: it is unaffected.`, t);
+    return ctx.out;
+  }
 
   switch (name) {
     case 'Aura of Command':
