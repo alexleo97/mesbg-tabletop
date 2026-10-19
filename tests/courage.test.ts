@@ -90,6 +90,26 @@ describe('charging a terrifying enemy', () => {
   });
 });
 
+describe('Fearful', () => {
+  it('takes two Courage tests to charge a terrifying enemy, one for each rule', () => {
+    const s = run(
+      initialState(),
+      { type: 'addModels', models: [mk('r', 'p1', 10, 20, { hero: true, profileId: '[battle-of-bywater] rosie-cotton' }), mk('t', 'p2', 10, 14, { profileId: TROLL, base: { shape: 'round', w: 40, h: 40 } }), mk('o', 'p2', 20, 14, { profileId: WARRIOR })] },
+      { type: 'startGame' },
+      { type: 'setPhase', phase: 'move' },
+    );
+    const both = terrorTest(s.models.r, s.models.t, catalog, dice(6, 6, 6, 6), uid, 0, s);
+    expect(both.actions.filter(a => a.type === 'rolled').map(a => (a.type === 'rolled' ? a.roll.label : ''))).toEqual([expect.stringContaining('(Fearful)'), expect.stringContaining('(Terror)')]);
+    expect(both.pass).toBe(true);
+    // Failing the first, it doesn't take the second.
+    const fail = terrorTest(s.models.r, s.models.t, catalog, dice(1, 1, 6, 6), uid, 0, s);
+    expect(fail.actions.filter(a => a.type === 'rolled')).toHaveLength(1);
+    expect(fail.pass).toBe(false);
+    // Charging an enemy with no Terror, just the one.
+    expect(terrorTest(s.models.r, s.models.o, catalog, dice(6, 6), uid, 0, s).actions.filter(a => a.type === 'rolled')).toHaveLength(1);
+  });
+});
+
 describe('Heroic Combat', () => {
   it('lets the winners move again once every enemy in the fight is slain', () => {
     let s = run(
