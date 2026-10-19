@@ -101,6 +101,20 @@ export interface Model {
   siege?: 'large' | 'small';
   /** The siege engine whose crew it is. */
   crewOf?: string;
+  /** Characteristics a narrative scenario sets for it, in place of its profile's (see narrative.ts). */
+  stats?: Partial<Record<'Mv' | 'Fv' | 'Sv' | 'S' | 'D' | 'A' | 'W' | 'C' | 'I', number>>;
+  /** Who it is in a narrative scenario's cast, such as 'frodo' (see narrative.ts). */
+  cast?: string;
+  /** It carries a flaming brand (Weathertop): a Ringwraith it beats in a fight is driven off. */
+  brand?: boolean;
+  /** Set Ablaze: it takes a Strength 5 hit in each End phase until the fire is put out (see ablaze.ts). */
+  ablaze?: boolean;
+  /** It wears the One Ring, and is Invisible (see ring.ts). */
+  ringOn?: boolean;
+  /** Once-per-game wargear and abilities it has used, such as its Morgul Blade. */
+  used?: string[];
+  /** A Morgul Blade wounded it: the first wound it takes slays it outright (Fate can still save it). */
+  slay?: boolean;
 }
 
 /** A power at work on a model: which one, who cast it and the turn it was cast. */
@@ -264,6 +278,18 @@ export interface GameState {
   botSpeed?: BotSpeed;
   /** 'click' when the players move on to the next phase themselves; otherwise a finished phase moves on by itself. */
   advance?: 'click';
+  /** The narrative scenario being played, if any (see narrative.ts). */
+  narrative?: NarrativeState;
+}
+
+export interface NarrativeState {
+  id: string;
+  /** The seat playing the Good side. */
+  good: Seat;
+  /** The turn the Evil side gave the Cry of the Nazgûl (Weathertop). */
+  cry?: number;
+  /** Turns a late arrival has been rolled for. */
+  rolled?: number[];
 }
 
 export type BotSpeed = 'normal' | 'fast' | 'instant';
@@ -361,7 +387,7 @@ export interface Flow {
   /** A shot paused for its shooter's player to spend Might on the roll it just made: its roll group, and the shot. */
   shotPause?: { group: string; shot: ShotRequest };
   /** How models fight this phase, as their players chose: Shielding, or a weapon used two-handed. */
-  choices?: Record<string, { shielding?: boolean; twoHanded?: boolean }>;
+  choices?: Record<string, { shielding?: boolean; twoHanded?: boolean; /** The enemy it strikes with its Morgul Blade. */ morgul?: string }>;
   /** Who charged whom this turn (charger to the enemy it reached), so a fight over a wall knows who is defending. */
   charges?: Record<string, string>;
   /** Monsters that have made their one Brutal Power Attack this turn, and the models already hurled at. */
@@ -389,7 +415,7 @@ export interface Flow {
   /** Duels rolled this turn, by group, so the same one isn't rolled twice. */
   duels?: string[];
   /** A Compel that worked: the caster's player moves the target up to `max` from where it stood. */
-  compel?: { model: string; caster: string; max: number; from: [number, number] };
+  compel?: { model: string; caster: string; max: number; from: [number, number]; /** Sauron's Will: the Ringbearer's foes move it, during its own side's move. */ ring?: boolean };
   /** Models that can't move again this turn (moved by Compel). */
   held?: string[];
   /** Models that stood up from Prone this turn, which costs half their Move. */
@@ -421,6 +447,11 @@ export interface Flow {
   strikeBonus?: Record<string, number>;
   /** Fights and shots whose wounds have been taken off already, by roll group, so they're never taken twice. */
   applied?: string[];
+  /** The turn the fires of models Set Ablaze last burned. */
+  burned?: number;
+  /** Ringbearers that have rolled for Sauron's Will this turn, and those that have tried to take the Ring off. */
+  sauron?: string[];
+  ringTried?: string[];
 }
 
 export interface Heroic {
@@ -501,7 +532,21 @@ export type Action =
   /** Carry on with a shot paused for Might (see Flow.shotPause). */
   | { type: 'shotOn'; group: string }
   /** A player's choice for how one of its models fights this phase. */
-  | { type: 'fightChoice'; id: string; shielding?: boolean; twoHanded?: boolean }
+  | { type: 'fightChoice'; id: string; shielding?: boolean; twoHanded?: boolean; morgul?: string | null }
+  /** Request from a client: set up a narrative scenario, with `good` the seat playing Good (the server builds the casts). */
+  | { type: 'setNarrative'; id: string; good: Seat }
+  /** Server result of setNarrative: the scenario's table and both casts. */
+  | { type: 'startNarrative'; id: string; good: Seat; models: Model[] }
+  /** Request from a client: a Ringbearer puts the One Ring on, or tries to take it off (the server rolls the Courage test). */
+  | { type: 'ring'; id: string; on: boolean }
+  /** Request from a client: the Evil side gives the Cry of the Nazgûl as a Move phase begins (Weathertop). */
+  | { type: 'cry'; seat: Seat }
+  /** Server only: bookkeeping for a narrative scenario's rules. */
+  | { type: 'narrativeNote'; rolled?: number }
+  /** Server only: the fires of models Set Ablaze have burned this turn. */
+  | { type: 'burned' }
+  /** Server only: a Ringbearer has rolled for Sauron's Will, or tried to take the Ring off, this turn. */
+  | { type: 'ringMark'; key: 'sauron' | 'ringTried'; id: string }
   /** Asks to re-roll one duel die with a friendly banner nearby (the server rolls it). */
   | { type: 'banner'; roll: string; die: number }
   /** A rider gets down from its mount during its move (the game rolls the Courage test of a mount that fights). */
@@ -523,7 +568,7 @@ export type Action =
   /** A hero spends a Might point to raise one of its own dice by 1. `follow` picks the follow-up dice of a 6/4+ roll. */
   | { type: 'useMight'; roll: string; die: number; follow?: boolean; will?: boolean }
   /** Wounds dealt to a model. A hero with Fate holds them as pending until its player decides. */
-  | { type: 'wound'; id: string; count: number; by?: string[]; how?: 'fight' | 'shoot' | 'other'; group?: string; mount?: boolean; howdah?: boolean }
+  | { type: 'wound'; id: string; count: number; by?: string[]; how?: 'fight' | 'shoot' | 'other'; group?: string; mount?: boolean; howdah?: boolean; /** A Morgul Blade's: the first wound taken slays outright. */ slay?: boolean }
   /** A model picks up a marker it is touching, turns a face-down marker over, or drops what it carries. */
   | { type: 'pickUp'; model: string; marker: string }
   | { type: 'flip'; model: string; marker: string }

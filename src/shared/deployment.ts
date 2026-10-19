@@ -1,6 +1,7 @@
 import { halfExtents, type Point } from './geometry.ts';
 import { inZone, whollyIn, zonesOf } from './objects.ts';
 import type { Zone } from './scenarios.ts';
+import { holdNarrative } from './narrative.ts';
 import { insidePolygon, outline } from './sight.ts';
 import type { GameState, Model } from './types.ts';
 
@@ -65,6 +66,8 @@ export function placeNear(state: GameState, mates: Model[], zone: Zone, near: Po
 /** The moves of a drag before the battle, held inside each side's deployment zones, plus any warband that follows. */
 export function holdInZones(state: GameState, moves: Move[]): Move[] {
   if (state.flow.started) return moves;
+  // A narrative scenario's cast stays where its story puts it.
+  if (state.narrative) return moves.map(mv => holdNarrative(state, mv));
   const out = new Map<string, Move>();
   for (const mv of moves) {
     const m = state.models[mv.id];

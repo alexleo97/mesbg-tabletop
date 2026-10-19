@@ -29,6 +29,9 @@ import catalogJson from '../src/data/mesbg-data.json';
 import { tierOf } from '../src/shared/warbands.ts';
 import { terrainRules } from '../src/shared/wargear.ts';
 import { gearOf } from '../src/shared/gear.ts';
+import { arrivalDue, rollArrival } from '../src/shared/narrative.ts';
+import { sauronDue, sauronRoll } from '../src/shared/ring.ts';
+import { burnDue, burns } from '../src/shared/fire.ts';
 
 const CATALOG = catalogJson as unknown as Catalog;
 
@@ -276,6 +279,10 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
     case 'seatAccount':
     case 'setPrivate':
     case 'resultSaved':
+    case 'startNarrative':
+    case 'narrativeNote':
+    case 'burned':
+    case 'ringMark':
       return null; // only the server produces dice results, undo changes and account details
     case 'gameOver':
       return null;
@@ -489,10 +496,10 @@ function apply(room: Room, action: Action) {
       for (const a of out ?? []) apply(room, a);
     }
   // Models that fly, cross terrain specially, beat a war drum or ride a mount are marked as they come onto the table.
-  if (action.type === 'addModels' && Array.isArray(action.models))
+  if ((action.type === 'addModels' || action.type === 'startNarrative') && Array.isArray(action.models))
     action = {
       ...action,
-      models: action.models.map(m => {
+      models: action.models.map((m: Model) => {
         if (!m?.profileId || !CATALOG.units[m.profileId]) return m;
         const ground = terrainRules(CATALOG, m);
         const drum = gearOf(CATALOG, m as Model).some(g => /war ?drum/.test(g));
@@ -527,6 +534,7 @@ function apply(room: Room, action: Action) {
   rollGameEnd(room);
   rollRecovery(room);
   takeWillOfEvil(room);
+  narrativeUpkeep(room);
   scheduleAdvance(room);
   scheduleBot(room);
   updateVoice(room);
@@ -646,6 +654,25 @@ function takeWillOfEvil(room: Room) {
   } finally {
     takingWill = false;
   }
+}
+
+/**
+ * The rules the game plays out by itself: a narrative scenario's late arrivals, Sauron's Will on a Ringbearer as its
+ * side begins to move, and the flames of models Set Ablaze in the End phase.
+ */
+let upkeeping = false;
+function narrativeUpkeep(room: Room) {
+  if (upkeeping) return;
+  upkeeping = true;
+  try {
+    const s = room.state;
+    const bearer = sauronDue(s);
+    const out = arrivalDue(s) ? rollArrival(s, serverDice, serverId) : bearer ? sauronRoll(s, bearer, serverDice, serverId) : burnDue(s) ? burns(s, CATALOG, serverDice, serverId) : [];
+    for (const a of out) apply(room, a);
+  } finally {
+    upkeeping = false;
+  }
+  if (arrivalDue(room.state) || sauronDue(room.state) || burnDue(room.state)) narrativeUpkeep(room);
 }
 
 /** In the End phase, Paralysed models roll to recover. */

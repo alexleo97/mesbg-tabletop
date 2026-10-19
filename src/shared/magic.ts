@@ -1,3 +1,4 @@
+import { invisibleTo } from './ring.ts';
 import type { Catalog } from './catalog.ts';
 import { distanceBetween } from './geometry.ts';
 import { affected, cannotAct, fitsTarget, freeResistDice, isAreaPower, isLinePower, powerInfo, powerTakesEffect, resister } from './powers.ts';
@@ -39,6 +40,8 @@ export function castTargets(state: GameState, caster: Model, range: number, powe
     // (A siege engine shrugs off every power.)
     .filter(t => t.id !== caster.id && !t.dead && !t.waiting && !t.escaped && !t.siege && distanceBetween(caster, t) <= reach && (isLinePower(power) || sightTo(state, caster, t) !== 'hidden'))
     .filter(t => !power || fitsTarget(state, catalog, caster, power, t))
+    // Nobody but the Nine can pick out a model wearing the One Ring.
+    .filter(t => !invisibleTo(t, caster))
     .sort((a, b) => Number(a.owner === caster.owner) - Number(b.owner === caster.owner) || distanceBetween(caster, a) - distanceBetween(caster, b));
 }
 

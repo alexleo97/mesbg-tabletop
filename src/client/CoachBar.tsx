@@ -14,6 +14,7 @@ import { pendingSpell } from '../shared/magic.ts';
 import { freeResistDice, isAreaPower, isLinePower } from '../shared/powers.ts';
 import { formatInches } from '../shared/geometry.ts';
 import { useCatalog } from './ListBuilder.tsx';
+import { mayCry, narrativeById } from '../shared/narrative.ts';
 import { isMaelstrom, waitingWarbands, warbandName } from '../shared/maelstrom.ts';
 import { objectivesMissing, scenarioById } from '../shared/scenarios.ts';
 import { scoreLines, vpTotals } from '../shared/scoring.ts';
@@ -128,7 +129,11 @@ function CompelStep({ state, dispatch, role }: { state: GameState; dispatch: Dis
   return (
     <div className="spell-step">
       <p>
-        {caster.owner === role
+        {c.ring
+          ? caster.owner === role
+            ? `Sauron's Will has ${t.name}: drag it up to ${formatInches(c.max)} wherever you like (charging if you can), then say you're done.`
+            : `Sauron's Will has ${t.name}: the other player moves it up to ${formatInches(c.max)} this turn.`
+          : caster.owner === role
           ? `Drag ${t.name} up to ${formatInches(c.max)} (you can charge with it, but not take it out of a fight). It can't move again this turn.`
           : `${caster.name} has Compelled ${t.name}: the other player moves it up to ${formatInches(c.max)}.`}
       </p>
@@ -321,7 +326,15 @@ function Reinforcements({ state, name }: { state: GameState; name: (s: Seat) => 
     <div className="reinforcements">
       {sides.map(({ s, bands }) => (
         <p key={s} className="muted small">
-          <b className={s}>{name(s)}</b> off the table: {bands.map(b => `${warbandName(b)} (${b.length})`).join(', ')}. They roll to arrive as {name(s)} starts to move.
+          {state.narrative ? (
+            <>
+              <b className={s}>{name(s)}</b> off the table: {bands.flat().map(m => m.name).join(', ')}, until the scenario brings them on (see its special rules).
+            </>
+          ) : (
+            <>
+              <b className={s}>{name(s)}</b> off the table: {bands.map(b => `${warbandName(b)} (${b.length})`).join(', ')}. They roll to arrive as {name(s)} starts to move.
+            </>
+          )}
         </p>
       ))}
     </div>
@@ -344,7 +357,8 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
 
   if (!flow.started) {
     const count = (s: Seat) => Object.values(state.models).filter(m => m.owner === s).length;
-    const scenario = scenarioById(state.scenario);
+    // A narrative scenario stands in for a matched play one.
+    const scenario = scenarioById(state.scenario) ?? narrativeById(state.narrative?.id);
     // Both armies must be on the table first; a solo battle is always fought over a scenario.
     const missing = objectivesMissing(state);
     const waiting = state.bot && !scenario ? 'Pick a scenario first.' : missing ? `Place ${missing} more objective marker${missing === 1 ? '' : 's'} first.` : !count('p1') || !count('p2') ? 'Deploy both armies first.' : '';
@@ -370,7 +384,9 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
             <span>
               {isMaelstrom(state)
                 ? 'Maelstrom of Battle: deploy your list and it waits off the table. Each warband rolls to arrive as its side starts to move.'
-                : `Deploy each army in its zone${scenario ? ' (shown on the board)' : ''}.`}
+                : state.narrative
+                  ? 'Each side starts where the story puts it; drag models round where it lets them stand.'
+                  : `Deploy each army in its zone${scenario ? ' (shown on the board)' : ''}.`}
             </span>
           </li>
         </ol>
@@ -599,6 +615,12 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
         <div className="coach-body">
           {flow.started && <SpellStep state={state} dispatch={dispatch} role={role} name={name} />}
           {flow.started && <CompelStep state={state} dispatch={dispatch} role={role} />}
+          {flow.started && role !== 'spectator' && mayCry(state, role) && (
+            <div className="spell-step">
+              <p>Once a game, before anyone moves, the Nazgûl can give their Cry: every Good model's Courage is 3 worse this turn, and Aragorn comes at once.</p>
+              <button onClick={() => dispatch({ type: 'cry', seat: role })}>Give the Cry of the Nazgûl</button>
+            </div>
+          )}
           {flow.started && <ShotPauseStep state={state} dispatch={dispatch} role={role} name={name} />}
           {flow.started && <FateStep state={state} dispatch={dispatch} role={role} name={name} />}
           {flow.started && <Reinforcements state={state} name={name} />}

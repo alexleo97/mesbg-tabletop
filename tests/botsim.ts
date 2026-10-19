@@ -13,6 +13,10 @@ import { endCheck, endRollLabel, gameWinner } from '../src/shared/status.ts';
 import { listEntries } from '../src/shared/warbands.ts';
 import type { Action, GameState, Seat } from '../src/shared/types.ts';
 import { openDuel } from '../src/shared/bot.ts';
+import { arrivalDue, rollArrival } from '../src/shared/narrative.ts';
+import { sauronDue, sauronRoll } from '../src/shared/ring.ts';
+import { burnDue, burns } from '../src/shared/fire.ts';
+import { willOfEvilDue, willOfEvilToll } from '../src/shared/courage.ts';
 
 export const catalog = catalogJson as unknown as Catalog;
 
@@ -69,6 +73,15 @@ export function play(state: GameState, rand: () => number, maxSteps = 20000) {
     // As the server does: Maelstrom warbands roll to arrive as their side starts to move.
     const due = arrivalsDue(state);
     if (due) for (const a of rollArrivals(state, due, d6, uid, rand, now)) state = reduce(state, a);
+    // And a narrative scenario's own rules, the One Ring and fire, and Will of Evil.
+    if (state.narrative) {
+      for (let k = 0; k < 4; k++) {
+        const bearer = sauronDue(state);
+        const out = arrivalDue(state) ? rollArrival(state, d6, uid, now) : bearer ? sauronRoll(state, bearer, d6, uid, now) : burnDue(state) ? burns(state, catalog, d6, uid, now) : willOfEvilDue(state) ? willOfEvilToll(state, catalog, uid, now) : [];
+        for (const a of out) state = reduce(state, a);
+        if (!out.length) break;
+      }
+    }
     if (gameWinner(state) && !state.result) state = reduce(state, { type: 'gameOver', winner: gameWinner(state)! });
     if (state.result) break;
     let acted = false;
@@ -109,7 +122,7 @@ export function play(state: GameState, rand: () => number, maxSteps = 20000) {
       const check = endCheck(state, { p1: 'a', p2: 'b' });
       if (check?.rollNeeded && !state.log.some(r => r.label === endRollLabel(state.turn))) apply('p1', { type: 'roll', count: 1, label: endRollLabel(state.turn) });
       else if (check?.over || state.log.some(r => r.label === endRollLabel(state.turn) && r.dice[0] <= 2)) break;
-      else if (state.turn >= 12) break;
+      else if (state.turn >= (state.narrative ? 40 : 12)) break;
       else apply('p1', { type: 'nextPhase' });
     } else {
       throw new Error(`Stuck in turn ${state.turn} ${state.phase}`);

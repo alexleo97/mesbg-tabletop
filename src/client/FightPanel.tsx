@@ -10,6 +10,7 @@ import { fightDone, foughtThisTurn } from '../shared/movement.ts';
 import { noStrikes, under } from '../shared/powers.ts';
 import { cantShield, fighterOf, twoHandedChoice } from '../shared/wargear.ts';
 import { mountLabel, mountOf } from '../shared/cavalry.ts';
+import { hasMorgulBlade } from '../shared/morgul.ts';
 import { brutalOptions, chargeEffects } from '../shared/monsters.ts';
 import { BOT_NAME, type Action, type GameState, type Model, type Role, type Seat } from '../shared/types.ts';
 import { useCatalog } from './ListBuilder.tsx';
@@ -134,7 +135,7 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
     return canShieldSide(s) && sides[s].some(m => choices[m.id]?.shielding);
   }
   // Choices go to the game, so whichever player rolls the fight rolls it as both sides chose.
-  const choose = (m: Model, pick: { shielding?: boolean; twoHanded?: boolean }) => dispatch({ type: 'fightChoice', id: m.id, ...choices[m.id], ...pick });
+  const choose = (m: Model, pick: { shielding?: boolean; twoHanded?: boolean; morgul?: string | null }) => dispatch({ type: 'fightChoice', id: m.id, ...choices[m.id], ...pick });
   const side = (s: Seat) => [...sides[s].map(fighter), ...(shieldingSide(s) ? [] : helping(s).map(m => ({ ...fighter(m), a: 1, support: true, shielding: undefined, noStrike: undefined })))];
   const request = () => {
     // The loser's model struck first; with more than one, the winner aims each strike after the duel.
@@ -240,6 +241,12 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
                         Two-handed
                       </button>
                     )}
+                    {role === m.owner && (!lastGroup || !!leader) && hasMorgulBlade(catalog, m) &&
+                      sides[seat === 'p1' ? 'p2' : 'p1'].map(e => (
+                        <button key={e.id} className={`toggle small ${choices[m.id]?.morgul === e.id ? 'on' : ''}`} aria-pressed={choices[m.id]?.morgul === e.id} title={`Once a game: if ${m.name} wins, every strike goes at ${e.name}, and a single wound slays it outright.`} onClick={() => choose(m, { morgul: choices[m.id]?.morgul === e.id ? null : e.id })}>
+                          🗡 Morgul Blade{sides[seat === 'p1' ? 'p2' : 'p1'].length > 1 ? ` on ${e.name}` : ''}
+                        </button>
+                      ))}
                   </div>
                 );
               })}

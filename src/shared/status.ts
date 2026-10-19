@@ -1,5 +1,6 @@
 import { scenarioById } from './scenarios.ts';
 import { vpTotals } from './scoring.ts';
+import { narrativeWinner } from './narrative.ts';
 import type { GameState, Seat } from './types.ts';
 
 export interface ArmyStatus {
@@ -81,6 +82,8 @@ export function gameEnded(state: GameState): boolean {
  */
 export function gameWinner(state: GameState): Seat | 'draw' | null {
   if (!state.flow.started) return null;
+  // A narrative scenario is won by its own objectives, the moment one side achieves them.
+  if (state.narrative) return narrativeWinner(state);
   const left = { p1: armyStatus(state, 'p1'), p2: armyStatus(state, 'p2') };
   if (left.p1.start && left.p2.start) {
     const gone = (['p1', 'p2'] as const).filter(s => left[s].left === 0);

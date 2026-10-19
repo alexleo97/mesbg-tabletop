@@ -13,6 +13,7 @@ import { distanceToTerrain, heightOf, obstructions, sightTo, type Obstruction } 
 import { howdahFor } from './warBeasts.ts';
 import { acrossCable, engineBlocked, engineCantHit, firingCrew, siegeWeapon } from './siege.ts';
 import { cloaked, hasRule, poisonedShot, shotDefence, stalks, stones } from './wargear.ts';
+import { invisibleTo } from './ring.ts';
 import type { GameState, Model } from './types.ts';
 
 export type Weapon = (typeof MISSILE_WEAPONS)[number];
@@ -21,7 +22,11 @@ export type Weapon = (typeof MISSILE_WEAPONS)[number];
 export const weaponFor = (catalog: Catalog | null | undefined, m: Model): Weapon | undefined => (m.siege ? siegeWeapon(catalog, m) : howdahArchers(m) ? MISSILE_WEAPONS.find(w => w.name === 'Orc Bow') : missileWeapon(gearOf(catalog, m)));
 /** A Great Beast's Howdah full of Orc archers: as many shots as it has Wounds left, at its own Shoot Value, however far the beast moved. */
 export const howdahArchers = (m: Model) => (m.beast === 'war' && (m.howdahWounds ?? 0) > 0 ? howdahFor(m.name)?.sv : undefined);
-export const isThrowing = (w: Weapon) => /^throwing/i.test(w.name);
+export const isThrowing = (w: Weapon) => /^throwing|brand/i.test(w.name);
+/** Aragorn's flaming brand, thrown once (Weathertop): a throwing weapon whose hit Sets the target Ablaze, with no roll To Wound. */
+export const FLAMING_BRAND: Weapon = { name: 'Flaming Brand', range: 6, s: 3 };
+/** Whether a model may still throw its flaming brand. */
+export const canThrowBrand = (m: Model) => !!m.brand && m.cast === 'aragorn';
 const isCrossbow = (w: Weapon) => /crossbow/i.test(w.name);
 const isSling = (w: Weapon) => /^sling/i.test(w.name);
 
@@ -113,7 +118,7 @@ export function planShot(
   catalog: Catalog | null | undefined,
   shooter: Model,
   target: Model,
-  opts: { charge?: boolean; fallback?: { weapon?: Weapon; shoot?: number } } = {},
+  opts: { charge?: boolean; brand?: boolean; fallback?: { weapon?: Weapon; shoot?: number } } = {},
 ): ShotPlan {
   const started = !!state.flow.started;
   if (shooter.siege) return planEngineShot(state, catalog, shooter, target);
@@ -122,14 +127,15 @@ export function planShot(
   const moved = started && !opts.charge && !!state.flow.moved?.includes(shooter.id) && shooter.beast !== 'chariot' && !archers && !(mounted(shooter) && mountOf(shooter)?.chariot);
   // Thrown stones, for a model that has nothing better and didn't move.
   const rocks = !opts.charge ? stones(catalog, shooter) : undefined;
-  const weapon = weaponFor(catalog, shooter) ?? (rocks && !moved ? rocks : undefined) ?? opts.fallback?.weapon;
+  const weapon = opts.brand ? (canThrowBrand(shooter) ? FLAMING_BRAND : undefined) : (weaponFor(catalog, shooter) ?? (rocks && !moved ? rocks : undefined) ?? opts.fallback?.weapon);
   const printed = archers ?? modelStats(catalog, shooter)?.Sv ?? opts.fallback?.shoot ?? 4;
   const dist = distanceBetween(shooter, target);
   const plan: ShotPlan = { weapon, printed, need: printed, moved, shots: 1, dist, inWay: [], rerolls: false };
   const no = (why: string) => ({ ...plan, why });
-  if (!weapon) return no(rocks ? 'moved, and only throws stones standing still' : 'has no missile weapon');
+  if (!weapon) return no(opts.brand ? 'has no flaming brand left to throw' : rocks ? 'moved, and only throws stones standing still' : 'has no missile weapon');
   if (target.owner === shooter.owner) return no('only shoots at enemies');
   if (target.dead || target.escaped || target.waiting) return no('has nothing there to shoot at');
+  if (invisibleTo(target, shooter)) return no('can’t see a model wearing the One Ring');
   const blocked = shooterBlocked(state, shooter, weapon, opts.charge);
   if (blocked) return no(blocked);
   plan.shots = archers ? shooter.howdahWounds! : isSling(weapon) && started && !moved && !opts.charge ? 2 : 1;
