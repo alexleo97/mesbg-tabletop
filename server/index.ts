@@ -31,6 +31,8 @@ import { terrainRules } from '../src/shared/wargear.ts';
 import { gearOf } from '../src/shared/gear.ts';
 import { arrivalDue, rollArrival } from '../src/shared/narrative.ts';
 import { sauronDue, sauronRoll } from '../src/shared/ring.ts';
+import { mightyBonus, mightyDue } from '../src/shared/mighty.ts';
+import { longshanksDue, longshanksMove } from '../src/shared/sam.ts';
 import { burnDue, burns } from '../src/shared/fire.ts';
 
 const CATALOG = catalogJson as unknown as Catalog;
@@ -283,6 +285,8 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
     case 'narrativeNote':
     case 'burned':
     case 'ringMark':
+    case 'placing':
+    case 'mightyHero':
       return null; // only the server produces dice results, undo changes and account details
     case 'gameOver':
       return null;
@@ -412,6 +416,9 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
       // Wounds go on your own model, or on an enemy your models struck.
       if (!state.flow.started) return action;
       return ours(action.id) || (Array.isArray(action.by) && action.by.some(ours)) ? action : null;
+    case 'placed':
+      // Only the player placing the model says it's done.
+      return action.seat === client.role || action.seat === state.bot ? action : null;
     case 'setName':
     case 'endActivation':
       // Your own name, and the end of your own move or shooting.
@@ -465,6 +472,7 @@ function openRooms(): RoomSummary[] {
         seated: (['p1', 'p2'] as const).filter(s => roles.includes(s)),
         spectators: roles.filter(x => x === 'spectator').length,
         scenario: r.state.scenario,
+        ...(r.state.narrative ? { narrative: r.state.narrative.id } : {}),
         turn: r.state.turn,
         models: Object.keys(r.state.models).length,
         started: r.state.flow.started,
@@ -667,12 +675,13 @@ function narrativeUpkeep(room: Room) {
   try {
     const s = room.state;
     const bearer = sauronDue(s);
-    const out = arrivalDue(s) ? rollArrival(s, serverDice, serverId) : bearer ? sauronRoll(s, bearer, serverDice, serverId) : burnDue(s) ? burns(s, CATALOG, serverDice, serverId) : [];
+    const sam = longshanksDue(s);
+    const out = mightyDue(s, CATALOG) ? mightyBonus(s, CATALOG, serverId) : sam ? longshanksMove(s, sam) : arrivalDue(s) ? rollArrival(s, serverDice, serverId) : bearer ? sauronRoll(s, bearer, serverDice, serverId) : burnDue(s) ? burns(s, CATALOG, serverDice, serverId) : [];
     for (const a of out) apply(room, a);
   } finally {
     upkeeping = false;
   }
-  if (arrivalDue(room.state) || sauronDue(room.state) || burnDue(room.state)) narrativeUpkeep(room);
+  if (mightyDue(room.state, CATALOG) || longshanksDue(room.state) || arrivalDue(room.state) || sauronDue(room.state) || burnDue(room.state)) narrativeUpkeep(room);
 }
 
 /** In the End phase, Paralysed models roll to recover. */

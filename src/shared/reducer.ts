@@ -19,7 +19,9 @@ import { endPhaseUpkeep } from './scoring.ts';
 import { mayCry, narrativeById } from './narrative.ts';
 import { putOut } from './fire.ts';
 import { ringAfterMight } from './ring.ts';
-import { BOT_NAME, BOT_SPEEDS, DOOR_TYPES, MARKER_OBJECTS, MATS, PHASES, PICK_KEYS, TERRAIN_KINDS, type Action, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type ModelEffect, type Phase, type Picks, type Seat, type SpellPending, type Terrain } from './types.ts';
+import { placeSpot, placingNow } from './placing.ts';
+import { longshanksFree } from './sam.ts';
+import { BOT_NAME, BOT_SPEEDS, DOOR_TYPES, MARKER_OBJECTS, MATS, PHASES, PICK_KEYS, TERRAIN_KINDS, type Action, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type ModelEffect, type Phase, type Picks, type Placing, type Seat, type SpellPending, type Terrain } from './types.ts';
 
 export const MAX_MODELS = 600;
 export const MAX_TERRAIN = 200;
@@ -83,7 +85,7 @@ function goToPhase(state: GameState, phase: Phase, turn: number, newTurn: boolea
       done: [],
       resolved: newTurn ? [] : state.flow.resolved,
       heroics: newTurn ? [] : state.flow.heroics,
-      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], moved: [], cast: [], spell: undefined, held: [], stood: [], climbed: {}, compel: undefined, supported: [], strikeBonus: {}, charges: {}, brutal: [], hurledAt: [], breached: [], trampled: [], turned: [], cables: [], sauron: [], ringTried: [] } : {}),
+      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], moved: [], cast: [], spell: undefined, held: [], stood: [], climbed: {}, compel: undefined, supported: [], strikeBonus: {}, charges: {}, brutal: [], hurledAt: [], breached: [], trampled: [], turned: [], cables: [], sauron: [], ringTried: [], placing: [], joined: [] } : {}),
       ...(phase !== state.phase ? { compel: undefined, mustCharge: undefined } : {}),
       // The fights are paired off as the Fight phase begins, and stay that way until it ends.
       ...(phase !== state.phase ? { pairs: phase === 'fight' && state.flow.started ? pairOff(livingModels(state), { ...state, phase: 'move' }, state.flow.pairChoices).map(c => c.key) : undefined, pairChoices: undefined } : {}),
@@ -103,6 +105,22 @@ const num = (v: unknown, min: number, max: number, fallback: number) =>
   typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : fallback;
 const int = (v: unknown, min: number, max: number, fallback: number) => Math.round(num(v, min, max, fallback));
 const str = (v: unknown, max: number, fallback = '') => (typeof v === 'string' ? v.slice(0, max) : fallback);
+/** A model waiting to be placed, kept to sensible values (null if its model is gone). */
+function cleanPlacing(p: Partial<Placing> | undefined, state: Pick<GameState, 'models'>): Placing | null {
+  if (!p || typeof p !== 'object' || typeof p.model !== 'string' || !state.models[p.model] || !isSeat(p.seat) || (p.kind !== 'arrive' && p.kind !== 'retreat' && p.kind !== 'join') || !Array.isArray(p.from)) return null;
+  const m = state.models[p.model];
+  return {
+    model: p.model,
+    seat: p.seat,
+    kind: p.kind,
+    from: [num(p.from[0], -24, 200, m.x), num(p.from[1], -24, 200, m.y)],
+    ...(typeof p.rim === 'string' ? { rim: p.rim.slice(0, 80) } : {}),
+    ...(p.dist !== undefined ? { dist: num(p.dist, 0, 12, 0) } : {}),
+    ...(Array.isArray(p.away) ? { away: p.away.filter(x => typeof x === 'string').slice(0, 10).map(x => x.slice(0, 80)) } : {}),
+    ...(p.stay === true ? { stay: true } : {}),
+  };
+}
+
 const isSeat = (v: unknown): v is Seat => v === 'p1' || v === 'p2';
 const isPhase = (v: unknown): v is Phase => PHASES.includes(v as Phase);
 const id = (v: unknown) => str(v, 64);
@@ -230,6 +248,8 @@ export function cleanModel(m: Partial<Model>, prev?: Model): Model | null {
   for (const k of ['ablaze', 'ringOn', 'slay'] as const) if ((k in m ? m[k] === true : base[k]) && !out.dead) out[k] = true;
   const used = 'used' in m ? (Array.isArray(m.used) ? [...new Set(m.used.slice(0, 8).map(u => str(u, 40)))] : undefined) : base.used;
   if (used?.length) out.used = used;
+  const panned = 'panned' in m ? (m.panned === undefined ? undefined : int(m.panned, 0, 99, 0)) : base.panned;
+  if (panned) out.panned = panned;
   return out.id ? out : null;
 }
 
@@ -250,7 +270,7 @@ function cleanEffects(v: unknown): ModelEffect[] | undefined {
   return v
     .filter(e => e && typeof e === 'object')
     .slice(0, 12)
-    .map(e => ({ power: str(e.power, 60), by: id(e.by), turn: int(e.turn, 0, 99, 0), duration: e.duration === 'Temporary' ? ('Temporary' as const) : ('Exhaustion' as const) }))
+    .map(e => ({ power: str(e.power, 60), by: id(e.by), turn: int(e.turn, 0, 99, 0), duration: e.duration === 'Temporary' ? ('Temporary' as const) : ('Exhaustion' as const), ...(Array.isArray(e.spared) ? { spared: e.spared.slice(0, 10).map(id) } : {}) }))
     .filter(e => e.power && e.by);
 }
 
@@ -602,9 +622,19 @@ function step(state: GameState, action: Action): GameState {
       let turned = state.flow.turned;
       // Models moved together don't block each other.
       const together = new Set(moves.map(mv => mv && String(mv.id)));
+      // While a model waits to be placed, only it moves, and only where its placing allows.
+      const placing = state.flow.started ? placingNow(state) : undefined;
       for (const mv of moves) {
         const prev = mv && models[mv.id];
         if (!prev || prev.escaped || prev.waiting) continue;
+        // Sam, once the game has put him in Frodo's fight, and a model stunned by his Frying Pan, stay put.
+        if (state.flow.started && !placing && ((state.phase === 'fight' && state.flow.joined?.includes(prev.id)) || (state.phase === 'move' && prev.panned === state.turn))) continue;
+        if (placing) {
+          if (prev.id !== placing.model || prev.dead) continue;
+          const spot = placeSpot(state, placing, prev, { x: num(mv.x, -24, 200, prev.x), y: num(mv.y, -24, 200, prev.y) });
+          if (spot) models[prev.id] = { ...prev, ...spot, rot: mv.rot === undefined ? prev.rot : num(mv.rot, -360, 720, prev.rot) % 360 };
+          continue;
+        }
         // Riders go where their war beast takes them.
         if (prev.aboard && models[prev.aboard] && !models[prev.aboard].dead) continue;
         // A siege engine is pushed by the friends beside it, and goes with them (see siege.ts).
@@ -875,9 +905,11 @@ function step(state: GameState, action: Action): GameState {
       return { ...state, terrain };
     }
     case 'setPhase':
-      if (!isPhase(action.phase)) return state;
+      if (!isPhase(action.phase) || (state.flow.started && placingNow(state))) return state;
       return goTo(state, action.phase, int(action.turn, 1, 99, state.turn));
     case 'nextPhase': {
+      // Play waits for a model to be placed.
+      if (state.flow.started && placingNow(state)) return state;
       const i = PHASES.indexOf(state.phase);
       return i === PHASES.length - 1 ? goTo(state, PHASES[0], Math.min(99, state.turn + 1)) : goTo(state, PHASES[i + 1], state.turn);
     }
@@ -906,7 +938,7 @@ function step(state: GameState, action: Action): GameState {
       if (!isSeat(action.seat)) return state;
       return { ...goTo(state, state.phase === 'priority' ? 'move' : state.phase, state.turn), priority: action.seat };
     case 'endActivation': {
-      if (!isSeat(action.seat) || state.flow.done.includes(action.seat) || state.flow.shotPause) return state;
+      if (!isSeat(action.seat) || state.flow.done.includes(action.seat) || state.flow.shotPause || (state.flow.started && placingNow(state))) return state;
       // A Ringbearer in Sauron's grip is moved by its foes in its own side's activation, which waits for them.
       const grip = state.flow.compel?.ring ? state.models[state.flow.compel.model] : undefined;
       if (grip && grip.owner === action.seat && state.flow.started) return state;
@@ -944,7 +976,9 @@ function step(state: GameState, action: Action): GameState {
       const info = heroicInfo(str(action.action, 40));
       // A war drum calls a Heroic March for free, hero or not.
       const drum = !!m?.drum && info?.name === 'Heroic March';
-      if (!m || (!m.hero && !drum) || m.dead || (m.might < 1 && !drum) || !info || info.phase !== state.phase || cannotAct(state, m)) return state;
+      // Sam's Heroic Combat to get to Frodo costs nothing.
+      const free = !!m && info?.name === 'Heroic Combat' && longshanksFree(state, m);
+      if (!m || (!m.hero && !drum) || m.dead || (m.might < 1 && !drum && !free) || !info || info.phase !== state.phase || cannotAct(state, m)) return state;
       if (state.flow.heroics.some(h => h.model === m.id && h.phase === state.phase)) return state;
       if ((info.name === 'Heroic Shoot' || info.name === 'Heroic Accuracy') && state.flow.started && engagedNow(state, m)) return state;
       const other: Seat = m.owner === 'p1' ? 'p2' : 'p1';
@@ -959,10 +993,10 @@ function step(state: GameState, action: Action): GameState {
       }
       return {
         ...state,
-        models: drum ? state.models : { ...state.models, [m.id]: { ...m, might: m.might - 1 } },
+        models: drum || free ? state.models : { ...state.models, [m.id]: { ...m, might: m.might - 1 } },
         flow: {
           ...state.flow,
-          heroics: [...state.flow.heroics, { model: m.id, action: info.name, phase: state.phase }],
+          heroics: [...state.flow.heroics, { model: m.id, action: info.name, phase: state.phase, ...(free ? { free: true } : {}) }],
           ...(challenges !== state.flow.challenges ? { challenges } : {}),
           // A declaration gives the other player a fresh chance to respond.
           passed: state.flow.passed.filter(s => s !== other && s !== m.owner),
@@ -1029,7 +1063,8 @@ function step(state: GameState, action: Action): GameState {
       const m = state.models[action.id];
       if (!m) return state;
       const morgul = typeof action.morgul === 'string' && state.models[action.morgul] && state.models[action.morgul].owner !== m.owner ? action.morgul : undefined;
-      const pick = { ...(action.shielding === true ? { shielding: true } : {}), ...(action.twoHanded === true ? { twoHanded: true } : {}), ...(morgul ? { morgul } : {}) };
+      const pan = typeof action.pan === 'string' && state.models[action.pan] && state.models[action.pan].owner !== m.owner ? action.pan : undefined;
+      const pick = { ...(action.shielding === true ? { shielding: true } : {}), ...(action.twoHanded === true ? { twoHanded: true } : {}), ...(morgul ? { morgul } : {}), ...(pan ? { pan } : {}) };
       const { [m.id]: _, ...rest } = state.flow.choices ?? {};
       return { ...state, flow: { ...state.flow, choices: Object.keys(pick).length ? { ...rest, [m.id]: pick } : rest } };
     }
@@ -1080,6 +1115,21 @@ function step(state: GameState, action: Action): GameState {
     }
     case 'burned':
       return { ...state, flow: { ...state.flow, burned: state.turn } };
+    case 'placing': {
+      const p = cleanPlacing(action.placing, state);
+      if (!p) return state;
+      // A follow-up move the game placed is the model's last move this phase.
+      const joined = p.kind === 'join' ? { joined: [...new Set([...(state.flow.joined ?? []), p.model])] } : {};
+      return { ...state, flow: { ...state.flow, placing: [...(state.flow.placing ?? []), p], ...joined } };
+    }
+    case 'mightyHero':
+      if (!action.base || typeof action.base !== 'object') return state;
+      return { ...state, flow: { ...state.flow, mighty: { turn: state.turn, base: cleanCounts(action.base, 9) } } };
+    case 'placed': {
+      const p = placingNow(state);
+      if (!p || p.seat !== action.seat) return state;
+      return { ...state, flow: { ...state.flow, placing: state.flow.placing!.slice(1) } };
+    }
     case 'ringMark': {
       if (action.key !== 'sauron' && action.key !== 'ringTried') return state;
       return { ...state, flow: { ...state.flow, [action.key]: [...new Set([...(state.flow[action.key] ?? []), id(action.id)])] } };
@@ -1438,7 +1488,7 @@ export function loadState(raw: unknown): GameState {
         heroics: Array.isArray(f.heroics)
           ? f.heroics
               .filter(h => h && typeof h === 'object' && heroicInfo(h.action) && isPhase(h.phase))
-              .map(h => ({ model: id(h.model), action: heroicInfo(h.action)!.name, phase: h.phase }))
+              .map(h => ({ model: id(h.model), action: heroicInfo(h.action)!.name, phase: h.phase, ...(h.free === true ? { free: true } : {}) }))
               .slice(-60)
           : [],
         passed: seats(f.passed),
@@ -1475,7 +1525,7 @@ export function loadState(raw: unknown): GameState {
         ...(Number.isFinite(f.willed) ? { willed: int(f.willed, 0, 99, 0) } : {}),
         ...(f.shotPause && typeof f.shotPause === 'object' && cleanPause(f.shotPause) ? { shotPause: cleanPause(f.shotPause) } : {}),
         ...(f.choices && typeof f.choices === 'object'
-          ? { choices: Object.fromEntries(Object.entries(f.choices as Record<string, { shielding?: unknown; twoHanded?: unknown; morgul?: unknown }>).slice(0, 200).map(([k, v]) => [str(k, 80), { ...(v?.shielding === true ? { shielding: true } : {}), ...(v?.twoHanded === true ? { twoHanded: true } : {}), ...(typeof v?.morgul === 'string' ? { morgul: str(v.morgul, 80) } : {}) }])) }
+          ? { choices: Object.fromEntries(Object.entries(f.choices as Record<string, { shielding?: unknown; twoHanded?: unknown; morgul?: unknown; pan?: unknown }>).slice(0, 200).map(([k, v]) => [str(k, 80), { ...(v?.shielding === true ? { shielding: true } : {}), ...(v?.twoHanded === true ? { twoHanded: true } : {}), ...(typeof v?.morgul === 'string' ? { morgul: str(v.morgul, 80) } : {}), ...(typeof v?.pan === 'string' ? { pan: str(v.pan, 80) } : {}) }])) }
           : {}),
         ...(Array.isArray(f.challenges) ? { challenges: f.challenges.slice(0, 20).filter(c => c && typeof c === 'object').map(c => ({ by: str(c.by, 80), target: str(c.target, 80), cap: int(c.cap, 0, 9, 3), ...(typeof c.accepted === 'boolean' ? { accepted: c.accepted } : {}) })) } : {}),
         ...(f.charges && typeof f.charges === 'object' ? { charges: Object.fromEntries(Object.entries(f.charges).slice(0, 400).map(([k, v]) => [str(k, 80), str(v, 80)])) } : {}),
@@ -1498,6 +1548,9 @@ export function loadState(raw: unknown): GameState {
         ...(Number.isFinite(f.burned) ? { burned: int(f.burned, 0, 99, 0) } : {}),
         ...(Array.isArray(f.sauron) ? { sauron: f.sauron.slice(0, 20).map(x => str(x, 80)) } : {}),
         ...(Array.isArray(f.ringTried) ? { ringTried: f.ringTried.slice(0, 20).map(x => str(x, 80)) } : {}),
+        ...(f.mighty && typeof f.mighty === 'object' && f.mighty.base && typeof f.mighty.base === 'object' ? { mighty: { turn: int(f.mighty.turn, 0, 99, 0), base: cleanCounts(f.mighty.base, 9) } } : {}),
+        ...(Array.isArray(f.joined) ? { joined: f.joined.slice(0, 20).map(x => str(x, 80)) } : {}),
+        ...(Array.isArray(f.placing) ? { placing: f.placing.map(p => cleanPlacing(p, out)).filter((p): p is Placing => !!p).slice(0, 20) } : {}),
       },
     };
   }

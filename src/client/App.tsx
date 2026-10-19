@@ -22,6 +22,8 @@ import { Tutorial } from './Tutorial.tsx';
 import { HeroArt } from './HeroArt.tsx';
 import { ProfilePage } from './Account.tsx';
 import { ArmiesCard, ArmiesPage, MapsCard, MapsPage, randomRoom, SitePage, TopPlayersCard } from './Home.tsx';
+import { NarrativePage } from './NarrativePanel.tsx';
+import { narrativeById } from '../shared/narrative.ts';
 import { getMap } from './cloud.ts';
 import { MapEditor } from './MapEditor.tsx';
 import { LeaderboardPage } from './Leaderboard.tsx';
@@ -93,6 +95,14 @@ function Lobby() {
               <span className="menu-go" aria-hidden>→</span>
             </button>
           </div>
+          <a className="menu-card story-link" href="?narrative">
+            <span className="menu-icon" aria-hidden>📜</span>
+            <span>
+              <b>Narrative scenarios</b>
+              <small>The battles from the books, with their own tables, characters and special rules. Pick a side and play.</small>
+            </span>
+            <span className="menu-go" aria-hidden>→</span>
+          </a>
           <a className="menu-card learn-card" href="?learn">
             <span className="menu-icon" aria-hidden>📖</span>
             <span>
@@ -128,7 +138,7 @@ function Lobby() {
                   <b className="p1">{g.names.p1 || 'Player 1'}</b> vs <b className="p2">{g.names.p2 || 'Player 2'}</b>
                 </span>
                 <span className="muted">
-                  {scenarioById(g.scenario)?.name ?? 'Open play'} · {g.started ? `turn ${g.turn}` : 'setting up'}
+                  {narrativeById(g.narrative)?.name ?? scenarioById(g.scenario)?.name ?? 'Open play'} · {g.started ? `turn ${g.turn}` : 'setting up'}
                   {g.spectators ? ` · ${g.spectators} watching` : ''}
                 </span>
                 <span className={`game-seat ${free.length ? 'free' : ''}`}>{free.length ? 'Join' : 'Watch'}</span>
@@ -243,6 +253,17 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
       dispatch({ type: 'setScenery', w: m.data.w, h: m.data.h, mat: m.data.mat, terrain });
     });
   }, [mapId, seat, players.includes(seat as Seat), status]);
+  // Arriving from the narrative scenario menu: set up its story with you on the side you picked.
+  const story = useMemo(() => (practice ? null : new URLSearchParams(location.search).get('story')), []);
+  const storySide = useMemo(() => new URLSearchParams(location.search).get('side'), []);
+  useEffect(() => {
+    if (!story || seat !== 'p1' || !players.includes('p1') || status !== 'online' || (vsComputer && !state.bot)) return;
+    const url = new URL(location.href);
+    url.searchParams.delete('story');
+    url.searchParams.delete('side');
+    history.replaceState(null, '', url);
+    if (!state.narrative && !state.flow.started) dispatch({ type: 'setNarrative', id: story, good: storySide === 'evil' ? 'p2' : 'p1' });
+  }, [seat, players.includes('p1'), status, !!state.bot]);
   useEffect(() => {
     if (!vsComputer || seat !== 'p1' || !players.includes('p1') || status !== 'online') return;
     const url = new URL(location.href);
@@ -644,6 +665,7 @@ export function App() {
   const [settings, updateSettings] = useSettings();
   if (params.has('armies')) return <ArmiesPage />;
   if (params.has('maps')) return <MapsPage />;
+  if (params.has('narrative')) return <NarrativePage />;
   if (params.has('mapeditor')) return <MapEditor settings={settings} />;
   if (params.has('leaderboard'))
     return (

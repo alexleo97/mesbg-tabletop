@@ -15,6 +15,8 @@ import { freeResistDice, isAreaPower, isLinePower } from '../shared/powers.ts';
 import { formatInches } from '../shared/geometry.ts';
 import { useCatalog } from './ListBuilder.tsx';
 import { mayCry, narrativeById } from '../shared/narrative.ts';
+import { placingNow } from '../shared/placing.ts';
+import { longshanksFree } from '../shared/sam.ts';
 import { isMaelstrom, waitingWarbands, warbandName } from '../shared/maelstrom.ts';
 import { objectivesMissing, scenarioById } from '../shared/scenarios.ts';
 import { scoreLines, vpTotals } from '../shared/scoring.ts';
@@ -146,6 +148,39 @@ function CompelStep({ state, dispatch, role }: { state: GameState; dispatch: Dis
   );
 }
 
+/** A model its player places before play goes on: Aragorn arriving, or a Ringwraith fleeing a flaming brand. */
+function PlacingStep({ state, dispatch, role, name }: { state: GameState; dispatch: Dispatch; role: Role; name: (s: Seat) => string }) {
+  const p = placingNow(state);
+  const m = p && state.models[p.model];
+  if (!p || !m) return null;
+  const mine = p.seat === role;
+  const from = (p.away ?? []).map(id => state.models[id]?.name).filter(Boolean).join(' and ') || 'the flames';
+  const what =
+    p.kind === 'join'
+      ? p.stay
+        ? `${m.name} can't reach Frodo's fight, so the game has moved ${m.name} as near to Frodo as possible.`
+        : mine
+          ? `${m.name} won the Heroic Combat and goes to Frodo's aid. The game has put ${m.name} in Frodo's fight: drag ${m.name} elsewhere in it if you like, then confirm.`
+          : `${m.name} goes to Frodo's aid: ${name(p.seat)} is placing ${m.name} in Frodo's fight.`
+      : p.kind === 'arrive'
+      ? mine
+        ? `${m.name} has arrived. Drag ${m.name} anywhere round the edge of the ruin, touching it, then confirm.`
+        : `${m.name} has arrived: ${name(p.seat)} is placing ${m.name} round the edge of the ruin.`
+      : mine
+        ? `${m.name} retreats ${formatInches(p.dist ?? 0)} from ${from}. Drag it the way you want it to go (never back towards the brand), then say you're done.`
+        : `${m.name} retreats ${formatInches(p.dist ?? 0)} from ${from}: ${name(p.seat)} is choosing which way.`;
+  return (
+    <div className="spell-step">
+      <p>{what}</p>
+      {mine && (
+        <button className="primary" onClick={() => dispatch({ type: 'placed', seat: p.seat })}>
+          {p.kind === 'retreat' ? `Done moving ${m.name}` : `${m.name} stands here`}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function HeroicStep({ state, dispatch, role, name }: { state: GameState; dispatch: Dispatch; role: Role; name: (s: Seat) => string }) {
   const me = role === 'spectator' ? null : role;
   const { catalog } = useCatalog();
@@ -182,6 +217,7 @@ function HeroicStep({ state, dispatch, role, name }: { state: GameState; dispatc
             return (
               <li key={h.model} className={m?.owner} title={heroicInfo(h.action)?.tip}>
                 ⚡ <b>{m?.name ?? 'Hero'}</b> {h.action}
+                {h.free ? ' (free)' : ''}
               </li>
             );
           })}
@@ -217,6 +253,7 @@ function HeroicStep({ state, dispatch, role, name }: { state: GameState; dispatc
                   {actions.map(a => (
                     <option key={a.name} value={a.name}>
                       {a.name}
+                      {a.name === 'Heroic Combat' && longshanksFree(state, pickedHero) ? ' (free: to Frodo!)' : ''}
                     </option>
                   ))}
                 </select>
@@ -232,6 +269,9 @@ function HeroicStep({ state, dispatch, role, name }: { state: GameState; dispatc
                 )}
               </div>
               {pickedAction && <p className="muted small">{pickedAction.tip}</p>}
+              {pickedAction?.name === 'Heroic Combat' && longshanksFree(state, pickedHero) && (
+                <p className="muted small">"Let him go or I'll have you, Longshanks!": no Might needed, but if it wins through {pickedHero.name} must go straight into Frodo's fight.</p>
+              )}
               <div className="row choice-pair">
                 <button
                   className="go"
@@ -358,12 +398,37 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
   if (!flow.started) {
     const count = (s: Seat) => Object.values(state.models).filter(m => m.owner === s).length;
     // A narrative scenario stands in for a matched play one.
-    const scenario = scenarioById(state.scenario) ?? narrativeById(state.narrative?.id);
+    const scenario = scenarioById(state.scenario);
     // Both armies must be on the table first; a solo battle is always fought over a scenario.
     const missing = objectivesMissing(state);
     const waiting = state.bot && !scenario ? 'Pick a scenario first.' : missing ? `Place ${missing} more objective marker${missing === 1 ? '' : 's'} first.` : !count('p1') || !count('p2') ? 'Deploy both armies first.' : '';
     title = 'Set up the battle';
-    body = (
+    const story = narrativeById(state.narrative?.id);
+    const sideOf = (s: Seat) => (state.narrative?.good === s ? 'Good' : 'Evil');
+    body = story ? (
+      <>
+        <ol className="setup-steps">
+          <li className="ok">
+            <span>
+              {story.name}: the table and both casts are set by the scenario.
+            </span>
+          </li>
+          <li className="ok">
+            <span>
+              <b className="p1">{name('p1')}</b> plays {sideOf('p1')}, <b className="p2">{name('p2')}</b> plays {sideOf('p2')}.
+            </span>
+          </li>
+          <li>
+            <span>Each side starts where the story puts it; drag models round where it lets them stand.</span>
+          </li>
+        </ol>
+        {me && (
+          <button className="primary go" onClick={() => dispatch({ type: 'startGame' })}>
+            Start the battle
+          </button>
+        )}
+      </>
+    ) : (
       <>
         <ol className="setup-steps">
           <li className={Object.keys(state.terrain).length ? 'ok' : ''}>
@@ -384,9 +449,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
             <span>
               {isMaelstrom(state)
                 ? 'Maelstrom of Battle: deploy your list and it waits off the table. Each warband rolls to arrive as its side starts to move.'
-                : state.narrative
-                  ? 'Each side starts where the story puts it; drag models round where it lets them stand.'
-                  : `Deploy each army in its zone${scenario ? ' (shown on the board)' : ''}.`}
+                : `Deploy each army in its zone${scenario ? ' (shown on the board)' : ''}.`}
             </span>
           </li>
         </ol>
@@ -615,6 +678,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
         <div className="coach-body">
           {flow.started && <SpellStep state={state} dispatch={dispatch} role={role} name={name} />}
           {flow.started && <CompelStep state={state} dispatch={dispatch} role={role} />}
+          {flow.started && <PlacingStep state={state} dispatch={dispatch} role={role} name={name} />}
           {flow.started && role !== 'spectator' && mayCry(state, role) && (
             <div className="spell-step">
               <p>Once a game, before anyone moves, the Nazgûl can give their Cry: every Good model's Courage is 3 worse this turn, and Aragorn comes at once.</p>

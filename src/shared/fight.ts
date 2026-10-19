@@ -42,6 +42,8 @@ export interface Fighter {
   woundMod?: number;
   /** Re-rolls natural 1s to wound (Poisoned Attacks). */
   ones?: boolean;
+  /** Never needs worse than this To Wound on its strikes, before other bonuses (Andúril: 4+). */
+  woundCap?: number;
   /** Each strike that wounds does 2 (Mighty Blow). */
   mighty?: boolean;
   /** +1 to wound a trapped enemy (Backstabbers). */
@@ -304,7 +306,8 @@ export function resolveStrikes(req: FightRequest, duel: DiceRoll[], d6: D6, by: 
     // Its wargear and rules against this enemy (two-handed weapons, Hatred and so on), a Heroic Challenge's rival,
     // and Backstabbers against a trapped enemy.
     const vs = f.vs?.[target.id] ?? { d: target.d, wound: f.woundMod ?? 0, ones: !!f.ones };
-    const plain = woundNeed(f.s, vs.d);
+    const printed = woundNeed(f.s, vs.d);
+    const plain = f.woundCap && (!printed || printed.then || printed.target > f.woundCap) ? { target: f.woundCap } : printed;
     const bonus = vs.wound + (f.rival === target.id ? 1 : 0) + (f.backstab && trapped ? 1 : 0);
     const base = plain && shiftNeed(plain, bonus);
     // Heroic Defence: only natural 6s wound (both dice for 6/4+ style results).

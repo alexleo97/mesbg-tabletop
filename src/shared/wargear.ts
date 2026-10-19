@@ -160,6 +160,11 @@ export function fighterOf(state: GameState, catalog: Catalog | null | undefined,
     f.twoHanded = true;
     notes.push(hasRule(catalog, m, 'Burly') ? 'Two-handed: +1 to wound (Burly: no duel penalty)' : 'Two-handed: -1 duel (not on a 6), +1 to wound');
   }
+  // Andúril never needs worse than 4+ to wound (a two-handed blow still adds its +1).
+  if (unitOf(catalog, m)?.rules.some(r => /^And[uú]ril\b/i.test(r))) {
+    f.woundCap = 4;
+    notes.push('Andúril: never worse than 4+ to wound');
+  }
   if (hasGear(catalog, m, /\bpikes?\b/) && (hasShield(catalog, m) || missile(catalog, m))) {
     duel--;
     notes.push('Pike with a shield or bow: -1 duel');

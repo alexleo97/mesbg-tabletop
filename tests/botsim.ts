@@ -17,6 +17,8 @@ import { arrivalDue, rollArrival } from '../src/shared/narrative.ts';
 import { sauronDue, sauronRoll } from '../src/shared/ring.ts';
 import { burnDue, burns } from '../src/shared/fire.ts';
 import { willOfEvilDue, willOfEvilToll } from '../src/shared/courage.ts';
+import { mightyBonus, mightyDue } from '../src/shared/mighty.ts';
+import { longshanksDue, longshanksMove } from '../src/shared/sam.ts';
 
 export const catalog = catalogJson as unknown as Catalog;
 
@@ -74,6 +76,9 @@ export function play(state: GameState, rand: () => number, maxSteps = 20000) {
     const due = arrivalsDue(state);
     if (due) for (const a of rollArrivals(state, due, d6, uid, rand, now)) state = reduce(state, a);
     // And a narrative scenario's own rules, the One Ring and fire, and Will of Evil.
+    if (mightyDue(state, catalog)) for (const a of mightyBonus(state, catalog, uid, now)) state = reduce(state, a);
+    const sam = longshanksDue(state);
+    if (sam) for (const a of longshanksMove(state, sam)) state = reduce(state, a);
     if (state.narrative) {
       for (let k = 0; k < 4; k++) {
         const bearer = sauronDue(state);

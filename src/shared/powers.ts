@@ -100,7 +100,7 @@ export const under = (state: GameState, m: Model | undefined, power: string) => 
 /** Casters of a Self power within its 6" aura of a model: friends of it, or enemies. */
 function auras(state: GameState, m: Model, power: string, side: 'friend' | 'enemy'): Model[] {
   return Object.values(state.models).filter(
-    c => !c.dead && !c.escaped && (side === 'friend') === (c.owner === m.owner) && effectsOn(state, c).some(e => basePower(e.power) === power && e.by === c.id) && distanceBetween(c, m) <= AURA_RANGE,
+    c => !c.dead && !c.escaped && (side === 'friend') === (c.owner === m.owner) && effectsOn(state, c).some(e => basePower(e.power) === power && e.by === c.id && !e.spared?.includes(m.id)) && distanceBetween(c, m) <= AURA_RANGE,
   );
 }
 
@@ -362,6 +362,18 @@ const d3 = (d6: () => number) => Math.ceil(d6() / 2);
 /** Powers that would move a model or stop it acting. */
 const UNMOVED = new Set(['Call Winds', 'Compel', 'Transfix', 'Paralyse']);
 
+/** Rolls for each wearer of the Ring of Barahir a power would affect: those that roll a 6 are left alone. */
+function barahirRolls(ctx: Ctx, power: string, ms: Model[]): string[] {
+  const free: string[] = [];
+  for (const m of ms) {
+    if (!unitOf(ctx.catalog, m)?.rules.includes('Ring of Barahir')) continue;
+    const die = ctx.d6();
+    ctx.out.push({ type: 'rolled', roll: { id: `r-${ctx.uid()}`, by: m.owner, label: `Ring of Barahir: ${m.name} against ${power} (6)`.slice(0, 80), dice: [die], target: 6, model: m.id, note: die === 6 ? `${power} has no effect on ${m.name}.` : `${power} affects ${m.name}.`, at: ctx.now } });
+    if (die === 6) free.push(m.id);
+  }
+  return free;
+}
+
 /**
  * Everything a power does once it has worked, as actions to apply: log entries, effects put on models, hits rolled,
  * wounds taken, models knocked down or moved. `spell.target` is the model it was aimed at.
@@ -378,11 +390,14 @@ export function powerTakesEffect(
   if (!caster) return [];
   const ctx: Ctx = { state, catalog, caster, d6, uid, now, by: caster.owner, out: [] };
   // Work on copies, so several changes to one model (two effects, say) build on each other.
-  const targets = affected(state, catalog, spell).map(m => ({ ...m }));
-  const t = targets[0];
   const name = basePower(spell.power);
+  // The Ring of Barahir: an enemy power that would affect its wearer has no effect on him on a 6.
+  const spared = barahirRolls(ctx, spell.power, affected(state, catalog, spell).filter(m => m.owner !== caster.owner));
+  const targets = affected(state, catalog, spell).filter(m => !spared.includes(m.id)).map(m => ({ ...m }));
+  const t = targets[0];
   const label = `${spell.power}${t && t.id !== caster.id ? ` on ${t.name}` : ''}`;
   const say = (text: string, m?: Model) => note(ctx, label, text, m);
+  if (!targets.length && spared.length) return ctx.out;
   const pts = (m: Model) => startingPoints(catalog, m);
 
   // A war beast is unaffected by anything that would move it or stop it acting (Rulebook errata, Immovable Object).
@@ -401,6 +416,15 @@ export function powerTakesEffect(
     case 'Blinding Light': {
       const self = { ...caster };
       addEffect(ctx, self, spell.power);
+      // An aura that hinders enemies leaves a wearer of the Ring of Barahir who rolls a 6 alone, wherever he goes.
+      if (name === 'Aura of Dismay' || name === 'Fog of Disarray' || name === 'Instil Fear') {
+        const free = barahirRolls(ctx, spell.power, Object.values(state.models).filter(m => onTable(m) && m.owner !== caster.owner));
+        if (free.length) {
+          const effects = self.effects!.map(e => (e.power === spell.power && e.by === caster.id ? { ...e, spared: free } : e));
+          self.effects = effects;
+          patch(ctx, self, { effects });
+        }
+      }
       const what: Record<string, string> = {
         'Aura of Command': `${caster.name} and friends within 6" pass their Courage tests.`,
         'Aura of Dismay': `Enemies within 6" of ${caster.name} take their Courage tests at -1.`,

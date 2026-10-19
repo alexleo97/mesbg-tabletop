@@ -1,22 +1,10 @@
 import { useState } from 'react';
 import { other } from '../shared/flow.ts';
 import { narrativeById, NARRATIVES, type Side } from '../shared/narrative.ts';
+import { MapPreview, randomRoom, SitePage } from './Home.tsx';
 import { BOT_NAME, type Action, type GameState, type Role, type Seat } from '../shared/types.ts';
 
 type Dispatch = (a: Action) => void;
-
-/** The narrative scenarios in the scenario list, as options of their own group. */
-export function NarrativeOptions() {
-  return (
-    <optgroup label="Narrative">
-      {NARRATIVES.map(n => (
-        <option key={n.id} value={`n:${n.id}`}>
-          {n.name}
-        </option>
-      ))}
-    </optgroup>
-  );
-}
 
 /**
  * A narrative scenario: who plays which side (you pick, and the other player or the Palantír takes the rest), then
@@ -42,8 +30,9 @@ export function NarrativePanel({ state, dispatch, role, id }: { state: GameState
   const sideSeat = (side: Side): Seat | undefined => (set ? (side === 'good' ? state.narrative!.good : other(state.narrative!.good)) : undefined);
   return (
     <div className="narrative">
+      <h4>{n.name}</h4>
       <p className="muted small">Narrative scenario from {n.from}. The cast and the table are the story's own.</p>
-      <h4>Choose your side</h4>
+      <h4>Sides</h4>
       <div className="narrative-sides">
         {(['good', 'evil'] as const).map(side => {
           const at = sideSeat(side);
@@ -58,7 +47,7 @@ export function NarrativePanel({ state, dispatch, role, id }: { state: GameState
         })}
       </div>
       {asking && <p className="warn">This takes the armies and terrain off the table to set up {n.name}. Pick your side again to go ahead.</p>}
-      {!set && !fixed && <p className="fine">{state.bot ? `${BOT_NAME} plays the other side.` : 'Your opponent plays the other side.'}</p>}
+      {!fixed && <p className="fine">Pick the other card to swap sides before the battle starts.</p>}
 
       <h4>Objectives</h4>
       <p>{n.objectives}</p>
@@ -108,5 +97,79 @@ export function NarrativeCast({ state }: { state: GameState }) {
       {list('good')}
       {list('evil')}
     </div>
+  );
+}
+
+/** The menu for a narrative scenario, apart from regular games: the scenario, your side and your opponent, then play. */
+export function NarrativePage() {
+  const [id, setId] = useState(NARRATIVES[0]?.id ?? '');
+  const [side, setSide] = useState<Side>('good');
+  const [vs, setVs] = useState<'computer' | 'friend'>('computer');
+  const n = narrativeById(id);
+  const start = () => n && (location.search = `?room=${randomRoom()}&story=${n.id}&side=${side}${vs === 'computer' ? '&vs=computer' : ''}`);
+  const count = (side: Side) => n?.cast.filter(c => c.side === side).length ?? 0;
+  return (
+    <SitePage page="play" wide>
+      <section className="narrative-menu">
+        <header>
+          <h1>Narrative scenarios</h1>
+          <p className="lead">Play the battles from the story. Each one sets its own table, its exact characters and its special rules, so there are no lists to build and no map to pick.</p>
+        </header>
+        <h2>1. Choose a scenario</h2>
+        <div className="story-grid">
+          {NARRATIVES.map(x => (
+            <button key={x.id} className={`story-card ${x.id === id ? 'on' : ''}`} aria-pressed={x.id === id} onClick={() => setId(x.id)}>
+              <MapPreview w={x.board.w} h={x.board.h} terrain={x.terrain} />
+              <span className="story-text">
+                <b>{x.name}</b>
+                <small className="muted">
+                  {x.from} · {x.board.w}"×{x.board.h}" table
+                </small>
+                <span>{x.blurb}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+        {n && (
+          <>
+            <h2>2. Choose your side</h2>
+            <div className="narrative-sides">
+              {(['good', 'evil'] as const).map(s => (
+                <button key={s} className={`side-card ${s} ${side === s ? 'on' : ''}`} aria-pressed={side === s} onClick={() => setSide(s)}>
+                  <b>{n.sides[s].name}</b>
+                  <span>{n.sides[s].cast}</span>
+                  <small>
+                    {s === 'good' ? 'Good' : 'Evil'} · {count(s)} model{count(s) === 1 ? '' : 's'}
+                  </small>
+                </button>
+              ))}
+            </div>
+            <h2>3. Choose your opponent</h2>
+            <div className="narrative-sides">
+              <button className={`side-card ${vs === 'computer' ? 'on' : ''}`} aria-pressed={vs === 'computer'} onClick={() => setVs('computer')}>
+                <b>{BOT_NAME}</b>
+                <span>The computer plays {n.sides[side === 'good' ? 'evil' : 'good'].name}.</span>
+              </button>
+              <button className={`side-card ${vs === 'friend' ? 'on' : ''}`} aria-pressed={vs === 'friend'} onClick={() => setVs('friend')}>
+                <b>A friend</b>
+                <span>Send them the game's link and they play {n.sides[side === 'good' ? 'evil' : 'good'].name}.</span>
+              </button>
+            </div>
+            <details className="story-brief">
+              <summary>Objectives and special rules</summary>
+              <p>{n.objectives}</p>
+              {n.rules.map(r => (
+                <p key={r.name} className="small">
+                  <b>{r.name}:</b> {r.text}
+                </p>
+              ))}
+            </details>
+            <button className="primary go story-start" onClick={start}>
+              Play {n.name} →
+            </button>
+          </>
+        )}
+      </section>
+    </SitePage>
   );
 }
