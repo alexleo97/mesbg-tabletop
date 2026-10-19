@@ -42,6 +42,8 @@ interface Props {
   openFight: (key: string) => void;
   /** The server moves finished Fight and End phases on by itself (not in the training, which runs in the browser). */
   auto?: boolean;
+  /** A Learn to play lesson: it lays out the table and armies itself, so set-up is only the start. */
+  lesson?: boolean;
 }
 
 type Dispatch = (a: Action) => void;
@@ -446,7 +448,7 @@ function Reinforcements({ state, name }: { state: GameState; name: (s: Seat) => 
   );
 }
 
-export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, openFight, auto, view, setView, table, log }: Props) {
+export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, openFight, auto, lesson, view, setView, table, log }: Props) {
   let combats = allCombats;
   const [small, setSmall] = useState(false);
   const drag = useDraggable('coach');
@@ -471,7 +473,17 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
     title = 'Set up the battle';
     const story = narrativeById(state.narrative?.id);
     const sideOf = (s: Seat) => (state.narrative?.good === s ? 'Good' : 'Evil');
-    body = story ? (
+    body = lesson ? (
+      // A lesson lays out the table and both armies itself, so there is nothing to set up but the start.
+      <>
+        <p>The table and both armies are ready.</p>
+        {me && (
+          <button className="primary go" onClick={() => dispatch({ type: 'startGame' })}>
+            Start the battle
+          </button>
+        )}
+      </>
+    ) : story ? (
       <>
         <ol className="setup-steps">
           <li className="ok">

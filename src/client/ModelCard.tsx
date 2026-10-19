@@ -42,8 +42,6 @@ interface Props {
   combat: Combat | undefined;
   openFight: (key: string) => void;
   close: () => void;
-  /** In a lesson, where the reader rolls a Courage test themselves to see how it works. */
-  practice?: boolean;
 }
 
 /** What the gear of a model says it can shoot with, if anything. */
@@ -170,7 +168,7 @@ function Tend({ state, dispatch, m, catalog }: { state: GameState; dispatch: (a:
 }
 
 /** A selected model's card: its profile at a glance and the actions that make sense in this phase. */
-export function ModelCard({ state, dispatch, role, model: m, catalog, target, clearTarget, combat, openFight, close, practice }: Props) {
+export function ModelCard({ state, dispatch, role, model: m, catalog, target, clearTarget, combat, openFight, close }: Props) {
   const drag = useDraggable('model-card');
   const [photoFailed, setPhotoFailed] = useState(false);
   /** A Sharpshooter's pick: aim at a rider's mount rather than the rider. */
@@ -560,11 +558,6 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
         <ol className="log card-roll">
           <RollRow r={recent} state={state} role={role} dispatch={dispatch} />
         </ol>
-      )}
-      {practice && mine && (
-        <div className="row wrap card-actions">
-          <button onClick={() => dispatch({ type: 'roll', count: 2, label: `Courage test: ${m.name}`, model: m.id, ...(stats?.C ? { sum: stats.C } : {}) })}>Courage</button>
-        </div>
       )}
     </div>
   );

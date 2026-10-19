@@ -568,7 +568,7 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
               onMark={m => conn.mark(m)}
             />
 
-            {!state.flow.started && (!practice || setupCard) && (
+            {!state.flow.started && !practice && (
               <SetupCard
                 state={state}
                 dispatch={dispatch}
@@ -594,7 +594,6 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
             {single && (
               <ModelCard
                 key={single.id}
-                practice={!!practice}
                 state={state}
                 dispatch={dispatch}
                 role={role}
@@ -623,6 +622,7 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
               openTab={t => (state.flow.started ? t !== 'map' && setBattleTab(t) : setSetupTab(t))}
               openFight={setFightKey}
               auto={!practice}
+              lesson={!!practice}
               view={coachView}
               setView={setCoachView}
               table={tableView}
