@@ -789,6 +789,10 @@ details.finish summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
 .narrative-menu { display: flex; flex-direction: column; gap: 12px; }
 .narrative-menu header { display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; }
 .narrative-menu h2 { margin: 14px 0 0; font-size: 1.15rem; color: var(--gold); font-family: var(--font-head); }
+.narrative-menu .back-link { align-self: flex-start; color: var(--gold); text-decoration: none; font-size: 0.95rem; padding: 4px 10px 4px 0; }
+.narrative-menu .back-link:hover { text-decoration: underline; }
+.story-saga { display: flex; flex-direction: column; gap: 8px; }
+.story-saga h3 { margin: 6px 0 0; font-size: 1rem; color: var(--text); font-family: var(--font-head); letter-spacing: 0.04em; }
 .story-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
 .story-card { display: flex; gap: 12px; align-items: flex-start; text-align: left; padding: 12px; border-radius: 12px; background: var(--panel); border: 2px solid var(--line); color: var(--text); font: inherit; cursor: pointer; }
 .story-card:hover { border-color: var(--gold); }

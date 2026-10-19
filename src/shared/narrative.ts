@@ -11,6 +11,13 @@ import type { Action, DiceRoll, GameState, Mat, Model, Seat, Terrain } from './t
 
 export type Side = 'good' | 'evil';
 
+/** The two tales the scenarios come from, in the order the menu lists them. */
+export const SAGAS = [
+  { id: 'hobbit', name: 'The Hobbit' },
+  { id: 'lotr', name: 'The Lord of the Rings' },
+] as const;
+export type Saga = (typeof SAGAS)[number]['id'];
+
 /** Where a member of the cast starts, and where it may be moved to before the battle. */
 export type Placement =
   /** Just there. */
@@ -52,8 +59,9 @@ export interface NarrativeRule {
 export interface Narrative {
   id: string;
   name: string;
-  /** The book it comes from. */
+  /** The book it comes from, and which tale that is part of (the menu lists them under it). */
   from: string;
+  saga: Saga;
   /** A line on what happens, in our own words. */
   blurb: string;
   board: { w: number; h: number; mat: Mat };
@@ -75,6 +83,7 @@ export const NARRATIVES: Narrative[] = [
     id: 'weathertop',
     name: 'Weathertop',
     from: 'The Fellowship of the Ring',
+    saga: 'lotr',
     blurb: 'Night on Amon Sûl: the Nine close in on Frodo and the Ring, and only burning brands and Strider stand in their way.',
     board: { w: 24, h: 24, mat: 'plains' },
     terrain: [
@@ -123,6 +132,7 @@ export const NARRATIVES: Narrative[] = [
     id: 'roast-mutton',
     name: 'Roast Mutton',
     from: 'The Hobbit: An Unexpected Journey',
+    saga: 'hobbit',
     blurb: 'Night in the Trollshaws: three hungry Trolls have caught Bilbo, and Thorin\'s Company charges out of the trees to get him back before they all end up in the pot.',
     board: { w: 24, h: 24, mat: 'forest' },
     terrain: [

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { other } from '../shared/flow.ts';
-import { narrativeById, NARRATIVES, type Side } from '../shared/narrative.ts';
+import { narrativeById, NARRATIVES, SAGAS, type Side } from '../shared/narrative.ts';
 import { MapPreview, randomRoom, SitePage } from './Home.tsx';
 import { BOT_NAME, type Action, type GameState, type Role, type Seat } from '../shared/types.ts';
 
@@ -100,6 +100,9 @@ export function NarrativeCast({ state }: { state: GameState }) {
   );
 }
 
+/** A table's size as the books give it: in feet once it's 4' or more across, otherwise in inches. */
+const tableSize = (b: { w: number; h: number }) => (b.w >= 48 && b.w % 12 === 0 && b.h % 12 === 0 ? `${b.w / 12}'×${b.h / 12}'` : `${b.w}"×${b.h}"`);
+
 /** The menu for a narrative scenario, apart from regular games: the scenario, your side and your opponent, then play. */
 export function NarrativePage() {
   const [id, setId] = useState(NARRATIVES[0]?.id ?? '');
@@ -111,25 +114,37 @@ export function NarrativePage() {
   return (
     <SitePage page="play" wide>
       <section className="narrative-menu">
+        <a className="back-link" href="?">
+          ← Back
+        </a>
         <header>
           <h1>Narrative scenarios</h1>
           <p className="lead">Play the battles from the story. Each one sets its own table, its exact characters and its special rules, so there are no lists to build and no map to pick.</p>
         </header>
         <h2>1. Choose a scenario</h2>
-        <div className="story-grid">
-          {NARRATIVES.map(x => (
-            <button key={x.id} className={`story-card ${x.id === id ? 'on' : ''}`} aria-pressed={x.id === id} onClick={() => setId(x.id)}>
-              <MapPreview w={x.board.w} h={x.board.h} terrain={x.terrain} />
-              <span className="story-text">
-                <b>{x.name}</b>
-                <small className="muted">
-                  {x.from} · {x.board.w}"×{x.board.h}" table
-                </small>
-                <span>{x.blurb}</span>
-              </span>
-            </button>
-          ))}
-        </div>
+        {SAGAS.map(saga => {
+          const list = NARRATIVES.filter(x => x.saga === saga.id);
+          if (!list.length) return null;
+          return (
+            <section key={saga.id} className="story-saga">
+              <h3>{saga.name}</h3>
+              <div className="story-grid">
+                {list.map(x => (
+                  <button key={x.id} className={`story-card ${x.id === id ? 'on' : ''}`} aria-pressed={x.id === id} onClick={() => setId(x.id)}>
+                    <MapPreview w={x.board.w} h={x.board.h} terrain={x.terrain} />
+                    <span className="story-text">
+                      <b>{x.name}</b>
+                      <small className="muted">
+                        {x.from} · {tableSize(x.board)} table
+                      </small>
+                      <span>{x.blurb}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          );
+        })}
         {n && (
           <>
             <h2>2. Choose your side</h2>
