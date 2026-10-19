@@ -42,6 +42,16 @@ describe('entriesFor', () => {
     const unit = catalog.units[GUARD];
     expect(entryPoints(unit, ['OPT0768'], 10)).toBe(140);
   });
+
+  it('counts the options a model comes with', () => {
+    // The Black Riders' Ringwraith is priced by its included profile and horse: 105 points (errata).
+    expect(entryPoints(catalog.units['[the-black-riders] ringwraith'], [], 1)).toBe(105);
+    // A Royal Guard in the Pelennor list comes mounted, the same price as one given a horse in Kingdom of Rohan.
+    expect(entryPoints(catalog.units['[defenders-of-the-pelennor] rohan-royal-guard'], [], 1)).toBe(16);
+    // Already listed among the chosen options, it's still counted once.
+    const wraith = catalog.units['[the-black-riders] ringwraith'];
+    expect(entryPoints(wraith, wraith.options.map(o => o.id).filter(id => wraith.options.find(o => o.id === id)?.included), 1)).toBe(105);
+  });
 });
 
 describe('parseBuilderExport', () => {
