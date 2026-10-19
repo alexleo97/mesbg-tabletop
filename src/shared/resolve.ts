@@ -30,13 +30,14 @@ import { arrivalAuto, arrivalDue, mayCry, narrativeById, narrativeSetup, rollArr
 import { invisibleTo, ringRequest, seekRequest } from './ring.ts';
 import { isTroll, spareFor } from './mutton.ts';
 import { bag, roast, sneeze, steadyAgainst, trollSacks } from './trolls.ts';
-import { AXE_FREED, axeMastery, canHeadbutt, goodSort, hasMattock, hasOakenshield, loyalTo } from './company.ts';
+import { AXE_FREED, axeMastery, axeTest, canHeadbutt, deadeye, goodSort, hasMattock, hasOakenshield, longbeard, loyalTo, mayAxeTest, mayLongbeard, maySwap, mayTend, rerollFor, tend, trumpet, trumpetDue } from './company.ts';
+import { tierOf } from './warbands.ts';
 import { MORGUL, morgulBlades } from './morgul.ts';
 import { MAX_DICE } from './reducer.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
 /** Dice requests a player sends, which only whoever holds the dice (the server, or the browser in practice games) can answer. */
-export const DICE_REQUESTS = new Set<Action['type']>(['setNarrative', 'ring', 'cry', 'aragorn', 'seek', 'roll', 'fight', 'strikes', 'shoot', 'shotOn', 'banner', 'dismount', 'trample', 'cross', 'rollFate', 'rollPriority', 'uncover', 'cast', 'resist', 'breach', 'hurl']);
+export const DICE_REQUESTS = new Set<Action['type']>(['setNarrative', 'ring', 'cry', 'aragorn', 'seek', 'roll', 'fight', 'strikes', 'shoot', 'shotOn', 'banner', 'dismount', 'trample', 'cross', 'rollFate', 'rollPriority', 'uncover', 'cast', 'resist', 'breach', 'hurl', 'swap', 'reroll', 'tend', 'longbeard', 'trumpet', 'axeTest']);
 
 export interface Resolved {
   /** Results everyone applies, in order. */
@@ -589,6 +590,8 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       const stray = plan.fight?.[0];
       if (stray) req.stray = { id: stray, name: state.models[stray].name, d: dOf(stray) };
       if (plan.rerolls) req.rerolls = true;
+      // Ori's Deadeye with his sling.
+      if (deadeye(catalog, shooter, req.shooter.weapon)) req.deadeye = true;
       // Thrown as it charges: the model first closes to 1" of its target (unless it set off that close).
       const before: Action[] = [];
       if (req.charge) {
@@ -676,6 +679,52 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       const sum = Math.max(2, Math.min(12, (Math.round(Number(action.intelligence)) || 7) + intelligenceWorse(state, m)));
       const roll = { id: `r-${uid()}`, by: seat, label: `Uncover the Artefact: ${m.name}`.slice(0, 80), dice: [d6(), d6()], sum, at: now };
       return { apply: [{ type: 'uncovered', model: m.id, marker: t.id, roll }] };
+    }
+    case 'swap': {
+      // Kíli and Fíli swap places as a phase starts (Combat Synergy): not a move.
+      const a = state.models[String(action.a)];
+      const b = state.models[String(action.b)];
+      if (!a || !b || a.owner !== seat || !maySwap(state, catalog, a, b)) return null;
+      const roll: DiceRoll = { id: `r-${uid()}`, by: seat, label: `Combat Synergy: ${a.name} and ${b.name} swap places`.slice(0, 80), dice: [], at: now, note: 'They may each re-roll a die in their duels this turn.' };
+      return { apply: [{ type: 'rolled', roll }, { type: 'backAway', moves: [{ id: a.id, x: b.x, y: b.y }, { id: b.id, x: a.x, y: a.y }] }, { type: 'usedTurn', key: `swap-${state.phase}`, model: seat }] };
+    }
+    case 'reroll': {
+      // Combat Synergy, or Óin's Reading the Portents (a Will point), re-rolls a die of a duel roll.
+      const r = state.log.find(x => x.id === String(action.roll));
+      const k = Math.round(Number(action.die));
+      const why = action.why === 'portents' ? 'portents' : 'synergy';
+      const by = state.models[String(action.model)];
+      if (!r || !by || by.owner !== seat || !(k >= 0 && k < r.dice.length)) return null;
+      // (Kíli or Fíli re-roll their own dice; Óin a friend's.)
+      if (why === 'synergy' ? r.model !== by.id : !r.model || state.models[r.model]?.owner !== seat) return null;
+      const name = rerollFor(state, catalog, r, why, by);
+      if (!name) return null;
+      return { apply: [{ type: 'dieRerolled', roll: r.id, die: k, value: d6(), by: name, why }, ...(why === 'portents' ? [{ type: 'affect', id: by.id, patch: { will: by.will - 1 } } as Action] : [])] };
+    }
+    case 'tend': {
+      const m = state.models[String(action.model)];
+      const t = state.models[String(action.target)];
+      const how = action.how === 'spirits' ? 'spirits' : 'herbs';
+      if (!m || m.owner !== seat || !mayActivate(state, m) || mayTend(state, catalog, how, m, t)) return null;
+      return { apply: tend(how, m, t!, d6, uid, now) };
+    }
+    case 'longbeard': {
+      const m = state.models[String(action.model)];
+      if (!m || m.owner !== seat || !mayLongbeard(state, catalog, m)) return null;
+      if (action.skip === true) return { apply: [{ type: 'usedTurn', key: 'longbeard', model: m.id }] };
+      return { apply: longbeard(state, m, d6, uid, now) };
+    }
+    case 'trumpet': {
+      const due = trumpetDue(state, catalog);
+      if (!due || due.oin.owner !== seat) return null;
+      const tierOk = (o: Model, t: Model) => tierOf(o.profileId ? catalog?.units[o.profileId] : undefined) <= tierOf(t.profileId ? catalog?.units[t.profileId] : undefined) && t.hero;
+      const out = trumpet(state, catalog, action.listen === true, d6, uid, now, tierOk);
+      return out && { apply: out };
+    }
+    case 'axeTest': {
+      const m = state.models[String(action.model)];
+      if (!m || m.owner !== seat || !mayAxeTest(state, catalog, m)) return null;
+      return { apply: axeTest(catalog, m, d6, uid, now) };
     }
     case 'rollPriority': {
       // Once per turn: whoever asks first rolls for both players.

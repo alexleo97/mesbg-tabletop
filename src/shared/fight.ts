@@ -155,6 +155,8 @@ export interface ShotRequest {
   stray?: { id: string; name: string; d: number };
   /** Heroic Accuracy: failed In the Way tests are re-rolled. */
   rerolls?: boolean;
+  /** Ori's Deadeye: a natural 6 to hit skips In the Way and To Wound, and simply does a Wound. */
+  deadeye?: boolean;
   /** To wound, re-roll 1s (Poisoned Attacks) or every miss (Bane of Kings). */
   ones?: boolean;
   bane?: boolean;
@@ -533,6 +535,7 @@ export function cleanPausedShot(raw: unknown): ShotRequest | null {
     ...(o.rerolls === true ? { rerolls: true } : {}),
     ...(o.ones === true ? { ones: true } : {}),
     ...(o.bane === true ? { bane: true } : {}),
+    ...(o.deadeye === true ? { deadeye: true } : {}),
     ...(o.sharp === true ? { sharp: true } : {}),
     ...(o.target?.mount && typeof o.target.mount === 'object' ? { target: { ...base.target, mount: { name: str(o.target.mount.name, 40), d: clamp(o.target.mount.d, 1, 10, 4), ...(o.target.mount.monster === true ? { monster: true } : {}), ...(o.target.mount.chariot === true ? { chariot: true } : {}) } } } : {}),
   };
@@ -581,6 +584,9 @@ export function resolveShot(req: ShotRequest, d6: D6, by: Role, group: string, n
   }).dice;
   // A natural 6 always hits.
   let flying = toHit.filter(d => d >= Math.min(6, shooter.shoot)).length;
+  // Ori's Deadeye: each natural 6 goes straight to its mark for a Wound, with no In the Way test or roll To Wound.
+  const dead = req.deadeye && !req.brand ? toHit.filter(d => d === 6).length : 0;
+  flying -= dead;
   const struck: { id: string; name: string; d: number; count: number }[] = [];
   const strike = (id: string, name: string, d: number, count: number) => {
     const at = struck.find(x => x.id === id);
@@ -650,6 +656,13 @@ export function resolveShot(req: ShotRequest, d6: D6, by: Role, group: string, n
     const again = req.bane ? r.dice.filter(d => d < need.target).length : req.ones ? r.dice.filter(d => d === 1).length : 0;
     if (again) wounds += strikeWounds([take(`To wound ${v.name} again: ${req.bane ? 'misses' : '1s'} re-rolled (${formatNeed(need)})`, again, { target: need.target, against: v.id, model: shooter.id }, need.then)]);
     hits.push({ id: v.id, wounds });
+  }
+  if (dead) {
+    const r = take(`Deadeye: ${dead} natural 6${dead === 1 ? '' : 's'}, a Wound each on ${target.name}`, 0, { against: target.id, model: shooter.id, fixed: dead });
+    const at = hits.find(h => h.id === target.id);
+    if (at) at.wounds += strikeWounds([r]);
+    else hits.push({ id: target.id, wounds: strikeWounds([r]) });
+    if (!struck.some(v => v.id === target.id)) struck.push({ id: target.id, name: target.name, d: target.d, count: 0 });
   }
   const onTarget = hits.find(h => h.id === target.id)?.wounds ?? 0;
   const others = struck.filter(v => v.id !== target.id).map(v => v.name);

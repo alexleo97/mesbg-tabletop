@@ -120,11 +120,12 @@ function goToPhase(state: GameState, phase: Phase, turn: number, newTurn: boolea
       done: [],
       resolved: newTurn ? [] : state.flow.resolved,
       heroics: newTurn ? [] : state.flow.heroics,
-      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], moved: [], cast: [], spell: undefined, held: [], stood: [], climbed: {}, compel: undefined, supported: [], strikeBonus: {}, charges: {}, brutal: [], hurledAt: [], breached: [], trampled: [], turned: [], cables: [], sauron: [], ringTried: [], sought: [], reinforce: undefined, placing: [], joined: [] } : {}),
+      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], moved: [], cast: [], spell: undefined, held: [], stood: [], climbed: {}, compel: undefined, supported: [], strikeBonus: {}, charges: {}, brutal: [], hurledAt: [], breached: [], trampled: [], turned: [], cables: [], sauron: [], ringTried: [], sought: [], reinforce: undefined, usedTurn: [], heard: [], freeMove: [], placing: [], joined: [] } : {}),
       ...(phase !== state.phase ? { compel: undefined, mustCharge: undefined } : {}),
       // The fights are paired off as the Fight phase begins, and stay that way until it ends.
       ...(phase !== state.phase ? { pairs: phase === 'fight' && state.flow.started ? pairOff(livingModels(state), { ...state, phase: 'move' }, state.flow.pairChoices).map(c => c.key) : undefined, pairChoices: undefined } : {}),
       passed: [],
+      listen: undefined,
       lastHeroic: null,
       starts: {},
       walked: {},
@@ -486,6 +487,10 @@ function cleanRoll(r: unknown): DiceRoll | null {
     ...(o.sixSafe === true ? { sixSafe: true } : {}),
     ...(o.per && o.per > 1 ? { per: int(o.per, 1, 3, 1) } : {}),
     ...(o.banner === true ? { banner: true } : {}),
+    ...(o.sixes === true ? { sixes: true } : {}),
+    ...(o.fixed !== undefined ? { fixed: int(o.fixed, 0, 20, 0) } : {}),
+    ...(o.frees ? { frees: id(o.frees) } : {}),
+    ...(Array.isArray(o.rerolled) ? { rerolled: o.rerolled.filter(x => x === 'synergy' || x === 'portents').slice(0, 4) } : {}),
     at: num(o.at, 0, Number.MAX_SAFE_INTEGER, 0),
   };
 }
@@ -982,7 +987,9 @@ function step(state: GameState, action: Action): GameState {
     case 'priorityRolled': {
       if (!isSeat(action.chooser) || !Array.isArray(action.roll)) return state;
       const roll: [number, number] = [int(action.roll[0], 1, 6, 1), int(action.roll[1], 1, 6, 1)];
-      return { ...state, flow: { ...state.flow, roll, chooser: action.chooser, chooserTurn: state.turn } };
+      // (The last turn's chooser is kept, for a tie if Balin's Longbeard has the roll made again.)
+      const lastChooser = state.flow.chooserTurn === state.turn ? state.flow.lastChooser : state.flow.chooser;
+      return { ...state, flow: { ...state.flow, roll, chooser: action.chooser, chooserTurn: state.turn, ...(lastChooser ? { lastChooser } : {}) } };
     }
     case 'choosePriority':
       if (!isSeat(action.seat)) return state;
@@ -1035,7 +1042,8 @@ function step(state: GameState, action: Action): GameState {
       // A war drum calls a Heroic March for free, hero or not.
       const drum = !!m?.drum && info?.name === 'Heroic March';
       // Sam's Heroic Combat to get to Frodo costs nothing.
-      const free = !!m && info?.name === 'Heroic Combat' && longshanksFree(state, m);
+      // (So is Bifur's Heroic Move, once his axe is out and he has passed the test for it this turn.)
+      const free = !!m && ((info?.name === 'Heroic Combat' && longshanksFree(state, m)) || (info?.name === 'Heroic Move' && !!state.flow.freeMove?.includes(m.id)));
       if (!m || (!m.hero && !drum) || m.dead || (m.might < 1 && !drum && !free) || !info || info.phase !== state.phase || cannotAct(state, m)) return state;
       if (state.flow.heroics.some(h => h.model === m.id && h.phase === state.phase)) return state;
       if ((info.name === 'Heroic Shoot' || info.name === 'Heroic Accuracy') && state.flow.started && engagedNow(state, m)) return state;
@@ -1134,6 +1142,8 @@ function step(state: GameState, action: Action): GameState {
     case 'willOfEvil':
       return { ...state, flow: { ...state.flow, willed: state.turn } };
     case 'passHeroic':
+      // (Not while Óin's player decides whether to listen through his trumpet.)
+      if (state.flow.listen) return state;
       if (!isSeat(action.seat) || state.flow.passed.includes(action.seat)) return state;
       return { ...state, flow: { ...state.flow, passed: [...state.flow.passed, action.seat], lastHeroic: action.seat } };
     case 'spendWill': {
@@ -1184,6 +1194,47 @@ function step(state: GameState, action: Action): GameState {
     }
     case 'burned':
       return { ...state, flow: { ...state.flow, burned: state.turn } };
+    case 'usedTurn': {
+      // A once-a-turn ability has been used (Kíli and Fíli's swap is once a phase, and lets them re-roll in the fights).
+      const key = `${str(action.key, 40)}:${str(action.model, 80)}`;
+      if (state.flow.usedTurn?.includes(key)) return state;
+      return { ...state, flow: { ...state.flow, usedTurn: [...(state.flow.usedTurn ?? []), key].slice(-60), ...(key.startsWith('swap-') ? { synergy: state.turn } : {}) } };
+    }
+    case 'freeMove':
+      return state.models[action.model] ? { ...state, flow: { ...state.flow, freeMove: [...new Set([...(state.flow.freeMove ?? []), action.model])] } } : state;
+    case 'heard': {
+      const key = str(action.key, 120);
+      return { ...state, flow: { ...state.flow, heard: [...(state.flow.heard ?? []), key].slice(-40), listen: state.flow.listen === key ? undefined : state.flow.listen } };
+    }
+    case 'listen':
+      return { ...state, flow: { ...state.flow, listen: str(action.key, 120) } };
+    case 'freeHeroic': {
+      // Óin, hearing an enemy hero's heroic action, calls the same one for nothing.
+      const m = state.models[action.model];
+      const info = heroicInfo(str(action.action, 40));
+      if (!m || m.dead || !m.hero || !info || info.phase !== state.phase || state.flow.heroics.some(h => h.model === m.id && h.phase === state.phase)) return state;
+      const other: Seat = m.owner === 'p1' ? 'p2' : 'p1';
+      // A Heroic Challenge he copies goes at the hero who issued it (the game checked he may challenge it).
+      const t = info.name === 'Heroic Challenge' ? state.models[str(action.target, 80)] : undefined;
+      if (info.name === 'Heroic Challenge' && (!t || t.dead || t.owner === m.owner || (state.flow.challenges ?? []).some(c => c.by === m.id))) return state;
+      const challenges = t ? [...(state.flow.challenges ?? []), { by: m.id, target: t.id, cap: m.might }] : state.flow.challenges;
+      return { ...state, flow: { ...state.flow, heroics: [...state.flow.heroics, { model: m.id, action: info.name, phase: state.phase, free: true }], ...(t ? { challenges } : {}), passed: state.flow.passed.filter(x => x !== other && x !== m.owner), lastHeroic: m.owner } };
+    }
+    case 'dieRerolled': {
+      // Combat Synergy, or Óin reading the portents: one die of a duel roll rolled again.
+      const i = state.log.findIndex(r => r.id === action.roll);
+      const r = state.log[i];
+      const k = int(action.die, 0, MAX_DICE, -1);
+      const why = action.why === 'synergy' || action.why === 'portents' ? action.why : null;
+      if (!r || !why || r.rerolled?.includes(why) || k < 0 || k >= r.dice.length) return state;
+      const dice = [...r.dice];
+      const was = dice[k];
+      dice[k] = int(action.value, 1, 6, was);
+      const log = [...state.log];
+      // (Not a note: a note on a duel roll marks the duel settled.)
+      log[i] = { ...r, dice, rerolled: [...(r.rerolled ?? []), why], label: `${r.label.replace(/ \(F.*$/, '')}: ${str(action.by, 40)} re-rolled a ${was}`.slice(0, 80) };
+      return { ...state, log };
+    }
     case 'placing': {
       const p = cleanPlacing(action.placing, state);
       if (!p) return state;
@@ -1256,7 +1307,11 @@ function step(state: GameState, action: Action): GameState {
       if (hero.fateRoll === r.id && roll.dice[0] >= 4) hero = { ...hero, pending: (hero.pending ?? 1) - 1, fateRoll: undefined };
       // A Courage test that now passes counts as passed (a charge at a terrifying enemy can go ahead).
       const flow = courage && roll.dice[0] + roll.dice[1] >= roll.sum! && state.flow.courage?.[m.id] === false ? { ...state.flow, courage: { ...state.flow.courage, [m.id]: true } } : state.flow;
-      return ringAfterMight(afterMight({ ...state, log, flow, models: { ...state.models, [m.id]: settle(hero) } }, roll.id), roll);
+      let models = { ...state.models, [m.id]: settle(hero) };
+      // Might that makes a recovery roll a 6 frees the Paralysed model (from a Troll's sack too).
+      const held = roll.frees ? models[roll.frees] : undefined;
+      if (held && roll.target === 6 && roll.dice[0] === 6 && held.effects?.some(e => basePower(e.power) === 'Paralyse')) models = { ...models, [held.id]: { ...held, effects: held.effects.filter(e => basePower(e.power) !== 'Paralyse') } };
+      return ringAfterMight(afterMight({ ...state, log, flow, models }, roll.id), roll);
     }
     case 'wound': {
       const m = state.models[action.id];
@@ -1457,7 +1512,10 @@ function step(state: GameState, action: Action): GameState {
       const w = action.winner;
       if (!(isSeat(w) || w === 'draw') || state.result?.agreed || (state.result && state.result.by !== 'game')) return state;
       if (state.result?.winner === w) return state;
-      return { ...state, result: { winner: w, by: 'game', confirmed: [], agreed: false } };
+      // A model still in a Troll's sack when the game ends counts as slain.
+      const bagged = Object.values(state.models).filter(m => !m.dead && m.effects?.some(e => e.sack));
+      const models = bagged.length ? { ...state.models, ...Object.fromEntries(bagged.map(m => [m.id, { ...m, dead: true, wounds: 0 }])) } : state.models;
+      return { ...state, models, result: { winner: w, by: 'game', confirmed: [], agreed: false } };
     }
     case 'resultSaved':
       return state.result?.agreed ? { ...state, result: { ...state.result, saved: true } } : state;
@@ -1592,6 +1650,12 @@ export function loadState(raw: unknown): GameState {
         ...(isSeat(f.heroicFirst) ? { heroicFirst: f.heroicFirst } : {}),
         ...(Array.isArray(f.activated) ? { activated: f.activated.slice(0, 400).map(x => str(x, 80)) } : {}),
         ...(Number.isFinite(f.willed) ? { willed: int(f.willed, 0, 99, 0) } : {}),
+        ...(Array.isArray(f.usedTurn) ? { usedTurn: f.usedTurn.slice(0, 60).map(x => str(x, 130)) } : {}),
+        ...(Array.isArray(f.heard) ? { heard: f.heard.slice(0, 40).map(x => str(x, 120)) } : {}),
+        ...(typeof f.listen === 'string' ? { listen: str(f.listen, 120) } : {}),
+        ...(Array.isArray(f.freeMove) ? { freeMove: f.freeMove.slice(0, 20).map(x => str(x, 80)) } : {}),
+        ...(Number.isFinite(f.synergy) ? { synergy: int(f.synergy, 0, 99, 0) } : {}),
+        ...(isSeat(f.lastChooser) ? { lastChooser: f.lastChooser } : {}),
         ...(f.shotPause && typeof f.shotPause === 'object' && cleanPause(f.shotPause) ? { shotPause: cleanPause(f.shotPause) } : {}),
         ...(f.choices && typeof f.choices === 'object'
           ? { choices: Object.fromEntries(Object.entries(f.choices as Record<string, Record<string, unknown>>).slice(0, 200).map(([k, v]) => [str(k, 80), { ...(v?.shielding === true ? { shielding: true } : {}), ...(v?.twoHanded === true ? { twoHanded: true } : {}), ...Object.fromEntries(FIGHT_TARGETS.filter(t => typeof v?.[t] === 'string').map(t => [t, str(v[t], 80)])) }])) }

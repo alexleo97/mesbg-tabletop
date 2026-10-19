@@ -252,6 +252,8 @@ export interface DiceRoll {
   rerolled?: ('synergy' | 'portents')[];
   /** Grasper & Keeper: each natural 6 that wounds does 2 Wounds. */
   sixes?: boolean;
+  /** A roll to recover from Paralyse (or a Troll's sack): the model a 6 frees. */
+  frees?: string;
   /** Wounds this roll does without a roll To Wound (Mince 'em Fine). */
   fixed?: number;
   /** Might points spent raising these dice. */
@@ -510,10 +512,12 @@ export interface Flow {
   synergy?: number;
   /** Enemy heroic actions Óin's Hearing Trumpet has listened for this turn. */
   heard?: string[];
+  /** The one his player is deciding about now: no more heroic actions are settled until they do. */
+  listen?: string;
   /** Heroes that may declare a Heroic Move for free this turn (Bifur, once his axe is out). */
   freeMove?: string[];
-  /** The turn Balin's Longbeard re-rolled the roll for Priority. */
-  longbeard?: number;
+  /** Who chose Priority the turn before this one's roll (a tie goes against them). */
+  lastChooser?: Seat;
 }
 
 /**
@@ -646,14 +650,20 @@ export type Action =
   | { type: 'freeMove'; model: string }
   /** Server only: an enemy heroic action Óin's Hearing Trumpet has listened for. */
   | { type: 'heard'; key: string }
+  /** Server only: an enemy heroic action Óin could hear; play waits for his player to say whether he listens. */
+  | { type: 'listen'; key: string }
   /** Kíli and Fíli swap places as a phase starts (Combat Synergy). */
   | { type: 'swap'; a: string; b: string }
   /** Request: re-roll one die of a duel roll for Combat Synergy, or Óin's Reading the Portents (a Will point). */
   | { type: 'reroll'; roll: string; die: number; why: 'synergy' | 'portents'; model: string }
   /** Request: Óin's Healing Herbs, or Bombur's Raising Spirits, on a friend. */
   | { type: 'tend'; how: 'herbs' | 'spirits'; model: string; target: string }
-  /** Request: Balin's Longbeard, a Will point to re-roll the roll for Priority. */
-  | { type: 'longbeard'; model: string }
+  /** Request: Balin's Longbeard, a Will point to re-roll his side's roll for Priority (or, with `skip`, not this turn). */
+  | { type: 'longbeard'; model: string; skip?: boolean }
+  /** Request: Óin's Hearing Trumpet, listening (or not) for the enemy heroic action it caught (see company.ts). */
+  | { type: 'trumpet'; listen: boolean }
+  /** Request: Bifur, his axe freed, tests his Intelligence for a free Heroic Move this turn. */
+  | { type: 'axeTest'; model: string }
   /** A die of a duel roll re-rolled by a model's rule, worked out by the game (never sent by a player). */
   | { type: 'dieRerolled'; roll: string; die: number; value: number; by: string; why: 'synergy' | 'portents' }
   /** Server only: the fires of models Set Ablaze have burned this turn. */

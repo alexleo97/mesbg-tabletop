@@ -1,4 +1,5 @@
 import { modelStats, rulesFor, startingPoints, type Catalog } from './catalog.ts';
+import { priorityChooser } from './flow.ts';
 import { distanceBetween } from './geometry.ts';
 import { carriedBy } from './objects.ts';
 import { sightTo } from './sight.ts';
@@ -51,6 +52,9 @@ export function steadfast(state: GameState, catalog: Catalog | null | undefined,
 /** Thorin's "Loyalty, honour, a willing heart": the Company within 6" of him (himself too) re-roll 1s to wound. */
 export const loyalTo = (state: GameState, catalog: Catalog | null | undefined, m: Model) =>
   inCompany(catalog, m) && Object.values(state.models).some(t => t.owner === m.owner && onTable(t) && rule(catalog, t, /^"?Loyalty, honour/i) && distanceBetween(t, m) <= 6);
+
+/** Thorin, whose Stand Fast! steadies the heroes of his Company as well as its warriors. */
+export const thorinsCall = (catalog: Catalog | null | undefined, m: Model) => rule(catalog, m, /^"?Loyalty, honour/i);
 
 /** Dori's A Good Sort: with Ori or Nori within 3", he has 3 Attacks and re-rolls 1s in the duel. */
 export const goodSort = (state: GameState, catalog: Catalog | null | undefined, m: Model) =>
@@ -114,8 +118,8 @@ export function rerollFor(state: GameState, catalog: Catalog | null | undefined,
   const m = state.models[r.model];
   if (!m || m.dead) return null;
   if (why === 'synergy') {
-    // Once Kíli and Fíli have swapped this turn, each re-rolls one die in the Fight phase.
-    if (state.flow.synergy !== state.turn || !hasSynergy(catalog, m) || state.flow.usedTurn?.includes(`synergy:${m.id}`)) return null;
+    // Once Kíli and Fíli have swapped this turn, each re-rolls one die of each of his duel rolls in the Fight phase.
+    if (state.flow.synergy !== state.turn || !hasSynergy(catalog, m)) return null;
     return `${m.name} (Combat Synergy)`;
   }
   // Óin's Reading the Portents: a Will point for a friend of the Company within 6" to re-roll a die.
@@ -154,10 +158,33 @@ export function tend(how: 'herbs' | 'spirits', m: Model, t: Model, d6: () => num
 
 // ——— Balin's Longbeard ———
 
-/** Whether Balin may spend a Will point now to re-roll the roll for Priority: just after it, once. */
+/** Whether Balin may spend a Will point now to have his side's roll for Priority made again: just after it, once. */
 export function mayLongbeard(state: GameState, catalog: Catalog | null | undefined, m: Model | undefined): boolean {
-  if (!m || !onTable(m) || m.will < 1 || !rule(catalog, m, /^Longbeard$/) || state.phase !== 'priority') return false;
-  return state.flow.chooserTurn === state.turn && !!state.flow.chooser && state.flow.longbeard !== state.turn;
+  if (!m || !onTable(m) || m.will < 1 || !rule(catalog, m, /^Longbeard$/) || state.phase !== 'priority' || !state.flow.started) return false;
+  return state.flow.chooserTurn === state.turn && !!state.flow.chooser && !state.flow.usedTurn?.includes(`longbeard:${m.id}`);
+}
+
+/** Balin on the table who may still use Longbeard this Priority phase, for a seat. */
+export const longbeardFor = (state: GameState, catalog: Catalog | null | undefined, seat: Seat) => Object.values(state.models).find(m => m.owner === seat && mayLongbeard(state, catalog, m));
+
+/** Balin's Longbeard: his side's Priority die rolled again (both, on a first-turn tie), and who chooses now. */
+export function longbeard(state: GameState, m: Model, d6: () => number, uid: () => string, now: number): Action[] {
+  const i = m.owner === 'p1' ? 0 : 1;
+  const was = state.flow.roll ?? [1, 1];
+  const roll: [number, number] = [...was];
+  roll[i] = d6();
+  const out: Action[] = [{ type: 'affect', id: m.id, patch: { will: m.will - 1 } }, { type: 'usedTurn', key: 'longbeard', model: m.id }];
+  let chooser = priorityChooser(roll, state.turn, state.flow.lastChooser ?? null);
+  out.push({ type: 'rolled', roll: { id: `r-${uid()}`, by: m.owner, label: `Longbeard: ${m.name} re-rolls a ${was[i]} for Priority (1 Will)`.slice(0, 80), dice: [roll[i]], model: m.id, at: now } });
+  // A first-turn tie is rolled again.
+  while (!chooser) {
+    roll[0] = d6();
+    roll[1] = d6();
+    chooser = priorityChooser(roll, state.turn, state.flow.lastChooser ?? null);
+    out.push({ type: 'rolled', roll: { id: `r-${uid()}`, by: m.owner, label: `Priority roll, turn ${state.turn}`, dice: [...roll], at: now } });
+  }
+  out.push({ type: 'priorityRolled', roll, chooser });
+  return out;
 }
 
 // ——— Ori ———
@@ -204,3 +231,71 @@ export const hasTrumpet = (catalog: Catalog | null | undefined, m: Model) => [..
 
 /** The Strength a model has for a knock-down or a Troll's Mince 'em Fine roll. */
 export const strengthOf = (catalog: Catalog | null | undefined, m: Model) => modelStats(catalog, m)?.S ?? 3;
+
+// ——— Óin's Hearing Trumpet ———
+
+/**
+ * An enemy hero's heroic action that Óin, within 6" of it, has yet to listen for: his player may roll (a 5+ calls the
+ * same one for nothing; a 1 costs him a Will point, or, with none, his move this turn).
+ */
+export function trumpetDue(state: GameState, catalog: Catalog | null | undefined): { oin: Model; heroic: { model: string; action: string }; key: string } | null {
+  if (!state.flow.started || state.result) return null;
+  for (const h of state.flow.heroics) {
+    if (h.phase !== state.phase) continue;
+    const m = state.models[h.model];
+    if (!m) continue;
+    const key = `${state.turn}:${h.phase}:${h.model}:${h.action}`;
+    if (state.flow.heard?.includes(key)) continue;
+    const oin = Object.values(state.models).find(o => o.owner !== m.owner && onTable(o) && o.hero && hasTrumpet(catalog, o) && distanceBetween(o, m) <= 6 && !state.flow.heroics.some(x => x.model === o.id && x.phase === state.phase));
+    if (oin) return { oin, heroic: h, key };
+  }
+  return null;
+}
+
+/** A heroic action Óin could hear that the game hasn't yet held play for. */
+export const listenDue = (state: GameState, catalog: Catalog | null | undefined) => {
+  const due = trumpetDue(state, catalog);
+  return !!due && state.flow.listen !== due.key;
+};
+/** Holds the heroic actions for Óin's player to decide (see heroics.heroicsSettled). */
+export const listenFor = (state: GameState, catalog: Catalog | null | undefined): Action[] => [{ type: 'listen', key: trumpetDue(state, catalog)!.key }];
+
+/** Óin's player listens through the trumpet, or doesn't. */
+export function trumpet(state: GameState, catalog: Catalog | null | undefined, listen: boolean, d6: () => number, uid: () => string, now: number, tierOk: (oin: Model, t: Model) => boolean): Action[] | null {
+  const due = trumpetDue(state, catalog);
+  if (!due) return null;
+  const { oin, heroic, key } = due;
+  const out: Action[] = [{ type: 'heard', key }];
+  if (!listen) return out;
+  const caller = state.models[heroic.model];
+  const d = d6();
+  // A Heroic Challenge he copies goes at the hero who issued it, if it's one he may challenge.
+  const target = heroic.action === 'Heroic Challenge' ? (tierOk(oin, caller) && !caller.dead ? caller.id : undefined) : undefined;
+  const copies = d >= 5 && (heroic.action !== 'Heroic Challenge' || !!target);
+  const note = d >= 5 ? (copies ? `${oin.name} calls a ${heroic.action} too, for nothing.` : `${oin.name} heard it, but has nobody to challenge.`) : d === 1 ? (oin.will > 0 ? `${oin.name} fumbles with the trumpet and loses a Will point.` : `${oin.name} can't move this turn while he fixes his trumpet.`) : 'He didn\'t quite catch it.';
+  out.push({ type: 'rolled', roll: { id: `r-${uid()}`, by: oin.owner, label: `Hearing Trumpet: ${oin.name} listens to ${caller.name}'s ${heroic.action} (5+)`.slice(0, 80), dice: [d], target: 5, model: oin.id, at: now, note } });
+  if (copies) out.push({ type: 'freeHeroic', model: oin.id, action: heroic.action, ...(target ? { target } : {}) });
+  if (d === 1) out.push({ type: 'affect', id: oin.id, patch: oin.will > 0 ? { will: oin.will - 1 } : { noMove: state.turn } });
+  return out;
+}
+
+// ——— Bifur's Embedded Axe ———
+
+/** Whether Bifur, his axe freed, may test for a free Heroic Move now: as the Move phase starts, before any heroic action. */
+export function mayAxeTest(state: GameState, catalog: Catalog | null | undefined, m: Model | undefined): boolean {
+  if (!m || !onTable(m) || !m.hero || !m.used?.includes(AXE_FREED) || !canHeadbutt(catalog, m)) return false;
+  if (!state.flow.started || state.phase !== 'move' || state.flow.heroics.some(h => h.phase === 'move') || state.flow.passed.length || state.flow.done.length) return false;
+  return !state.flow.usedTurn?.includes(`axe:${m.id}`) && !state.flow.freeMove?.includes(m.id);
+}
+
+/** The Intelligence test (2D6, his Intelligence or more): passed, he may declare a Heroic Move this turn for nothing. */
+export function axeTest(catalog: Catalog | null | undefined, m: Model, d6: () => number, uid: () => string, now: number): Action[] {
+  const need = modelStats(catalog, m)?.I ?? 7;
+  const dice = [d6(), d6()];
+  const pass = dice[0] + dice[1] >= need;
+  return [
+    { type: 'rolled', roll: { id: `r-${uid()}`, by: m.owner, label: `Embedded Axe: ${m.name}'s Intelligence test for a free Heroic Move`.slice(0, 80), dice, sum: need, model: m.id, at: now, note: pass ? `${m.name} may declare a Heroic Move this turn for nothing.` : 'Not this turn.' } },
+    { type: 'usedTurn', key: 'axe', model: m.id },
+    ...(pass ? [{ type: 'freeMove', model: m.id } as Action] : []),
+  ];
+}

@@ -1,5 +1,6 @@
 // Courage tests the app rolls by itself: every model of a Broken army as its side starts to move, and a model
 // charging a terrifying enemy as it moves into contact.
+import { inCompany, steadfast, thorinsCall } from './company.ts';
 import { modelStats, type Catalog } from './catalog.ts';
 import { activeSeat, CONTACT_SLACK } from './flow.ts';
 import { distanceBetween } from './geometry.ts';
@@ -73,8 +74,14 @@ export function brokenTests(state: GameState, seat: Seat, catalog: Catalog | nul
   const spent: Action[] = [];
   const results: Record<string, boolean> = {};
   const anchors: Model[] = [];
-  const heroes = models.filter(isHero).sort((a, b) => courageOf(state, catalog, b) - courageOf(state, catalog, a));
+  // (Thorin goes first: his Stand Fast! reaches the heroes of his Company too.)
+  const heroes = models.filter(isHero).sort((a, b) => Number(thorinsCall(catalog, b)) - Number(thorinsCall(catalog, a)) || courageOf(state, catalog, b) - courageOf(state, catalog, a));
   for (const h of heroes) {
+    const thorin = inCompany(catalog, h) && anchors.find(a => a.id !== h.id && !a.ringOn && thorinsCall(catalog, a) && distanceBetween(a, h) <= STAND_FAST_RANGE && sightTo(state, h, a) !== 'hidden');
+    if (thorin) {
+      results[h.id] = true;
+      continue;
+    }
     // A Heroic Resolve, or a power such as Aura of Command, passes it without a roll.
     if (resolute.has(h.id) || courageAuto(state, catalog, h)) {
       results[h.id] = true;
@@ -139,6 +146,12 @@ export function terrorTest(m: Model, enemy: Model, catalog: Catalog | null, d6: 
   }
   const need = state ? courageOf(state, catalog, m) : (modelStats(catalog, m)?.C ?? 7);
   const actions: Action[] = [];
+  // Bofur's Steadfast: a 3+ and a friend of the Company near him pays the enemy's Terror no heed.
+  if (state && whys.length === 1 && whys[0] === 'Terror') {
+    const steady = steadfast(state, catalog, m, `${enemy.name}'s Terror`, d6, m.owner, `c-${uid()}`, now);
+    if (steady.roll) actions.push({ type: 'rolled', roll: steady.roll });
+    if (steady.saved) return { actions: [...actions, { type: 'courageTaken', results: { [m.id]: true } }], pass: true };
+  }
   let pass = true;
   // The second test is only taken if the first is passed.
   for (const why of whys) {

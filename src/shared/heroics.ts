@@ -51,7 +51,7 @@ export function canDeclare(state: GameState, seat: Seat): Model[] {
 
 /** Both players have declared what they want (or have no one who could), so models can activate. */
 export const heroicsSettled = (state: GameState) =>
-  !state.flow.started || (['p1', 'p2'] as const).every(s => state.flow.passed.includes(s) || canDeclare(state, s).length === 0);
+  !state.flow.started || (!state.flow.listen && (['p1', 'p2'] as const).every(s => state.flow.passed.includes(s) || canDeclare(state, s).length === 0));
 
 /** Whose turn it is to declare: the player without Priority starts, then it goes back and forth. */
 export function heroicTurn(state: GameState): Seat | null {
@@ -159,9 +159,12 @@ export function canActivate(state: GameState, seat: Seat): boolean {
  * Whether a hero may declare this heroic action: the universal ones any hero may, the rest only a hero with it on
  * its profile (`heroics`, from the catalog). A hero in a fight can't call a Heroic Shoot or Heroic Accuracy.
  */
-export function mayDeclare(state: GameState, m: Model, action: string, heroics: string[] | undefined): boolean {
+export function mayDeclare(state: GameState, m: Model, action: string, heroics: string[] | undefined, rules: string[] = []): boolean {
   const info = heroicInfo(action);
   if (!info || info.phase !== state.phase) return false;
+  // Bombur is too Lumbering for a Heroic Move; Bifur, his axe out, may have one for free.
+  if (action === 'Heroic Move' && rules.includes('Lumbering')) return false;
+  if (m.hero && action === 'Heroic Move' && state.flow.freeMove?.includes(m.id)) return true;
   // Sam calls a Heroic Combat for free to get to Frodo.
   if (m.hero && action === 'Heroic Combat' && longshanksFree(state, m)) return true;
   if (!m.hero || m.might < 1) return !!m.drum && action === 'Heroic March';

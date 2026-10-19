@@ -624,7 +624,8 @@ export function recoveryRolls(state: GameState, d6: () => number, uid: () => str
     for (const r of rollers) {
       const die = d6();
       free = die === 6;
-      out.push({ type: 'rolled', roll: { id: `e-${uid()}`, by: m.owner, label: `Recover from Paralyse: ${r.id === m.id ? m.name : `${r.name} helps ${m.name}`} (6)`.slice(0, 80), dice: [die], target: 6, at: now, ...(free ? { note: `${m.name} recovers.` } : {}) } });
+      // (A hero rolling may spend its own Might on the die: see reducer useMight.)
+      out.push({ type: 'rolled', roll: { id: `e-${uid()}`, by: m.owner, label: `Recover from Paralyse: ${r.id === m.id ? m.name : `${r.name} helps ${m.name}`} (6)`.slice(0, 80), dice: [die], target: 6, at: now, ...(r.hero ? { model: r.id, frees: m.id } : {}), ...(free ? { note: `${m.name} recovers.` } : {}) } });
       if (free) break;
     }
     if (free) out.push({ type: 'affect', id: m.id, patch: { effects: (m.effects ?? []).filter(e => basePower(e.power) !== 'Paralyse') } });

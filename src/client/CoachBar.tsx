@@ -6,7 +6,7 @@ import { breachesLeft } from '../shared/breach.ts';
 import { fightDone } from '../shared/movement.ts';
 import { canDeclare, GOES_FIRST, heroicInfo, heroicNow, heroicsSettled, heroicTurn, HEROICS, mayDeclare, orderRollLabel, orderRollNeeded, phaseHeroics, shoutedFor } from '../shared/heroics.ts';
 import { distanceBetween } from '../shared/geometry.ts';
-import { startingPoints } from '../shared/catalog.ts';
+import { rulesFor, startingPoints } from '../shared/catalog.ts';
 import { tierOf } from '../shared/warbands.ts';
 import { RollRow } from './Panels.tsx';
 import { useDraggable } from './useDraggable.tsx';
@@ -194,7 +194,7 @@ function HeroicStep({ state, dispatch, role, name }: { state: GameState; dispatc
   const pickedHero = heroes.find(m => m.id === hero) ?? heroes[0];
   const unitOf = (m: Model) => (m.profileId ? catalog?.units[m.profileId] : undefined);
   // Only the heroic actions this hero can call: the universal ones, and the rest if they're on its profile.
-  const actions = HEROICS.filter(h => h.phase === state.phase && (!pickedHero || mayDeclare(state, pickedHero, h.name, unitOf(pickedHero)?.heroics)));
+  const actions = HEROICS.filter(h => h.phase === state.phase && (!pickedHero || mayDeclare(state, pickedHero, h.name, unitOf(pickedHero)?.heroics, rulesFor(catalog, pickedHero))));
   const pickedAction = actions.find(a => a.name === action) ?? actions[0];
   // A Heroic Challenge names an enemy hero within 6", of the same tier or higher.
   const rivals = pickedHero
