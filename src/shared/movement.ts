@@ -225,6 +225,29 @@ export function moveLeft(state: GameState, m: Model): number | null {
   return allowance === null ? null : Math.max(0, allowance - spent(state, m));
 }
 
+/** How near (in inches) a drop must be to the way a model came for it to count as stepping back along it. */
+export const RETRACE = 0.4;
+
+/**
+ * Dragging a model back along the way it came this phase takes it back there and gives the Move it spent beyond that
+ * point back, so a move that went wrong can be tried again. Returns the trail up to the nearest point on it, or null
+ * when `to` isn't close to the way it came.
+ */
+export function retrace(trail: [number, number][] | undefined, to: Point): { at: Point; trail: [number, number][] } | null {
+  if (!trail || trail.length < 2) return null;
+  for (let i = 0; i < trail.length - 1; i++) {
+    const [ax, ay] = trail[i];
+    const [bx, by] = trail[i + 1];
+    const len2 = (bx - ax) ** 2 + (by - ay) ** 2;
+    const t = len2 ? Math.max(0, Math.min(1, ((to.x - ax) * (bx - ax) + (to.y - ay) * (by - ay)) / len2)) : 0;
+    const at = { x: ax + t * (bx - ax), y: ay + t * (by - ay) };
+    // (Near the far end of the last leg is near where the model is now: a nudge from there, not a step back.)
+    if (i === trail.length - 2 && Math.hypot(at.x - bx, at.y - by) < RETRACE) continue;
+    if (Math.hypot(to.x - at.x, to.y - at.y) <= RETRACE) return { at, trail: [...trail.slice(0, i + 1), [at.x, at.y]] };
+  }
+  return null;
+}
+
 /** Where a model stood when this Move phase began (where it is now, if it hasn't moved yet). */
 export function moveStart(state: GameState, m: Model): Point {
   const s = state.flow.starts?.[m.id];

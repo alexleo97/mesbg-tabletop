@@ -20,13 +20,35 @@ describe('move limits', () => {
     let s = move(inMove(), 10, 36);
     s = move(s, 10, 30);
     expect(s.models.o.y).toBeCloseTo(34, 2);
-    // Walking back costs Move too...
-    s = move(s, 10, 39);
-    expect(s.models.o.y).toBeCloseTo(34, 2);
-    // ...but putting it back where it started is always allowed, and gives the whole Move back.
+    // Walking off somewhere new costs Move from where it is...
+    expect(move(s, 13, 34).models.o.x).toBe(10);
+    // ...but stepping back along the way it came takes it back there and gives back what it spent beyond that point,
+    s = move(s, 10, 37);
+    expect(s.models.o.y).toBeCloseTo(37, 2);
+    expect(s.flow.walked?.o).toBeCloseTo(3, 2);
+    expect(move(s, 10, 30).models.o.y).toBeCloseTo(34, 2);
+    // ...and putting it back where it started gives the whole Move back.
     s = move(s, 10, 40);
     expect(s.models.o.y).toBe(40);
     expect(move(s, 10, 30).models.o.y).toBeCloseTo(34, 2);
+  });
+
+  it('steps back along a bent path, keeping the legs before it', () => {
+    let s = move(inMove(), 10, 37);
+    s = move(s, 12, 37);
+    // Back onto the first leg, near its end: the second leg is undone.
+    s = move(s, 10.2, 37.6);
+    expect(s.models.o.x).toBeCloseTo(10, 2);
+    expect(s.models.o.y).toBeCloseTo(37.6, 2);
+    expect(s.flow.walked?.o).toBeCloseTo(2.4, 2);
+    expect(s.flow.paths?.o?.length).toBe(2);
+  });
+
+  it('a small nudge from where it stands is a move, not a step back', () => {
+    let s = move(inMove(), 10, 37);
+    s = move(s, 10.3, 37);
+    expect(s.models.o.x).toBeCloseTo(10.3, 2);
+    expect(s.flow.walked?.o).toBeCloseTo(3.3, 2);
   });
 
   it('goes round a corner, as long as the whole way is within its Move', () => {
