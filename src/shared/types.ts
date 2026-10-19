@@ -252,6 +252,8 @@ export interface DiceRoll {
   rerolled?: ('synergy' | 'portents')[];
   /** Grasper & Keeper: each natural 6 that wounds does 2 Wounds. */
   sixes?: boolean;
+  /** Wounds this roll does without a roll To Wound (Mince 'em Fine). */
+  fixed?: number;
   /** Might points spent raising these dice. */
   might?: number;
   /** A supporting model's duel die (a spear or pike lending a hand). */

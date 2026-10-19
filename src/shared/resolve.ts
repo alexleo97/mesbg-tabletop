@@ -15,7 +15,7 @@ import { missileWeapon, woundNeed } from './rules.ts';
 import { planShot, throwingPoint } from './shooting.ts';
 import { fallDamage, resolveCross } from './terrainTests.ts';
 import { heightOf } from './sight.ts';
-import { cleanFight, cleanShot, duelSettled, mightCouldHelp, resolveDuel, resolveShot, resolveStrikes, strikeWounds, type DrawRule, type Fighter, type FightRequest, type ShotRequest } from './fight.ts';
+import { BPA_NAMES, TROLL_BRUTALS, cleanFight, cleanShot, duelSettled, mightCouldHelp, resolveDuel, resolveShot, resolveStrikes, strikeWounds, type BrutalAttack, type DrawRule, type Fighter, type FightRequest, type ShotRequest } from './fight.ts';
 import { combatFromKey, CONTACT_SLACK, other, priorityChooser } from './flow.ts';
 import { hasElvenWeapon, hasPike, sideOf } from './gear.ts';
 import { oneSpearEach, supporters } from './support.ts';
@@ -28,7 +28,9 @@ import { placingNow } from './placing.ts';
 import { fryingPans } from './sam.ts';
 import { arrivalAuto, arrivalDue, mayCry, narrativeById, narrativeSetup, rollArrival, skipArrival } from './narrative.ts';
 import { invisibleTo, ringRequest, seekRequest } from './ring.ts';
-import { spareFor } from './mutton.ts';
+import { isTroll, spareFor } from './mutton.ts';
+import { bag, roast, sneeze, steadyAgainst, trollSacks } from './trolls.ts';
+import { AXE_FREED, axeMastery, canHeadbutt, goodSort, hasMattock, hasOakenshield, loyalTo } from './company.ts';
 import { MORGUL, morgulBlades } from './morgul.ts';
 import { MAX_DICE } from './reducer.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
@@ -172,6 +174,22 @@ export function adjustFight(state: GameState, req: FightRequest, catalog: Catalo
     const foes = req.sides.flat().filter(x => !x.support && state.models[x.id] && state.models[x.id].owner !== m.owner).map(x => x.id);
     const rival = (state.flow.challenges ?? []).map(c => (c.by === m.id ? c.target : c.target === m.id && c.accepted ? c.by : undefined)).find(id => id && foes.includes(id));
     if (rival && !f.support) Object.assign(out, { a: Math.min(10, out.a + 1), rival });
+    // Thorin's Company's own rules (see company.ts), and the Trolls' (see trolls.ts).
+    if (!f.support) {
+      const pick = state.flow.choices?.[m.id] ?? {};
+      const theirs = req.sides[1 - i].filter(x => !x.support).map(x => x.id);
+      const ours = req.sides[i].filter(x => !x.support);
+      const times = out.shielding ? 2 : 1;
+      if (loyalTo(state, catalog, m)) out.ones = true;
+      if (goodSort(state, catalog, m)) Object.assign(out, { a: Math.max(out.a, 3 * times), duelOnes: true });
+      if (axeMastery(catalog, m) && ours.length === 1 && theirs.length >= 2) out.a = Math.max(out.a, 4 * times);
+      if (pick.headbutt && theirs.includes(pick.headbutt) && canHeadbutt(catalog, m)) out.headbutt = pick.headbutt;
+      if (pick.knock && theirs.includes(pick.knock) && hasMattock(catalog, m)) out.knock = pick.knock;
+      if (out.shielding && hasOakenshield(catalog, m)) out.oak = pick.oak && theirs.includes(pick.oak) ? pick.oak : theirs[0];
+      if (isTroll(m)) out.squash = touchingEnemies(state, m).map(e => e.id).filter(id => theirs.includes(id));
+      // Tom's Lingering Cold halves its Fight until the turn ends (a Heroic Strike's bonus still comes on top).
+      if (m.chilled === state.turn) out.f = Math.ceil(out.f / 2);
+    }
     // Roast Mutton: the Trolls may not strike Bilbo at first.
     const spare = spareFor(state, m);
     if (spare.length) out.spare = [...new Set([...(out.spare ?? []), ...spare])];
@@ -259,7 +277,11 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       const fresh = prepareFight(state, catalog, cleanFight(action.fight));
       const req = fresh && adjustFight(state, fresh, catalog);
       if (!req || (state.flow.started && req.combat && fightDone(state, combatFromKey(state, req.combat) ?? { key: req.combat, p1: [], p2: [] })) || duelOpen(state, req.sides.flat().map(f => f.id))) return null;
-      return { apply: resolveDuel(req, d6, seat, `f-${uid()}`, now).map(roll => ({ type: 'rolled', roll })) };
+      const group = `f-${uid()}`;
+      // Tom's Lingering Cold comes as the fight starts, before the dice.
+      const cold = sneeze(state, catalog, req, d6, seat, group, now);
+      for (const a of cold.actions) if (a.type === 'affect' && a.patch.chilled) for (const f of req.sides.flat()) if (f.id === a.id && !f.support) f.f = Math.ceil(f.f / 2);
+      return { apply: [...cold.rolls.map((roll): Action => ({ type: 'rolled', roll })), ...cold.actions, ...resolveDuel(req, d6, seat, group, now).map((roll): Action => ({ type: 'rolled', roll }))] };
     }
     case 'strikes': {
       const group = String(action.group ?? '');
@@ -278,6 +300,27 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       const foeSide = brute && req.sides.findIndex(side => !side.includes(brute)) as 0 | 1;
       const hurled = b?.kind === 'hurl' && brute ? req.sides[foeSide as 0 | 1].find(f => f.id === b.target && !f.support && f.s < brute.s && !!state.models[f.id] && !immovable(catalog, state.models[f.id])) : undefined;
       if (!b || !bm || !brutalOptions(state, catalog, bm).includes(b.kind) || (b.kind === 'hurl' && !hurled)) delete req.brutal;
+      // Other monsters on the brute's side making theirs first: each one once, and only one it may make.
+      const winSide = (x: BrutalAttack) => req.sides.findIndex(side => side.some(f => f.id === x.by && !f.support && f.monster));
+      if (req.more) req.more = req.more.filter((x, k, all) => x.by !== req.brutal?.by && all.findIndex(y => y.by === x.by) === k && !!state.models[x.by] && brutalOptions(state, catalog, state.models[x.by]).includes(x.kind) && (!req.brutal || winSide(x) === winSide(req.brutal)));
+      // A Troll stuffing a foe in a sack does that instead of striking, or of a Brutal Power Attack.
+      const sacks = trollSacks(state, catalog, req);
+      for (const x of sacks) {
+        for (const f of req.sides.flat()) if (f.id === x.by) f.noStrike = `stuffs ${state.models[x.target].name} in a sack`;
+        if (req.brutal?.by === x.by) delete req.brutal;
+        if (req.more) req.more = req.more.filter(y => y.by !== x.by);
+      }
+      // Bofur's Steadfast against the Trolls' own Brutal Power Attacks: a 3+ and the foe shrugs it off.
+      const bpas = [...(req.more ?? []), ...(req.brutal ? [req.brutal] : [])].filter(x => TROLL_BRUTALS.has(x.kind));
+      const steadied: DiceRoll[] = [];
+      for (const x of bpas) {
+        const f = req.sides.flat().find(y => y.id === x.by);
+        if (!f) continue;
+        const hit = x.kind === 'squash' ? (f.squash ?? []) : x.target ? [x.target] : [];
+        const st = steadyAgainst(state, catalog, hit, BPA_NAMES[x.kind], d6, group, now);
+        steadied.push(...st.rolls);
+        if (st.immune.length) f.immune = [...(f.immune ?? []), ...st.immune];
+      }
       // A Morgul Blade declared before the strikes: every strike its bearer makes goes at the one enemy it picked.
       const blades = morgulBlades(state, catalog, req);
       if (blades.length) req.aims = { ...req.aims, ...Object.fromEntries(blades.map(x => [x.by, Array(10).fill(x.target)])) };
@@ -433,8 +476,35 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
         push(`Frying Pan: ${state.models[x.by].name} swings at ${t.name} (4+)`, [d], { target: 4, model: x.by, note: d >= 4 ? `${t.name} is stunned and can't move next turn.` : `${t.name} shakes it off.` });
         if (d >= 4) panned.push({ type: 'affect', id: t.id, patch: { panned: state.turn + 1 } });
       }
+      // The Trolls' own: a foe in a sack, one carried to the fire, those sat on knocked down.
+      const trolled: Action[] = [];
+      for (const x of outcome.ended ? [] : sacks.filter(x => winners.includes(x.by))) {
+        const t = state.models[x.target];
+        if (slain(t.id)) continue;
+        const b = bag(state, catalog, state.models[x.by], t, d6, seat, `${group}-sack-${t.id}`.slice(0, 80), now, group);
+        extra.push(...b.rolls);
+        trolled.push(...b.actions);
+      }
+      const madeBy = (x: BrutalAttack) => winners.includes(x.by) && req.sides[outcome.winner].some(f => f.id === x.by && !f.noStrike);
+      const theirs = [...(req.more ?? []), ...(req.brutal ? [req.brutal] : [])].filter(madeBy);
+      // (They are all on one side, so Bofur's rolls count if that side won.)
+      if (theirs.some(x => TROLL_BRUTALS.has(x.kind))) extra.unshift(...steadied);
+      for (const x of theirs.filter(x => x.kind === 'roast')) {
+        const t = x.target ? state.models[x.target] : undefined;
+        const f = req.sides[outcome.winner].find(y => y.id === x.by);
+        if (!t || slain(t.id) || f?.immune?.includes(t.id)) continue;
+        trolled.push(...roast(state, state.models[x.by], t));
+      }
+      for (const id of outcome.squashed ?? []) if (!slain(id)) trolled.push({ type: 'affect', id, patch: { prone: true } });
+      // Bofur's Mattock knocked its foe down before the strikes.
+      for (const id of outcome.knocked ?? []) if (!slain(id)) trolled.push({ type: 'affect', id, patch: { prone: true } });
+      // Bifur's headbutt that wounds frees the axe from his head.
+      for (const f of outcome.ended ? [] : req.sides[outcome.winner].filter(f => f.headbutt)) {
+        const m = state.models[f.id];
+        if (m && !m.used?.includes(AXE_FREED) && strikeWounds(strikes.filter(r => r.model === f.id && r.against === f.headbutt)) > 0) trolled.push({ type: 'affect', id: f.id, patch: { used: [...(m.used ?? []), AXE_FREED] } });
+      }
       // The monster's Brutal Power Attack: noted for the turn, then the Barge's free move or the Hurl itself.
-      const brutalDone: Action[] = [];
+      const brutalDone: Action[] = theirs.filter(x => x !== req.brutal).map((x): Action => ({ type: 'brutal', id: x.by }));
       if (req.brutal && bm && req.sides[outcome.winner].some(f => f.id === bm.id)) {
         if (bargeOn) {
           const d3 = Math.ceil(d6() / 2);
@@ -466,6 +536,7 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
           ...offLadder,
           ...brutalDone,
           ...panned,
+          ...trolled,
           ...rise.map((id): Action => ({ type: 'affect', id, patch: { prone: false } })),
         ],
         ...(req.combat ? { record: { type: 'resolveCombat', key: req.combat } } : {}),

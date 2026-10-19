@@ -22,7 +22,7 @@ import { putOut } from './fire.ts';
 import { ringAfterMight } from './ring.ts';
 import { placeSpot, placingNow } from './placing.ts';
 import { longshanksFree } from './sam.ts';
-import { BOT_NAME, BOT_SPEEDS, DOOR_TYPES, MARKER_OBJECTS, MATS, PHASES, PICK_KEYS, TERRAIN_KINDS, type Action, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type ModelEffect, type Phase, type Picks, type Placing, type Seat, type SpellPending, type Terrain } from './types.ts';
+import { BOT_NAME, BOT_SPEEDS, DOOR_TYPES, FIGHT_TARGETS, MARKER_OBJECTS, MATS, PHASES, PICK_KEYS, TERRAIN_KINDS, type Action, type FightPicks, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type ModelEffect, type Phase, type Picks, type Placing, type Seat, type SpellPending, type Terrain } from './types.ts';
 
 export const MAX_MODELS = 600;
 export const MAX_TERRAIN = 200;
@@ -1120,9 +1120,10 @@ function step(state: GameState, action: Action): GameState {
     case 'fightChoice': {
       const m = state.models[action.id];
       if (!m) return state;
-      const morgul = typeof action.morgul === 'string' && state.models[action.morgul] && state.models[action.morgul].owner !== m.owner ? action.morgul : undefined;
-      const pan = typeof action.pan === 'string' && state.models[action.pan] && state.models[action.pan].owner !== m.owner ? action.pan : undefined;
-      const pick = { ...(action.shielding === true ? { shielding: true } : {}), ...(action.twoHanded === true ? { twoHanded: true } : {}), ...(morgul ? { morgul } : {}), ...(pan ? { pan } : {}) };
+      // Each special attack names an enemy (see FightPicks).
+      const foe = (id: unknown) => typeof id === 'string' && !!state.models[id] && state.models[id].owner !== m.owner;
+      const pick: FightPicks = { ...(action.shielding === true ? { shielding: true } : {}), ...(action.twoHanded === true ? { twoHanded: true } : {}) };
+      for (const k of FIGHT_TARGETS) if (foe(action[k])) pick[k] = action[k] as string;
       const { [m.id]: _, ...rest } = state.flow.choices ?? {};
       return { ...state, flow: { ...state.flow, choices: Object.keys(pick).length ? { ...rest, [m.id]: pick } : rest } };
     }
@@ -1593,7 +1594,7 @@ export function loadState(raw: unknown): GameState {
         ...(Number.isFinite(f.willed) ? { willed: int(f.willed, 0, 99, 0) } : {}),
         ...(f.shotPause && typeof f.shotPause === 'object' && cleanPause(f.shotPause) ? { shotPause: cleanPause(f.shotPause) } : {}),
         ...(f.choices && typeof f.choices === 'object'
-          ? { choices: Object.fromEntries(Object.entries(f.choices as Record<string, { shielding?: unknown; twoHanded?: unknown; morgul?: unknown; pan?: unknown }>).slice(0, 200).map(([k, v]) => [str(k, 80), { ...(v?.shielding === true ? { shielding: true } : {}), ...(v?.twoHanded === true ? { twoHanded: true } : {}), ...(typeof v?.morgul === 'string' ? { morgul: str(v.morgul, 80) } : {}), ...(typeof v?.pan === 'string' ? { pan: str(v.pan, 80) } : {}) }])) }
+          ? { choices: Object.fromEntries(Object.entries(f.choices as Record<string, Record<string, unknown>>).slice(0, 200).map(([k, v]) => [str(k, 80), { ...(v?.shielding === true ? { shielding: true } : {}), ...(v?.twoHanded === true ? { twoHanded: true } : {}), ...Object.fromEntries(FIGHT_TARGETS.filter(t => typeof v?.[t] === 'string').map(t => [t, str(v[t], 80)])) }])) }
           : {}),
         ...(Array.isArray(f.challenges) ? { challenges: f.challenges.slice(0, 20).filter(c => c && typeof c === 'object').map(c => ({ by: str(c.by, 80), target: str(c.target, 80), cap: int(c.cap, 0, 9, 3), ...(typeof c.accepted === 'boolean' ? { accepted: c.accepted } : {}) })) } : {}),
         ...(f.charges && typeof f.charges === 'object' ? { charges: Object.fromEntries(Object.entries(f.charges).slice(0, 400).map(([k, v]) => [str(k, 80), str(v, 80)])) } : {}),

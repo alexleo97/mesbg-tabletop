@@ -1,4 +1,4 @@
-import { startingPoints, modelStats, type Catalog } from './catalog.ts';
+import { modelStats, rulesFor, startingPoints, type Catalog } from './catalog.ts';
 import { distanceBetween } from './geometry.ts';
 import { carriedBy } from './objects.ts';
 import { sightTo } from './sight.ts';
@@ -9,7 +9,7 @@ import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 // and the like, worked out here.
 
 const unitOf = (catalog: Catalog | null | undefined, m: Model) => (m.profileId ? catalog?.units[m.profileId] : undefined);
-const rule = (catalog: Catalog | null | undefined, m: Model, re: RegExp) => !!unitOf(catalog, m)?.rules.some(r => re.test(r));
+const rule = (catalog: Catalog | null | undefined, m: Model, re: RegExp) => rulesFor(catalog, m).some(r => re.test(r));
 const onTable = (m: Model) => !m.dead && !m.escaped && !m.waiting;
 
 /** A member of Thorin's Company: a model from that army. */
@@ -48,9 +48,9 @@ export function steadfast(state: GameState, catalog: Catalog | null | undefined,
 
 // ——— In a fight ———
 
-/** Thorin's "Loyalty, honour, a willing heart": friends of the Company within 6" of him re-roll 1s to wound. */
+/** Thorin's "Loyalty, honour, a willing heart": the Company within 6" of him (himself too) re-roll 1s to wound. */
 export const loyalTo = (state: GameState, catalog: Catalog | null | undefined, m: Model) =>
-  inCompany(catalog, m) && Object.values(state.models).some(t => t.id !== m.id && t.owner === m.owner && onTable(t) && rule(catalog, t, /^"?Loyalty, honour/i) && distanceBetween(t, m) <= 6);
+  inCompany(catalog, m) && Object.values(state.models).some(t => t.owner === m.owner && onTable(t) && rule(catalog, t, /^"?Loyalty, honour/i) && distanceBetween(t, m) <= 6);
 
 /** Dori's A Good Sort: with Ori or Nori within 3", he has 3 Attacks and re-rolls 1s in the duel. */
 export const goodSort = (state: GameState, catalog: Catalog | null | undefined, m: Model) =>
@@ -132,7 +132,8 @@ export function mayTend(state: GameState, catalog: Catalog | null | undefined, h
   if (!rule(catalog, m, re)) return 'not his rule';
   if (state.flow.usedTurn?.includes(`${how}:${m.id}`)) return 'once a turn';
   if (!state.flow.started || (state.phase !== 'move' && state.phase !== 'shoot')) return 'only in his activation';
-  if (!inCompany(catalog, t) || (how === 'spirits' && t.id === m.id)) return 'only a friend of the Company';
+  // (A model is always within range of itself, so Bombur can cheer himself up.)
+  if (!inCompany(catalog, t)) return 'only a friend of the Company';
   if (how === 'herbs' && (t.id === m.id || distanceBetween(m, t) > 0.05)) return 'must be touching him';
   if (how === 'spirits' && distanceBetween(m, t) > 3) return 'must be within 3"';
   if (how === 'herbs' && t.wounds >= t.maxWounds) return 'has no wounds to heal';

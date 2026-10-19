@@ -46,6 +46,12 @@ export interface Fighter {
   woundCap?: number;
   /** Each strike that wounds does 2 (Mighty Blow). */
   mighty?: boolean;
+  /** Its Strength before Heroic Strength doubled it: what a Brutal Power Attack or a Strength roll-off uses. */
+  baseS?: number;
+  /** Enemies that shrug off its own Brutal Power Attacks (Bofur's Steadfast). */
+  immune?: string[];
+  /** The enemies touching it, which Tom's Squash 'em into Jelly hits. */
+  squash?: string[];
   /** Each natural 6 that wounds does 2 (Grasper & Keeper). */
   sixes?: boolean;
   /** Re-rolls its 1s in the duel (Dori's A Good Sort). */
@@ -95,8 +101,9 @@ export interface BrutalAttack {
 
 export const BRUTAL_KINDS = ['rend', 'barge', 'hurl', 'mince', 'roast', 'squash'] as const;
 export type BrutalKind = (typeof BRUTAL_KINDS)[number];
-/** The Trolls' own Brutal Power Attacks, worked out once the strikes are done (see trolls.ts). */
+/** The Trolls' own Brutal Power Attacks (see trolls.ts). */
 export const TROLL_BRUTALS = new Set<BrutalKind>(['mince', 'roast', 'squash']);
+export const BPA_NAMES: Record<BrutalKind, string> = { rend: 'Rend', barge: 'Barge', hurl: 'Hurl', mince: "Mince 'em Fine", roast: "Roast 'em Slowly", squash: "Squash 'em into Jelly" };
 
 /** How a fight tied on dice and Fight is settled: which side is Good, and which sides fight with Elven weapons. */
 export interface DrawRule {
@@ -118,6 +125,8 @@ export interface FightRequest {
   draw?: DrawRule;
   /** A winning monster's Brutal Power Attack, chosen by its player before the strikes. */
   brutal?: BrutalAttack;
+  /** Other monsters on the same side making theirs first, in the order their player chose (never a Barge or Hurl). */
+  more?: BrutalAttack[];
   /** Set by the game: who supports whom on each side, for a monster's free strikes. */
   backing?: Record<string, string[]>;
 }
@@ -164,6 +173,8 @@ export interface FightOutcome {
   ended?: 'barge' | 'hurl';
   /** Enemies a Mattock knocked down before the strikes. */
   knocked?: string[];
+  /** Enemies Tom sat on (Squash 'em into Jelly): those that live are knocked down. */
+  squashed?: string[];
 }
 
 type D6 = () => number;
@@ -198,9 +209,10 @@ export function cleanFight(raw: unknown): FightRequest | null {
   const aims: Record<string, string[]> = {};
   if (o.aims && typeof o.aims === 'object')
     for (const [k, v] of Object.entries(o.aims).slice(0, 20)) if (Array.isArray(v)) aims[String(k).slice(0, 64)] = v.slice(0, 10).map(x => String(x).slice(0, 72));
-  const b = o.brutal;
-  const brutal = b && typeof b === 'object' && (BRUTAL_KINDS as readonly string[]).includes(String(b.kind)) ? { by: String(b.by ?? '').slice(0, 64), kind: b.kind, ...(b.target ? { target: String(b.target).slice(0, 72) } : {}), ...(b.at ? { at: String(b.at).slice(0, 64) } : {}) } : undefined;
-  return { sides, targets: [String(t[0] ?? ''), String(t[1] ?? '')], trapped: o.trapped === true, ...(combat ? { combat } : {}), ...(Object.keys(aims).length ? { aims } : {}), ...(brutal ? { brutal } : {}) };
+  const bpa = (b: any): BrutalAttack | undefined => (b && typeof b === 'object' && (BRUTAL_KINDS as readonly string[]).includes(String(b.kind)) ? { by: String(b.by ?? '').slice(0, 64), kind: b.kind, ...(b.target ? { target: String(b.target).slice(0, 72) } : {}), ...(b.at ? { at: String(b.at).slice(0, 64) } : {}) } : undefined);
+  const brutal = bpa(o.brutal);
+  const more = Array.isArray(o.more) ? o.more.slice(0, 6).map(bpa).filter((x: BrutalAttack | undefined): x is BrutalAttack => !!x && x.kind !== 'barge' && x.kind !== 'hurl') : [];
+  return { sides, targets: [String(t[0] ?? ''), String(t[1] ?? '')], trapped: o.trapped === true, ...(combat ? { combat } : {}), ...(Object.keys(aims).length ? { aims } : {}), ...(brutal ? { brutal } : {}), ...(more.length ? { more } : {}) };
 }
 
 const names = (side: Fighter[]) => {
@@ -218,8 +230,10 @@ export const woundsTaken = (applied: string[] | undefined, group: string, victim
 /** Wounds caused by a group of rolls: successes on strikes, counting only follow-up dice for 6/4 results. */
 export function strikeWounds(rolls: DiceRoll[]): number {
   return rolls
-    .filter(r => r.against && r.target)
+    .filter(r => r.against && (r.target || r.fixed !== undefined))
     .reduce((n, r) => {
+      // (Wounds worked out without a roll To Wound: Mince 'em Fine.)
+      if (r.fixed !== undefined) return n + r.fixed;
       const hits = r.then && r.follow ? r.follow.filter(d => d >= r.then!) : r.dice.filter(d => d >= r.target!);
       // (Grasper & Keeper: a natural 6 does 2.)
       return n + hits.length * (r.per ?? 1) + (r.sixes ? hits.filter(d => d === 6).length : 0);
@@ -311,7 +325,7 @@ export function resolveStrikes(req: FightRequest, duel: DiceRoll[], d6: D6, by: 
   // Supporting models aren't in the fight, so they can't be struck; a rider's mount can be, instead of the rider (and
   // a hero's chariot must be: the hero can't be struck apart from it).
   const losers = req.sides[1 - winner].filter(f => !f.support);
-  const pool = losers.flatMap(l => {
+  const pool = losers.flatMap((l): Fighter[] => {
     if (!l.mount) return [l];
     const steed = { id: `${l.id}#mount`, name: `${l.name}'s ${l.mount.name}`, f: 1, a: 1, s: l.mount.s, d: l.mount.d };
     return l.mount.chariot ? [steed] : [l, steed];
@@ -360,6 +374,47 @@ export function resolveStrikes(req: FightRequest, duel: DiceRoll[], d6: D6, by: 
     push(label, dice, { target: need.target, against: target.id, model: f.id, ...(need.then ? { then: need.then, follow } : {}), ...(plain2 && f.mighty ? { per: 2 } : {}), ...(sixes ? { sixes: true } : {}) });
     return strikeWounds([rolls[rolls.length - 1]]);
   };
+  // A Brutal Power Attack is made before anyone else in the fight strikes. It isn't a strike: Heroic Strength and the
+  // like don't change it, and a trapped foe isn't hit twice; but Heroic Defence still means only 6s wound.
+  // With more than one monster making one, they go in the order their player chose, the Barge or Hurl last.
+  const squashed: string[] = [];
+  const brutes = new Set<Fighter>();
+  for (const bpa of [...(req.more ?? []), ...(brute && !ended ? [req.brutal!] : [])]) {
+    const f = req.sides[winner].find(x => x.id === bpa.by && x.monster && !x.support && !x.noStrike);
+    if (!f || brutes.has(f)) continue;
+    brutes.add(f);
+    const s0 = f.baseS ?? f.s;
+    const victim = pool.find(t => t.id === bpa.target) ?? main;
+    const kind = bpa.kind;
+    if (f.immune?.includes(victim.id) && kind !== 'rend') {
+      push(`${victim.name} shrugs off ${f.name}'s ${BPA_NAMES[kind]}`, [], { model: f.id });
+      continue;
+    }
+    if (kind === 'rend') {
+      // Rend: as many To Wound rolls as it has Attacks, against the victim's Strength rather than its Defence.
+      const base = woundNeed(s0, victim.s);
+      const need = base && victim.defence ? { target: 6, ...(base.then ? { then: 6 } : {}) } : base;
+      if (need) {
+        const dice = Array.from({ length: f.a }, d6);
+        const follow = need.then ? dice.filter(d => d >= need.target).map(d6) : undefined;
+        push(`Rend: ${f.name} tears at ${victim.name}, S${s0} vs its S${victim.s} (${formatNeed(need)})`, dice, { target: need.target, against: victim.id, model: f.id, ...(need.then ? { then: need.then, follow } : {}) });
+      }
+    } else if (kind === 'mince') {
+      // Mince 'em Fine: each rolls a D6 and adds its Strength; beat the victim and it takes the difference in Wounds.
+      const dice = [d6(), d6()];
+      const vs = victim.baseS ?? victim.s;
+      const diff = dice[0] + s0 - (dice[1] + vs);
+      // (Heroic Defence: only a natural 6 wounds, and here Bill's D6 is the only roll that could be one.)
+      const wounds = diff > 0 && (!victim.defence || dice[0] === 6) ? diff : 0;
+      push(`Mince 'em Fine: ${f.name} ${dice[0] + s0} v ${victim.name} ${dice[1] + vs} (D6 + Strength)`, dice, { against: victim.id, model: f.id, fixed: wounds, note: wounds ? `${victim.name} takes ${wounds} Wound${wounds === 1 ? '' : 's'}.` : diff > 0 ? `${victim.name}'s Heroic Defence holds.` : `${victim.name} escapes the knife.` });
+    } else if (kind === 'squash') {
+      // Squash 'em into Jelly: a Strength 6 hit on every enemy touching it; those that live are knocked down.
+      for (const t of pool.filter(t => !t.id.endsWith('#mount') && (f.squash ?? pool.map(x => x.id)).includes(t.id) && !f.immune?.includes(t.id))) {
+        strike(f, t, 1, false, { s: 6, single: true, label: `Squash 'em into Jelly: ${f.name} sits on ${t.name}, S6` });
+        squashed.push(t.id);
+      }
+    } else if (kind === 'roast') push(`Roast 'em Slowly: ${f.name} carries ${victim.name} to the fire`, [], { model: f.id });
+  }
   // A Mattock swung to knock a foe down comes before anyone strikes: each rolls a D6 and adds its Strength, and the
   // wielder knocks the foe down if it scores as high. (A foe knocked down is then trapped.)
   const knocked: string[] = [];
@@ -367,8 +422,9 @@ export function resolveStrikes(req: FightRequest, duel: DiceRoll[], d6: D6, by: 
     const foe = f.knock && !f.noStrike && !f.support ? pool.find(t => t.id === f.knock && !t.id.endsWith('#mount')) : undefined;
     if (!foe) continue;
     const dice = [d6(), d6()];
-    const down = dice[0] + f.s >= dice[1] + foe.s;
-    push(`Mattock: ${f.name} tries to knock ${foe.name} down, ${dice[0] + f.s} v ${dice[1] + foe.s} (D6 + Strength)`, dice, { model: f.id });
+    const [a, b] = [dice[0] + (f.baseS ?? f.s), dice[1] + (foe.baseS ?? foe.s)];
+    const down = a >= b;
+    push(`Mattock: ${f.name} tries to knock ${foe.name} down, ${a} v ${b} (D6 + Strength)`, dice, { model: f.id });
     if (down) {
       knocked.push(foe.id);
       trappedFor.set(foe.id, true);
@@ -383,23 +439,11 @@ export function resolveStrikes(req: FightRequest, duel: DiceRoll[], d6: D6, by: 
       idle.push(`${f.name} (${knocked.includes(f.knock) ? 'knocked a foe down' : 'tried to knock a foe down'})`);
       continue;
     }
-    // A Troll's own Brutal Power Attack comes after the strikes (see trolls.ts).
-    if (f === brute && TROLL_BRUTALS.has(req.brutal!.kind)) continue;
+    if (brutes.has(f)) continue;
     // Bifur's headbutt: one Strength 4 strike, never doubled.
     const butt = f.headbutt ? pool.find(t => t.id === f.headbutt) : undefined;
     if (butt) {
       strike(f, butt, 1, false, { s: 4, single: true, label: `${f.name} headbutts ${butt.name}, S4` });
-      continue;
-    }
-    if (f === brute) {
-      // Rend: as many To Wound rolls as it has Attacks, against the victim's Strength rather than its Defence.
-      const victim = pool.find(t => t.id === req.brutal!.target) ?? main;
-      const need = woundNeed(f.s, victim.s);
-      if (need) {
-        const dice = Array.from({ length: f.a }, d6);
-        const follow = need.then ? dice.filter(d => d >= need.target).map(d6) : undefined;
-        push(`Rend: ${f.name} tears at ${victim.name}, S${f.s} vs its S${victim.s} (${formatNeed(need)})`, dice, { target: need.target, against: victim.id, model: f.id, ...(need.then ? { then: need.then, follow } : {}) });
-      }
       continue;
     }
     // Its strikes, each at the model it chose (any not aimed go at the main target).
@@ -439,7 +483,7 @@ export function resolveStrikes(req: FightRequest, duel: DiceRoll[], d6: D6, by: 
   }
   else push(idle.length ? `${names(req.sides[winner])} makes no strikes` : `${names(req.sides[winner])} can't wound ${main.name}`, [], { note });
   const lead1 = hits[0];
-  return { rolls, outcome: { winner, how, target: lead1?.target ?? main, wounds: lead1?.wounds ?? 0, hits, ...(ended ? { ended } : {}), ...(knocked.length ? { knocked } : {}) } };
+  return { rolls, outcome: { winner, how, target: lead1?.target ?? main, wounds: lead1?.wounds ?? 0, hits, ...(ended ? { ended } : {}), ...(knocked.length ? { knocked } : {}), ...(squashed.length ? { squashed } : {}) } };
 }
 
 /** Rolls a whole fight in one go: the duel, any roll-off and the strikes. */
