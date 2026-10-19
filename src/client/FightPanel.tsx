@@ -1,12 +1,12 @@
-import { useState } from 'react';
+import { type Ref, useMemo, useState } from 'react';
 import { modelStats } from '../shared/catalog.ts';
 import { duelLeader, duelSettled, strikeWounds, woundsTaken, type Fighter } from '../shared/fight.ts';
-import { combats, enemiesTouching } from '../shared/flow.ts';
+import { combats, enemiesTouching, type Combat } from '../shared/flow.ts';
 import { supporters } from '../shared/support.ts';
 import { defence } from '../shared/barriers.ts';
 import { declared, phaseAllows } from '../shared/heroics.ts';
 import { waitingOnMight } from '../shared/bot.ts';
-import { foughtThisTurn } from '../shared/movement.ts';
+import { fightDone, foughtThisTurn } from '../shared/movement.ts';
 import { noStrikes, under } from '../shared/powers.ts';
 import { cantShield, fighterOf, twoHandedChoice } from '../shared/wargear.ts';
 import { mountLabel, mountOf } from '../shared/cavalry.ts';
@@ -14,6 +14,7 @@ import { brutalOptions, chargeEffects } from '../shared/monsters.ts';
 import { BOT_NAME, type Action, type GameState, type Model, type Role, type Seat } from '../shared/types.ts';
 import { useCatalog } from './ListBuilder.tsx';
 import { RollRow } from './Panels.tsx';
+import { useDraggable } from './useDraggable.tsx';
 
 type Dispatch = (a: Action) => void;
 
@@ -28,6 +29,8 @@ function fightEffects(state: GameState, m: Model): string[] {
   if (m.withered) out.push(`Withered: S -${m.withered}`);
   return out;
 }
+/** Time between the lines of a roll that came in all at once (the duel, then each model's strikes). */
+const REVEAL_STEP = 900;
 type Stat = 'f' | 'a' | 's' | 'd';
 const STATS: [Stat, string][] = [['f', 'F'], ['a', 'A'], ['s', 'S'], ['d', 'D']];
 
@@ -36,11 +39,9 @@ const STATS: [Stat, string][] = [['f', 'F'], ['a', 'A'], ['s', 'S'], ['d', 'D']]
  * spend Might on their dice, then the winner's strikes.
  * With `combat`, it resolves that fight on the table and the turn tracker ticks it off.
  */
-export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight' }: { state: GameState; dispatch: Dispatch; role: Role; ids: string[]; combat?: string; title?: string }) {
+export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight', photoFor }: { state: GameState; dispatch: Dispatch; role: Role; ids: string[]; combat?: string; title?: string; photoFor?: (m: Model) => string | undefined }) {
   const { catalog } = useCatalog();
   const [edits, setEdits] = useState<Record<string, Partial<Record<Stat, number>>>>({});
-  const [targets, setTargets] = useState<Record<Seat, string>>({ p1: '', p2: '' });
-  const [trapped, setTrapped] = useState(false);
   /** Where each model puts each of its strikes, when it beats more than one enemy. */
   const [aims, setAims] = useState<Record<string, string[]>>({});
   /** Spear and pike models the player chose to keep out of this fight. */
@@ -89,9 +90,10 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
 
   // The latest fight rolled between these models, if any.
   const idSet = new Set(ids);
+  // (In a battle, only a fight from this turn counts: the same models may fight again next turn.)
   const lastGroup = [...state.log]
     .reverse()
-    .find(r => r.group?.startsWith('f-') && r.side !== undefined && r.model && idSet.has(r.model))?.group;
+    .find(r => r.group?.startsWith('f-') && r.side !== undefined && r.model && idSet.has(r.model) && (!state.flow.started || !!state.flow.duels?.includes(r.group)))?.group;
   const lastRolls = lastGroup ? state.log.filter(r => r.group === lastGroup) : [];
   const struck = lastRolls.some(duelSettled);
   const leader = lastGroup && !struck ? duelLeader(lastRolls) : null;
@@ -115,6 +117,16 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
   // Shielding and two-handed weapons are chosen before the duel is rolled, by the side's own player.
   const choosingFor = (s: Seat) => (!lastGroup || struck) && role === s;
   const priorityOnly = state.flow.started && state.phase === 'fight' && !!state.priority && role !== state.priority;
+  // A roll that just came in shows one line after another, so each can be followed.
+  const reveal = (i: number) => {
+    const r = lastRolls[i];
+    const batch = lastRolls.filter(x => x.at === r.at);
+    // (Not at Instant speed against the computer, which is meant to be over at once.)
+    return batch.length > 1 && !(state.bot && state.botSpeed === 'instant') ? batch.indexOf(r) * REVEAL_STEP : 0;
+  };
+  // Who is winning, and what to do next, show once the last line is in.
+  const lastId = lastRolls.at(-1)?.id;
+  const settle = useMemo(() => (lastRolls.length && Date.now() - lastRolls[lastRolls.length - 1].at < 2500 ? reveal(lastRolls.length - 1) + 400 : 0), [lastId]);
   // Shielding needs every model on the side able to do it, and then none of them can be Supported.
   function canShieldSide(s: Seat) {
     return sides[s].length > 0 && sides[s].every(m => !cantShield(catalog, m));
@@ -126,13 +138,15 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
   const choose = (m: Model, pick: { shielding?: boolean; twoHanded?: boolean }) => dispatch({ type: 'fightChoice', id: m.id, ...choices[m.id], ...pick });
   const side = (s: Seat) => [...sides[s].map(fighter), ...(shieldingSide(s) ? [] : helping(s).map(m => ({ ...fighter(m), a: 1, support: true, shielding: undefined, noStrike: undefined })))];
   const request = () => {
-    const target = (s: Seat) => (strikable(s).some(t => t.id === targets[s]) ? targets[s] : sides[s][0].id);
+    // The loser's model struck first; with more than one, the winner aims each strike after the duel.
+    const target = (s: Seat) => sides[s][0].id;
     const [kind, victim] = brutal.split(':');
     const brute = brutalBy();
     return {
       sides: [side('p1'), side('p2')] as [Fighter[], Fighter[]],
       targets: [target('p2'), target('p1')] as [string, string],
-      trapped,
+      // The game works out who is trapped.
+      trapped: false,
       aims,
       ...(combat ? { combat } : {}),
       ...(brute && kind ? { brutal: { by: brute.id, kind: kind as 'rend' | 'barge' | 'hurl', ...(victim ? { target: victim } : {}) } } : {}),
@@ -167,7 +181,7 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
   return (
     <div className="fight">
       <h4>{title}</h4>
-      {!ready && (
+      {!ready && !lastRolls.length && (
         <p className="hint">
           {role === 'spectator' ? 'Spectators can watch fights but not roll them.' : 'Select at least one model from each side (Select tool or shift-click) to fight.'}
         </p>
@@ -182,6 +196,7 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
                 const f = fighter(m);
                 return (
                   <div key={m.id} className="fighter">
+                    <Portrait m={m} photo={photoFor?.(m)} />
                     <span className="fighter-name">
                       {tag(m)}
                       {f.strike && <small className="heroic-tag">Heroic Strike</small>}
@@ -198,6 +213,9 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
                           {t}
                         </small>
                       ))}
+                    </span>
+                    <span className="mini-stat wounds" title="Wounds left">
+                      W <b>{m.wounds}</b>
                     </span>
                     {STATS.map(([k, label]) =>
                       // Profile numbers come from the game; a model added by hand can have its numbers typed in.
@@ -219,17 +237,17 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
                       ),
                     )}
                     {choosingFor(m.owner) && twoHandedChoice(catalog, m) === 'may' && !shieldingSide(seat) && (
-                      <label className="check small">
-                        <input type="checkbox" checked={!!choices[m.id]?.twoHanded} onChange={e => choose(m, { twoHanded: e.target.checked })} /> Two-handed
-                      </label>
+                      <button className={`toggle small ${choices[m.id]?.twoHanded ? 'on' : ''}`} aria-pressed={!!choices[m.id]?.twoHanded} title="Strike with both hands: -1 to the duel roll, +1 To Wound" onClick={() => choose(m, { twoHanded: !choices[m.id]?.twoHanded })}>
+                        Two-handed
+                      </button>
                     )}
                   </div>
                 );
               })}
               {choosingFor(seat) && canShieldSide(seat) && (
-                <label className="check small">
-                  <input type="checkbox" checked={shieldingSide(seat)} onChange={e => sides[seat].forEach(m => choose(m, { shielding: e.target.checked }))} /> Shielding: double Attacks, but no strikes and no support
-                </label>
+                <button className={`toggle small ${shieldingSide(seat) ? 'on' : ''}`} aria-pressed={shieldingSide(seat)} title="Double Attacks in the duel, but no strikes and no support" onClick={() => { const on = !shieldingSide(seat); sides[seat].forEach(m => choose(m, { shielding: on })); }}>
+                  🛡 Shielding
+                </button>
               )}
               {!shieldingSide(seat) && helping(seat).map(m => (
                 <div key={m.id} className="fighter supporter">
@@ -244,18 +262,6 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
                   ) : null}
                 </div>
               ))}
-              {strikable(foe).length > 1 && leader?.winner !== (seat === 'p1' ? 0 : 1) && (
-                <label className="strike-at">
-                  Strikes at
-                  <select value={targets[seat]} onChange={e => setTargets(t => ({ ...t, [seat]: e.target.value }))}>
-                    {strikable(foe).map(t => (
-                      <option key={t.id} value={t.id}>
-                        {t.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
               {brutalBy()?.owner === seat && (() => {
                 const brute = brutalBy()!;
                 const kinds = brutalOptions(state, catalog, brute);
@@ -278,7 +284,7 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
                   .map(m => {
                     const f = fighter(m);
                     const count = helping(seat).includes(m) ? 1 : f.a;
-                    const def = strikable(foe).some(x => x.id === targets[seat]) ? targets[seat] : sides[foe][0].id;
+                    const def = sides[foe][0].id;
                     return (
                       <div key={m.id} className="strike-at">
                         {tag(m)}'s strike{count === 1 ? '' : 's'}:
@@ -332,25 +338,22 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
         </p>
       )}
       {ready && priorityOnly && (!lastGroup || struck) && <p className="hint">{seatName(state.priority!)} has Priority, so they choose the order the fights are rolled in.</p>}
-      {ready && (!lastGroup || struck) && (
+      {ready && !lastGroup && (
         <div className="row wrap">
-          <label className="check">
-            <input type="checkbox" checked={trapped} onChange={e => setTrapped(e.target.checked)} /> Loser is trapped (double strikes; checked for you when it can't back away)
-          </label>
           <button className="primary" onClick={duel} disabled={!fightNow || priorityOnly} title={fightNow ? undefined : 'Fights are rolled in the Fight phase.'}>
-            {struck ? 'Roll a new duel' : 'Roll the duel'}
+            Roll the duel
           </button>
         </div>
       )}
       {lastRolls.length > 0 && (
         <div className="rules-result">
           <ol className="log">
-            {lastRolls.map(r => (
-              <RollRow key={r.id} r={r} state={state} role={role} dispatch={dispatch} />
+            {lastRolls.map((r, i) => (
+              <RollRow key={r.id} r={r} state={state} role={role} dispatch={dispatch} delay={reveal(i)} />
             ))}
           </ol>
           {lastGroup && !struck && (
-            <>
+            <div className={settle ? 'reveal' : ''} style={settle ? { animationDelay: `${settle}ms` } : undefined}>
               <p className="duel-lead">
                 {leader ? (
                   <>
@@ -366,15 +369,12 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
               )}
               {ready && (
                 <div className="row wrap">
-                  <label className="check">
-                    <input type="checkbox" checked={trapped} onChange={e => setTrapped(e.target.checked)} /> Loser is trapped (double strikes; checked for you when it can't back away)
-                  </label>
                   <button className="primary" onClick={strikes} disabled={!fightNow} title={fightNow ? undefined : 'Fights are rolled in the Fight phase.'}>
                     Roll strikes
                   </button>
                 </div>
               )}
-            </>
+            </div>
           )}
           {struck &&
             role !== 'spectator' &&
@@ -387,6 +387,49 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
                 </button>
               ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+/** A fighter's picture, or its initial when there is none. */
+function Portrait({ m, photo }: { m: Model; photo?: string }) {
+  const [failed, setFailed] = useState(false);
+  return photo && !failed ? <img className="portrait" src={photo} alt="" onError={() => setFailed(true)} /> : <span className="portrait avatar">{m.name.slice(0, 1)}</span>;
+}
+
+/**
+ * The fight being rolled, in a card beside the board rather than over it. Every fight on the table is listed at the
+ * top, so the next one can be picked from here; once this one is done, a button moves on to the next.
+ */
+export function FightDock({ state, dispatch, role, fight, fights, open, photoFor }: { state: GameState; dispatch: Dispatch; role: Role; fight: Combat; fights: Combat[]; open: (key: string | null) => void; photoFor?: (m: Model) => string | undefined }) {
+  const drag = useDraggable('fight-card');
+  const battle = state.flow.started && state.phase === 'fight';
+  // Named by the first model on each side, even once it has fallen.
+  const name = (c: Combat) => c.key.split(',|,').map((ids, i) => state.models[(i ? c.p2 : c.p1)[0] ?? ids.split(',')[0]]?.name ?? 'the fallen').join(' vs ');
+  const next = battle && fightDone(state, fight) ? fights.find(c => c.key !== fight.key && !fightDone(state, c)) : undefined;
+  return (
+    <div ref={drag.ref as Ref<HTMLDivElement>} style={drag.style} className="fight-dock" role="dialog" aria-label="Fight">
+      <button className="close" onClick={() => open(null)} aria-label="Close">
+        ✕
+      </button>
+      {drag.controls && <span className="model-card-grip">{drag.controls}</span>}
+      <div className={`fight-dock-head ${drag.draggable ? 'grab' : ''}`} onPointerDown={drag.onPointerDown}>
+        {battle && fights.length > 1 && (
+          <div className="fight-list" aria-label="Fights this turn">
+            {fights.map((c, i) => (
+              <button key={c.key} className={`small ${c.key === fight.key ? 'on' : ''} ${fightDone(state, c) ? 'done' : ''}`} title={name(c)} onClick={() => open(c.key)}>
+                {fightDone(state, c) ? '✓' : '⚔'} {i + 1}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <FightPanel state={state} dispatch={dispatch} role={role} ids={[...fight.p1, ...fight.p2]} combat={fight.key} title={name(fight)} photoFor={photoFor} />
+      {next && (
+        <button className="primary next-fight" onClick={() => open(next.key)}>
+          Next fight: {name(next)} →
+        </button>
       )}
     </div>
   );

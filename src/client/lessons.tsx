@@ -309,10 +309,10 @@ export const CHAPTERS: Chapter[] = [
         body: (
           <>
             <p>A loser that can't back away, because enemies, terrain or the table edge block it, is trapped. The winner rolls twice as many strikes against a trapped model.</p>
-            <p>Surrounding an enemy is the surest way to finish it. The fight card has a box to tick when the loser is trapped.</p>
+            <p>Surrounding an enemy is the surest way to finish it. The game spots a trapped loser for you and doubles the strikes.</p>
           </>
         ),
-        task: 'Fight the Orc you have surrounded, ticking Loser is trapped.',
+        task: 'Fight the Orc you have surrounded.',
         setup: () =>
           inPhase('fight', {
             changes: { captain: { x: 13.5, y: 14.48 }, warrior: { x: 13.5, y: 12.52 } },

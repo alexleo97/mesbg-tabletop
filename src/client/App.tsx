@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { BOT_NAME, BOT_SPEEDS, type Terrain, type Model, type Role, type RoomSummary, type Seat } from '../shared/types.ts';
 import { Board, type Tool } from './Board.tsx';
 import { RoomConnection, useRoom, type Connection } from './net.ts';
@@ -9,7 +9,7 @@ import { RulesPanel } from './RulesPanel.tsx';
 import { ScenarioPanel } from './ScenarioPanel.tsx';
 import { BrokenTags } from './BrokenTags.tsx';
 import { CoachBar } from './CoachBar.tsx';
-import { FightPanel } from './FightPanel.tsx';
+import { FightDock } from './FightPanel.tsx';
 import { ModelCard, weaponOf } from './ModelCard.tsx';
 import { SightHint } from './SightHint.tsx';
 import { combatFromKey, combats, other } from '../shared/flow.ts';
@@ -291,6 +291,17 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
     history.replaceState(null, '', url);
     if (!state.bot && !players.includes('p2')) dispatch({ type: 'setBot', seat: 'p2' });
   }, [seat, players.includes('p1'), status]);
+  // A duel rolled by either side opens its fight, so it can be followed as it happens.
+  const seenDuels = useRef(new Set(state.log.map(r => r.id)));
+  useEffect(() => {
+    for (const r of state.log) {
+      if (seenDuels.current.has(r.id)) continue;
+      seenDuels.current.add(r.id);
+      if (!state.flow.started || state.phase !== 'fight' || !r.group?.startsWith('f-') || r.side === undefined || !r.model || r.support || Date.now() - r.at > 5000) continue;
+      const c = combats(state).find(x => x.p1.includes(r.model!) || x.p2.includes(r.model!));
+      if (c) setFightKey(c.key);
+    }
+  }, [state.log]);
   // When the computer holds off its strikes for you to spend Might, the fight opens so you can.
   const mightFight = waitingOnMight(state);
   useEffect(() => {
@@ -389,6 +400,10 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
       : undefined;
   // The fight stays open after its losers back away, so its wounds can still be applied.
   const fight = fightKey ? (fights.find(c => c.key === fightKey) ?? combatFromKey(state, fightKey)) : undefined;
+  const photoFor = (m: Model) => {
+    const unit = settings.photos && m.profileId ? catalog?.units[m.profileId] : undefined;
+    return unit && pictureUrl(unit);
+  };
   const singleCombat = single ? fights.find(c => c.p1.includes(single.id) || c.p2.includes(single.id)) : undefined;
 
   return (
@@ -466,10 +481,8 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
               showZones={settings.zones}
               showDeployment={settings.deployment && !state.flow.started}
               showGrid={settings.grid}
-              photoFor={m => {
-                const unit = settings.photos && m.profileId ? catalog?.units[m.profileId] : undefined;
-                return unit && pictureUrl(unit);
-              }}
+              photoFor={photoFor}
+              focus={fight ? { key: fight.key, ids: [...fight.p1, ...fight.p2] } : null}
               onModelTap={onModelTap}
               links={aimLinks}
               fights={state.flow.started && state.phase === 'fight' ? fights.map(c => ({ key: c.key, ids: [...c.p1, ...c.p2], done: fightDone(state, c) })) : undefined}
@@ -583,16 +596,7 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
           )}
         </div>
 
-        {fight && (
-          <div className="sheet-backdrop" onClick={() => setFightKey(null)}>
-            <div className="sheet" role="dialog" aria-label="Fight" onClick={e => e.stopPropagation()}>
-              <button className="close" onClick={() => setFightKey(null)} aria-label="Close">
-                ✕
-              </button>
-              <FightPanel state={state} dispatch={dispatch} role={role} ids={[...fight.p1, ...fight.p2]} combat={fight.key} title="Resolve the fight" />
-            </div>
-          </div>
-        )}
+        {fight && <FightDock state={state} dispatch={dispatch} role={role} fight={fight} fights={fights} open={setFightKey} photoFor={photoFor} />}
 
         {panelOpen && (
           <aside className="panel">

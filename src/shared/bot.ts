@@ -1185,12 +1185,13 @@ function fightStep(ctx: Ctx): BotStep | null {
     return null;
   }
   const duel = openDuel(state, c, memo.since);
-  if (!duel) return { action: { type: 'fight', fight: fightRequest(ctx, c) }, delay: DICE_PAUSE * 1.5 };
+  // Fights are held long enough to follow: the duel's dice, then each model's strikes, come in one line at a time.
+  if (!duel) return { action: { type: 'fight', fight: fightRequest(ctx, c) }, delay: DICE_PAUSE * 3 };
   const raise = mightInDuel(ctx, duel.rolls);
   if (raise) return raise;
   // Hold the strikes while the other player could still use Might; they roll the strikes themselves.
   if (ctx.person && humanCanRaise(state, other(seat), duel.rolls)) return { delay: WAIT_PAUSE };
-  return { action: { type: 'strikes', fight: fightRequest(ctx, c, duel.rolls), group: duel.group }, delay: DICE_PAUSE * 1.5 };
+  return { action: { type: 'strikes', fight: fightRequest(ctx, c, duel.rolls), group: duel.group }, delay: DICE_PAUSE * 3 };
 }
 
 /** Might on the computer's own duel dice, when a point or two turns a lost duel into a won one. */
