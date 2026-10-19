@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { entriesFor, entryPoints, parseBuilderExport, pictureUrl, type Catalog } from '../src/shared/catalog.ts';
+import { entriesFor, entryPoints, modelStats, parseBuilderExport, pictureUrl, statsWithOptions, type Catalog } from '../src/shared/catalog.ts';
 
 const catalog: Catalog = JSON.parse(readFileSync(new URL('../src/data/mesbg-data.json', import.meta.url), 'utf8'));
 const THRANDUIL = '[halls-of-thranduil] thranduil-king-of-the-woodland-realm';
@@ -111,5 +111,10 @@ describe('base sizes', () => {
     expect(entriesFor(rider[0], rider[1], [], 1)[0].base).toEqual({ shape: 'round', w: 40, h: 40 });
     const ent = Object.entries(catalog.units).find(([, u]) => u.name === 'Treebeard')!;
     expect(entriesFor(ent[0], ent[1], [], 1)[0].base).toEqual({ shape: 'round', w: 60, h: 60 });
+  });
+  it('gives Théodred of the Fords of Isen his shield\'s Defence, in the list and on the table', () => {
+    const unit = catalog.units['[fords-of-isen] theodred'];
+    expect(statsWithOptions(unit, [])?.[4]).toBe('7');
+    expect(modelStats(catalog, { profileId: '[fords-of-isen] theodred', options: ['Shield'] })?.D).toBe(7);
   });
 });

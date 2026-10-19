@@ -17,7 +17,7 @@ import { fallDamage, resolveCross } from './terrainTests.ts';
 import { heightOf } from './sight.ts';
 import { cleanFight, cleanShot, duelSettled, mightCouldHelp, resolveDuel, resolveShot, resolveStrikes, type DrawRule, type Fighter, type FightRequest, type ShotRequest } from './fight.ts';
 import { combatFromKey, CONTACT_SLACK, other, priorityChooser } from './flow.ts';
-import { hasElvenWeapon, sideOf } from './gear.ts';
+import { hasElvenWeapon, hasPike, sideOf } from './gear.ts';
 import { oneSpearEach, supporters } from './support.ts';
 import { fightDone, foughtThisTurn } from './movement.ts';
 import { rollCast, rollResist } from './magic.ts';
@@ -135,6 +135,13 @@ function prepareFight(state: GameState, catalog: Catalog | null, req: FightReque
       for (const id of front[i]) if (state.models[id] && distanceBetween(state.models[id], state.models[f.id]) <= CONTACT_SLACK) (backing[id] ??= []).push(f.id);
     }),
   );
+  // A pike backing a supporting pike backs up the same friend, so it is struck too (Rulebook FAQ).
+  sides.forEach(side => {
+    const pikes = side.filter(f => f.support && state.models[f.id] && hasPike(catalog, state.models[f.id])).map(f => f.id);
+    for (const list of Object.values(backing))
+      for (let k = 0; k < list.length; k++)
+        if (pikes.includes(list[k])) for (const h of pikes) if (!list.includes(h) && distanceBetween(state.models[h], state.models[list[k]]) <= CONTACT_SLACK) list.push(h);
+  });
   return { ...fresh, sides, ...(draw ? { draw } : {}), ...(Object.keys(backing).length ? { backing } : {}) };
 }
 

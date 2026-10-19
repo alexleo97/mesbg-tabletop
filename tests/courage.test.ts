@@ -4,6 +4,7 @@ import type { Catalog } from '../src/shared/catalog.ts';
 import { brokenSideToTest, brokenTests, terrorAhead, terrorTest } from '../src/shared/courage.ts';
 import { moveAllowance } from '../src/shared/movement.ts';
 import { initialState, reduce } from '../src/shared/reducer.ts';
+import { resolveRequest } from '../src/shared/resolve.ts';
 import type { Action, GameState, Model, Seat } from '../src/shared/types.ts';
 
 const catalog = catalogJson as unknown as Catalog;
@@ -127,5 +128,24 @@ describe('Heroic Combat', () => {
     expect(moveAllowance(s, s.models.h)).toBe(6);
     // A friend who wasn't in that fight doesn't get the move.
     expect(moveAllowance(s, s.models.f)).toBe(1);
+  });
+
+  it('stops the Heroic Combat move at a wall for a Jump test, as in the Move phase', () => {
+    const wall = { id: 'w', kind: 'wall' as const, shape: 'rect' as const, x: 10, y: 15, w: 10, h: 0.5, rot: 0, locked: false };
+    let s = run(
+      initialState(),
+      { type: 'addModels', models: [mk('h', 'p1', 10, 20, { hero: true, might: 1 }), mk('o', 'p2', 10, 20 - 2 * R)] },
+      { type: 'addTerrain', terrain: wall },
+      { type: 'startGame' },
+      { type: 'setPhase', phase: 'fight' },
+    );
+    s = { ...s, flow: { ...s.flow, heroics: [{ model: 'h', action: 'Heroic Combat', phase: 'fight' }] } };
+    s = run(s, { type: 'resolveCombat', key: 'h,|,o' }, { type: 'wound', id: 'o', count: 1 }, { type: 'moveModels', moves: [{ id: 'h', x: 10, y: 13 }] });
+    expect(s.models.h.y).toBeGreaterThan(15.5);
+    expect(s.flow.blocked?.h?.test).toBe('Jump');
+    const seq = [6];
+    const out = resolveRequest(s, 'p1', { type: 'cross', id: 'h' }, () => seq.shift() ?? 1, uid, 1, catalog);
+    s = run(s, ...out!.apply);
+    expect(s.models.h.y).toBeLessThan(14.8);
   });
 });
