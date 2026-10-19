@@ -436,3 +436,22 @@ describe('Roast Mutton: Ori, Bombur and Thorin', () => {
     expect(taken.some(x => x.includes?.('Balin') || x === who(s, 'balin').id)).toBe(false);
   });
 });
+
+describe('Roast Mutton: the profiles in play', () => {
+  it('throws the right stones, and keeps Thorin and Bilbo without the gear the scenario takes away', async () => {
+    const { stones } = await import('../src/shared/wargear.ts');
+    const { rulesFor } = await import('../src/shared/catalog.ts');
+    const { isMonster } = await import('../src/shared/monsters.ts');
+    const s = scene({});
+    for (const k of ['bill', 'bert', 'tom']) {
+      expect(stones(catalog, who(s, k))).toMatchObject({ range: 12, s: 8 });
+      expect(isMonster(catalog, who(s, k))).toBe(true);
+    }
+    expect(stones(catalog, who(s, 'bifur'))).toMatchObject({ range: 8, s: 2 });
+    expect(isMonster(catalog, who(s, 'bombur'))).toBe(false);
+    expect(rulesFor(catalog, who(s, 'thorin'))).not.toContain('Orcrist');
+    expect(rulesFor(catalog, who(s, 'thorin'))).toContain('The Oakenshield');
+    expect(rulesFor(catalog, who(s, 'bilbo')).some(r => /sting|one ring/i.test(r))).toBe(false);
+    expect(rulesFor(catalog, who(s, 'bifur'))).toContain('Embedded Axe');
+  });
+});

@@ -128,7 +128,9 @@ export function muttonWinner(state: GameState): Seat | 'draw' | null {
   const good = seatOf(state, 'good');
   const evil = seatOf(state, 'evil');
   if (!good || !evil) return null;
-  const bilboDead = !!castModel(state, 'bilbo')?.dead;
+  // (Still in a sack as the game ends, he counts as slain.)
+  const bilbo = castModel(state, 'bilbo');
+  const bilboDead = !!bilbo && (bilbo.dead || sacked(bilbo));
   const trolls = Object.values(state.models).filter(m => m.owner === evil);
   if (trolls.length && trolls.every(m => m.dead)) return bilboDead ? 'draw' : good;
   const company = Object.values(state.models).filter(m => m.owner === good);

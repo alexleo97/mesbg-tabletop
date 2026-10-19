@@ -163,6 +163,10 @@ describe('Roast Mutton: Bilbo, the dawn and the result', () => {
     expect(gameWinner(kill(s, ['bill', 'bert']))).toBeNull();
     expect(gameWinner(kill(s, ['bill', 'bert', 'tom']))).toBe('p1');
     expect(gameWinner(kill(s, ['bill', 'bert', 'tom', 'bilbo']))).toBe('draw');
+    // Bilbo still in a sack as the last Troll falls counts as slain.
+    const bilbo = who(s, 'bilbo');
+    const inSack = { ...s, models: { ...s.models, [bilbo.id]: { ...bilbo, effects: [{ power: 'Paralyse', by: who(s, 'bill').id, turn: 3, duration: 'Exhaustion' as const, sack: true }] } } };
+    expect(gameWinner(kill(inSack, ['bill', 'bert', 'tom']))).toBe('draw');
     const company = Object.values(s.models).filter(m => m.owner === 'p1').map(m => m.cast!);
     const bag = (st: GameState, key: string): GameState => {
       const m = who(st, key);
