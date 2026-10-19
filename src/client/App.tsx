@@ -388,16 +388,10 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
                       <option value="spectator">Spectator</option>
                     </select>
                   </div>
-                  {seat && !state.bot && (
+                  {seat && !state.bot && !state.flow.started && !players.includes(other(seat)) && (
                     <label className="check">
-                      <input
-                        type="checkbox"
-                        checked={false}
-                        disabled={players.includes(other(seat))}
-                        onChange={e => dispatch({ type: 'setBot', seat: e.target.checked ? other(seat) : null })}
-                      />
+                      <input type="checkbox" checked={false} onChange={e => dispatch({ type: 'setBot', seat: e.target.checked ? other(seat) : null })} />
                       Let {BOT_NAME.replace(/^The /, 'the ')} play the other side
-                      {players.includes(other(seat)) ? ' (someone is sitting there now)' : ''}
                     </label>
                   )}
                   {state.bot && <p className="hint">A solo battle against {BOT_NAME.replace(/^The /, 'the ')}. Nobody else can join it.</p>}
@@ -425,6 +419,52 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
     </>
   );
   const singleCombat = single ? fights.find(c => c.p1.includes(single.id) || c.p2.includes(single.id)) : undefined;
+
+  const tools = (
+    <div className="tool-bar" role="toolbar" aria-label="Tools">
+      {(
+        [
+          ['move', '✋', 'Drag'],
+          ['select', '⬚', 'Select'],
+          ['measure', '📏', 'Measure'],
+          ['mark', '📍', 'Mark'],
+        ] as const
+      ).map(([t, icon, label]) => (
+        <button
+          key={t}
+          className={tool === t ? 'on' : ''}
+          onClick={() => setTool(t)}
+          title={t === 'mark' ? 'Click to ping a spot, drag to draw an arrow (or hold Alt with any tool)' : label}
+          aria-label={label}
+        >
+          <span>{icon}</span>
+          <small>{label}</small>
+        </button>
+      ))}
+      <button className={sight ? 'on' : ''} onClick={() => setSight(v => !v)} title="Show what a model can see" aria-label="Line of sight" aria-pressed={sight}>
+        <span>👁</span>
+        <small>Sight</small>
+      </button>
+      <button className={settings.names ? 'on' : ''} onClick={() => updateSettings({ names: !settings.names })} title="Show each model's name under it" aria-label="Model names" aria-pressed={settings.names}>
+        <span>🏷</span>
+        <small>Models</small>
+      </button>
+      <button className={settings.terrainNames ? 'on' : ''} onClick={() => updateSettings({ terrainNames: !settings.terrainNames })} title="Show each terrain piece's name on it" aria-label="Terrain names" aria-pressed={settings.terrainNames}>
+        <span>⛰</span>
+        <small>Terrain</small>
+      </button>
+      {marks?.some(m => m.kind === 'arrow' && m.by === role) && (
+        <button onClick={() => conn.clearMarks()} title="Take your arrows off the table" aria-label="Clear arrows">
+          <span>✕</span>
+          <small>Arrows</small>
+        </button>
+      )}
+      <button onClick={() => dispatch({ type: 'undo' })} disabled={!canUndo} title="Undo your last change (Ctrl+Z)" aria-label="Undo">
+        <span>↶</span>
+        <small>Undo</small>
+      </button>
+    </div>
+  );
 
   return (
     <div className="game">
@@ -460,49 +500,6 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
             VP <b className="p1">{vpTotals(state).p1}</b>–<b className="p2">{vpTotals(state).p2}</b>
           </button>
         )}
-        <div className="tool-bar" role="toolbar" aria-label="Tools">
-          {(
-            [
-              ['move', '✋', 'Drag'],
-              ['select', '⬚', 'Select'],
-              ['measure', '📏', 'Measure'],
-              ['mark', '📍', 'Mark'],
-            ] as const
-          ).map(([t, icon, label]) => (
-            <button
-              key={t}
-              className={tool === t ? 'on' : ''}
-              onClick={() => setTool(t)}
-              title={t === 'mark' ? 'Click to ping a spot, drag to draw an arrow (or hold Alt with any tool)' : label}
-              aria-label={label}
-            >
-              <span>{icon}</span>
-              <small>{label}</small>
-            </button>
-          ))}
-          <button className={sight ? 'on' : ''} onClick={() => setSight(v => !v)} title="Show what a model can see" aria-label="Line of sight" aria-pressed={sight}>
-            <span>👁</span>
-            <small>Sight</small>
-          </button>
-          <button className={settings.names ? 'on' : ''} onClick={() => updateSettings({ names: !settings.names })} title="Show each model's name under it" aria-label="Model names" aria-pressed={settings.names}>
-            <span>🏷</span>
-            <small>Models</small>
-          </button>
-          <button className={settings.terrainNames ? 'on' : ''} onClick={() => updateSettings({ terrainNames: !settings.terrainNames })} title="Show each terrain piece's name on it" aria-label="Terrain names" aria-pressed={settings.terrainNames}>
-            <span>⛰</span>
-            <small>Terrain</small>
-          </button>
-          {marks?.some(m => m.kind === 'arrow' && m.by === role) && (
-            <button onClick={() => conn.clearMarks()} title="Take your arrows off the table" aria-label="Clear arrows">
-              <span>✕</span>
-              <small>Arrows</small>
-            </button>
-          )}
-          <button onClick={() => dispatch({ type: 'undo' })} disabled={!canUndo} title="Undo your last change (Ctrl+Z)" aria-label="Undo">
-            <span>↶</span>
-            <small>Undo</small>
-          </button>
-        </div>
         <nav className="panel-buttons" aria-label="Panels">
           <button className={panelOpen && tab === 'settings' ? 'on' : ''} onClick={() => openTab('settings')} aria-label="Display settings" title="Display settings">
             <span>⚙</span>
@@ -550,7 +547,7 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
               onMark={m => conn.mark(m)}
             />
 
-            <BattleCard state={state} dispatch={dispatch} role={role} tab={battleTab} setTab={setBattleTab} fight={fight} fights={fights} openFight={setFightKey} photoFor={photoFor} />
+            <BattleCard tools={tools} state={state} dispatch={dispatch} role={role} tab={battleTab} setTab={setBattleTab} fight={fight} fights={fights} openFight={setFightKey} photoFor={photoFor} />
 
             {refusedNote && (
               <button className="sight-hint" onClick={() => setRefusedNote(null)}>

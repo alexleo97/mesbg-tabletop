@@ -387,11 +387,8 @@ export function ArmyPanel({ state, dispatch, role }: { state: GameState; dispatc
     if (fileRef.current) fileRef.current.value = '';
   };
 
-  const casualties = Object.values(state.models).filter(m => m.dead);
-  const alive = (seat: Seat) => Object.values(state.models).filter(m => m.owner === seat && !m.dead).length;
   const total = (seat: Seat) => Object.values(state.models).filter(m => m.owner === seat).length;
   const onTable = (seat: Seat) => total(seat) > 0;
-  const seatName = (seat: Seat) => state.names[seat] || (seat === 'p1' ? 'Player 1' : 'Player 2');
   // Each army goes on the table once; clearing it before the battle lets you pick another.
   const locked = onTable(owner) && !byWarband.has(owner);
 
@@ -401,10 +398,6 @@ export function ArmyPanel({ state, dispatch, role }: { state: GameState; dispatc
       {state.bot && role !== 'spectator' && <OpponentArmy state={state} dispatch={dispatch} seat={state.bot} />}
       {role !== 'spectator' && locked ? (
         <div className="deployed">
-          {state.bot && <h4>Your army</h4>}
-          <p>
-            {seatName(owner)}'s army is on the table: {total(owner)} models, {Object.values(state.models).filter(m => m.owner === owner).reduce((n, m) => n + (m.points ?? 0), 0)} pts.
-          </p>
           {!state.flow.started && (
             <button onClick={() => dispatch({ type: 'removeModels', ids: Object.values(state.models).filter(m => m.owner === owner).map(m => m.id) })}>
               Take it off to deploy a different army
@@ -443,25 +436,68 @@ export function ArmyPanel({ state, dispatch, role }: { state: GameState; dispatc
         </>
       )}
 
-      <h4>Forces</h4>
-      <p className="muted">
-        {(['p1', 'p2'] as const).map(s => `${state.names[s] || (s === 'p1' ? 'Player 1' : 'Player 2')}: ${alive(s)}/${total(s)}`).join(' · ')}
-        {(['p1', 'p2'] as const).some(s => armyStatus(state, s).broken) && <b className="broken"> · an army is Broken</b>}
-      </p>
-
-      {casualties.length > 0 && (
-        <>
-          <h4>Casualties</h4>
-          <ul className="casualties">
-            {casualties.map(m => (
-              <li key={m.id} className={m.owner}>
-                <span>{m.name}</span>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
+      {(['p1', 'p2'] as const).filter(onTable).map(s => (
+        <ArmyRoster key={s} state={state} seat={s} mine={s === role} />
+      ))}
     </div>
+  );
+}
+
+/** One side's army as a list: a fold per warband, its hero first, then its warriors counted by kind. */
+function ArmyRoster({ state, seat, mine }: { state: GameState; seat: Seat; mine: boolean }) {
+  const models = Object.values(state.models).filter(m => m.owner === seat);
+  const standing = models.filter(m => !m.dead).length;
+  const points = models.reduce((n, m) => n + (m.points ?? 0), 0);
+  const name = state.names[seat] || (seat === 'p1' ? 'Player 1' : 'Player 2');
+  const groups = new Map<string, Model[]>();
+  for (const m of models) groups.set(m.warband ?? '', [...(groups.get(m.warband ?? '') ?? []), m]);
+  const warbands = [...groups.values()].map(ms => ms.sort((a, b) => Number(b.hero) - Number(a.hero)));
+  return (
+    <details className={`army-roster ${seat}`} open>
+      <summary>
+        <b>{mine ? 'Your army' : state.bot === seat ? BOT_NAME : name}</b>
+        <span className="muted">
+          {standing}/{models.length} standing{points ? ` · ${points} pts` : ''}
+        </span>
+        {armyStatus(state, seat).broken && <b className="broken">Broken</b>}
+      </summary>
+      {warbands.map((ms, i) => {
+        const leader = ms.find(m => m.hero);
+        const heroes = ms.filter(m => m.hero);
+        const kinds = new Map<string, Model[]>();
+        for (const m of ms.filter(m => !m.hero)) kinds.set(m.name, [...(kinds.get(m.name) ?? []), m]);
+        return (
+          <details key={i} className="roster-band" open>
+            <summary>
+              {warbands.length > 1 && leader ? `${leader.name}'s warband` : warbands.length > 1 ? 'Other models' : 'Models'}
+              <span className="muted">{ms.filter(m => !m.dead).length}/{ms.length}</span>
+            </summary>
+            <ul>
+              {heroes.map(m => (
+                <li key={m.id} className={m.dead ? 'dead' : ''}>
+                  <span>{m.name}</span>
+                  <span className="muted">
+                    {m.dead ? 'slain' : `M${m.might} W${m.will} F${m.fate} · ${m.wounds}/${m.maxWounds}W`}
+                  </span>
+                </li>
+              ))}
+              {[...kinds].map(([kind, list]) => {
+                const left = list.filter(m => !m.dead).length;
+                return (
+                  <li key={kind} className={left ? '' : 'dead'}>
+                    <span>
+                      {list.length > 1 && <b>{list.length}× </b>}
+                      {kind}
+                    </span>
+                    {list.length > 1 ? <span className="muted">{left} left</span> : list[0].dead && <span className="muted">slain</span>}
+                  </li>
+                );
+              })}
+            </ul>
+          </details>
+        );
+      })}
+    </details>
   );
 }
 
@@ -563,7 +599,7 @@ export function TablePanel({
   if (!editor && (state.flow.started || role === 'spectator'))
     return (
       <div className="panel-body">
-        <p className="hint">{state.flow.started ? "The table is set: it can't change once the battle has started." : 'Only the players set up the table.'} Tap a piece of terrain to see how it plays.</p>
+        {!state.flow.started && <p className="hint">Only the players set up the table.</p>}
         {t && (
           <>
             <h4>{TERRAIN_INFO[t.kind].name}</h4>
@@ -574,7 +610,6 @@ export function TablePanel({
             </ul>
           </>
         )}
-        <h4>Game</h4>
         <div className="row">
           <button onClick={save}>Save game</button>
         </div>

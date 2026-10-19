@@ -242,6 +242,22 @@ label.check input { width: auto; min-height: 0; }
 .die.hit { background: var(--ok); color: white; }
 .die.miss { opacity: 0.45; }
 .hits { margin-left: 6px; font-size: 0.85rem; color: var(--muted); }
+.army-roster { border-left: 4px solid var(--muted); padding-left: 10px; margin-top: 12px; }
+.army-roster.p1 { border-left-color: var(--p1); }
+.army-roster.p2 { border-left-color: var(--p2); }
+.army-roster summary { display: flex; align-items: baseline; gap: 8px; cursor: pointer; list-style: none; }
+.army-roster summary::-webkit-details-marker { display: none; }
+.army-roster summary::before { content: "▸"; color: var(--muted); font-size: 0.8rem; width: 0.8em; }
+.army-roster details[open] > summary::before, .army-roster[open] > summary::before { content: "▾"; }
+.army-roster > summary b { font-family: var(--font-head); color: var(--gold); font-size: 1.05rem; }
+.army-roster summary .muted { margin-left: auto; font-size: 0.8rem; }
+.army-roster .broken { font-size: 0.75rem; }
+.roster-band { margin: 6px 0 0 4px; }
+.roster-band > summary { font-size: 0.9rem; color: var(--text); }
+.roster-band ul { list-style: none; margin: 4px 0 0; padding: 0 0 0 14px; display: flex; flex-direction: column; gap: 2px; font-size: 0.88rem; }
+.roster-band li { display: flex; justify-content: space-between; gap: 8px; }
+.roster-band li .muted { font-size: 0.78rem; white-space: nowrap; }
+.roster-band li.dead span:first-child { text-decoration: line-through; opacity: 0.55; }
 .casualties { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
 .casualties li { display: flex; justify-content: space-between; align-items: center; gap: 8px; border-left: 4px solid var(--muted); padding-left: 8px; }
 .casualties li.p1 { border-left-color: var(--p1); }
@@ -535,12 +551,11 @@ div.strike-at select { width: auto; flex: 1 1 40%; }
 .tool-rail small { font-size: 0.66rem; }
 
 /* The table tools, in the top bar. */
-.tool-bar { margin-left: auto; display: flex; gap: 3px; }
-.tool-bar button { display: flex; flex-direction: column; align-items: center; gap: 0; padding: 2px 6px; min-width: 50px; }
+.tool-bar { display: grid; grid-template-columns: repeat(auto-fit, minmax(40px, 1fr)); gap: 3px; position: sticky; top: -8px; z-index: 2; background: #26231f; padding: 2px 0 6px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
+.tool-bar button { display: flex; flex-direction: column; align-items: center; gap: 0; padding: 2px 0; min-width: 0; }
 .tool-bar button.on { background: var(--gold); color: var(--ink); border-color: var(--gold); }
 .tool-bar span { font-size: 1rem; line-height: 1.1; }
 .tool-bar small { font-size: 0.66rem; }
-.tool-bar + .panel-buttons { margin-left: 8px; }
 
 /* The battle card down the left: armies, scenario and the fight being rolled. */
 .battle-card {
@@ -548,7 +563,7 @@ div.strike-at select { width: auto; flex: 1 1 40%; }
   background: #26231ff5; border: 1px solid var(--gold); border-radius: 14px; padding: 8px 12px 12px; box-shadow: 0 10px 30px #0009;
 }
 .battle-card.small { overflow: visible; }
-.battle-head { display: flex; align-items: center; gap: 6px; position: sticky; top: -8px; background: #26231f; padding: 4px 0; z-index: 1; }
+.battle-head { display: flex; align-items: center; gap: 6px; position: sticky; top: 46px; background: #26231f; padding: 4px 0; z-index: 1; }
 .battle-tabs { display: flex; gap: 4px; flex: 1; min-width: 0; }
 .battle-tabs button, .coach-views button { min-height: 30px; padding: 2px 10px; font-size: 0.85rem; }
 .battle-body .panel-body, .coach-view .panel-body { padding: 0; overflow: visible; flex: none; margin-top: 8px; }

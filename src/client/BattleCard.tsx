@@ -1,4 +1,4 @@
-import { useState, type Ref } from 'react';
+import { useState, type ReactNode, type Ref } from 'react';
 import type { Combat } from '../shared/flow.ts';
 import { scenarioById } from '../shared/scenarios.ts';
 import type { Action, GameState, Model, Role } from '../shared/types.ts';
@@ -10,10 +10,10 @@ import { useDraggable } from './useDraggable.tsx';
 export type BattleTab = 'army' | 'scenario' | 'fight';
 
 /**
- * The card down the left of the table: the armies, the scenario (victory points, special rules, game end) and the
+ * The card down the left of the table: the board tools, then the armies, the scenario (victory points, special rules, game end) and the
  * fight being rolled. It stays put, and on a computer it can be dragged somewhere else and locked there.
  */
-export function BattleCard({ state, dispatch, role, tab, setTab, fight, fights, openFight, photoFor }: { state: GameState; dispatch: (a: Action) => void; role: Role; tab: BattleTab; setTab: (t: BattleTab) => void; fight?: Combat; fights: Combat[]; openFight: (key: string | null) => void; photoFor: (m: Model) => string | undefined }) {
+export function BattleCard({ tools, state, dispatch, role, tab, setTab, fight, fights, openFight, photoFor }: { tools: ReactNode; state: GameState; dispatch: (a: Action) => void; role: Role; tab: BattleTab; setTab: (t: BattleTab) => void; fight?: Combat; fights: Combat[]; openFight: (key: string | null) => void; photoFor: (m: Model) => string | undefined }) {
   const drag = useDraggable('battle-card');
   const [small, setSmall] = useState(false);
   const shown = tab === 'fight' && !fight ? 'army' : tab;
@@ -24,6 +24,7 @@ export function BattleCard({ state, dispatch, role, tab, setTab, fight, fights, 
   ];
   return (
     <section ref={drag.ref as Ref<HTMLElement>} style={drag.style} className={`battle-card ${small ? 'small' : ''}`} aria-label="Battle">
+      {tools}
       <div className={`battle-head ${drag.draggable ? 'grab' : ''}`} onPointerDown={drag.onPointerDown}>
         <nav className="battle-tabs" aria-label="Battle card">
           {tabs.map(([t, label]) => (
