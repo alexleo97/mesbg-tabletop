@@ -190,7 +190,7 @@ export function RollRow({ r, state, role, dispatch, delay = 0 }: { r: DiceRoll; 
 export function DicePanel({ state, dispatch, role }: { state: GameState; dispatch: Dispatch; role: Role }) {
   return (
     <div className="panel-body">
-      <p className="hint">The game rolls every fight, shot, Courage test and Fate roll for you, and they all appear here. For anything else, such as a Thrown Rider test, use the roller in Rules.</p>
+      <p className="hint">The game rolls every fight, shot, test and Fate roll for you, and they all appear here.</p>
       {!state.log.length && <p className="muted">No rolls yet.</p>}
       <ol className="log">
         {[...state.log].reverse().map(r => (
@@ -875,6 +875,9 @@ export function SettingsPanel({ settings, update, game }: { settings: Settings; 
       </label>
       <label className="check">
         <input type="checkbox" checked={settings.names} onChange={e => update({ names: e.target.checked })} /> Unit names under models
+      </label>
+      <label className="check">
+        <input type="checkbox" checked={settings.terrainNames} onChange={e => update({ terrainNames: e.target.checked })} /> Terrain names on the table
       </label>
       <label className="check">
         <input type="checkbox" checked={settings.animations} onChange={e => update({ animations: e.target.checked })} /> Animations (gliding moves, dice, hits and shots)

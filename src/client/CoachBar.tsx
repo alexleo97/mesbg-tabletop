@@ -27,13 +27,20 @@ interface Props {
   dispatch: (a: Action) => void;
   role: Role;
   combats: Combat[];
-  openTab: (t: 'army' | 'table') => void;
+  /** Opens a tab of the battle card on the left. */
+  openTab: (t: 'army' | 'scenario') => void;
+  /** What the card shows: the turn guide, or the table's settings or the dice log in its place. */
+  view: CoachView;
+  setView: (v: CoachView) => void;
+  table: React.ReactNode;
+  log: React.ReactNode;
   openFight: (key: string) => void;
   /** The server moves finished Fight and End phases on by itself (not in the training, which runs in the browser). */
   auto?: boolean;
 }
 
 type Dispatch = (a: Action) => void;
+export type CoachView = 'turn' | 'table' | 'log';
 
 /** Declaring heroic actions at the start of the Move, Shoot and Fight phases, taking turns from the player without Priority. */
 /** A power cast and waiting: its target's player chooses whether to resist, or its caster whether to spend Might. */
@@ -321,7 +328,7 @@ function Reinforcements({ state, name }: { state: GameState; name: (s: Seat) => 
   );
 }
 
-export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, openFight, auto }: Props) {
+export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, openFight, auto, view, setView, table, log }: Props) {
   let combats = allCombats;
   const [small, setSmall] = useState(false);
   const drag = useDraggable('coach');
@@ -347,11 +354,11 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
         <ol className="setup-steps">
           <li className={scenario ? 'ok' : ''}>
             <span>{scenario ? scenario.name : state.bot ? 'Pick a scenario' : 'Pick a scenario, or play without one'}</span>
-            <button onClick={() => openTab('table')}>Scenario</button>
+            <button onClick={() => openTab('scenario')}>Scenario</button>
           </li>
           <li className={Object.keys(state.terrain).length ? 'ok' : ''}>
             <span>{Object.keys(state.terrain).length ? `${Object.keys(state.terrain).length} pieces of terrain` : 'Lay out the terrain'}</span>
-            <button onClick={() => openTab('table')}>Board</button>
+            <button onClick={() => setView('table')}>Board</button>
           </li>
           <li className={count('p1') && count('p2') ? 'ok' : ''}>
             <span>
@@ -521,7 +528,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
     const lead: Seat | null = vp.p1 === vp.p2 ? null : vp.p1 > vp.p2 ? 'p1' : 'p2';
     body = (
       <>
-        {scenarioById(state.scenario) && manual && <p>The game keeps the score. Enter the lines it can't see, like secret picks or carried objects, in the Table tab.</p>}
+        {scenarioById(state.scenario) && manual && <p>The game keeps the score. Enter the lines it can't see, like secret picks or carried objects, in the Scenario tab on the left.</p>}
         {check && <p className="warn">{check.reason}</p>}
         {check?.rollNeeded && !endRoll && me && (
           <button className="primary go" onClick={() => dispatch({ type: 'roll', count: 1, label: rollLabel })}>
@@ -568,13 +575,27 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
             ))}
           </ol>
         )}
-        <h3>{title}</h3>
+        <h3>{view === 'table' ? 'Table' : view === 'log' ? 'Dice log' : title}</h3>
+        <nav className="coach-views" aria-label="Turn guide">
+          {(
+            [
+              ['turn', flow.started ? 'Turn' : 'Set up'],
+              ['table', 'Table'],
+              ['log', 'Log'],
+            ] as const
+          ).map(([v, label]) => (
+            <button key={v} className={view === v ? 'on' : ''} aria-pressed={view === v} onClick={() => { setView(v); setSmall(false); }}>
+              {label}
+            </button>
+          ))}
+        </nav>
         {drag.controls}
         <button className="coach-toggle" onClick={() => setSmall(v => !v)} aria-label={small ? 'Show turn guide' : 'Hide turn guide'}>
           {small ? '▴' : '▾'}
         </button>
       </div>
-      {!small && (
+      {!small && view !== 'turn' && <div className="coach-view">{view === 'table' ? table : log}</div>}
+      {!small && view === 'turn' && (
         <div className="coach-body">
           {flow.started && <SpellStep state={state} dispatch={dispatch} role={role} name={name} />}
           {flow.started && <CompelStep state={state} dispatch={dispatch} role={role} />}

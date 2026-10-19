@@ -45,6 +45,8 @@ interface Props {
   sightRange?: number;
   /** Write each model's name under its base. */
   showNames?: boolean;
+  /** Write each terrain piece's name on it. */
+  showTerrainNames?: boolean;
   /** Pings and arrows on the table, and how to put one down (a click pings, a drag draws an arrow). */
   marks?: Mark[];
   onMark?: (m: Pick<Mark, 'kind' | 'x' | 'y' | 'x2' | 'y2'>) => void;
@@ -161,7 +163,7 @@ function Arrow({ by, from, to, fontSize }: { by: string; from: Point; to: Point;
 
 const clipId = (m: Model) => `clip-${m.base.shape}-${m.base.w}-${m.base.h}`;
 
-export function Board({ state, tool, selected, setSelected, selectedTerrain, setSelectedTerrain, dispatch, showZones, showDeployment, showGrid, photoFor, onModelTap, links, fights, onFightTap, sightFrom, sightRange, showNames, marks, onMark, animate, role, focus }: Props) {
+export function Board({ state, tool, selected, setSelected, selectedTerrain, setSelectedTerrain, dispatch, showZones, showDeployment, showGrid, photoFor, onModelTap, links, fights, onFightTap, sightFrom, sightRange, showNames, showTerrainNames, marks, onMark, animate, role, focus }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const tex = useMemo(() => textures(), []);
   const [view, setView] = useState<View>({ x: 0, y: 0, s: 10 });
@@ -751,7 +753,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
             );
           })}
 
-          {showNames &&
+          {showTerrainNames &&
             terrain
               .filter(t => t.kind !== 'objective' && !t.vines)
               .map(t => (
