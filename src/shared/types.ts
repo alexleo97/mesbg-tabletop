@@ -397,6 +397,10 @@ export interface Flow {
   /** The turn Paralysed models last rolled to recover. */
   recovered?: number;
   starts?: Record<string, [number, number]>;
+  /** How much Move each model has spent this phase along the way it has actually gone (round corners included). */
+  walked?: Record<string, number>;
+  /** The way each model has gone this phase, from where it began: corners only, for drawing its trail. */
+  paths?: Record<string, [number, number][]>;
   /** Each hero's Fate at the start of the game, so Fate spent can be counted. */
   startFate?: Record<string, number>;
   /** Who holds each objective, for scenarios where control lasts until someone else takes it. */

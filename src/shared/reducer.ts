@@ -6,7 +6,7 @@ import { holdInZones, nearEdge } from './deployment.ts';
 import { canActivate, heroicInfo, heroicNow, heroicQueue, mayActivate, shoutedFor, SHOUT_RANGE } from './heroics.ts';
 import { pendingSpell } from './magic.ts';
 import { basePower, cannotAct, effectActive } from './powers.ts';
-import { basesOverlap, engaged as engagedNow, finishCharge, fightsAgain, limitMove, marchedBy, marchRange, moveAllowance, movedAtAll, movedTooFar, moveLeft, moveStart } from './movement.ts';
+import { basesOverlap, costOf, engaged as engagedNow, finishCharge, fightsAgain, limitMove, marchedBy, marchRange, moveAllowance, movedAtAll, movedTooFar, moveLeft, moveStart, spent } from './movement.ts';
 import { FLOORED, floorHeight, flooredAt, insidePolygon, isDifficult, outline } from './sight.ts';
 import { cleanPausedShot, woundsTaken } from './fight.ts';
 import { pairOff } from './flow.ts';
@@ -88,6 +88,8 @@ function goToPhase(state: GameState, phase: Phase, turn: number, newTurn: boolea
       passed: [],
       lastHeroic: null,
       starts: {},
+      walked: {},
+      paths: {},
       ...(phase !== state.phase ? { crossed: {}, blocked: {}, stopped: [], crawling: [], lay: [], retreat: {}, heroicDone: [], heroicNow: undefined, heroicFirst: undefined, activated: [], shotPause: undefined, choices: undefined, barged: undefined } : {}),
       ...farMoved,
       ...upkeep,
@@ -560,6 +562,8 @@ function step(state: GameState, action: Action): GameState {
       if (!Array.isArray(action.moves)) return state;
       const models = { ...state.models };
       let starts = state.flow.starts;
+      let walked = state.flow.walked;
+      let paths = state.flow.paths;
       // Before the battle, models stay in their deployment zones (and a warband switching zones comes along whole).
       const moves = state.flow.started ? action.moves : holdInZones(state, action.moves.filter(mv => mv && models[mv.id]).map(mv => ({ id: String(mv.id), x: num(mv.x, -24, 200, models[mv.id].x), y: num(mv.y, -24, 200, models[mv.id].y), rot: mv.rot })));
       let stood = state.flow.stood;
@@ -604,9 +608,14 @@ function step(state: GameState, action: Action): GameState {
         const allowance = compel ? null : moveAllowance(state, prev);
         if (allowance !== null && moving) {
           const from = moveStart(state, prev);
-          to = limitMove(state, from, to, allowance, prev.owner, prev, together);
+          // Each move goes on from where the model is now, so it can go round things: what it may still spend is its
+          // allowance less what it has walked so far.
+          const here = { x: prev.x, y: prev.y };
+          // (Putting it back where it began the phase is always allowed, and gives its whole Move back.)
+          const back = Math.hypot(to.x - from.x, to.y - from.y) < 0.05;
+          to = back ? from : limitMove(state, here, to, Math.max(0, allowance - spent(state, prev)), prev.owner, prev, together);
           // A model that stops inside an enemy's control zone is charging it: it must reach base contact, or stay out.
-          if (state.phase === 'move' || fightsAgain(state, prev)) to = finishCharge(state, prev, from, to, together);
+          if (state.phase === 'move' || fightsAgain(state, prev)) to = finishCharge(state, prev, here, to, together);
           // A friend going with a hero (With Me, or At the Double) must end within 6" of it.
           const leader = state.phase === 'move' ? followed(state, prev, heroicStarted) : undefined;
           if (leader && !together.has(leader.id)) to = keepNear(prev, from, to, leader);
@@ -617,6 +626,12 @@ function step(state: GameState, action: Action): GameState {
           const must = state.flow.mustCharge?.model === prev.id ? state.models[state.flow.mustCharge.target] : undefined;
           if (must && !must.dead && !inContact(state, { ...prev, ...to }, must)) to = { x: prev.x, y: prev.y };
           if (!starts?.[prev.id]) starts = { ...starts, [prev.id]: [from.x, from.y] };
+          walked = { ...walked, [prev.id]: back ? 0 : spent(state, prev) + costOf(state, prev, here, to) };
+          // Its trail keeps a point where it turned (a straight run just stretches the last leg), up to 40 of them.
+          const trail: [number, number][] = back ? [] : (paths?.[prev.id] ?? [[from.x, from.y]]);
+          const [a, b] = [trail.at(-2), trail.at(-1)];
+          const straight = a && b && Math.abs((b[0] - a[0]) * (to.y - b[1]) - (b[1] - a[1]) * (to.x - b[0])) < 0.05 * Math.hypot(b[0] - a[0], b[1] - a[1]);
+          paths = { ...paths, [prev.id]: back ? [] : [...(straight ? trail.slice(0, -1) : trail), [to.x, to.y] as [number, number]].slice(-40) };
           // Stopped at terrain that needs a test: remember it, so the model's card can offer the test.
           if (state.phase === 'move') {
             const ahead = crossingAhead(state, prev, from, asked);
@@ -655,8 +670,8 @@ function step(state: GameState, action: Action): GameState {
           for (const r of Object.values(models)) if (r.aboard === prev.id && !r.dead) models[r.id] = { ...r, ...carried(prev, next, r) };
       }
       const flow =
-        starts !== state.flow.starts || stood !== state.flow.stood || climbed !== state.flow.climbed || blocked !== state.flow.blocked || charges !== state.flow.charges || heroicStarted !== state.flow.heroicNow || turned !== state.flow.turned
-          ? { flow: { ...state.flow, starts, ...(stood ? { stood } : {}), ...(climbed ? { climbed } : {}), ...(blocked ? { blocked } : {}), ...(charges ? { charges } : {}), ...(heroicStarted ? { heroicNow: heroicStarted } : {}), ...(turned ? { turned } : {}) } }
+        starts !== state.flow.starts || walked !== state.flow.walked || paths !== state.flow.paths || stood !== state.flow.stood || climbed !== state.flow.climbed || blocked !== state.flow.blocked || charges !== state.flow.charges || heroicStarted !== state.flow.heroicNow || turned !== state.flow.turned
+          ? { flow: { ...state.flow, starts, ...(walked ? { walked } : {}), ...(paths ? { paths } : {}), ...(stood ? { stood } : {}), ...(climbed ? { climbed } : {}), ...(blocked ? { blocked } : {}), ...(charges ? { charges } : {}), ...(heroicStarted ? { heroicNow: heroicStarted } : {}), ...(turned ? { turned } : {}) } }
           : {};
       return { ...state, models, ...flow };
     }
@@ -1359,6 +1374,8 @@ export function loadState(raw: unknown): GameState {
         lastHeroic: isSeat(f.lastHeroic) ? f.lastHeroic : null,
         ...(Number.isFinite(f.startedAt) ? { startedAt: Number(f.startedAt) } : {}),
         ...(f.starts ? { starts: cleanStarts(f.starts) } : {}),
+        ...(f.paths && typeof f.paths === 'object' ? { paths: Object.fromEntries(Object.entries(f.paths).slice(0, 400).filter(([, v]) => Array.isArray(v)).map(([k, v]) => [k.slice(0, 80), (v as unknown[]).slice(-40).filter(Array.isArray).map(q => [num((q as unknown[])[0], -24, 200, 0), num((q as unknown[])[1], -24, 200, 0)] as [number, number])])) } : {}),
+        ...(f.walked && typeof f.walked === 'object' ? { walked: Object.fromEntries(Object.entries(f.walked).slice(0, 400).map(([k, v]) => [k.slice(0, 80), num(v, 0, 100, 0)])) } : {}),
         ...(f.courage && typeof f.courage === 'object' ? { courage: Object.fromEntries(Object.entries(f.courage).slice(0, 400).map(([k, v]) => [k.slice(0, 80), v === true])) } : {}),
         ...(f.braved ? { braved: seats(f.braved) } : {}),
         ...(f.arrived ? { arrived: seats(f.arrived) } : {}),

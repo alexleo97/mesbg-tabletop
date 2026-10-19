@@ -9,7 +9,7 @@ import { scenarioById } from '../shared/scenarios.ts';
 import { MATERIALS, textures } from './textures.ts';
 import { TERRAIN_INFO, terrainRules } from '../shared/terrain.ts';
 import { holdInZones } from '../shared/deployment.ts';
-import { limitMove, moveAllowance, moveStart, movesLimited, settleMove } from '../shared/movement.ts';
+import { limitMove, moveAllowance, moveLeft, moveStart, movesLimited, settleMove, spent } from '../shared/movement.ts';
 import { inDifficult, standingAt, insidePolygon, inTheWay, isDifficult, moveCost, outline, shadowPath, sightTo, VINES_REACH } from '../shared/sight.ts';
 import { effectsOn } from '../shared/powers.ts';
 import { carried, drive, riders } from '../shared/warBeasts.ts';
@@ -91,12 +91,12 @@ function MoveZones({ state, models }: { state: GameState; models: Model[] }) {
   // A zone for each model that can still go somewhere this phase.
   models = models.filter(m => moveAllowance(state, m) !== 0);
   if (!models.length) return null;
-  // In the Move phase the move zone stays where the model began the phase, so you can see how far it can still go.
-  const starts = models.map(m => ({ m, s: movesLimited(state, m) ? { ...m, ...moveStart(state, m) } : m }));
+  // The zone is round where the model is now, as far as the Move it has left (it can go round things to get there).
+  const starts = models.map(m => ({ m, s: m }));
   const zones = (className: string) =>
     starts.map(({ m, s }) => (
       <g key={m.id} transform={`translate(${s.x} ${s.y}) rotate(${s.rot})`}>
-        <ZoneShape m={m} pad={moveAllowance(state, m) ?? m.move} className={className} />
+        <ZoneShape m={m} pad={moveLeft(state, m) ?? m.move} className={className} />
       </g>
     ));
   return (
@@ -419,8 +419,11 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
         const m = state.models[id];
         const to = { x: o.x + dx, y: o.y + dy };
         // Once the battle is under way a model stops at the edge of its allowance, as the server would hold it there anyway.
-        const allowance = m && moveAllowance(state, m);
-        pos[id] = m && allowance != null ? limitMove(state, moveStart(state, m), to, allowance, m.owner, m, moving) : to;
+        // A move goes on from where the model is now, with what's left of its Move; putting it back where it began
+        // the phase is always allowed.
+        const left = m && moveLeft(state, m);
+        const start = m && moveStart(state, m);
+        pos[id] = m && left != null ? (Math.hypot(to.x - start!.x, to.y - start!.y) < 0.3 ? start! : limitMove(state, { x: m.x, y: m.y }, to, left, m.owner, m, moving)) : to;
       }
       // Before the battle, models stop at the edge of their deployment zone, as the server would hold them there.
       if (!state.flow.started) for (const mv of holdInZones(state, Object.entries(pos).map(([id, p]) => ({ id, ...p })))) if (pos[mv.id]) pos[mv.id] = { x: mv.x, y: mv.y };
@@ -611,21 +614,28 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
             gesture?.kind === 'drag' &&
             Object.entries(gesture.origin).map(([id, dragFrom]) => {
               const m = state.models[id];
-              // Measure from where the model began the Move phase, so several short drags add up.
-              const o = m && movesLimited(state, m) ? moveStart(state, m) : dragFrom;
+              // Measure on from where the model is, adding what it has already walked this phase.
+              const limited = m && movesLimited(state, m);
+              const o = m && limited ? { x: m.x, y: m.y } : dragFrom;
               const now = dragPos[id];
               if (!m || !now) return null;
-              const d = Math.hypot(now.x - o.x, now.y - o.y);
+              const before = limited ? spent(state, m) : 0;
+              const d = before + Math.hypot(now.x - o.x, now.y - o.y);
               // Difficult terrain costs double and climbing costs the height, so the move is judged on what it costs.
-              const { cost, difficult } = moveCost(state, o, now, m.owner);
+              const step = moveCost(state, o, now, m.owner);
+              const cost = before + step.cost;
+              const difficult = step.difficult;
               const allowance = moveAllowance(state, m) ?? m.move;
               const over = cost > allowance + 1e-6;
+              // The ghost stays where the model began the phase; the trail follows the way it has gone since.
+              const home = limited ? moveStart(state, m) : dragFrom;
+              const way = limited && state.flow.paths?.[id]?.length ? state.flow.paths[id] : [[home.x, home.y]];
               return (
                 <g key={`g-${id}`} pointerEvents="none">
-                  <g transform={`translate(${o.x} ${o.y}) rotate(${m.rot})`} className="ghost">
+                  <g transform={`translate(${home.x} ${home.y}) rotate(${m.rot})`} className="ghost">
                     <BaseShape m={m} />
                   </g>
-                  <line className={`trail ${over ? 'over' : ''}`} x1={o.x} y1={o.y} x2={now.x} y2={now.y} />
+                  <polyline className={`trail ${over ? 'over' : ''}`} fill="none" points={[...way, [o.x, o.y], [now.x, now.y]].map(q => q.join(',')).join(' ')} />
                   {id === gesture.tapId && (
                     <text className={`trail-label ${over ? 'over' : ''}`} x={now.x} y={now.y - halfExtents(m.base).ry - 0.3} textAnchor="middle">
                       {difficult ? `${formatInches(d)} (${formatInches(cost)} in difficult terrain)` : cost > d + 0.05 ? `${formatInches(d)} (${formatInches(cost)} with climbing)` : formatInches(d)} / {allowance}"
@@ -640,7 +650,8 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
             Object.entries(state.flow.starts ?? {}).map(([id, [x, y]]) => {
               const m = state.models[id];
               if (!m || m.dead || dragPos?.[id] || Math.hypot(m.x - x, m.y - y) < 0.2) return null;
-              return <line key={`mt-${id}`} className={`move-trail ${m.owner}`} x1={x} y1={y} x2={m.x} y2={m.y} pointerEvents="none" />;
+              const way = state.flow.paths?.[id]?.length ? state.flow.paths[id] : [[x, y]];
+              return <polyline key={`mt-${id}`} className={`move-trail ${m.owner}`} points={[...way, [m.x, m.y]].map(q => q.join(',')).join(' ')} fill="none" pointerEvents="none" />;
             })}
           {models.map(m0 => {
             const m = shown(m0);

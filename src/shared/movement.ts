@@ -198,7 +198,7 @@ export function movedTooFar(state: GameState): string[] {
   return Object.entries(state.flow.starts ?? {})
     .filter(([id, [x, y]]) => {
       const m = state.models[id];
-      return m && !m.dead && costOf(state, m, { x, y }, m) + (state.flow.climbed?.[id] ?? 0) > m.move / 2 + 0.05;
+      return m && !m.dead && (state.flow.walked?.[id] ?? costOf(state, m, { x, y }, m)) + (state.flow.climbed?.[id] ?? 0) > m.move / 2 + 0.05;
     })
     .map(([id]) => id)
     .concat(Object.entries(state.flow.climbed ?? {}).filter(([id, c]) => !state.flow.starts?.[id] && state.models[id] && c > state.models[id].move / 2 + 0.05).map(([id]) => id));
@@ -209,15 +209,20 @@ export const costOf = (state: GameState, m: Model, a: Point, b: Point) => moveCo
 
 /** Models that moved at all this Move phase, even a little or only between floors, so shoot 1 worse. */
 export function movedAtAll(state: GameState): string[] {
-  const walked = Object.entries(state.flow.starts ?? {}).filter(([id, [x, y]]) => state.models[id] && costOf(state, state.models[id], { x, y }, state.models[id]) > 0.05);
+  const walked = Object.entries(state.flow.starts ?? {}).filter(([id, [x, y]]) => state.models[id] && (state.flow.walked?.[id] ?? costOf(state, state.models[id], { x, y }, state.models[id])) > 0.05);
   const climbed = Object.entries(state.flow.climbed ?? {}).filter(([, c]) => c > 0);
   return [...new Set([...walked, ...climbed].map(([id]) => id))];
+}
+
+/** How much Move a model has spent walking this phase: along the way it went, or straight from its start if unknown. */
+export function spent(state: GameState, m: Model): number {
+  return state.flow.walked?.[m.id] ?? costOf(state, m, moveStart(state, m), m);
 }
 
 /** How much of its Move a model still has this phase, after the ground it's walked and any floors it's climbed. */
 export function moveLeft(state: GameState, m: Model): number | null {
   const allowance = moveAllowance(state, m);
-  return allowance === null ? null : Math.max(0, allowance - costOf(state, m, moveStart(state, m), m));
+  return allowance === null ? null : Math.max(0, allowance - spent(state, m));
 }
 
 /** Where a model stood when this Move phase began (where it is now, if it hasn't moved yet). */
@@ -273,7 +278,7 @@ export function settleMove(state: GameState, m: Model, at: Point): Point {
   if (wallBetween(state, here, best.e)) return at;
   const over = overWallSpot(state, m, best.e, at);
   if (over) {
-    const reach = limitMove(state, moveStart(state, m), over, moveAllowance(state, m) ?? m.move, m.owner, m);
+    const reach = limitMove(state, { x: m.x, y: m.y }, over, moveLeft(state, m) ?? m.move, m.owner, m);
     return Math.hypot(reach.x - over.x, reach.y - over.y) < 1e-3 ? over : at;
   }
   // Step towards the enemy until the bases touch.
@@ -288,7 +293,7 @@ export function settleMove(state: GameState, m: Model, at: Point): Point {
     else hi = t;
   }
   const contact = { x: at.x + (dx / len) * hi, y: at.y + (dy / len) * hi };
-  const reach = limitMove(state, moveStart(state, m), contact, moveAllowance(state, m) ?? m.move, m.owner, m);
+  const reach = limitMove(state, { x: m.x, y: m.y }, contact, moveLeft(state, m) ?? m.move, m.owner, m);
   return Math.hypot(reach.x - contact.x, reach.y - contact.y) < 1e-3 ? contact : at;
 }
 
