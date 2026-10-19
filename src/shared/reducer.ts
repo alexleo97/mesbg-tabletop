@@ -11,12 +11,12 @@ import { FLOORED, floorHeight, flooredAt, insidePolygon, isDifficult, outline } 
 import { cleanPausedShot, woundsTaken } from './fight.ts';
 import { pairOff } from './flow.ts';
 import { crossingAhead } from './terrainTests.ts';
-import { distanceBetween } from './geometry.ts';
+import { distanceBetween, halfExtents } from './geometry.ts';
 import { touching as inContact, touchingEnemies } from './barriers.ts';
 import { canPickUp, markerUpkeep, syncCarried, touching, canEscape } from './objects.ts';
 import { aboard, raiseLadders, towerMove } from './fortress.ts';
 import { endPhaseUpkeep } from './scoring.ts';
-import { mayCry, narrativeById } from './narrative.ts';
+import { arrivalDue, mayCry, narrativeById } from './narrative.ts';
 import { putOut } from './fire.ts';
 import { ringAfterMight } from './ring.ts';
 import { placeSpot, placingNow } from './placing.ts';
@@ -50,6 +50,15 @@ const GROUND = ['wood', 'rock', 'cave', 'spectral', 'swift', 'burly'];
 const newFlow = (): Flow => ({ started: false, chooser: null, chooserTurn: 0, roll: null, done: [], resolved: [], heroics: [], passed: [], lastHeroic: null });
 
 /** Moves to a phase (and turn), clearing who has finished; a new turn also clears fights and priority. */
+/** Play is held for a model being placed, or for the Good player at Weathertop to say whether they roll for Aragorn. */
+const waitingOn = (state: GameState) => !!placingNow(state) || arrivalDue(state);
+
+/** Once nothing holds it, a Move phase both sides have finished goes on to shooting (unless the players move it on). */
+function moveOn(state: GameState): GameState {
+  if (!state.flow.started || state.phase !== 'move' || state.flow.done.length < 2 || state.advance === 'click' || waitingOn(state)) return state;
+  return goTo(state, 'shoot', state.turn);
+}
+
 function goTo(state: GameState, phase: Phase, turn: number): GameState {
   const newTurn = turn !== state.turn;
   // Scenario bookkeeping happens as the End phase begins.
@@ -85,7 +94,7 @@ function goToPhase(state: GameState, phase: Phase, turn: number, newTurn: boolea
       done: [],
       resolved: newTurn ? [] : state.flow.resolved,
       heroics: newTurn ? [] : state.flow.heroics,
-      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], moved: [], cast: [], spell: undefined, held: [], stood: [], climbed: {}, compel: undefined, supported: [], strikeBonus: {}, charges: {}, brutal: [], hurledAt: [], breached: [], trampled: [], turned: [], cables: [], sauron: [], ringTried: [], placing: [], joined: [] } : {}),
+      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], moved: [], cast: [], spell: undefined, held: [], stood: [], climbed: {}, compel: undefined, supported: [], strikeBonus: {}, charges: {}, brutal: [], hurledAt: [], breached: [], trampled: [], turned: [], cables: [], sauron: [], ringTried: [], sought: [], placing: [], joined: [] } : {}),
       ...(phase !== state.phase ? { compel: undefined, mustCharge: undefined } : {}),
       // The fights are paired off as the Fight phase begins, and stay that way until it ends.
       ...(phase !== state.phase ? { pairs: phase === 'fight' && state.flow.started ? pairOff(livingModels(state), { ...state, phase: 'move' }, state.flow.pairChoices).map(c => c.key) : undefined, pairChoices: undefined } : {}),
@@ -626,6 +635,8 @@ function step(state: GameState, action: Action): GameState {
       const together = new Set(moves.map(mv => mv && String(mv.id)));
       // While a model waits to be placed, only it moves, and only where its placing allows.
       const placing = state.flow.started ? placingNow(state) : undefined;
+      // Nothing moves while the Good player decides whether to roll for Aragorn.
+      if (state.flow.started && !placing && arrivalDue(state)) return state;
       for (const mv of moves) {
         const prev = mv && models[mv.id];
         if (!prev || prev.escaped || prev.waiting) continue;
@@ -661,8 +672,15 @@ function step(state: GameState, action: Action): GameState {
         let to = asked;
         const moving = to.x !== prev.x || to.y !== prev.y;
         const compel = state.flow.compel?.model === prev.id ? state.flow.compel : undefined;
+        // A Compelled model in a fight can't be moved out of it.
+        if (compel && moving && engagedNow(state, prev)) continue;
         // A Compelled model goes where the caster's player takes it, up to half its Move from where it stood.
         if (compel && moving) to = limitMove(state, { x: compel.from[0], y: compel.from[1] }, to, compel.max, prev.owner, prev, together);
+        // In Sauron's grip a Ringbearer can't be walked off the table.
+        if (compel?.ring && moving) {
+          const r = Math.max(halfExtents(prev.base).rx, halfExtents(prev.base).ry);
+          to = { x: Math.min(state.board.w - r, Math.max(r, to.x)), y: Math.min(state.board.h - r, Math.max(r, to.y)) };
+        }
         // Once the battle is under way a model goes no further than its allowance from where it began the phase:
         // its Move in the Move phase, 1" in the Fight phase, and nowhere in the others.
         const allowance = compel ? null : moveAllowance(state, prev);
@@ -907,11 +925,11 @@ function step(state: GameState, action: Action): GameState {
       return { ...state, terrain };
     }
     case 'setPhase':
-      if (!isPhase(action.phase) || (state.flow.started && placingNow(state))) return state;
+      if (!isPhase(action.phase) || (state.flow.started && waitingOn(state))) return state;
       return goTo(state, action.phase, int(action.turn, 1, 99, state.turn));
     case 'nextPhase': {
-      // Play waits for a model to be placed.
-      if (state.flow.started && placingNow(state)) return state;
+      // Play waits for a model to be placed, or for the Good player to say whether they roll for Aragorn.
+      if (state.flow.started && waitingOn(state)) return state;
       const i = PHASES.indexOf(state.phase);
       return i === PHASES.length - 1 ? goTo(state, PHASES[0], Math.min(99, state.turn + 1)) : goTo(state, PHASES[i + 1], state.turn);
     }
@@ -940,7 +958,7 @@ function step(state: GameState, action: Action): GameState {
       if (!isSeat(action.seat)) return state;
       return { ...goTo(state, state.phase === 'priority' ? 'move' : state.phase, state.turn), priority: action.seat };
     case 'endActivation': {
-      if (!isSeat(action.seat) || state.flow.done.includes(action.seat) || state.flow.shotPause || (state.flow.started && placingNow(state))) return state;
+      if (!isSeat(action.seat) || state.flow.done.includes(action.seat) || state.flow.shotPause || (state.flow.started && waitingOn(state))) return state;
       // A Ringbearer in Sauron's grip is moved by its foes in its own side's activation, which waits for them.
       const grip = state.flow.compel?.ring ? state.models[state.flow.compel.model] : undefined;
       if (grip && grip.owner === action.seat && state.flow.started) return state;
@@ -953,8 +971,9 @@ function step(state: GameState, action: Action): GameState {
         return { ...state, flow: { ...state.flow, heroicDone: [...(state.flow.heroicDone ?? []), hero.id], heroicNow: undefined, activated: [...new Set([...(state.flow.activated ?? []), ...went])] } };
       }
       const done = [...state.flow.done, action.seat];
-      // Once both players have activated in the Move or Shoot phase, play moves on (unless they move on themselves).
-      if (done.length === 2 && (state.phase === 'move' || state.phase === 'shoot') && state.advance !== 'click') return goTo(state, state.phase === 'move' ? 'shoot' : 'fight', state.turn);
+      // Once both players have activated in the Move or Shoot phase, play moves on (unless they move on themselves),
+      // after the Good side at Weathertop has had its chance to roll for Aragorn.
+      if (done.length === 2 && (state.phase === 'move' || state.phase === 'shoot') && state.advance !== 'click' && !arrivalDue({ ...state, flow: { ...state.flow, done } })) return goTo(state, state.phase === 'move' ? 'shoot' : 'fight', state.turn);
       // A Compel ends with its caster's side's move.
       const compel = state.flow.compel && state.models[state.flow.compel.caster]?.owner === action.seat ? undefined : state.flow.compel;
       return { ...state, flow: { ...state.flow, done, compel } };
@@ -1113,7 +1132,7 @@ function step(state: GameState, action: Action): GameState {
     case 'narrativeNote': {
       if (!state.narrative) return state;
       const rolled = action.rolled === undefined ? state.narrative.rolled : [...new Set([...(state.narrative.rolled ?? []), int(action.rolled, 0, 99, 0)])];
-      return { ...state, narrative: { ...state.narrative, ...(rolled ? { rolled } : {}) } };
+      return moveOn({ ...state, narrative: { ...state.narrative, ...(rolled ? { rolled } : {}) } });
     }
     case 'burned':
       return { ...state, flow: { ...state.flow, burned: state.turn } };
@@ -1130,10 +1149,10 @@ function step(state: GameState, action: Action): GameState {
     case 'placed': {
       const p = placingNow(state);
       if (!p || p.seat !== action.seat) return state;
-      return { ...state, flow: { ...state.flow, placing: state.flow.placing!.slice(1) } };
+      return moveOn({ ...state, flow: { ...state.flow, placing: state.flow.placing!.slice(1) } });
     }
     case 'ringMark': {
-      if (action.key !== 'sauron' && action.key !== 'ringTried') return state;
+      if (action.key !== 'sauron' && action.key !== 'ringTried' && action.key !== 'sought') return state;
       return { ...state, flow: { ...state.flow, [action.key]: [...new Set([...(state.flow[action.key] ?? []), id(action.id)])] } };
     }
     case 'affect': {
@@ -1550,6 +1569,7 @@ export function loadState(raw: unknown): GameState {
         ...(Number.isFinite(f.burned) ? { burned: int(f.burned, 0, 99, 0) } : {}),
         ...(Array.isArray(f.sauron) ? { sauron: f.sauron.slice(0, 20).map(x => str(x, 80)) } : {}),
         ...(Array.isArray(f.ringTried) ? { ringTried: f.ringTried.slice(0, 20).map(x => str(x, 80)) } : {}),
+        ...(Array.isArray(f.sought) ? { sought: f.sought.slice(0, 40).map(x => str(x, 80)) } : {}),
         ...(f.mighty && typeof f.mighty === 'object' && f.mighty.base && typeof f.mighty.base === 'object' ? { mighty: { turn: int(f.mighty.turn, 0, 99, 0), base: cleanCounts(f.mighty.base, 9) } } : {}),
         ...(Array.isArray(f.joined) ? { joined: f.joined.slice(0, 20).map(x => str(x, 80)) } : {}),
         ...(Array.isArray(f.placing) ? { placing: f.placing.map(p => cleanPlacing(p, out)).filter((p): p is Placing => !!p).slice(0, 20) } : {}),

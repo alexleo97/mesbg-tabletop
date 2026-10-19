@@ -2,7 +2,7 @@
 // ground, a monster's kills earn free strikes on the models backing up its victim, and a monster that wins may make a
 // Brutal Power Attack instead of striking: Rend, Barge or Hurl.
 import type { Catalog } from './catalog.ts';
-import { modelStats } from './catalog.ts';
+import { modelStats, rulesFor } from './catalog.ts';
 import { hitModel, mountOf, mounted } from './cavalry.ts';
 import { distanceBetween, halfExtents } from './geometry.ts';
 import { declared } from './heroics.ts';
@@ -13,7 +13,7 @@ import type { BrutalKind } from './fight.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
 const unitOf = (catalog: Catalog | null | undefined, m: Model) => (m.profileId ? catalog?.units[m.profileId] : undefined);
-const rules = (catalog: Catalog | null | undefined, m: Model) => unitOf(catalog, m)?.rules ?? [];
+const rules = (catalog: Catalog | null | undefined, m: Model) => rulesFor(catalog, m);
 
 export { isChariot, isWarBeast };
 

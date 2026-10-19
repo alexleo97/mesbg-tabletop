@@ -94,7 +94,8 @@ export function brokenTests(state: GameState, seat: Seat, catalog: Catalog | nul
   }
   for (const m of models) {
     if (m.id in results) continue;
-    if (anchors.some(h => distanceBetween(h, m) <= STAND_FAST_RANGE && sightTo(state, m, h) !== 'hidden') || courageAuto(state, catalog, m)) {
+    // An Invisible hero can't give a Stand Fast!.
+    if (anchors.some(h => !h.ringOn && distanceBetween(h, m) <= STAND_FAST_RANGE && sightTo(state, m, h) !== 'hidden') || courageAuto(state, catalog, m)) {
       results[m.id] = true;
       continue;
     }
@@ -161,7 +162,7 @@ export const willOfEvilDue = (state: GameState) => state.flow.started && state.p
  */
 export function willOfEvilToll(state: GameState, catalog: Catalog | null, uid: () => string, now = Date.now()): Action[] {
   const fought = new Set(state.flow.resolved.flatMap(k => k.split(',')));
-  // A fight against nobody but a model wearing the One Ring costs no Will.
+  // A fight that had a model wearing the One Ring in it costs no Will, whoever else was in it.
   const foes = new Map<string, string[]>();
   for (const k of state.flow.resolved) {
     const [a, b] = k.split('|').map(x => x.split(',').filter(Boolean));
@@ -171,7 +172,7 @@ export function willOfEvilToll(state: GameState, catalog: Catalog | null, uid: (
   const out: Action[] = [];
   for (const m of Object.values(state.models)) {
     const against = foes.get(m.id);
-    if (m.dead || m.escaped || !willOfEvil(catalog, m) || !fought.has(m.id) || (against?.length && against.every(id => state.models[id]?.ringOn))) continue;
+    if (m.dead || m.escaped || !willOfEvil(catalog, m) || !fought.has(m.id) || against?.some(id => state.models[id]?.ringOn)) continue;
     const will = Math.max(0, m.will - 1);
     out.push({ type: 'rolled', roll: { id: `c-${uid()}`, by: m.owner, label: `Will of Evil: ${m.name} gives up 1 Will`.slice(0, 80), dice: [], model: m.id, note: will ? `${will} Will left.` : `${m.name} has no Will left and is banished.`, at: now } });
     out.push({ type: 'affect', id: m.id, patch: will ? { will } : { will: 0, wounds: 0, dead: true } });

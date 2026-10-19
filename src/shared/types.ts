@@ -487,6 +487,8 @@ export interface Flow {
   /** Ringbearers that have rolled for Sauron's Will this turn, and those that have tried to take the Ring off. */
   sauron?: string[];
   ringTried?: string[];
+  /** This turn's rolls (by id) of models testing to charge an Invisible foe. */
+  sought?: string[];
   /**
    * Models a player must put where they choose before play goes on, first one first (a narrative scenario's arrival,
    * or a retreat in a direction its player picks).
@@ -629,6 +631,8 @@ export type Action =
   | { type: 'ring'; id: string; on: boolean }
   /** Request from a client: the Evil side gives the Cry of the Nazgûl as a Move phase begins (Weathertop). */
   | { type: 'cry'; seat: Seat }
+  /** Request: the Good player at Weathertop rolls for Aragorn this turn, or doesn't. */
+  | { type: 'aragorn'; roll: boolean }
   /** Server only: bookkeeping for a narrative scenario's rules. */
   | { type: 'narrativeNote'; rolled?: number; dawn?: number; bilbo?: boolean }
   /** Server only: reinforcements have come on and move onto the table now, from `from` (see mutton.ts). */
@@ -653,7 +657,9 @@ export type Action =
   /** Server only: the fires of models Set Ablaze have burned this turn. */
   | { type: 'burned' }
   /** Server only: a Ringbearer has rolled for Sauron's Will, or tried to take the Ring off, this turn. */
-  | { type: 'ringMark'; key: 'sauron' | 'ringTried'; id: string }
+  | { type: 'ringMark'; key: 'sauron' | 'ringTried' | 'sought'; id: string }
+  /** Request: an Intelligence test for `id` to charge the Invisible model `target`. */
+  | { type: 'seek'; id: string; target: string }
   /** A model for a player to place (the game's). */
   | { type: 'placing'; placing: Placing }
   /** The player has put the first model waiting to be placed where they want it. */

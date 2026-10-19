@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import catalogJson from '../src/data/mesbg-data.json';
-import { modelStats, type Catalog } from '../src/shared/catalog.ts';
+import { modelStats, rulesFor, type Catalog } from '../src/shared/catalog.ts';
 import { courageOf, willOfEvilToll } from '../src/shared/courage.ts';
 import { burnDue, burns } from '../src/shared/fire.ts';
 import { distanceBetween } from '../src/shared/geometry.ts';
@@ -17,6 +17,7 @@ import { canDeclare } from '../src/shared/heroics.ts';
 import { combats } from '../src/shared/flow.ts';
 import type { Action, GameState, Model, Seat } from '../src/shared/types.ts';
 import { play, seeded } from './botsim.ts';
+import { botStep, newMemo } from '../src/shared/bot.ts';
 
 const catalog = catalogJson as unknown as Catalog;
 const run = (s: GameState, ...actions: Action[]) => actions.reduce(reduce, s);
@@ -84,10 +85,14 @@ describe('Weathertop rules', () => {
     expect(arrivalDue(s)).toBe(false);
     s = run(weathertop(2), { type: 'endActivation', seat: 'p1' });
     expect(arrivalDue(s)).toBe(true);
-    const missed = run(s, ...rollArrival(s, dice([3]), uid));
+    // Rolling is the Good player's choice, and nothing else happens until they make it.
+    expect(ask(s, 'p2', { type: 'aragorn', roll: true }, [6])).toBe(s);
+    expect(run(s, { type: 'endActivation', seat: 'p2' }).flow.done).not.toContain('p2');
+    const missed = ask(s, 'p1', { type: 'aragorn', roll: true }, [3]);
     expect(who(missed, 'aragorn').waiting).toBe(true);
     expect(arrivalDue(missed)).toBe(false);
-    s = run(s, ...rollArrival(s, dice([4]), uid));
+    expect(ask(missed, 'p1', { type: 'aragorn', roll: true }, [6])).toBe(missed);
+    s = ask(s, 'p1', { type: 'aragorn', roll: true }, [4]);
     const a = who(s, 'aragorn');
     expect(a.waiting).toBeUndefined();
     expect(Math.hypot(a.x - 12, a.y - 12)).toBeCloseTo(6.5, 0);
@@ -111,6 +116,28 @@ describe('Weathertop rules', () => {
     expect(run(s, { type: 'moveModels', moves: [{ id: a.id, x: 18, y: 6 }] }).models[a.id]).toMatchObject({ x: s.models[a.id].x, y: s.models[a.id].y });
   });
 
+  it('gives the Good side its roll for Aragorn when it moves second, and lets it choose not to roll', () => {
+    let s = run(weathertop(2), { type: 'endActivation', seat: 'p1' });
+    s = ask(s, 'p1', { type: 'aragorn', roll: false });
+    expect(s.log.at(-1)?.label).toBe('No roll for Aragorn this turn');
+    expect(who(s, 'aragorn').waiting).toBe(true);
+    // With the Nazgûl moving first, play waits for the Good player's choice before the Shoot phase.
+    let t: GameState = { ...weathertop(2), priority: 'p2' };
+    t = run(t, { type: 'endActivation', seat: 'p2' }, { type: 'endActivation', seat: 'p1' });
+    expect(t.phase).toBe('move');
+    expect(arrivalDue(t)).toBe(true);
+    expect(run(t, { type: 'nextPhase' }).phase).toBe('move');
+    // The computer playing the Hobbits always rolls; playing the Nazgûl it waits.
+    expect(botStep(t, 'p1', catalog, newMemo(), 1, false)?.action).toEqual({ type: 'aragorn', roll: true });
+    expect(botStep(t, 'p2', catalog, newMemo(), 1, false)).toBeNull();
+    const skipped = ask(t, 'p1', { type: 'aragorn', roll: false });
+    expect(skipped.phase).toBe('shoot');
+    const came = ask(t, 'p1', { type: 'aragorn', roll: true }, [5]);
+    expect(came.phase).toBe('move');
+    expect(came.flow.placing?.[0]).toMatchObject({ kind: 'arrive' });
+    expect(run(came, { type: 'placed', seat: 'p1' }).phase).toBe('shoot');
+  });
+
   it('lets the Evil side give the Cry once, making Good Courage 3 worse and calling Aragorn at once', () => {
     let s = weathertop(1);
     expect(mayCry(s, 'p1')).toBe(false);
@@ -124,6 +151,8 @@ describe('Weathertop rules', () => {
     expect(mayCry(s, 'p2')).toBe(false);
     s = run(s, { type: 'endActivation', seat: 'p1' });
     expect(arrivalDue(s)).toBe(true);
+    // After the Cry there is no choice and no roll: he comes.
+    expect(ask(s, 'p1', { type: 'aragorn', roll: false })).toBe(s);
     s = run(s, ...rollArrival(s, dice([]), uid));
     expect(who(s, 'aragorn').waiting).toBeUndefined();
   });
@@ -181,7 +210,7 @@ describe('Weathertop rules', () => {
   it('puts out the flames of a model that crawls 1"', () => {
     let s = weathertop(2);
     const w = wraiths(s)[0];
-    s = { ...s, models: { ...s.models, [w.id]: { ...w, x: 3, y: 3, ablaze: true, prone: true } }, flow: { ...s.flow, done: ['p1'] } };
+    s = { ...s, models: { ...s.models, [w.id]: { ...w, x: 3, y: 3, ablaze: true, prone: true } }, flow: { ...s.flow, done: ['p1'] }, narrative: { ...s.narrative!, rolled: [2] } };
     s = run(s, { type: 'crawl', id: w.id }, { type: 'moveModels', moves: [{ id: w.id, x: 4, y: 3 }] });
     expect(s.models[w.id].ablaze).toBeUndefined();
   });
@@ -244,6 +273,31 @@ describe('the One Ring', () => {
     const wk = who(s, 'witch-king');
     const fought = { ...s, phase: 'end' as const, flow: { ...s.flow, resolved: [`${frodo.id},|,${wk.id}`] } };
     expect(willOfEvilToll(fought, catalog, uid, 1).some(a => a.type === 'affect')).toBe(false);
+    // Even with Sam in the fight too: it was a fight with an Invisible model.
+    const sam = who(s, 'sam');
+    const both = { ...fought, flow: { ...fought.flow, resolved: [`${frodo.id},${sam.id},|,${wk.id}`] } };
+    expect(willOfEvilToll(both, catalog, uid, 1).some(a => a.type === 'affect')).toBe(false);
+    const seen = { ...both, models: { ...both.models, [frodo.id]: { ...both.models[frodo.id], ringOn: undefined } } };
+    expect(willOfEvilToll(seen, catalog, uid, 1).some(a => a.type === 'affect' && a.id === wk.id)).toBe(true);
+  });
+});
+
+describe('Compelling the Ringbearer', () => {
+  it('lets the caster\'s player make Frodo put on the Ring, but never move him out of a fight', () => {
+    let s = run(weathertop(1), { type: 'endActivation', seat: 'p1' });
+    const frodo = who(s, 'frodo');
+    const wk = who(s, 'witch-king');
+    s = run(s, { type: 'compel', compel: { model: frodo.id, caster: wk.id, max: 2, from: [frodo.x, frodo.y] } });
+    expect(ask(s, 'p1', { type: 'ring', id: frodo.id, on: true }).models[frodo.id].ringOn).toBeUndefined();
+    const worn = ask(s, 'p2', { type: 'ring', id: frodo.id, on: true });
+    expect(worn.models[frodo.id].ringOn).toBe(true);
+    // Not put on by Sauron's Will: there the Nazgûl only move him.
+    const gripped = { ...s, flow: { ...s.flow, compel: { ...s.flow.compel!, ring: true } } };
+    expect(ask(gripped, 'p2', { type: 'ring', id: frodo.id, on: true }).models[frodo.id].ringOn).toBeUndefined();
+    // In a fight, a Compelled model stays put.
+    const w = wraiths(s).find(m => m.cast === 'ringwraith')!;
+    const fight = place(s, { [w.id]: [frodo.x + 0.99, frodo.y] });
+    expect(run(fight, { type: 'moveModels', moves: [{ id: frodo.id, x: frodo.x - 1.5, y: frodo.y }] }).models[frodo.id]).toMatchObject({ x: frodo.x, y: frodo.y });
   });
 });
 
@@ -267,11 +321,19 @@ describe("the Weathertop cast's own rules", () => {
   };
   const fightOf = (a: Model, b: Model) => ({ sides: [[{ id: a.id, name: a.name, f: 3, a: 1, s: 3, d: 4 }], [{ id: b.id, name: b.name, f: 3, a: 1, s: 3, d: 4 }]], targets: [b.id, a.id], trapped: false }) as never;
 
-  it('Andúril: Aragorn never needs worse than 4+ to wound, and 3+ two-handed', () => {
+  it('Andúril: Aragorn with it never needs worse than 4+ to wound, and 3+ two-handed', () => {
     const base = weathertop(2);
     const a = who(base, 'aragorn');
     const w = wraiths(base)[0];
-    let s = place(onTable(only(base, [a, w]), a), { [a.id]: [5, 5], [w.id]: [5, 6] });
+    // Weathertop's Strider has only his bow: no Andúril.
+    let plain = place(onTable(only(base, [a, w]), a), { [a.id]: [5, 5], [w.id]: [5, 6] });
+    plain = { ...plain, phase: 'fight', flow: { ...plain.flow, pairs: undefined } };
+    plain = ask(plain, 'p1', { type: 'fight', fight: fightOf(a, w) }, [6, 6, 6, 1]);
+    plain = ask(plain, 'p1', { type: 'strikes', fight: fightOf(a, w), group: plain.log.at(-1)!.group! }, [1, 1, 1]);
+    expect(plain.log.find(r => r.label.startsWith('Aragorn, Strider strikes'))?.label).not.toMatch(/\(4\+\)/);
+    // Taken as an option, it works.
+    const armed = { ...base, models: { ...base.models, [a.id]: { ...a, options: [...(a.options ?? []), 'Anduril, Flame of the West'] } } };
+    let s = place(onTable(only(armed, [a, w]), a), { [a.id]: [5, 5], [w.id]: [5, 6] });
     s = { ...s, phase: 'fight', flow: { ...s.flow, pairs: undefined } };
     let t = s;
     s = ask(s, 'p1', { type: 'fight', fight: fightOf(a, w) }, [6, 6, 6, 1]);
@@ -281,6 +343,21 @@ describe("the Weathertop cast's own rules", () => {
     t = ask(t, 'p1', { type: 'fight', fight: fightOf(a, w) }, [6, 6, 6, 1]);
     t = ask(t, 'p1', { type: 'strikes', fight: fightOf(a, w), group: t.log.at(-1)!.group! }, [1, 1, 1]);
     expect(t.log.find(r => r.label.startsWith('Aragorn, Strider strikes'))?.label).toMatch(/\(3\+\)/);
+  });
+
+  it('the cast carries only the wargear the scenario gives it', () => {
+    const base = weathertop(2);
+    const rules = (key: string) => rulesFor(catalog, who(base, key));
+    // Frodo has neither Sting nor his Mithril Coat yet, and Strider has no Andúril.
+    expect(rules('frodo')).not.toContain('Sting');
+    expect(rules('frodo')).not.toContain('Mithril Coat');
+    expect(rules('aragorn').some(r => /And[uú]ril/.test(r))).toBe(false);
+    expect(rules('aragorn')).toContain('Ring of Barahir');
+    // The Witch-king has his Morgul Blade but not the Crown; the other Ringwraiths have no blade.
+    expect(rules('witch-king')).toContain('Morgul Blade');
+    expect(rules('witch-king')).not.toContain('Crown of Morgul');
+    for (const w of wraiths(base).filter(m => m.cast === 'ringwraith')) expect(rulesFor(catalog, w)).not.toContain('Morgul Blade');
+    expect(who(base, 'aragorn').options).toContain('Bow');
   });
 
   it('Mighty Hero: a bonus Might point each turn, lost if unspent', () => {

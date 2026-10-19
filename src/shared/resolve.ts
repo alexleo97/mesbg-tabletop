@@ -26,14 +26,14 @@ import { touching } from './objects.ts';
 import { brandRetreats } from './fire.ts';
 import { placingNow } from './placing.ts';
 import { fryingPans } from './sam.ts';
-import { mayCry, narrativeById, narrativeSetup } from './narrative.ts';
-import { ringRequest } from './ring.ts';
+import { arrivalAuto, arrivalDue, mayCry, narrativeById, narrativeSetup, rollArrival, skipArrival } from './narrative.ts';
+import { invisibleTo, ringRequest, seekRequest } from './ring.ts';
 import { MORGUL, morgulBlades } from './morgul.ts';
 import { MAX_DICE } from './reducer.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
 /** Dice requests a player sends, which only whoever holds the dice (the server, or the browser in practice games) can answer. */
-export const DICE_REQUESTS = new Set<Action['type']>(['setNarrative', 'ring', 'cry', 'roll', 'fight', 'strikes', 'shoot', 'shotOn', 'banner', 'dismount', 'trample', 'cross', 'rollFate', 'rollPriority', 'uncover', 'cast', 'resist', 'breach', 'hurl']);
+export const DICE_REQUESTS = new Set<Action['type']>(['setNarrative', 'ring', 'cry', 'aragorn', 'seek', 'roll', 'fight', 'strikes', 'shoot', 'shotOn', 'banner', 'dismount', 'trample', 'cross', 'rollFate', 'rollPriority', 'uncover', 'cast', 'resist', 'breach', 'hurl']);
 
 export interface Resolved {
   /** Results everyone applies, in order. */
@@ -171,6 +171,9 @@ export function adjustFight(state: GameState, req: FightRequest, catalog: Catalo
     const foes = req.sides.flat().filter(x => !x.support && state.models[x.id] && state.models[x.id].owner !== m.owner).map(x => x.id);
     const rival = (state.flow.challenges ?? []).map(c => (c.by === m.id ? c.target : c.target === m.id && c.accepted ? c.by : undefined)).find(id => id && foes.includes(id));
     if (rival && !f.support) Object.assign(out, { a: Math.min(10, out.a + 1), rival });
+    // Fighting an Invisible model that has no friends in the fight halves its Fight (rounding up); not the Nine's.
+    const others = req.sides[1 - i].filter(x => !x.support).map(x => state.models[x.id]).filter(Boolean);
+    if (!f.support && others.length === 1 && invisibleTo(others[0], m)) out.f = Math.ceil(out.f / 2);
     // What its strikes need against each enemy it could strike (Hatred, Ancient Enemies, Blades of the Dead).
     if (catalog) out.vs = Object.fromEntries(req.sides[1 - i].filter(t => !t.support).map(t => [t.id, strikeAgainst(catalog, state, out, t)]));
     return out;
@@ -196,10 +199,19 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       const out = ringRequest(state, catalog, seat, String(action.id), action.on === true, d6, uid, now);
       return out && { apply: out };
     }
+    case 'seek': {
+      const out = seekRequest(state, catalog, seat, String(action.id), String(action.target), d6, uid, now);
+      return out && { apply: out };
+    }
     case 'cry': {
       if (!mayCry(state, seat)) return null;
       const roll: DiceRoll = { id: `r-${uid()}`, by: seat, label: 'The Cry of the Nazgûl', dice: [], note: 'Good models take Courage tests 3 worse until the End phase.', at: now };
       return { apply: [{ type: 'rolled', roll }, { type: 'cry', seat }] };
+    }
+    case 'aragorn': {
+      // Rolling for Aragorn is the Good player's choice, except after the Cry, when he comes anyway.
+      if (!arrivalDue(state) || arrivalAuto(state) || seat !== state.narrative?.good) return null;
+      return { apply: action.roll === true ? rollArrival(state, d6, uid, now) : skipArrival(state, uid, now) };
     }
     case 'roll': {
       // The roll for which side's hero goes first, once, by the player with Priority: 1-3 Evil, 4+ Good.

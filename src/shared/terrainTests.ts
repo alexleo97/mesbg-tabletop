@@ -182,6 +182,8 @@ export function resolveCross(state: GameState, seat: Seat, id: string, d6: () =>
 function crossOne(state: GameState, seat: Seat, id: string, d6: () => number, uid: () => string, now: number, catalog: Catalog | null, shared?: { roll: number; with: string }): { actions: Action[]; roll: number } | null {
   const m = state.models[id];
   const b = m && state.flow.blocked?.[id];
+  // (Nor does a Compelled model, or a Ringbearer in Sauron's grip, jump, climb or leap.)
+  if (state.flow.compel?.model === id) return null;
   if (!m || !b || m.owner !== seat || !testsTerrain(state, m) || !state.flow.started || (state.phase === 'move' && !canActivate(state, seat)) || state.flow.stopped?.includes(id)) return null;
   if (Math.hypot(m.x - b.stop[0], m.y - b.stop[1]) > 0.1) return null;
   const c: Crossing = { terrain: b.terrain, test: b.test, stop: { x: b.stop[0], y: b.stop[1] }, landing: { x: b.landing[0], y: b.landing[1] }, drop: b.drop };

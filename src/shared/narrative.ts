@@ -1,5 +1,5 @@
 import { entriesFor, type Catalog, type StatName } from './catalog.ts';
-import { other } from './flow.ts';
+import { arrivalDue, other } from './flow.ts';
 import { halfExtents, type Point } from './geometry.ts';
 import { guessBase } from './importList.ts';
 import { offTable } from './maelstrom.ts';
@@ -94,7 +94,7 @@ export const NARRATIVES: Narrative[] = [
       },
       {
         name: 'Aragorn',
-        text: 'From turn 2, as the Good side finishes its move, it rolls a D6: on a 4+ Aragorn arrives, and the Good player places him anywhere touching the edge of the ruin. He can\'t move that turn but otherwise acts as normal.',
+        text: 'From turn 2, each time the Good side finishes its move, the Good player may roll a D6: on a 4+ Aragorn arrives, and the Good player places him anywhere touching the edge of the ruin. That Move phase is over for him, but he shoots and fights as normal.',
       },
       {
         name: 'Cry of the Nazgûl',
@@ -243,16 +243,17 @@ export function mayCry(state: GameState, seat: Seat): boolean {
   return Object.values(state.models).some(m => m.owner === seat && !m.dead);
 }
 
-/**
- * Aragorn's arrival is due: from turn 2 (or straight away, after the Cry), once the Good side has finished its move
- * and once a turn.
- */
-export function arrivalDue(state: GameState): boolean {
-  const ns = state.narrative;
-  if (ns?.id !== 'weathertop' || !state.flow.started || state.phase !== 'move' || !state.flow.done.includes(ns.good) || ns.rolled?.includes(state.turn)) return false;
-  const aragorn = castModel(state, 'aragorn');
-  if (!aragorn?.waiting || aragorn.dead) return false;
-  return state.turn >= 2 || ns.cry === state.turn;
+// Aragorn's arrival window lives with the turn's flow, which waits on it.
+export { arrivalDue };
+
+/** After the Cry Aragorn comes without a roll; otherwise rolling for him is the Good player's choice. */
+export const arrivalAuto = (state: GameState) => arrivalDue(state) && state.narrative?.cry === state.turn;
+
+/** The Good player chooses not to roll for Aragorn this turn. */
+export function skipArrival(state: GameState, uid: () => string, now = Date.now()): Action[] {
+  const ns = state.narrative!;
+  const roll: DiceRoll = { id: `n-${uid()}`, by: ns.good, label: 'No roll for Aragorn this turn', dice: [], note: 'He stays away for now.', at: now };
+  return [{ type: 'rolled', roll }, { type: 'narrativeNote', rolled: state.turn }];
 }
 
 /**
@@ -274,11 +275,12 @@ export function rollArrival(state: GameState, d6: () => number, uid: () => strin
     note: comes ? 'He arrives touching the edge of the ruin.' : 'Not yet.',
     at: now,
   };
-  const out: Action[] = [{ type: 'rolled', roll }, { type: 'narrativeNote', rolled: state.turn }];
-  if (!comes) return out;
-  const spot = arrivalSpot(state, aragorn);
+  const out: Action[] = [{ type: 'rolled', roll }];
+  const spot = comes ? arrivalSpot(state, aragorn) : null;
   // He comes on where he's needed most, and the Good player can then move him anywhere round the ruin's edge.
   if (spot) out.push({ type: 'arrive', seat: ns.good, moves: [{ id: aragorn.id, ...spot }] }, { type: 'placing', placing: { model: aragorn.id, seat: ns.good, kind: 'arrive', from: [spot.x, spot.y], rim: 'amon-sul' } });
+  // Marked last, so play goes on only once he has been placed.
+  out.push({ type: 'narrativeNote', rolled: state.turn });
   return out;
 }
 
