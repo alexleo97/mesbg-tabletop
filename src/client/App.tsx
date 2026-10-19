@@ -152,7 +152,7 @@ function Lobby() {
 }
 
 type PanelTab = 'model' | 'settings';
-const PANEL_TITLE: Record<PanelTab, string> = { model: 'Selected models', settings: 'Look' };
+const PANEL_TITLE: Record<PanelTab, string> = { model: 'Selected models', settings: 'Settings' };
 
 interface GameProps {
   room: string;
@@ -501,9 +501,8 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
           </button>
         )}
         <nav className="panel-buttons" aria-label="Panels">
-          <button className={panelOpen && tab === 'settings' ? 'on' : ''} onClick={() => openTab('settings')} aria-label="Display settings" title="Display settings">
+          <button className={panelOpen && tab === 'settings' ? 'on' : ''} onClick={() => openTab('settings')} aria-label="Settings" title="Settings">
             <span>⚙</span>
-            <small>Look</small>
           </button>
         </nav>
       </header>
