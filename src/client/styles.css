@@ -182,8 +182,9 @@ h1, h3, h4, .topbar .room, .phases .turn, .roster-summary b, .name-input, .tabs 
 .zone-mask { fill: #000; }
 .zone-control { fill: none; stroke: var(--gold); stroke-width: 0.04; opacity: 0.8; }
 .ghost .base { fill: none; stroke: #fff; stroke-width: 0.05; stroke-dasharray: 0.15 0.1; opacity: 0.7; }
-.trail { stroke: #fff; stroke-width: 0.06; stroke-dasharray: 0.2 0.15; }
-.trail.over, .trail-label.over { stroke: #ff6b5e; fill: #ff6b5e; }
+.trail { fill: none; stroke: #fff; stroke-width: 0.06; stroke-dasharray: 0.2 0.15; stroke-linejoin: round; }
+.trail.over { stroke: #ff6b5e; }
+.trail-label.over { stroke: #ff6b5e; fill: #ff6b5e; }
 .trail-label { fill: #fff; font-weight: 700; paint-order: stroke; stroke: #000; stroke-width: 0.06; }
 .trail-label.over { stroke: #000; }
 .box { fill: #c9a22722; stroke: var(--gold); stroke-width: 0.06; }
@@ -971,7 +972,7 @@ table.vp tr.auto .vp-cell b { color: var(--gold); }
 
 /* Animations: short, and only to show what just happened. Settings can turn them off. */
 .board g.model.glide { transition: transform 0.35s ease-out; }
-.move-trail { stroke-width: 0.08; stroke-dasharray: 0.3 0.25; opacity: 0.55; }
+.move-trail { fill: none; stroke-linejoin: round; stroke-width: 0.08; stroke-dasharray: 0.3 0.25; opacity: 0.55; }
 .move-trail.p1 { stroke: var(--p1); }
 .move-trail.p2 { stroke: var(--p2); }
 .die.tumble { animation: tumble 0.45s ease-out both; }

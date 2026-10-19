@@ -16,13 +16,31 @@ describe('move limits', () => {
     expect(s.models.o.y).toBeCloseTo(34, 2);
   });
 
-  it('counts several drags together from where the phase began', () => {
+  it('counts several drags together along the way the model went', () => {
     let s = move(inMove(), 10, 36);
     s = move(s, 10, 30);
     expect(s.models.o.y).toBeCloseTo(34, 2);
-    // Coming back is always allowed.
+    // Walking back costs Move too...
     s = move(s, 10, 39);
-    expect(s.models.o.y).toBe(39);
+    expect(s.models.o.y).toBeCloseTo(34, 2);
+    // ...but putting it back where it started is always allowed, and gives the whole Move back.
+    s = move(s, 10, 40);
+    expect(s.models.o.y).toBe(40);
+    expect(move(s, 10, 30).models.o.y).toBeCloseTo(34, 2);
+  });
+
+  it('goes round a corner, as long as the whole way is within its Move', () => {
+    // A short, tall wall 1" wide straight ahead: going straight at it stops there.
+    const wall = { id: 'w', kind: 'wall' as const, shape: 'rect' as const, x: 10, y: 37, w: 1, h: 0.5, rot: 0, locked: false, height: 3, sheer: true };
+    const s0 = reduce(inMove(), { type: 'addTerrain', terrain: wall });
+    expect(move(s0, 10, 35).models.o.y).toBeGreaterThan(37.7);
+    // Round its end instead: 1.1" across and 4.2" up.
+    let s = move(s0, 11.1, 40);
+    s = move(s, 11.1, 35.8);
+    expect(s.models.o).toMatchObject({ x: 11.1, y: 35.8 });
+    expect(s.flow.walked?.o).toBeCloseTo(5.3, 2);
+    // Only 0.7" of its Move is left.
+    expect(move(s, 11.1, 30).models.o.y).toBeCloseTo(35.1, 2);
   });
 
   it('gives a fresh Move next phase and leaves setup free', () => {
