@@ -6,7 +6,7 @@ import { holdInZones, nearEdge } from './deployment.ts';
 import { canActivate, heroicInfo, heroicNow, heroicQueue, mayActivate, shoutedFor, SHOUT_RANGE } from './heroics.ts';
 import { pendingSpell } from './magic.ts';
 import { basePower, cannotAct, effectActive } from './powers.ts';
-import { basesOverlap, costOf, engaged as engagedNow, finishCharge, fightsAgain, limitMove, marchedBy, marchRange, moveAllowance, movedAtAll, movedTooFar, moveLeft, moveStart, retrace, RETRACE, spent } from './movement.ts';
+import { basesOverlap, costOf, engaged as engagedNow, finishCharge, fightsAgain, limitMove, marchedBy, marchRange, moveAllowance, movedAtAll, movedTooFar, moveLeft, moveStart, retrace, RETRACE, spent, testsTerrain } from './movement.ts';
 import { FLOORED, floorHeight, flooredAt, insidePolygon, isDifficult, outline } from './sight.ts';
 import { cleanPausedShot, woundsTaken } from './fight.ts';
 import { pairOff } from './flow.ts';
@@ -636,7 +636,7 @@ function step(state: GameState, action: Action): GameState {
           const straight = a && b && Math.abs((b[0] - a[0]) * (to.y - b[1]) - (b[1] - a[1]) * (to.x - b[0])) < 0.05 * Math.hypot(b[0] - a[0], b[1] - a[1]);
           paths = { ...paths, [prev.id]: back ? [] : [...(straight ? trail.slice(0, -1) : trail), [to.x, to.y] as [number, number]].slice(-40) };
           // Stopped at terrain that needs a test: remember it, so the model's card can offer the test.
-          if (state.phase === 'move') {
+          if (testsTerrain(state, prev)) {
             const ahead = crossingAhead(state, prev, from, asked);
             const { [prev.id]: _, ...rest } = blocked ?? {};
             // (Not if it stopped there to fight an enemy across it.)

@@ -433,7 +433,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
       {action}
       <BeastPanel state={state} catalog={catalog} dispatch={dispatch} role={role} m={m} />
       <SiegePanel state={state} catalog={catalog} dispatch={dispatch} role={role} m={m} />
-      {mine && state.phase === 'move' && state.flow.started && !held && <TerrainMoves state={state} dispatch={dispatch} m={m} />}
+      {mine && (state.phase === 'move' || atCrossing(state, m)) && state.flow.started && !held && <TerrainMoves state={state} dispatch={dispatch} m={m} />}
       {mine && state.phase === 'move' && state.flow.started && !held && <PutBack state={state} dispatch={dispatch} m={m} />}
       {mine && state.phase === 'move' && <CastBox state={state} dispatch={dispatch} role={role} model={m} />}
       {carried.length > 0 && (

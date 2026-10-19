@@ -6,7 +6,7 @@ import { distanceBetween, halfExtents, type Point } from './geometry.ts';
 import { HEAVY, helpers, ladderAt } from './fortress.ts';
 import { canActivate } from './heroics.ts';
 import { onTable } from './objects.ts';
-import { engaged, moveLeft, settleMove } from './movement.ts';
+import { engaged, moveLeft, settleMove, testsTerrain } from './movement.ts';
 import { formatNeed, woundNeed } from './rules.ts';
 import { climbedLevel, distanceToTerrain, heightOf, heightOfModel, insidePolygon, outline } from './sight.ts';
 import type { Action, DiceRoll, GameState, Model, Seat, Terrain } from './types.ts';
@@ -182,7 +182,7 @@ export function resolveCross(state: GameState, seat: Seat, id: string, d6: () =>
 function crossOne(state: GameState, seat: Seat, id: string, d6: () => number, uid: () => string, now: number, catalog: Catalog | null, shared?: { roll: number; with: string }): { actions: Action[]; roll: number } | null {
   const m = state.models[id];
   const b = m && state.flow.blocked?.[id];
-  if (!m || !b || m.owner !== seat || state.phase !== 'move' || !state.flow.started || !canActivate(state, seat) || state.flow.stopped?.includes(id)) return null;
+  if (!m || !b || m.owner !== seat || !testsTerrain(state, m) || !state.flow.started || (state.phase === 'move' && !canActivate(state, seat)) || state.flow.stopped?.includes(id)) return null;
   if (Math.hypot(m.x - b.stop[0], m.y - b.stop[1]) > 0.1) return null;
   const c: Crossing = { terrain: b.terrain, test: b.test, stop: { x: b.stop[0], y: b.stop[1] }, landing: { x: b.landing[0], y: b.landing[1] }, drop: b.drop };
   if (crossBlocked(state, m, c)) return null;

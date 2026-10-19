@@ -93,7 +93,7 @@ export function basesOverlap(a: Model, b: Model): boolean {
 export function blockMove(state: GameState, m: Model, from: Point, to: Point, skip?: ReadonlySet<string>, charge = true): Point {
   if (Math.hypot(to.x - from.x, to.y - from.y) < 1e-6) return to;
   // Terrain that needs a Jump, Climb or Leap test stops the model at it, to take the test (see terrainTests.ts).
-  const ahead = state.flow.started && state.phase === 'move' ? crossingAhead(state, m, from, to) : null;
+  const ahead = state.flow.started && testsTerrain(state, m) ? crossingAhead(state, m, from, to) : null;
   if (ahead) to = ahead.stop;
   const d = Math.hypot(to.x - from.x, to.y - from.y);
   if (d < 1e-6) return to;
@@ -154,6 +154,8 @@ export function bargeMove(state: GameState, m: Model): number | undefined {
 }
 
 /** Whether a model may move and fight again this Fight phase: it won a Heroic Combat, or barged its foes aside. */
+/** Whether a move now takes Jump, Climb and Leap tests: in the Move phase, and in a Heroic Combat's move (Rulebook FAQ). */
+export const testsTerrain = (state: GameState, m: Model) => state.phase === 'move' || heroicCombatWon(state, m);
 export const fightsAgain = (state: GameState, m: Model) => heroicCombatWon(state, m) || bargeMove(state, m) !== undefined;
 
 /**
@@ -260,7 +262,7 @@ export function moveStart(state: GameState, m: Model): Point {
  */
 export function limitMove(state: GameState, from: Point, to: Point, move: number, seat?: Seat, m?: Model, skip?: ReadonlySet<string>): Point {
   // Terrain that needs a test stops the model at it first, whatever its Move would allow beyond.
-  const ahead = m && state.flow.started && state.phase === 'move' ? crossingAhead(state, m, from, to) : null;
+  const ahead = m && state.flow.started && testsTerrain(state, m) ? crossingAhead(state, m, from, to) : null;
   if (ahead) to = ahead.stop;
   const reached = reachable(state, from, to, move, seat, m);
   return m ? blockMove(state, m, from, reached, skip) : reached;
