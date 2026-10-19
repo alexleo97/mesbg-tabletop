@@ -1,6 +1,6 @@
 // After a duel the losers back away 1" from the winners. The app does it for the players: each loser steps
-// straight away from the enemies it fought, or as close to that as it can get, and its player may then pick another
-// way. A friend may make way for it; a loser with nowhere to go is trapped, unless it can go over the edge of a drop.
+// straight away from the enemies it fought, or as close to that as it can get, never onto another model. Friends may
+// make way for it; a loser with nowhere to go is trapped, unless it can go over the edge of a drop.
 import { shutTo } from './fortress.ts';
 import { distanceBetween, halfExtents, type Point } from './geometry.ts';
 import { engaged } from './movement.ts';
@@ -15,6 +15,13 @@ export const BACK_AWAY = 1;
 function gap(a: Model, b: Model): number {
   if (a.base.shape === 'round' && b.base.shape === 'round') return Math.hypot(a.x - b.x, a.y - b.y) - halfExtents(a.base).rx - halfExtents(b.base).rx;
   return distanceBetween(a, b);
+}
+
+/** Whether two bases overlap by more than a hair; just touching is fine. */
+function overlaps(a: Model, b: Model): boolean {
+  if (a.base.shape === 'round' && b.base.shape === 'round') return gap(a, b) < -0.02;
+  // Other shapes: shrink one base by a millimetre all round and see whether it still meets the other.
+  return distanceBetween({ ...a, base: { ...a.base, w: a.base.w - 1, h: a.base.h - 1 } }, b) < 0.001;
 }
 
 /** Whether the straight line between two points passes through a polygon. */
@@ -53,9 +60,8 @@ function step(state: GameState, models: Record<string, Model>, m: Model, at: Poi
   for (const o of Object.values(models)) {
     if (o.id === m.id || o.dead || o.escaped || o.waiting) continue;
     if (Math.abs(o.x - at.x) > 6 || Math.abs(o.y - at.y) > 6) continue;
-    const g = gap(here, o);
-    // It can't stay in touch with an enemy, and can't end up on top of a friend.
-    if (o.owner !== m.owner ? g < 0.05 : g < -0.02) return no;
+    // It can't stay in touch with an enemy, and can't end up on top of any other model.
+    if (o.owner !== m.owner ? gap(here, o) < 0.05 : overlaps(here, o)) return no;
   }
   return { ok: true, drop: 0 };
 }
@@ -91,6 +97,45 @@ function findSpot(state: GameState, models: Record<string, Model>, m: Model, hea
 /** Whether a friend could make way: not in a fight, and free to move. */
 const canMakeWay = (state: GameState, f: Model) => !f.dead && !f.escaped && !f.waiting && !engaged(state, f) && !cannotAct(state, f) && !state.flow.held?.includes(f.id);
 
+/** The least a friend can move (in quarter inches, up to `reach`) to get out of `spot`, and where it goes; null if it can't. */
+function nudge(state: GameState, models: Record<string, Model>, f: Model, spot: Model, reach: number): Point | null {
+  for (let d = 0.25; d <= reach + 1e-6; d += 0.25)
+    for (let k = 0; k < 16; k++) {
+      const p = at(f, (k * Math.PI) / 8, d);
+      if (overlaps({ ...f, ...p }, spot)) continue;
+      const s = step(state, models, f, p);
+      if (s.ok && !s.drop) return p;
+    }
+  return null;
+}
+
+/**
+ * Making way: a loser hemmed in only by friends has every friend in its way that is free to move step aside, each the
+ * least it can (up to `reach`), so it can back away `dist`. Straight back is tried first, then further round. Null if
+ * no way works, for instance when a friend in the way is fighting too.
+ */
+function makeRoom(state: GameState, models: Record<string, Model>, m: Model, heading: number, dist: number, reach: number, losers: string[]): { to: Point; moves: { f: Model; p: Point }[] } | null {
+  for (const turn of TURNS) {
+    const to = at(m, heading + (turn * Math.PI) / 180, dist);
+    const here = { ...m, ...to };
+    const inWay = Object.values(models).filter(f => f.owner === m.owner && f.id !== m.id && !f.dead && !f.escaped && !f.waiting && overlaps(here, f));
+    if (!inWay.length || inWay.some(f => losers.includes(f.id) || !canMakeWay(state, f))) continue;
+    const without = Object.fromEntries(Object.entries(models).filter(([k]) => !inWay.some(f => f.id === k)));
+    const s = step(state, without, m, to);
+    if (!s.ok || s.drop) continue;
+    let room: Record<string, Model> = { ...without, [m.id]: here };
+    const moves: { f: Model; p: Point }[] = [];
+    for (const f of inWay) {
+      const p = nudge(state, room, f, here, reach);
+      if (!p) break;
+      room = { ...room, [f.id]: { ...f, ...p } };
+      moves.push({ f, p });
+    }
+    if (moves.length === inWay.length) return { to, moves };
+  }
+  return null;
+}
+
 export interface Retreat {
   moves: { id: string; x: number; y: number }[];
   trapped: string[];
@@ -102,8 +147,7 @@ export interface Retreat {
 
 /**
  * Where each loser of a fight backs away to. Losers are moved one at a time so they don't land on each other. One
- * hemmed in by a friend has that friend make way, moving up to 1" (only one friend may, and only if that's enough);
- * one with nowhere else to go but over the edge of a drop goes over it; the rest are trapped.
+ * hemmed in by friends has them make way, each moving the least it can up to 1"; one with nowhere else to go but over the edge of a drop goes over it; the rest are trapped.
  */
 export function backAway(state: GameState, losers: string[], winners: string[]): Retreat {
   const models = { ...state.models };
@@ -115,26 +159,14 @@ export function backAway(state: GameState, losers: string[], winners: string[]):
     const heading = headingAway(m, foes);
     let to = findSpot(state, models, m, heading);
     if (!to) {
-      // A friend steps aside, the least it can, to let it through.
-      const friends = Object.values(models).filter(f => f.owner === m.owner && f.id !== m.id && !losers.includes(f.id) && Math.hypot(f.x - m.x, f.y - m.y) < 4 && canMakeWay(state, f));
-      let best: { f: Model; p: Point; to: Point; d: number } | null = null;
-      for (const f of friends) {
-        for (let d = 0.25; d <= 1 + 1e-6 && !(best && best.d <= d); d += 0.25) {
-          for (let k = 0; k < 16; k++) {
-            const p = at(f, (k * Math.PI) / 8, d);
-            const s = step(state, models, f, p);
-            if (!s.ok || s.drop) continue;
-            const spot = findSpot(state, { ...models, [f.id]: { ...f, ...p } }, m, heading);
-            if (spot && (!best || d < best.d)) best = { f, p, to: spot, d };
-          }
-        }
+      // Friends in the way step aside to let it through.
+      const room = makeRoom(state, models, m, heading, BACK_AWAY, BACK_AWAY, losers);
+      for (const { f, p } of room?.moves ?? []) {
+        models[f.id] = { ...f, ...p };
+        out.moves.push({ id: f.id, ...rounded(p) });
+        out.madeWay.push({ id: f.id, for: m.id });
       }
-      if (best) {
-        models[best.f.id] = { ...best.f, ...best.p };
-        out.moves.push({ id: best.f.id, ...rounded(best.p) });
-        out.madeWay.push({ id: best.f.id, for: m.id });
-        to = best.to;
-      }
+      if (room) to = room.to;
     }
     if (!to) {
       // Pinned at the edge of a sheer drop: it goes over.
@@ -187,36 +219,8 @@ export function separate(state: GameState, trapped: string[], winners: string[])
 }
 
 /**
- * The ways a model that just backed away could have gone instead, for its player to pick: eight directions round
- * where it stood, each 1" away, and whether it can stand there.
- */
-export function retreatSpots(state: GameState, id: string): { x: number; y: number; ok: boolean; dir: number }[] {
-  const m = state.models[id];
-  const from = state.flow.retreat?.[id];
-  if (!m || m.dead || !from) return [];
-  const was = { ...m, x: from[0], y: from[1] };
-  const models = { ...state.models, [id]: was };
-  return Array.from({ length: 8 }, (_, k) => {
-    const p = at(was, (k * Math.PI) / 4);
-    const s = step(state, models, was, p);
-    return { ...rounded(p), ok: s.ok && !s.drop, dir: k * 45 };
-  });
-}
-
-/** Whether a model that backed away may be put at `p` instead: 1" from where it stood, somewhere it could stand. */
-export function canRetreatTo(state: GameState, id: string, p: Point): boolean {
-  const m = state.models[id];
-  const from = state.flow.retreat?.[id];
-  if (!m || m.dead || !from) return false;
-  if (Math.abs(Math.hypot(p.x - from[0], p.y - from[1]) - BACK_AWAY) > 0.05) return false;
-  const was = { ...m, x: from[0], y: from[1] };
-  const s = step(state, { ...state.models, [id]: was }, was, p);
-  return s.ok && !s.drop;
-}
-
-/**
  * A monster's Barge: each model backs away `dist` (3") rather than 1", straight back if it can and otherwise the
- * way that lets it go furthest. One that can't go the whole way goes as far as it can and is knocked Prone.
+ * way that lets it go furthest, with friends making way where that lets it go the whole way. One that can't go the whole way goes as far as it can and is knocked Prone.
  */
 export function pushBack(state: GameState, losers: string[], winners: string[], dist: number): { moves: { id: string; x: number; y: number }[]; short: string[] } {
   const models = { ...state.models };
@@ -236,6 +240,15 @@ export function pushBack(state: GameState, losers: string[], winners: string[], 
           break;
         }
       }
+    // Friends may make way for it to go the whole distance, moving only as far as they need to.
+    if (!best || best.d < dist - 1e-6) {
+      const room = makeRoom(state, models, m, heading, dist, dist, losers);
+      for (const { f, p } of room?.moves ?? []) {
+        models[f.id] = { ...f, ...p };
+        out.moves.push({ id: f.id, ...rounded(p) });
+      }
+      if (room) best = { p: room.to, d: dist };
+    }
     if (!best || best.d < dist - 1e-6) out.short.push(id);
     if (!best) continue;
     models[id] = { ...m, ...best.p };

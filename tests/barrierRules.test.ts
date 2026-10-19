@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { defence, inDoorway, touching } from '../src/shared/barriers.ts';
-import { retreatSpots } from '../src/shared/backAway.ts';
 import { combats } from '../src/shared/flow.ts';
 import { distanceBetween } from '../src/shared/geometry.ts';
 import { engaged } from '../src/shared/movement.ts';
@@ -154,17 +153,28 @@ describe('backing away', () => {
     expect(s.models.b.prone || s.models.b.dead).toBe(true);
   });
 
-  it('lets the loser’s player pick another way to back away', () => {
-    const s0 = setup([mk('a', 'p1', 10, 20), mk('b', 'p2', 10, 20 - 2 * R)], [], 'fight');
-    const { s } = fight(s0, ['a'], ['b'], [6, 1, 1]);
-    const spots = retreatSpots(s, 'b');
-    const left = spots.find(p => p.dir === 180)!;
-    expect(left.ok).toBe(true);
-    const t = run(s, { type: 'backAwayTo', id: 'b', x: left.x, y: left.y });
-    expect(t.models.b.x).toBeCloseTo(9, 2);
-    // Back towards the winner it can't go.
-    const towards = spots.find(p => p.dir === 90)!;
-    expect(towards.ok).toBe(false);
-    expect(run(s, { type: 'backAwayTo', id: 'b', x: towards.x, y: towards.y }).models.b).toEqual(s.models.b);
+  it('has every friend in the way make way, not just one', () => {
+    // Two friends side by side right behind b, enemies on either side of it.
+    const s0 = setup([mk('a', 'p1', 10, 14), mk('e1', 'p1', 10 - 2 * R - 0.02, 14 - 2 * R), mk('e2', 'p1', 10 + 2 * R + 0.02, 14 - 2 * R), mk('b', 'p2', 10, 14 - 2 * R), mk('c1', 'p2', 10 - R, 14 - 4 * R - 0.15), mk('c2', 'p2', 10 + R, 14 - 4 * R - 0.15)], [], 'fight');
+    const { s, out } = fight(s0, ['a'], ['b'], [6, 1, 1]);
+    const strike = out.apply.find(a => a.type === 'rolled' && a.roll.against === 'b');
+    expect(strike?.type === 'rolled' && strike.roll.dice.length).toBe(1);
+    expect(distanceBetween(s.models.a, s.models.b)).toBeGreaterThan(0.9);
+    for (const id of ['c1', 'c2']) {
+      expect(Math.hypot(s.models[id].x - s0.models[id].x, s.models[id].y - s0.models[id].y)).toBeLessThanOrEqual(1.01);
+      expect(Math.hypot(s.models[id].x - s.models.b.x, s.models[id].y - s.models.b.y)).toBeGreaterThan(2 * R - 0.03);
+    }
+    expect(Math.hypot(s.models.c1.x - s.models.c2.x, s.models.c1.y - s.models.c2.y)).toBeGreaterThan(2 * R - 0.03);
+  });
+
+  it('never backs onto a friend on an oval base', () => {
+    // The friend behind b is fighting, so it can't make way, and b is trapped rather than stepping onto it.
+    const oval: Model['base'] = { shape: 'oval', w: 50, h: 25 };
+    const s0 = setup([mk('a', 'p1', 10, 14), mk('e1', 'p1', 10 - 2 * R - 0.02, 14 - 2 * R), mk('e2', 'p1', 10 + 2 * R + 0.02, 14 - 2 * R), mk('b', 'p2', 10, 14 - 2 * R), mk('c', 'p2', 10, 14 - 4 * R - 0.05, { base: oval }), mk('f', 'p1', 10 + 50 / 25.4 / 2 + R, 14 - 4 * R - 0.05)], [], 'fight');
+    const { s, out } = fight(s0, ['a'], ['b'], [6, 1, 1, 1]);
+    const strike = out.apply.find(a => a.type === 'rolled' && a.roll.against === 'b');
+    expect(strike?.type === 'rolled' && strike.roll.dice.length).toBe(2);
+    expect(s.models.c).toMatchObject({ x: 10, y: 14 - 4 * R - 0.05 });
+    expect(Math.abs(s.models.b.y - s.models.c.y)).toBeGreaterThan(2 * R - 0.03);
   });
 });

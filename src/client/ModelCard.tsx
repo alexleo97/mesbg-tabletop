@@ -22,7 +22,6 @@ import { flooredAt, floorHeight, floorName, sightTo, standingAt } from '../share
 import RULES from '../data/special-rules.json';
 import { CastBox } from './MagicPanel.tsx';
 import { RollRow } from './Panels.tsx';
-import { retreatSpots } from '../shared/backAway.ts';
 import { useDraggable } from './useDraggable.tsx';
 import { distanceBetween, formatInches } from '../shared/geometry.ts';
 import { formatNeed, woundNeed } from '../shared/rules.ts';
@@ -136,33 +135,6 @@ function TerrainMoves({ state, dispatch, m }: { state: GameState; dispatch: (a: 
       </div>
     );
   return null;
-}
-
-/** Arrows for the eight ways round, from straight right (the board's y runs down the screen). */
-const ARROWS = ['→', '↘', '↓', '↙', '←', '↖', '↑', '↗'];
-/** The arrows laid out as a compass, three by three, with the model in the middle. */
-const COMPASS = [5, 6, 7, 4, null, 0, 3, 2, 1];
-
-/** In the Fight phase, for a model that just backed away: its player may send it 1" another way instead. */
-function BackAwayPicker({ state, dispatch, m }: { state: GameState; dispatch: (a: Action) => void; m: Model }) {
-  const spots = retreatSpots(state, m.id);
-  if (!spots.length) return null;
-  return (
-    <div className="terrain-test">
-      <p className="muted small">{m.name} backed away 1". Send it another way:</p>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 2.5rem)', gap: '0.25rem' }}>
-        {COMPASS.map((k, i) => {
-          const p = k === null ? null : spots[k];
-          if (!p || k === null) return <span key={i} />;
-          return (
-            <button key={i} className="small" disabled={!p.ok || (Math.abs(p.x - m.x) < 0.02 && Math.abs(p.y - m.y) < 0.02)} title={p.ok ? 'Back away this way' : 'It can’t back away this way'} onClick={() => dispatch({ type: 'backAwayTo', id: m.id, x: p.x, y: p.y })}>
-              {ARROWS[k]}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
 }
 
 /** A selected model's card: its profile at a glance and the actions that make sense in this phase. */
@@ -449,7 +421,6 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
       <BeastPanel state={state} catalog={catalog} dispatch={dispatch} role={role} m={m} />
       <SiegePanel state={state} catalog={catalog} dispatch={dispatch} role={role} m={m} />
       {mine && state.phase === 'move' && state.flow.started && !held && <TerrainMoves state={state} dispatch={dispatch} m={m} />}
-      {mine && state.phase === 'fight' && state.flow.started && !m.dead && <BackAwayPicker state={state} dispatch={dispatch} m={m} />}
       {mine && state.phase === 'move' && <CastBox state={state} dispatch={dispatch} role={role} model={m} />}
       {carried.length > 0 && (
         <p className="muted carrying">
