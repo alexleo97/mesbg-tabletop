@@ -7,7 +7,7 @@ import { useCatalog } from './ListBuilder.tsx';
 import { DicePanel, SelectionPanel, SettingsPanel, TablePanel } from './Panels.tsx';
 import { BrokenTags } from './BrokenTags.tsx';
 import { CoachBar, type CoachView } from './CoachBar.tsx';
-import { BattleCard, type BattleTab } from './BattleCard.tsx';
+import { BattleCard, SetupCard, type BattleTab, type SetupTab } from './BattleCard.tsx';
 import { ModelCard, weaponOf } from './ModelCard.tsx';
 import { SightHint } from './SightHint.tsx';
 import { combatFromKey, combats, other } from '../shared/flow.ts';
@@ -187,6 +187,7 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
   const [selectedTerrain, setSelectedTerrain] = useState<string | null>(null);
   const [tab, setTab] = useState<PanelTab>('settings');
   const [battleTab, setBattleTab] = useState<BattleTab>('army');
+  const [setupTab, setSetupTab] = useState<SetupTab>('map');
   const [coachView, setCoachView] = useState<CoachView>('turn');
   const [panelOpen, setPanelOpen] = useState(false);
   const [aimAt, setAimAt] = useState<string | null>(null);
@@ -414,7 +415,7 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
                     <button onClick={leave}>Leave game</button>
                   </div>
                 </div>
-                <TablePanel state={state} dispatch={dispatch} role={role} selectedTerrain={selectedTerrain} setSelectedTerrain={setSelectedTerrain} />
+                {state.flow.started && <TablePanel state={state} dispatch={dispatch} role={role} selectedTerrain={selectedTerrain} setSelectedTerrain={setSelectedTerrain} />}
               
     </>
   );
@@ -546,6 +547,16 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
               onMark={m => conn.mark(m)}
             />
 
+            {!state.flow.started && (!practice || setupCard) && (
+              <SetupCard
+                state={state}
+                dispatch={dispatch}
+                role={role}
+                tab={setupTab}
+                setTab={setSetupTab}
+                table={<TablePanel state={state} dispatch={dispatch} role={role} selectedTerrain={selectedTerrain} setSelectedTerrain={setSelectedTerrain} />}
+              />
+            )}
             <BattleCard tools={tools} state={state} dispatch={dispatch} role={role} tab={battleTab} setTab={setBattleTab} fight={fight} fights={fights} openFight={setFightKey} photoFor={photoFor} />
 
             {refusedNote && (
@@ -588,7 +599,7 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
               dispatch={dispatch}
               role={role}
               combats={fights}
-              openTab={setBattleTab}
+              openTab={t => (state.flow.started ? t !== 'map' && setBattleTab(t) : setSetupTab(t))}
               openFight={setFightKey}
               auto={!practice}
               view={coachView}
