@@ -145,6 +145,12 @@ describe('the cavalry charge', () => {
     expect(s.log.find(r => r.model === 'r' && r.side === 0)?.dice).toHaveLength(1);
   });
 
+  it('keeps the charge bonus in difficult ground with Spectral Walk', () => {
+    let s = charged(mk('r', 'p1', 10, 13, '[rohan] rider', { ...horse, ground: ['spectral'] }), [mk('o', 'p2', 10, 10, '[mordor] orc')], [wood]);
+    s = ask(s, 'p1', { type: 'fight', fight: fight(['r'], ['o']) }, [6, 6, 2])!;
+    expect(s.log.find(r => r.model === 'r' && r.side === 0)?.dice).toHaveLength(2);
+  });
+
   it('lets the winner strike the mount instead of the rider', () => {
     let s = toFight(begin([mk('o', 'p1', 20, 20, '[mordor] troll', { wounds: 3, maxWounds: 3 }), mk('w', 'p2', 20, 21.3, '[mordor] warg', { ...horse, mount: 'Warg' })]));
     const req = fight(['o'], ['w'], { targets: ['w#mount', 'o'] });

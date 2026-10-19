@@ -53,7 +53,8 @@ export function chargeBonus(state: GameState, catalog: Catalog | null | undefine
   // (it knocks down the weaker foes it beats).
   if (isChariot(catalog, m)) return 'chariot';
   if (isWarBeast(catalog, m)) return state.flow.trampled?.includes(m.id) ? 'beast' : undefined;
-  if (under(state, m, 'Transfix') || inDifficult(state, m, m.owner)) return undefined;
+  // Spectral Walk and the like don't count the ground as difficult, so keep their charge bonuses (Rulebook FAQ).
+  if (under(state, m, 'Transfix') || inDifficult(state, m, m.owner, m.ground)) return undefined;
   if (mounted(m)) return foes.length && foes.every(f => isInfantry(catalog, f)) ? 'cavalry' : undefined;
   return rules(catalog, m).includes('Monstrous Charge') ? 'monster' : undefined;
 }
@@ -72,7 +73,7 @@ const CHARGE_NOTES = {
 
 export function chargeEffects(state: GameState, catalog: Catalog | null | undefined, m: Model, foes: Model[], overWall: boolean): { bonus?: 'cavalry' | 'monster' | 'chariot' | 'beast'; lance: boolean; notes: string[] } {
   const bonus = chargeBonus(state, catalog, m, foes, overWall);
-  const lance = mounted(m) && !isChariot(catalog, m) && !!state.flow.charges?.[m.id] && !overWall && !inDifficult(state, m, m.owner) && hasLance(catalog, m);
+  const lance = mounted(m) && !isChariot(catalog, m) && !!state.flow.charges?.[m.id] && !overWall && !inDifficult(state, m, m.owner, m.ground) && hasLance(catalog, m);
   const notes = [
     ...(bonus ? [CHARGE_NOTES[bonus]] : []),
     ...(lance ? ['Lance: +1 to wound on the charge'] : []),

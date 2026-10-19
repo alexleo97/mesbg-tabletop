@@ -276,9 +276,10 @@ function climbCost(state: GameState, a: Point, b: Point, tall: number): number {
   }
   return total;
 }
-export const inDifficult = (state: GameState, p: Point, seat?: Seat) => {
+/** Whether a point is in difficult ground for a model of `seat`, given the special rules for crossing terrain it has (`ground`). */
+export const inDifficult = (state: GameState, p: Point, seat?: Seat, ground?: string[]) => {
   const all = Object.values(state.terrain);
-  return slowGround(state, seat).some(poly => insidePolygon(poly, p)) && !all.some(t => t.kind === 'bridge' && insidePolygon(outline(t), p));
+  return slowGround(state, seat, ground).some(poly => insidePolygon(poly, p)) && !all.some(t => t.kind === 'bridge' && insidePolygon(outline(t), p));
 };
 
 /**
