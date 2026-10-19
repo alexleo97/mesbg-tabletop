@@ -2,7 +2,7 @@ import { useEffect, useState, type Ref } from 'react';
 import { breachOptions } from '../shared/breach.ts';
 import { hurlOptions } from '../shared/defenders.ts';
 import { laden } from '../shared/fortress.ts';
-import { loadRulesText, modelStats, pictureUrl, startingPoints, statsWithOptions, STAT_NAMES, type Catalog } from '../shared/catalog.ts';
+import { loadRulesText, modelStats, rulesFor, pictureUrl, startingPoints, statsWithOptions, STAT_NAMES, type Catalog } from '../shared/catalog.ts';
 import { strikeWounds, woundsTaken } from '../shared/fight.ts';
 import { CONTACT_SLACK, type Combat } from '../shared/flow.ts';
 import { engaged, fightDone, moveLeft, moveStart } from '../shared/movement.ts';
@@ -14,7 +14,7 @@ import { effectNotes, heldBy } from '../shared/powers.ts';
 import { canThrowBrand, FLAMING_BRAND, isThrowing, planShot, shooterBlocked, throwingPoint, weaponFor } from '../shared/shooting.ts';
 import { cloaked, stones } from '../shared/wargear.ts';
 import { fireLine } from '../shared/fire.ts';
-import { cantRemove, cantWear, ringbearer } from '../shared/ring.ts';
+import { cantRemove, cantWear, compelWear, ringbearer, seekTargets } from '../shared/ring.ts';
 import { mounted, mountLabel, mountOf } from '../shared/cavalry.ts';
 import { commanderStats, howdahFor, immovable } from '../shared/warBeasts.ts';
 import { BeastPanel } from './BeastPanel.tsx';
@@ -72,8 +72,8 @@ export function ruleSummary(name: string): string | undefined {
 
 /** The special rules on a model's profile. */
 export function rulesOf(m: Model, catalog: Catalog | null): string[] {
-  const unit = m.profileId ? catalog?.units[m.profileId] : undefined;
-  return unit?.rules ?? [];
+  // (Optional wargear our data lists among the rules shows only when taken.)
+  return rulesFor(catalog, m);
 }
 
 const TEST_HELP: Record<CrossTest, string> = {
@@ -189,6 +189,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
   const carried = carriedBy(state, m);
   const breaches = breachOptions(state, catalog, m);
   const hurls = hurlOptions(state, m);
+  const seeks = mine ? seekTargets(state, catalog, m) : [];
   const weapon = weaponOf(m, catalog);
   const photo = unit && pictureUrl(unit);
 
@@ -435,6 +436,13 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
           )}
         </div>
       )}
+      {!mine && (role === 'p1' || role === 'p2') && compelWear(state, catalog, role, m) && (
+        <div className="row wrap">
+          <button title={`Your Compel lets you make ${m.name} put on the One Ring.`} onClick={() => dispatch({ type: 'ring', id: m.id, on: true })}>
+            Make {m.name} put on the Ring
+          </button>
+        </div>
+      )}
       {rules.length > 0 && (
         <dl className="rule-list">
           {rules.map(r => (
@@ -494,6 +502,15 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
           {hurls.map(h => (
             <button key={h.item + h.target} className="primary" onClick={() => dispatch({ type: 'hurl', how: h.how, model: m.id, item: h.item, target: h.target })}>
               {h.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {seeks.length > 0 && (
+        <div className="row wrap marker-actions">
+          {seeks.map(t => (
+            <button key={t.target.id} onClick={() => dispatch({ type: 'seek', id: m.id, target: t.target.id })} title={`${t.target.name} is Invisible: to charge it, ${m.name} must pass an Intelligence test, 1 worse for every full inch away.`}>
+              {t.need > 12 ? `Charge ${t.target.name}? (can't pass)` : `Try to charge ${t.target.name} (Intelligence ${t.need}+)`}
             </button>
           ))}
         </div>

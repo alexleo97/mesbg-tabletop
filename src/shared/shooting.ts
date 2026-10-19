@@ -185,7 +185,7 @@ export function planShot(
   plan.inWay = inWay;
   plan.rerolls = phaseHeroics(state).some(h => {
     const hero = state.models[h.model];
-    return h.action === 'Heroic Accuracy' && hero && !hero.dead && hero.owner === shooter.owner && (hero.id === shooter.id || distanceBetween(hero, shooter) <= 6);
+    return h.action === 'Heroic Accuracy' && hero && !hero.dead && hero.owner === shooter.owner && (hero.id === shooter.id || (!hero.ringOn && distanceBetween(hero, shooter) <= 6));
   });
   return plan;
 }

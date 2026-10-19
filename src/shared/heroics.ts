@@ -121,6 +121,8 @@ export function heroicNow(state: GameState): { seat: Seat | null; hero?: string 
 
 /** The friends a hero takes with it on its heroic activation: those within 6" of where it stood as it began. */
 export function shoutedFor(state: GameState, hero: Model): Model[] {
+  // A hero wearing the One Ring is Invisible, and its friends can't benefit from its heroic actions.
+  if (hero.ringOn) return [];
   const at = { ...hero, ...moveStart(state, hero) };
   const others = new Set(heroicQueue(state).map(m => m.id));
   return Object.values(state.models).filter(f => f.owner === hero.owner && f.id !== hero.id && !f.dead && !f.escaped && !f.waiting && !others.has(f.id) && distanceBetween(at, { ...f, ...moveStart(state, f) }) <= SHOUT_RANGE);

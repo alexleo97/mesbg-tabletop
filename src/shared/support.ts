@@ -6,6 +6,7 @@ import { distanceBetween } from './geometry.ts';
 import { onLadder } from './defenders.ts';
 import { engaged } from './movement.ts';
 import { cannotAct, isCavalry } from './powers.ts';
+import { invisibleTo } from './ring.ts';
 import type { GameState, Model, Seat } from './types.ts';
 
 const area = (m: Model) => m.base.w * m.base.h;
@@ -33,7 +34,9 @@ export function supporters(state: GameState, catalog: Catalog | null, c: Combat)
   const out: Record<Seat, string[]> = { p1: [], p2: [] };
   for (const seat of ['p1', 'p2'] as const) {
     // Nobody can lend a spear to a model fighting from the top of a Siege Ladder.
-    const front = c[seat].map(id => state.models[id]).filter(m => m && !m.dead && !onLadder(state, m));
+    // Nor to an Invisible friend, nor to a model only fighting foes it can't see.
+    const foes = c[seat === 'p1' ? 'p2' : 'p1'].map(id => state.models[id]).filter(m => m && !m.dead);
+    const front = c[seat].map(id => state.models[id]).filter(m => m && !m.dead && !onLadder(state, m) && !m.ringOn && !(foes.length && foes.every(o => invisibleTo(o, m))));
     const friends = Object.values(state.models).filter(m => m.owner === seat && !c[seat].includes(m.id) && front.some(f => Math.abs(f.x - m.x) < 8 && Math.abs(f.y - m.y) < 8));
     const able = friends.filter(m => canSupport(state, catalog, m));
     const first = able.filter(m => front.some(f => touching(m, f) && area(f) <= area(m)));

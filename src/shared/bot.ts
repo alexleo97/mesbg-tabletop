@@ -20,13 +20,14 @@ import { carriedBy, exitEdges, markerActions, onTable, sanctuary } from './objec
 import { chance, fightOdds, woundChance, type Side } from './odds.ts';
 import { PICKS, pickOptions } from './picks.ts';
 import { scoreLines } from './scoring.ts';
+import { seekTargets } from './ring.ts';
 import { flooredAt, floorHeight, heightOf } from './sight.ts';
 import { planShot, weaponFor } from './shooting.ts';
 import { atCrossing, crossBlocked, fallingHits } from './terrainTests.ts';
 import { armyStatus } from './status.ts';
 import { pushers } from './siege.ts';
 import { chargeAim, chargesDue, straightOn } from './trample.ts';
-import { castModel, mayCry } from './narrative.ts';
+import { arrivalAuto, arrivalDue, castModel, mayCry } from './narrative.ts';
 import { willOfEvil } from './courage.ts';
 import { hasMorgulBlade } from './morgul.ts';
 import { canThrowBrand, FLAMING_BRAND } from './shooting.ts';
@@ -184,6 +185,8 @@ export function botStep(state: GameState, seat: Seat, catalog: Catalog | null, m
   // A model waiting to be placed: the game already put it where the computer would, so it just says so.
   const place = placingNow(state);
   if (place) return place.seat === seat ? { action: { type: 'placed', seat }, delay: THINK_PAUSE } : null;
+  // Playing the Hobbits at Weathertop, the computer always rolls for Aragorn when it may.
+  if (arrivalDue(state)) return seat === state.narrative?.good && !arrivalAuto(state) ? { action: { type: 'aragorn', roll: true }, delay: DICE_PAUSE } : null;
   const spell = spellStep(ctx) ?? compelStep(ctx);
   if (spell) return spell;
   if (++memo.steps > MAX_STEPS) return finish(ctx);
@@ -367,6 +370,13 @@ function moveStep(ctx: Ctx): BotStep {
     memo.tested.push(m.id);
     const c = { terrain: at.terrain, test: at.test, stop: { x: at.stop[0], y: at.stop[1] }, landing: { x: at.landing[0], y: at.landing[1] }, drop: at.drop };
     if (!crossBlocked(state, m, c) && !(at.test === 'Climb down' && fallingHits(m, at.drop) >= m.wounds)) return { action: { type: 'cross', id: m.id }, delay: DICE_PAUSE };
+  }
+
+  // A model that could reach an Invisible foe tests to charge it first (once a turn each).
+  for (const m of side(state, seat)) {
+    if (memo.acted.includes(m.id)) continue;
+    const t = seekTargets(state, ctx.catalog, m).find(x => x.need <= 12 && centre(m, x.target) <= (moveAllowance(state, m) ?? 6) + 1);
+    if (t) return { action: { type: 'seek', id: m.id, target: t.target.id }, delay: DICE_PAUSE };
   }
 
   // The Cry of the Nazgûl, once Aragorn is here anyway (or late in the game): it would only bring him sooner.
