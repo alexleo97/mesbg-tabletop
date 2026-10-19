@@ -43,3 +43,26 @@ export function supporters(state: GameState, catalog: Catalog | null, c: Combat)
   }
   return out;
 }
+
+/**
+ * A model can only gain Support from one spear at a time: of these supporters, the spears that can each be matched to
+ * a different fighter they back up, earlier ones first (pikes aren't limited).
+ */
+export function oneSpearEach(state: GameState, catalog: Catalog | null, front: string[], ids: string[]): string[] {
+  const fighters = front.map(id => state.models[id]).filter((m): m is Model => !!m);
+  const backs = (s: Model) => fighters.filter(f => touching(s, f) && area(f) <= area(s));
+  const by: Record<string, string> = {};
+  // Hands the spear a fighter, moving an earlier spear on to another fighter if it has to.
+  const place = (s: Model, seen: Set<string>): boolean =>
+    backs(s).some(f => {
+      if (seen.has(f.id)) return false;
+      seen.add(f.id);
+      if (by[f.id] && !place(state.models[by[f.id]], seen)) return false;
+      by[f.id] = s.id;
+      return true;
+    });
+  return ids.filter(id => {
+    const m = state.models[id];
+    return !m || hasPike(catalog, m) || !hasSpear(catalog, m) || place(m, new Set());
+  });
+}

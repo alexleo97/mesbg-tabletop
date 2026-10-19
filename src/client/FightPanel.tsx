@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { modelStats } from '../shared/catalog.ts';
 import { duelLeader, duelSettled, strikeWounds, woundsTaken, type Fighter } from '../shared/fight.ts';
 import { combats, enemiesTouching, type Combat } from '../shared/flow.ts';
-import { supporters } from '../shared/support.ts';
+import { oneSpearEach, supporters } from '../shared/support.ts';
 import { defence } from '../shared/barriers.ts';
 import { declared, phaseAllows } from '../shared/heroics.ts';
 import { waitingOnMight } from '../shared/bot.ts';
@@ -101,10 +101,10 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
     ? [...new Set(lastRolls.filter(r => r.against).map(r => r.against!))].map(id => ({ id, m: state.models[id.replace(/#mount$/, '')], mount: id.endsWith('#mount'), wounds: strikeWounds(lastRolls.filter(r => r.against === id)) })).filter(v => v.m)
     : [];
 
-  // Spears and pikes behind the front rank: offered before the duel, and the ones that rolled in it after.
+  // Spears and pikes behind the front rank (one spear per fighter): offered before the duel, and the ones that rolled in it after.
   const offered = sides.p1.length && sides.p2.length ? supporters(state, catalog, { key: combat ?? '', p1: sides.p1.map(m => m.id), p2: sides.p2.map(m => m.id) }) : { p1: [], p2: [] };
   const helping = (s: Seat): Model[] =>
-    (lastGroup && !struck ? lastRolls.filter(r => r.support && r.side === (s === 'p1' ? 0 : 1)).map(r => r.model!) : offered[s].filter(id => !benched.has(id)))
+    (lastGroup && !struck ? lastRolls.filter(r => r.support && r.side === (s === 'p1' ? 0 : 1)).map(r => r.model!) : oneSpearEach(state, catalog, sides[s].map(m => m.id), offered[s].filter(id => !benched.has(id))))
       .map(id => state.models[id])
       .filter((m): m is Model => !!m && !m.dead);
 

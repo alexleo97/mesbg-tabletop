@@ -178,6 +178,13 @@ describe('monsters', () => {
     expect(s.models.sp.dead).toBe(true);
   });
 
+  it('lets only one spear support each model in the fight', () => {
+    let s = toFight(begin([mk('t', 'p1', 20, 20, '[mordor] troll', { base: { shape: 'round', w: 40, h: 40 }, wounds: 3, maxWounds: 3 }), mk('o', 'p2', 20, 21.3, '[mordor] orc'), mk('sp', 'p2', 20, 22.3, '[mordor] spear'), mk('sp2', 'p2', 20.9, 21.8, '[mordor] spear')]));
+    const req = { ...fight(['t'], ['o']), sides: [[fx('t')], [fx('o'), { ...fx('sp'), support: true }, { ...fx('sp2'), support: true }]] } as FightRequest;
+    s = ask(s, 'p1', { type: 'fight', fight: req }, [6, 1, 1, 2, 2, 2])!;
+    expect(s.log.filter(r => r.support).map(r => r.model)).toEqual(['sp']);
+  });
+
   it('can Rend instead of striking: To Wound against Strength', () => {
     let s = toFight(begin([mk('t', 'p1', 20, 20, '[mordor] troll', { base: { shape: 'round', w: 40, h: 40 }, wounds: 3, maxWounds: 3 }), mk('o', 'p2', 20, 21.3, '[mordor] orc', { wounds: 3, maxWounds: 3 })]));
     const req = fight(['t'], ['o'], { brutal: { by: 't', kind: 'rend', target: 'o' } });
