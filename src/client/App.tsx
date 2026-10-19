@@ -23,13 +23,12 @@ import { useSettings, type Settings } from './settings.ts';
 import { Tutorial } from './Tutorial.tsx';
 import { HeroArt } from './HeroArt.tsx';
 import { ProfilePage } from './Account.tsx';
-import { ArmiesCard, ArmiesPage, MapIcon, MapsCard, MapsPage, randomRoom, SitePage, TopPlayersCard } from './Home.tsx';
+import { ArmiesCard, ArmiesPage, MapsCard, MapsPage, randomRoom, SitePage, TopPlayersCard } from './Home.tsx';
 import { getMap } from './cloud.ts';
 import { MapEditor } from './MapEditor.tsx';
 import { LeaderboardPage } from './Leaderboard.tsx';
 import { useAuth } from './auth.ts';
 
-const DISCORD_INVITE = 'https://discord.gg/epNRWMxGws';
 
 const storage = {
   get: (k: string) => {
@@ -70,31 +69,8 @@ function useOpenGames() {
   return games;
 }
 
-/** The community card: an invite for newcomers, a shortcut back in for members. */
-function DiscordCard() {
-  const { discordMember, discordGuild } = useAuth();
-  // Members go straight to the server; the invite would only ask them to accept it again.
-  const href = discordMember && discordGuild ? `https://discord.com/channels/${discordGuild}` : DISCORD_INVITE;
-  return (
-    <section className={`dash-card discord-card ${discordMember ? 'member' : ''}`}>
-      <header>
-        <h2>{discordMember ? "You're in our Discord" : 'Join the community'}</h2>
-      </header>
-      <p className="muted">
-        {discordMember
-          ? 'Find opponents, share your maps, and tell us what to build next.'
-          : 'Our Discord is where players find opponents, share maps and suggest what we build next.'}
-      </p>
-      <a className="discord-link" href={href} target="_blank" rel="noreferrer">
-        {discordMember ? 'Open Discord' : 'Join our Discord'}
-      </a>
-    </section>
-  );
-}
-
-function Lobby({ settings, updateSettings }: { settings: Settings; updateSettings: (p: Partial<Settings>) => void }) {
+function Lobby() {
   const [code, setCode] = useState('');
-  const [showSettings, setShowSettings] = useState(false);
   const games = useOpenGames();
   const go = (room: string) => {
     const clean = cleanRoom(room);
@@ -114,42 +90,21 @@ function Lobby({ settings, updateSettings }: { settings: Settings; updateSetting
             <button className="big" onClick={() => (location.search = `?room=${randomRoom()}&vs=computer`)}>
               Solo battle
             </button>
-            <button className="big" onClick={() => (location.search = '?learn')}>
-              Learn to play
-            </button>
           </div>
+          <a className="learn-cta" href="?learn">
+            <span className="learn-icon" aria-hidden>📖</span>
+            <span>
+              <b>New to the game? Learn to play</b>
+              <small>Short lessons on a real table: moving, shooting, fighting and heroes.</small>
+            </span>
+            <span className="learn-go" aria-hidden>→</span>
+          </a>
           <div className="join">
             <input placeholder="Have a game code? e.g. osgiliath-1234" value={code} onChange={e => setCode(e.target.value)} onKeyDown={e => e.key === 'Enter' && go(code)} />
             <button onClick={() => go(code)}>Join</button>
           </div>
         </div>
       </section>
-
-      <ol className="home-steps">
-        <li>
-          <a href="?armies">
-            <span className="step-icon" aria-hidden>🛡</span>
-            <b>Build your army</b>
-            <small>Every army list, with points and rules explained.</small>
-          </a>
-        </li>
-        <li>
-          <a href="?maps">
-            <span className="step-icon" aria-hidden>
-              <MapIcon />
-            </span>
-            <b>Pick a table</b>
-            <small>Ready-made boards, or lay out your own.</small>
-          </a>
-        </li>
-        <li>
-          <button onClick={() => go(randomRoom())}>
-            <span className="step-icon" aria-hidden>⚔</span>
-            <b>Play a friend</b>
-            <small>Send them the link. The turn guide does the rest.</small>
-          </button>
-        </li>
-      </ol>
 
       <div className="home-grid">
         <section className="open-games dash-card">
@@ -158,9 +113,10 @@ function Lobby({ settings, updateSettings }: { settings: Settings; updateSetting
             {!!games?.length && <small className="muted">{games.length} live</small>}
           </header>
           {games === null && <p className="muted">Looking for games…</p>}
-          {games?.length === 0 && <p className="muted">No open games right now. Start one and share the link, or find an opponent on Discord.</p>}
+          {games?.length === 0 && <p className="muted">No open games right now. Start one and it shows here for others to join, or find an opponent on Discord.</p>}
           {games?.map(g => {
-            const free = (['p1', 'p2'] as const).filter(s => !g.seated.includes(s));
+            // Once the battle is under way its seats belong to its players, so others watch.
+            const free = g.started ? [] : (['p1', 'p2'] as const).filter(s => !g.seated.includes(s));
             return (
               <button key={g.id} className="game-row" onClick={() => go(g.id)}>
                 <span className="game-id">{g.id}</span>
@@ -168,7 +124,7 @@ function Lobby({ settings, updateSettings }: { settings: Settings; updateSetting
                   <b className="p1">{g.names.p1 || 'Player 1'}</b> vs <b className="p2">{g.names.p2 || 'Player 2'}</b>
                 </span>
                 <span className="muted">
-                  {scenarioById(g.scenario)?.name ?? 'Open play'} · turn {g.turn}
+                  {scenarioById(g.scenario)?.name ?? 'Open play'} · {g.started ? `turn ${g.turn}` : 'setting up'}
                   {g.spectators ? ` · ${g.spectators} watching` : ''}
                 </span>
                 <span className={`game-seat ${free.length ? 'free' : ''}`}>{free.length ? 'Join' : 'Watch'}</span>
@@ -176,7 +132,6 @@ function Lobby({ settings, updateSettings }: { settings: Settings; updateSetting
             );
           })}
         </section>
-        <DiscordCard />
       </div>
 
       <div className="dash-grid">
@@ -186,16 +141,8 @@ function Lobby({ settings, updateSettings }: { settings: Settings; updateSetting
       </div>
 
       <footer className="home-foot">
-        <button onClick={() => setShowSettings(v => !v)} aria-expanded={showSettings}>
-          ⚙ Display settings
-        </button>
         <p className="fine">Unofficial fan project. Not affiliated with Games Workshop or Middle-earth Enterprises.</p>
       </footer>
-      {showSettings && (
-        <div className="lobby-settings">
-          <SettingsPanel settings={settings} update={updateSettings} />
-        </div>
-      )}
     </SitePage>
   );
 }
@@ -696,5 +643,5 @@ export function App() {
     );
   if (params.has('learn'))
     return <Tutorial settings={settings} updateSettings={updateSettings} onExit={() => (location.search = '')} onPlay={() => (location.search = `?room=${randomRoom()}`)} />;
-  return room.length >= 3 ? <Game room={room} settings={settings} updateSettings={updateSettings} /> : <Lobby settings={settings} updateSettings={updateSettings} />;
+  return room.length >= 3 ? <Game room={room} settings={settings} updateSettings={updateSettings} /> : <Lobby />;
 }

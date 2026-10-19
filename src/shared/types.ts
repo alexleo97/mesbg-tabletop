@@ -597,6 +597,8 @@ export interface RoomSummary {
   scenario: string | null;
   turn: number;
   models: number;
+  /** The battle is under way, so its seats are taken even when no one is connected. */
+  started?: boolean;
 }
 
 /** What one change touched, as it was before. `null` means the thing didn't exist yet. */

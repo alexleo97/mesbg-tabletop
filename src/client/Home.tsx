@@ -6,6 +6,40 @@ import { leaderboard, signIn, useAuth, type Standing } from './auth.ts';
 import { deleteMap, listMaps, updateMap, type SavedMap } from './cloud.ts';
 import { ListBuilder, loadSaved, type Roster } from './ListBuilder.tsx';
 import { cloudLists, mergeLists } from './cloud.ts';
+import { SettingsPanel } from './Panels.tsx';
+import { useSettings } from './settings.ts';
+
+const DISCORD_INVITE = 'https://discord.gg/epNRWMxGws';
+
+/** Join the community, or for members, a shortcut straight into the server. */
+function DiscordLink() {
+  const { discordMember, discordGuild } = useAuth();
+  // Members go straight to the server; the invite would only ask them to accept it again.
+  const href = discordMember && discordGuild ? `https://discord.com/channels/${discordGuild}` : DISCORD_INVITE;
+  return (
+    <a className="nav-discord" href={href} target="_blank" rel="noreferrer">
+      {discordMember ? 'Open Discord' : 'Join Discord'}
+    </a>
+  );
+}
+
+/** Display settings, from a button in the top bar. */
+function SettingsMenu() {
+  const [settings, update] = useSettings();
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="nav-settings">
+      <button className={`icon-btn ${open ? 'on' : ''}`} onClick={() => setOpen(v => !v)} aria-expanded={open} aria-label="Display settings" title="Display settings">
+        ⚙
+      </button>
+      {open && (
+        <div className="nav-settings-panel">
+          <SettingsPanel settings={settings} update={update} />
+        </div>
+      )}
+    </div>
+  );
+}
 
 export type Page = 'play' | 'armies' | 'maps' | 'leaderboard' | 'profile';
 
@@ -42,6 +76,8 @@ export function SiteNav({ page }: { page: Page }) {
           </a>
         ))}
       </nav>
+      <SettingsMenu />
+      <DiscordLink />
       <AccountButton />
     </header>
   );
