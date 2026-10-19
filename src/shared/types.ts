@@ -117,6 +117,10 @@ export interface Model {
   slay?: boolean;
   /** Stunned by Sam's Frying Pan: it can't move in this turn. */
   panned?: number;
+  /** The turn it can't move in for another reason: Óin's Hearing Trumpet, broken with no Will to lose. */
+  noMove?: number;
+  /** The turn Tom the Troll's Lingering Cold halved its Fight (until the turn ends). */
+  chilled?: number;
 }
 
 /** A power at work on a model: which one, who cast it and the turn it was cast. */
@@ -125,8 +129,10 @@ export interface ModelEffect {
   by: string;
   turn: number;
   duration: 'Temporary' | 'Exhaustion';
-  /** Enemies it doesn't touch (they rolled a 6 with the Ring of Barahir). */
+  /** Enemies it doesn't touch (they rolled a 6 with the Ring of Barahir, or a 3+ for Bofur's Steadfast). */
   spared?: string[];
+  /** Stuffed in a Troll's sack: Paralysed as by the power, but it doesn't end with the Troll (see trolls.ts). */
+  sack?: boolean;
 }
 
 export const TERRAIN_KINDS = ['wood', 'rock', 'building', 'water', 'hill', 'wall', 'ruin', 'cliff', 'field', 'objective', 'bridge', 'road', 'gate', 'tower'] as const;
@@ -192,7 +198,7 @@ export interface Terrain {
 export const DOOR_TYPES = ['castle', 'dwarven', 'heavyArmoured', 'armoured', 'heavy', 'external', 'internal'] as const;
 export type DoorType = (typeof DOOR_TYPES)[number];
 
-export const MARKER_OBJECTS = ['artefact', 'relic', 'heirloom', 'decoy', 'supply', 'ally', 'ladder', 'ram', 'rocks', 'oil', 'rally'] as const;
+export const MARKER_OBJECTS = ['artefact', 'relic', 'heirloom', 'decoy', 'supply', 'ally', 'ladder', 'ram', 'rocks', 'oil', 'rally', 'campfire'] as const;
 export type MarkerObject = (typeof MARKER_OBJECTS)[number];
 
 /** Secret choices some scenarios ask each player to make, by model or terrain id. */
@@ -242,6 +248,14 @@ export interface DiceRoll {
   per?: number;
   /** A die re-rolled with a banner. */
   banner?: boolean;
+  /** Re-rolls a model's own rules have made on this duel roll: Combat Synergy, Óin's Reading the Portents. */
+  rerolled?: ('synergy' | 'portents')[];
+  /** Grasper & Keeper: each natural 6 that wounds does 2 Wounds. */
+  sixes?: boolean;
+  /** A roll to recover from Paralyse (or a Troll's sack): the model a 6 frees. */
+  frees?: string;
+  /** Wounds this roll does without a roll To Wound (Mince 'em Fine). */
+  fixed?: number;
   /** Might points spent raising these dice. */
   might?: number;
   /** A supporting model's duel die (a spear or pike lending a hand). */
@@ -294,6 +308,10 @@ export interface NarrativeState {
   cry?: number;
   /** Turns a late arrival has been rolled for. */
   rolled?: number[];
+  /** The turn the sun came up (Roast Mutton): the Trolls are stone and the game is over. */
+  dawn?: number;
+  /** Bilbo has charged one of the Trolls, so they may strike him (Roast Mutton). */
+  bilbo?: boolean;
 }
 
 export type BotSpeed = 'normal' | 'fast' | 'instant';
@@ -408,7 +426,7 @@ export interface Flow {
   /** A shot paused for its shooter's player to spend Might on the roll it just made: its roll group, and the shot. */
   shotPause?: { group: string; shot: ShotRequest };
   /** How models fight this phase, as their players chose: Shielding, or a weapon used two-handed. */
-  choices?: Record<string, { shielding?: boolean; twoHanded?: boolean; /** The enemy it strikes with its Morgul Blade. */ morgul?: string; /** The enemy it swings its Frying Pan at instead of striking. */ pan?: string }>;
+  choices?: Record<string, FightPicks>;
   /** Who charged whom this turn (charger to the enemy it reached), so a fight over a wall knows who is defending. */
   charges?: Record<string, string>;
   /** Monsters that have made their one Brutal Power Attack this turn, and the models already hurled at. */
@@ -484,15 +502,61 @@ export interface Flow {
   joined?: string[];
   /** Mighty Hero: the turn its bonus Might was last given, and each hero's own Might before it (see mighty.ts). */
   mighty?: { turn: number; base: Record<string, number> };
+  /** A side's reinforcements moving onto the table now, from a point on the edge: they alone move, and can't charge. */
+  entering?: { seat: Seat; ids: string[]; from: [number, number]; turn: number; on?: string; at?: [number, number] };
+  /** The side that has asked to end its Move activation with reinforcements still to roll for (see mutton.ts). */
+  reinforce?: Seat;
+  /** Once-a-turn abilities used this turn, as `${key}:${model}` (Healing Herbs, Raising Spirits, Combat Synergy). */
+  usedTurn?: string[];
+  /** The turn Kíli and Fíli last swapped places (Combat Synergy). */
+  synergy?: number;
+  /** Enemy heroic actions Óin's Hearing Trumpet has listened for this turn. */
+  heard?: string[];
+  /** The one his player is deciding about now: no more heroic actions are settled until they do. */
+  listen?: string;
+  /** Heroes that may declare a Heroic Move for free this turn (Bifur, once his axe is out). */
+  freeMove?: string[];
+  /** Who chose Priority the turn before this one's roll (a tie goes against them). */
+  lastChooser?: Seat;
+  /** Ori's Chronicler: deeds he has seen, each with the friends who may take a point back; the first is up now. */
+  chronicles?: { seat: Seat; ids: string[] }[];
 }
+
+/**
+ * How a model fights this phase, as its player chose: Shielding, or a weapon used two-handed, and the enemy each of
+ * its special attacks goes at, if its side wins (or, for Lingering Cold, as the fight starts).
+ */
+export interface FightPicks {
+  shielding?: boolean;
+  twoHanded?: boolean;
+  /** The enemy it strikes with its Morgul Blade. */
+  morgul?: string;
+  /** The enemy it swings its Frying Pan at instead of striking. */
+  pan?: string;
+  /** A Troll's Keep 'em for Later: the enemy it stuffs in a sack instead of striking. */
+  sack?: string;
+  /** Tom the Troll's Lingering Cold: the enemy whose Fight he halves, for a Will point, as the fight starts. */
+  cold?: string;
+  /** Bifur's Embedded Axe: the enemy he headbutts instead of striking. */
+  headbutt?: string;
+  /** A Mattock: the enemy it tries to knock down before the strikes. */
+  knock?: string;
+  /** The Oakenshield: the enemy Thorin's shield hits when he wins Shielding. */
+  oak?: string;
+}
+
+/** The FightPicks that name an enemy. */
+export const FIGHT_TARGETS = ['morgul', 'pan', 'sack', 'cold', 'headbutt', 'knock', 'oak'] as const;
 
 export interface Heroic {
   model: string;
   /** The heroic action's name, from heroics.ts. */
   action: string;
   phase: Phase;
-  /** Called at no cost (Sam's "Let him go or I'll have you, Longshanks!"). */
+  /** Called at no cost (Sam's "Let him go or I'll have you, Longshanks!", Óin's Hearing Trumpet, Bifur's Heroic Move). */
   free?: boolean;
+  /** A Heroic Challenge's enemy hero. */
+  target?: string;
 }
 
 export type Action =
@@ -566,7 +630,7 @@ export type Action =
   /** Carry on with a shot paused for Might (see Flow.shotPause). */
   | { type: 'shotOn'; group: string }
   /** A player's choice for how one of its models fights this phase. */
-  | { type: 'fightChoice'; id: string; shielding?: boolean; twoHanded?: boolean; morgul?: string | null; pan?: string | null }
+  | ({ type: 'fightChoice'; id: string; shielding?: boolean; twoHanded?: boolean } & { [K in (typeof FIGHT_TARGETS)[number]]?: string | null })
   /** Request from a client: set up a narrative scenario, with `good` the seat playing Good (the server builds the casts). */
   | { type: 'setNarrative'; id: string; good: Seat }
   /** Server result of setNarrative: the scenario's table and both casts. */
@@ -578,7 +642,36 @@ export type Action =
   /** Request: the Good player at Weathertop rolls for Aragorn this turn, or doesn't. */
   | { type: 'aragorn'; roll: boolean }
   /** Server only: bookkeeping for a narrative scenario's rules. */
-  | { type: 'narrativeNote'; rolled?: number }
+  | { type: 'narrativeNote'; rolled?: number; dawn?: number; bilbo?: boolean }
+  /** Server only: reinforcements have come on and move onto the table now, from `from` (see mutton.ts). */
+  | { type: 'entering'; seat: Seat; ids: string[]; from: [number, number] }
+  /** Server only: a once-a-turn ability (Healing Herbs, Raising Spirits, Combat Synergy's re-roll) has been used. */
+  | { type: 'usedTurn'; key: string; model: string }
+  /** Server only: a free heroic action (Óin's Hearing Trumpet), or a free Heroic Move earned this turn (Bifur). */
+  | { type: 'freeHeroic'; model: string; action: string; target?: string }
+  | { type: 'freeMove'; model: string }
+  /** Server only: an enemy heroic action Óin's Hearing Trumpet has listened for. */
+  | { type: 'heard'; key: string }
+  /** Server only: an enemy heroic action Óin could hear; play waits for his player to say whether he listens. */
+  | { type: 'listen'; key: string }
+  /** Kíli and Fíli swap places as a phase starts (Combat Synergy). */
+  | { type: 'swap'; a: string; b: string }
+  /** Request: re-roll one die of a duel roll for Combat Synergy, or Óin's Reading the Portents (a Will point). */
+  | { type: 'reroll'; roll: string; die: number; why: 'synergy' | 'portents'; model: string }
+  /** Request: Óin's Healing Herbs, or Bombur's Raising Spirits, on a friend. */
+  | { type: 'tend'; how: 'herbs' | 'spirits'; model: string; target: string }
+  /** Request: Balin's Longbeard, a Will point to re-roll his side's roll for Priority (or, with `skip`, not this turn). */
+  | { type: 'longbeard'; model: string; skip?: boolean }
+  /** Request: Óin's Hearing Trumpet, listening (or not) for the enemy heroic action it caught (see company.ts). */
+  | { type: 'trumpet'; listen: boolean }
+  /** Request: Bifur, his axe freed, tests his Intelligence for a free Heroic Move this turn. */
+  | { type: 'axeTest'; model: string }
+  /** Server only: Ori has seen a deed for his chronicle (see company.chronicled); `done` clears the first one. */
+  | { type: 'chronicle'; add?: { seat: Seat; ids: string[] }[]; done?: boolean }
+  /** A friend takes the point back that Ori's Chronicler gives, or (with no `point`) the player lets it go. */
+  | { type: 'chronicled'; model?: string; point?: 'might' | 'will' | 'fate' }
+  /** A die of a duel roll re-rolled by a model's rule, worked out by the game (never sent by a player). */
+  | { type: 'dieRerolled'; roll: string; die: number; value: number; by: string; why: 'synergy' | 'portents' }
   /** Server only: the fires of models Set Ablaze have burned this turn. */
   | { type: 'burned' }
   /** Server only: a Ringbearer has rolled for Sauron's Will, or tried to take the Ring off, this turn. */

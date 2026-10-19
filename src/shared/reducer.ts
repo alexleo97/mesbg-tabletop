@@ -17,11 +17,12 @@ import { canPickUp, markerUpkeep, syncCarried, touching, canEscape } from './obj
 import { aboard, raiseLadders, towerMove } from './fortress.ts';
 import { endPhaseUpkeep } from './scoring.ts';
 import { arrivalDue, mayCry, narrativeById } from './narrative.ts';
+import { entering, isMutton, isTroll, nextEntering, onEdge, reinforcementsPending, stillEntering } from './mutton.ts';
 import { putOut } from './fire.ts';
 import { ringAfterMight } from './ring.ts';
 import { placeSpot, placingNow } from './placing.ts';
 import { longshanksFree } from './sam.ts';
-import { BOT_NAME, BOT_SPEEDS, DOOR_TYPES, MARKER_OBJECTS, MATS, PHASES, PICK_KEYS, TERRAIN_KINDS, type Action, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type ModelEffect, type Phase, type Picks, type Placing, type Seat, type SpellPending, type Terrain } from './types.ts';
+import { BOT_NAME, BOT_SPEEDS, DOOR_TYPES, FIGHT_TARGETS, MARKER_OBJECTS, MATS, PHASES, PICK_KEYS, TERRAIN_KINDS, type Action, type FightPicks, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type ModelEffect, type Phase, type Picks, type Placing, type Seat, type SpellPending, type Terrain } from './types.ts';
 
 export const MAX_MODELS = 600;
 export const MAX_TERRAIN = 200;
@@ -50,6 +51,31 @@ const GROUND = ['wood', 'rock', 'cave', 'spectral', 'swift', 'burly'];
 const newFlow = (): Flow => ({ started: false, chooser: null, chooserTurn: 0, roll: null, done: [], resolved: [], heroics: [], passed: [], lastHeroic: null });
 
 /** Moves to a phase (and turn), clearing who has finished; a new turn also clears fights and priority. */
+/** In Roast Mutton, a move by Bilbo into contact with a Troll is a charge: from then on the Trolls may strike him. */
+function bilboCharged(before: GameState, after: GameState): GameState {
+  if (!isMutton(after) || after.narrative?.bilbo || after.flow.charges === before.flow.charges) return after;
+  const bilbo = Object.values(after.models).find(m => m.cast === 'bilbo');
+  const foe = bilbo && after.flow.charges?.[bilbo.id] ? after.models[after.flow.charges[bilbo.id]] : undefined;
+  return foe && isTroll(foe) ? { ...after, narrative: { ...after.narrative!, bilbo: true } } : after;
+}
+
+/**
+ * Reinforcements step onto the table one at a time, at the middle of the west edge, once the way in is clear: the
+ * Move they have already used to get their base onto the table is counted from just off the edge.
+ */
+function comeOn(state: GameState): GameState {
+  const next = nextEntering(state);
+  if (!next) return state;
+  const { model, at } = next;
+  const { waiting: _, ...rest } = model;
+  const r = at.x;
+  return {
+    ...state,
+    models: { ...state.models, [model.id]: { ...rest, ...at, rot: 90 } },
+    flow: { ...state.flow, entering: { ...state.flow.entering!, on: model.id, at: [at.x, at.y] }, starts: { ...state.flow.starts, [model.id]: [-r, at.y] }, walked: { ...state.flow.walked, [model.id]: 2 * r }, paths: { ...state.flow.paths, [model.id]: [[-r, at.y], [at.x, at.y]] } },
+  };
+}
+
 /** Play is held for a model being placed, or for the Good player at Weathertop to say whether they roll for Aragorn. */
 const waitingOn = (state: GameState) => !!placingNow(state) || arrivalDue(state);
 
@@ -94,11 +120,12 @@ function goToPhase(state: GameState, phase: Phase, turn: number, newTurn: boolea
       done: [],
       resolved: newTurn ? [] : state.flow.resolved,
       heroics: newTurn ? [] : state.flow.heroics,
-      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], moved: [], cast: [], spell: undefined, held: [], stood: [], climbed: {}, compel: undefined, supported: [], strikeBonus: {}, charges: {}, brutal: [], hurledAt: [], breached: [], trampled: [], turned: [], cables: [], sauron: [], ringTried: [], sought: [], placing: [], joined: [] } : {}),
+      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], moved: [], cast: [], spell: undefined, held: [], stood: [], climbed: {}, compel: undefined, supported: [], strikeBonus: {}, charges: {}, brutal: [], hurledAt: [], breached: [], trampled: [], turned: [], cables: [], sauron: [], ringTried: [], sought: [], reinforce: undefined, usedTurn: [], heard: [], freeMove: [], chronicles: undefined, placing: [], joined: [] } : {}),
       ...(phase !== state.phase ? { compel: undefined, mustCharge: undefined } : {}),
       // The fights are paired off as the Fight phase begins, and stay that way until it ends.
       ...(phase !== state.phase ? { pairs: phase === 'fight' && state.flow.started ? pairOff(livingModels(state), { ...state, phase: 'move' }, state.flow.pairChoices).map(c => c.key) : undefined, pairChoices: undefined } : {}),
       passed: [],
+      listen: undefined,
       lastHeroic: null,
       starts: {},
       walked: {},
@@ -257,8 +284,10 @@ export function cleanModel(m: Partial<Model>, prev?: Model): Model | null {
   for (const k of ['ablaze', 'ringOn', 'slay'] as const) if ((k in m ? m[k] === true : base[k]) && !out.dead) out[k] = true;
   const used = 'used' in m ? (Array.isArray(m.used) ? [...new Set(m.used.slice(0, 8).map(u => str(u, 40)))] : undefined) : base.used;
   if (used?.length) out.used = used;
-  const panned = 'panned' in m ? (m.panned === undefined ? undefined : int(m.panned, 0, 99, 0)) : base.panned;
-  if (panned) out.panned = panned;
+  for (const k of ['panned', 'noMove', 'chilled'] as const) {
+    const turn = k in m ? (m[k] === undefined ? undefined : int(m[k], 0, 99, 0)) : base[k];
+    if (turn) out[k] = turn;
+  }
   return out.id ? out : null;
 }
 
@@ -279,7 +308,7 @@ function cleanEffects(v: unknown): ModelEffect[] | undefined {
   return v
     .filter(e => e && typeof e === 'object')
     .slice(0, 12)
-    .map(e => ({ power: str(e.power, 60), by: id(e.by), turn: int(e.turn, 0, 99, 0), duration: e.duration === 'Temporary' ? ('Temporary' as const) : ('Exhaustion' as const), ...(Array.isArray(e.spared) ? { spared: e.spared.slice(0, 10).map(id) } : {}) }))
+    .map(e => ({ power: str(e.power, 60), by: id(e.by), turn: int(e.turn, 0, 99, 0), duration: e.duration === 'Temporary' ? ('Temporary' as const) : ('Exhaustion' as const), ...(Array.isArray(e.spared) ? { spared: e.spared.slice(0, 10).map(id) } : {}), ...(e.sack === true ? { sack: true } : {}) }))
     .filter(e => e.power && e.by);
 }
 
@@ -458,6 +487,10 @@ function cleanRoll(r: unknown): DiceRoll | null {
     ...(o.sixSafe === true ? { sixSafe: true } : {}),
     ...(o.per && o.per > 1 ? { per: int(o.per, 1, 3, 1) } : {}),
     ...(o.banner === true ? { banner: true } : {}),
+    ...(o.sixes === true ? { sixes: true } : {}),
+    ...(o.fixed !== undefined ? { fixed: int(o.fixed, 0, 20, 0) } : {}),
+    ...(o.frees ? { frees: id(o.frees) } : {}),
+    ...(Array.isArray(o.rerolled) ? { rerolled: o.rerolled.filter(x => x === 'synergy' || x === 'portents').slice(0, 4) } : {}),
     at: num(o.at, 0, Number.MAX_SAFE_INTEGER, 0),
   };
 }
@@ -639,7 +672,7 @@ function step(state: GameState, action: Action): GameState {
         const prev = mv && models[mv.id];
         if (!prev || prev.escaped || prev.waiting) continue;
         // Sam, once the game has put him in Frodo's fight, and a model stunned by his Frying Pan, stay put.
-        if (state.flow.started && !placing && ((state.phase === 'fight' && state.flow.joined?.includes(prev.id)) || (state.phase === 'move' && prev.panned === state.turn))) continue;
+        if (state.flow.started && !placing && ((state.phase === 'fight' && state.flow.joined?.includes(prev.id)) || (state.phase === 'move' && (prev.panned === state.turn || prev.noMove === state.turn)))) continue;
         if (placing) {
           if (prev.id !== placing.model || prev.dead) continue;
           const spot = placeSpot(state, placing, prev, { x: num(mv.x, -24, 200, prev.x), y: num(mv.y, -24, 200, prev.y) });
@@ -665,6 +698,8 @@ function step(state: GameState, action: Action): GameState {
         if (state.flow.started && state.phase === 'move' && state.flow.stopped?.includes(prev.id) && (asked.x !== prev.x || asked.y !== prev.y)) continue;
         // Only the models whose activation it is may move (a hero's heroic activation goes first; see heroics.ts).
         const askedToMove = asked.x !== prev.x || asked.y !== prev.y;
+        // While reinforcements come on, the rest of their side has had its activation.
+        if (state.flow.started && state.phase === 'move' && askedToMove && state.flow.entering?.turn === state.turn && state.flow.entering.seat === prev.owner && !entering(state, prev)) continue;
         if (state.flow.started && state.phase === 'move' && askedToMove && !state.flow.compel && !mayActivate(state, prev)) continue;
         if (state.flow.started && state.phase === 'move' && askedToMove && !heroicStarted && heroicQueue(state).some(h => h.id === prev.id) && heroicNow(state)?.seat === prev.owner) heroicStarted = prev.id;
         let to = asked;
@@ -691,9 +726,11 @@ function step(state: GameState, action: Action): GameState {
           // back along the way it came, which gives back what it spent beyond that point.)
           const back = Math.hypot(to.x - from.x, to.y - from.y) < RETRACE / 2;
           const undone = back ? null : retrace(paths?.[prev.id], to);
-          to = back ? from : undone ? undone.at : limitMove(state, here, to, Math.max(0, allowance - spent(state, prev)), prev.owner, prev, together);
+          // (Reinforcements coming on may not charge.)
+          const arriving = state.phase === 'move' && entering(state, prev);
+          to = back ? from : undone ? undone.at : limitMove(state, here, to, Math.max(0, allowance - spent(state, prev)), prev.owner, prev, together, !arriving);
           // A model that stops inside an enemy's control zone is charging it: it must reach base contact, or stay out.
-          if (state.phase === 'move' || fightsAgain(state, prev)) to = finishCharge(state, prev, here, to, together);
+          if ((state.phase === 'move' || fightsAgain(state, prev)) && !arriving) to = finishCharge(state, prev, here, to, together);
           // A friend going with a hero (With Me, or At the Double) must end within 6" of it.
           const leader = state.phase === 'move' ? followed(state, prev, heroicStarted) : undefined;
           if (leader && !together.has(leader.id)) to = keepNear(prev, from, to, leader);
@@ -756,7 +793,7 @@ function step(state: GameState, action: Action): GameState {
         starts !== state.flow.starts || walked !== state.flow.walked || paths !== state.flow.paths || stood !== state.flow.stood || climbed !== state.flow.climbed || blocked !== state.flow.blocked || charges !== state.flow.charges || heroicStarted !== state.flow.heroicNow || turned !== state.flow.turned
           ? { flow: { ...state.flow, starts, ...(walked ? { walked } : {}), ...(paths ? { paths } : {}), ...(stood ? { stood } : {}), ...(climbed ? { climbed } : {}), ...(blocked ? { blocked } : {}), ...(charges ? { charges } : {}), ...(heroicStarted ? { heroicNow: heroicStarted } : {}), ...(turned ? { turned } : {}) } }
           : {};
-      return { ...state, models, ...flow };
+      return comeOn(bilboCharged(state, { ...state, models, ...flow }));
     }
     case 'trampled': {
       // A war beast or chariot has made its move (the game drove it; see warBeasts.ts): it moves no more this phase.
@@ -950,7 +987,9 @@ function step(state: GameState, action: Action): GameState {
     case 'priorityRolled': {
       if (!isSeat(action.chooser) || !Array.isArray(action.roll)) return state;
       const roll: [number, number] = [int(action.roll[0], 1, 6, 1), int(action.roll[1], 1, 6, 1)];
-      return { ...state, flow: { ...state.flow, roll, chooser: action.chooser, chooserTurn: state.turn } };
+      // (The last turn's chooser is kept, for a tie if Balin's Longbeard has the roll made again.)
+      const lastChooser = state.flow.chooserTurn === state.turn ? state.flow.lastChooser : state.flow.chooser;
+      return { ...state, flow: { ...state.flow, roll, chooser: action.chooser, chooserTurn: state.turn, ...(lastChooser ? { lastChooser } : {}) } };
     }
     case 'choosePriority':
       if (!isSeat(action.seat)) return state;
@@ -967,6 +1006,13 @@ function step(state: GameState, action: Action): GameState {
         const hero = state.models[heroic.hero ?? heroicQueue(state).find(m => m.owner === action.seat)!.id];
         const went = [hero.id, ...shoutedFor(state, hero).map(f => f.id)];
         return { ...state, flow: { ...state.flow, heroicDone: [...(state.flow.heroicDone ?? []), hero.id], heroicNow: undefined, activated: [...new Set([...(state.flow.activated ?? []), ...went])] } };
+      }
+      // Roast Mutton: the Company still to come rolls (or comes) first, and moves on before the side is done.
+      if (state.flow.started && reinforcementsPending(state, action.seat)) return state.flow.reinforce === action.seat ? state : { ...state, flow: { ...state.flow, reinforce: action.seat } };
+      // Ending it with a newcomer still at the edge lets it stay there, and the next one comes on.
+      if (state.flow.started && state.flow.entering?.seat === action.seat && stillEntering(state)) {
+        const waved = onEdge(state) ? comeOn({ ...state, flow: { ...state.flow, entering: { ...state.flow.entering, on: undefined, at: undefined } } }) : state;
+        if (onEdge(waved) || nextEntering(waved)) return waved;
       }
       const done = [...state.flow.done, action.seat];
       // Once both players have activated in the Move or Shoot phase, play moves on (unless they move on themselves),
@@ -996,7 +1042,8 @@ function step(state: GameState, action: Action): GameState {
       // A war drum calls a Heroic March for free, hero or not.
       const drum = !!m?.drum && info?.name === 'Heroic March';
       // Sam's Heroic Combat to get to Frodo costs nothing.
-      const free = !!m && info?.name === 'Heroic Combat' && longshanksFree(state, m);
+      // (So is Bifur's Heroic Move, once his axe is out and he has passed the test for it this turn.)
+      const free = !!m && ((info?.name === 'Heroic Combat' && longshanksFree(state, m)) || (info?.name === 'Heroic Move' && !!state.flow.freeMove?.includes(m.id)));
       if (!m || (!m.hero && !drum) || m.dead || (m.might < 1 && !drum && !free) || !info || info.phase !== state.phase || cannotAct(state, m)) return state;
       if (state.flow.heroics.some(h => h.model === m.id && h.phase === state.phase)) return state;
       if ((info.name === 'Heroic Shoot' || info.name === 'Heroic Accuracy') && state.flow.started && engagedNow(state, m)) return state;
@@ -1081,9 +1128,10 @@ function step(state: GameState, action: Action): GameState {
     case 'fightChoice': {
       const m = state.models[action.id];
       if (!m) return state;
-      const morgul = typeof action.morgul === 'string' && state.models[action.morgul] && state.models[action.morgul].owner !== m.owner ? action.morgul : undefined;
-      const pan = typeof action.pan === 'string' && state.models[action.pan] && state.models[action.pan].owner !== m.owner ? action.pan : undefined;
-      const pick = { ...(action.shielding === true ? { shielding: true } : {}), ...(action.twoHanded === true ? { twoHanded: true } : {}), ...(morgul ? { morgul } : {}), ...(pan ? { pan } : {}) };
+      // Each special attack names an enemy (see FightPicks).
+      const foe = (id: unknown) => typeof id === 'string' && !!state.models[id] && state.models[id].owner !== m.owner;
+      const pick: FightPicks = { ...(action.shielding === true ? { shielding: true } : {}), ...(action.twoHanded === true ? { twoHanded: true } : {}) };
+      for (const k of FIGHT_TARGETS) if (foe(action[k])) pick[k] = action[k] as string;
       const { [m.id]: _, ...rest } = state.flow.choices ?? {};
       return { ...state, flow: { ...state.flow, choices: Object.keys(pick).length ? { ...rest, [m.id]: pick } : rest } };
     }
@@ -1094,6 +1142,8 @@ function step(state: GameState, action: Action): GameState {
     case 'willOfEvil':
       return { ...state, flow: { ...state.flow, willed: state.turn } };
     case 'passHeroic':
+      // (Not while Óin's player decides whether to listen through his trumpet.)
+      if (state.flow.listen) return state;
       if (!isSeat(action.seat) || state.flow.passed.includes(action.seat)) return state;
       return { ...state, flow: { ...state.flow, passed: [...state.flow.passed, action.seat], lastHeroic: action.seat } };
     case 'spendWill': {
@@ -1130,10 +1180,66 @@ function step(state: GameState, action: Action): GameState {
     case 'narrativeNote': {
       if (!state.narrative) return state;
       const rolled = action.rolled === undefined ? state.narrative.rolled : [...new Set([...(state.narrative.rolled ?? []), int(action.rolled, 0, 99, 0)])];
-      return moveOn({ ...state, narrative: { ...state.narrative, ...(rolled ? { rolled } : {}) } });
+      const dawn = action.dawn === undefined ? state.narrative.dawn : int(action.dawn, 1, 99, 1);
+      return moveOn({ ...state, narrative: { ...state.narrative, ...(rolled ? { rolled } : {}), ...(dawn ? { dawn } : {}) } });
+    }
+    case 'entering': {
+      // Reinforcements have come on (see mutton.ts): they step onto the table one by one, and then the side is done.
+      if (!isSeat(action.seat) || !Array.isArray(action.ids) || state.flow.entering?.turn === state.turn) return state;
+      const ids = action.ids.filter(i => state.models[i]?.waiting && state.models[i].owner === action.seat).slice(0, 20);
+      const from: [number, number] = Array.isArray(action.from) ? [num(action.from[0], -24, 200, 0), num(action.from[1], -24, 200, 0)] : [0, state.board.h / 2];
+      const next = comeOn({ ...state, flow: { ...state.flow, entering: { seat: action.seat, ids, from, turn: state.turn } } });
+      // Nobody came: the side's move is over.
+      return ids.length ? next : step(next, { type: 'endActivation', seat: action.seat });
     }
     case 'burned':
       return { ...state, flow: { ...state.flow, burned: state.turn } };
+    case 'usedTurn': {
+      // A once-a-turn ability has been used (Kíli and Fíli's swap is once a phase, and lets them re-roll in the fights).
+      const key = `${str(action.key, 40)}:${str(action.model, 80)}`;
+      if (state.flow.usedTurn?.includes(key)) return state;
+      return { ...state, flow: { ...state.flow, usedTurn: [...(state.flow.usedTurn ?? []), key].slice(-60), ...(key.startsWith('swap-') ? { synergy: state.turn } : {}) } };
+    }
+    case 'freeMove':
+      return state.models[action.model] ? { ...state, flow: { ...state.flow, freeMove: [...new Set([...(state.flow.freeMove ?? []), action.model])] } } : state;
+    case 'heard': {
+      const key = str(action.key, 120);
+      return { ...state, flow: { ...state.flow, heard: [...(state.flow.heard ?? []), key].slice(-40), listen: state.flow.listen === key ? undefined : state.flow.listen } };
+    }
+    case 'chronicle': {
+      const add = (action.add ?? []).filter(c => isSeat(c.seat) && Array.isArray(c.ids)).map(c => ({ seat: c.seat, ids: c.ids.filter(id => state.models[id]).slice(0, 20) })).filter(c => c.ids.length);
+      const left = [...(state.flow.chronicles ?? []).slice(action.done ? 1 : 0), ...add].slice(0, 10);
+      return { ...state, flow: { ...state.flow, chronicles: left.length ? left : undefined } };
+    }
+    case 'listen':
+      return { ...state, flow: { ...state.flow, listen: str(action.key, 120) } };
+    case 'freeHeroic': {
+      // Óin, hearing an enemy hero's heroic action, calls the same one for nothing.
+      const m = state.models[action.model];
+      const info = heroicInfo(str(action.action, 40));
+      if (!m || m.dead || !m.hero || !info || info.phase !== state.phase || state.flow.heroics.some(h => h.model === m.id && h.phase === state.phase)) return state;
+      const other: Seat = m.owner === 'p1' ? 'p2' : 'p1';
+      // A Heroic Challenge he copies goes at the hero who issued it (the game checked he may challenge it).
+      const t = info.name === 'Heroic Challenge' ? state.models[str(action.target, 80)] : undefined;
+      if (info.name === 'Heroic Challenge' && (!t || t.dead || t.owner === m.owner || (state.flow.challenges ?? []).some(c => c.by === m.id))) return state;
+      const challenges = t ? [...(state.flow.challenges ?? []), { by: m.id, target: t.id, cap: m.might }] : state.flow.challenges;
+      return { ...state, flow: { ...state.flow, heroics: [...state.flow.heroics, { model: m.id, action: info.name, phase: state.phase, free: true }], ...(t ? { challenges } : {}), passed: state.flow.passed.filter(x => x !== other && x !== m.owner), lastHeroic: m.owner } };
+    }
+    case 'dieRerolled': {
+      // Combat Synergy, or Óin reading the portents: one die of a duel roll rolled again.
+      const i = state.log.findIndex(r => r.id === action.roll);
+      const r = state.log[i];
+      const k = int(action.die, 0, MAX_DICE, -1);
+      const why = action.why === 'synergy' || action.why === 'portents' ? action.why : null;
+      if (!r || !why || r.rerolled?.includes(why) || k < 0 || k >= r.dice.length) return state;
+      const dice = [...r.dice];
+      const was = dice[k];
+      dice[k] = int(action.value, 1, 6, was);
+      const log = [...state.log];
+      // (Not a note: a note on a duel roll marks the duel settled.)
+      log[i] = { ...r, dice, rerolled: [...(r.rerolled ?? []), why], label: `${r.label.replace(/ \(F.*$/, '')}: ${str(action.by, 40)} re-rolled a ${was}`.slice(0, 80) };
+      return { ...state, log };
+    }
     case 'placing': {
       const p = cleanPlacing(action.placing, state);
       if (!p) return state;
@@ -1206,7 +1312,11 @@ function step(state: GameState, action: Action): GameState {
       if (hero.fateRoll === r.id && roll.dice[0] >= 4) hero = { ...hero, pending: (hero.pending ?? 1) - 1, fateRoll: undefined };
       // A Courage test that now passes counts as passed (a charge at a terrifying enemy can go ahead).
       const flow = courage && roll.dice[0] + roll.dice[1] >= roll.sum! && state.flow.courage?.[m.id] === false ? { ...state.flow, courage: { ...state.flow.courage, [m.id]: true } } : state.flow;
-      return ringAfterMight(afterMight({ ...state, log, flow, models: { ...state.models, [m.id]: settle(hero) } }, roll.id), roll);
+      let models = { ...state.models, [m.id]: settle(hero) };
+      // Might that makes a recovery roll a 6 frees the Paralysed model (from a Troll's sack too).
+      const held = roll.frees ? models[roll.frees] : undefined;
+      if (held && roll.target === 6 && roll.dice[0] === 6 && held.effects?.some(e => basePower(e.power) === 'Paralyse')) models = { ...models, [held.id]: { ...held, effects: held.effects.filter(e => basePower(e.power) !== 'Paralyse') } };
+      return ringAfterMight(afterMight({ ...state, log, flow, models }, roll.id), roll);
     }
     case 'wound': {
       const m = state.models[action.id];
@@ -1407,7 +1517,10 @@ function step(state: GameState, action: Action): GameState {
       const w = action.winner;
       if (!(isSeat(w) || w === 'draw') || state.result?.agreed || (state.result && state.result.by !== 'game')) return state;
       if (state.result?.winner === w) return state;
-      return { ...state, result: { winner: w, by: 'game', confirmed: [], agreed: false } };
+      // A model still in a Troll's sack when the game ends counts as slain.
+      const bagged = Object.values(state.models).filter(m => !m.dead && m.effects?.some(e => e.sack));
+      const models = bagged.length ? { ...state.models, ...Object.fromEntries(bagged.map(m => [m.id, { ...m, dead: true, wounds: 0 }])) } : state.models;
+      return { ...state, models, result: { winner: w, by: 'game', confirmed: [], agreed: false } };
     }
     case 'resultSaved':
       return state.result?.agreed ? { ...state, result: { ...state.result, saved: true } } : state;
@@ -1491,7 +1604,7 @@ export function loadState(raw: unknown): GameState {
   if (o.advance === 'click') out = { ...out, advance: 'click' };
   const n = o.narrative;
   if (n && typeof n === 'object' && narrativeById(n.id) && isSeat(n.good))
-    out = { ...out, narrative: { id: n.id, good: n.good, ...(Number.isFinite(n.cry) ? { cry: int(n.cry, 0, 99, 0) } : {}), ...(Array.isArray(n.rolled) ? { rolled: n.rolled.slice(0, 40).map(t => int(t, 0, 99, 0)) } : {}) } };
+    out = { ...out, narrative: { id: n.id, good: n.good, ...(Number.isFinite(n.cry) ? { cry: int(n.cry, 0, 99, 0) } : {}), ...(Array.isArray(n.rolled) ? { rolled: n.rolled.slice(0, 40).map(t => int(t, 0, 99, 0)) } : {}), ...(Number.isFinite(n.dawn) ? { dawn: int(n.dawn, 1, 99, 1) } : {}), ...(n.bilbo === true ? { bilbo: true } : {}) } };
   if (o.flow && typeof o.flow === 'object') {
     const f = o.flow as Partial<Flow>;
     const seats = (v: unknown) => (Array.isArray(v) ? [...new Set(v.filter(isSeat))] : []);
@@ -1542,9 +1655,16 @@ export function loadState(raw: unknown): GameState {
         ...(isSeat(f.heroicFirst) ? { heroicFirst: f.heroicFirst } : {}),
         ...(Array.isArray(f.activated) ? { activated: f.activated.slice(0, 400).map(x => str(x, 80)) } : {}),
         ...(Number.isFinite(f.willed) ? { willed: int(f.willed, 0, 99, 0) } : {}),
+        ...(Array.isArray(f.usedTurn) ? { usedTurn: f.usedTurn.slice(0, 60).map(x => str(x, 130)) } : {}),
+        ...(Array.isArray(f.heard) ? { heard: f.heard.slice(0, 40).map(x => str(x, 120)) } : {}),
+        ...(typeof f.listen === 'string' ? { listen: str(f.listen, 120) } : {}),
+        ...(Array.isArray(f.freeMove) ? { freeMove: f.freeMove.slice(0, 20).map(x => str(x, 80)) } : {}),
+        ...(Number.isFinite(f.synergy) ? { synergy: int(f.synergy, 0, 99, 0) } : {}),
+        ...(isSeat(f.lastChooser) ? { lastChooser: f.lastChooser } : {}),
+        ...(Array.isArray(f.chronicles) ? { chronicles: f.chronicles.slice(0, 10).filter(c => c && isSeat(c.seat) && Array.isArray(c.ids)).map(c => ({ seat: c.seat, ids: c.ids.slice(0, 20).map(x => str(x, 80)) })) } : {}),
         ...(f.shotPause && typeof f.shotPause === 'object' && cleanPause(f.shotPause) ? { shotPause: cleanPause(f.shotPause) } : {}),
         ...(f.choices && typeof f.choices === 'object'
-          ? { choices: Object.fromEntries(Object.entries(f.choices as Record<string, { shielding?: unknown; twoHanded?: unknown; morgul?: unknown; pan?: unknown }>).slice(0, 200).map(([k, v]) => [str(k, 80), { ...(v?.shielding === true ? { shielding: true } : {}), ...(v?.twoHanded === true ? { twoHanded: true } : {}), ...(typeof v?.morgul === 'string' ? { morgul: str(v.morgul, 80) } : {}), ...(typeof v?.pan === 'string' ? { pan: str(v.pan, 80) } : {}) }])) }
+          ? { choices: Object.fromEntries(Object.entries(f.choices as Record<string, Record<string, unknown>>).slice(0, 200).map(([k, v]) => [str(k, 80), { ...(v?.shielding === true ? { shielding: true } : {}), ...(v?.twoHanded === true ? { twoHanded: true } : {}), ...Object.fromEntries(FIGHT_TARGETS.filter(t => typeof v?.[t] === 'string').map(t => [t, str(v[t], 80)])) }])) }
           : {}),
         ...(Array.isArray(f.challenges) ? { challenges: f.challenges.slice(0, 20).filter(c => c && typeof c === 'object').map(c => ({ by: str(c.by, 80), target: str(c.target, 80), cap: int(c.cap, 0, 9, 3), ...(typeof c.accepted === 'boolean' ? { accepted: c.accepted } : {}) })) } : {}),
         ...(f.charges && typeof f.charges === 'object' ? { charges: Object.fromEntries(Object.entries(f.charges).slice(0, 400).map(([k, v]) => [str(k, 80), str(v, 80)])) } : {}),
@@ -1570,6 +1690,8 @@ export function loadState(raw: unknown): GameState {
         ...(Array.isArray(f.sought) ? { sought: f.sought.slice(0, 40).map(x => str(x, 80)) } : {}),
         ...(f.mighty && typeof f.mighty === 'object' && f.mighty.base && typeof f.mighty.base === 'object' ? { mighty: { turn: int(f.mighty.turn, 0, 99, 0), base: cleanCounts(f.mighty.base, 9) } } : {}),
         ...(Array.isArray(f.joined) ? { joined: f.joined.slice(0, 20).map(x => str(x, 80)) } : {}),
+        ...(f.entering && typeof f.entering === 'object' && isSeat(f.entering.seat) && Array.isArray(f.entering.ids) ? { entering: { seat: f.entering.seat, ids: f.entering.ids.slice(0, 20).map(x => str(x, 80)), from: [num(f.entering.from?.[0], -24, 200, 0), num(f.entering.from?.[1], -24, 200, 0)] as [number, number], turn: int(f.entering.turn, 0, 99, 0), ...(typeof f.entering.on === 'string' && Array.isArray(f.entering.at) ? { on: str(f.entering.on, 80), at: [num(f.entering.at[0], -24, 200, 0), num(f.entering.at[1], -24, 200, 0)] as [number, number] } : {}) } } : {}),
+        ...(isSeat(f.reinforce) ? { reinforce: f.reinforce } : {}),
         ...(Array.isArray(f.placing) ? { placing: f.placing.map(p => cleanPlacing(p, out)).filter((p): p is Placing => !!p).slice(0, 20) } : {}),
       },
     };

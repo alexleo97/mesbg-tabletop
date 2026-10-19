@@ -1,6 +1,7 @@
 import { scenarioById } from '../shared/scenarios.ts';
 import { armyStatus } from '../shared/status.ts';
 import { bannerFor } from '../shared/wargear.ts';
+import { rerollFor } from '../shared/company.ts';
 import { ResultReport } from './ResultReport.tsx';
 import { MapsSection } from './Maps.tsx';
 import { DEFAULT_HEIGHT, FLOORED, heightOf, isDifficult } from '../shared/sight.ts';
@@ -127,6 +128,11 @@ export function RollRow({ r, state, role, dispatch, delay = 0 }: { r: DiceRoll; 
   // A friendly banner nearby lets a side re-roll one die of a duel it isn't winning.
   const { catalog } = useCatalog();
   const flag = !!dispatch && role !== undefined && role !== 'spectator' ? bannerFor(state, catalog, r, role) : undefined;
+  // Kíli and Fíli, once they've swapped this turn, re-roll a die of their own duel rolls; Óin can pay a Will point
+  // for a friend of the Company to re-roll one.
+  const own = r.model ? state.models[r.model] : undefined;
+  const synergy = !!dispatch && !!own && own.owner === role && !!rerollFor(state, catalog, r, 'synergy');
+  const oin = dispatch && role !== 'spectator' && role !== undefined ? Object.values(state.models).find(o => o.owner === role && !!rerollFor(state, catalog, r, 'portents', o)) : undefined;
   // A Courage test can be raised with Will as well as Might.
   const will = mine && hero!.will > 0 && r.sum !== undefined && /^Courage/.test(r.label);
   // Dice from a roll made in the last moment tumble before they land.
@@ -144,6 +150,16 @@ export function RollRow({ r, state, role, dispatch, delay = 0 }: { r: DiceRoll; 
       {flag && !follow && (
         <button className="might banner" onClick={() => dispatch!({ type: 'banner', roll: r.id, die: i })} title={`Re-roll this die with ${flag.name}'s banner (once per side in this fight)`}>
           ↻
+        </button>
+      )}
+      {synergy && !follow && (
+        <button className="might banner" onClick={() => dispatch!({ type: 'reroll', roll: r.id, die: i, why: 'synergy', model: own!.id })} title={`Combat Synergy: ${own!.name} re-rolls this die (one die in this duel)`}>
+          ↻
+        </button>
+      )}
+      {oin && !follow && (
+        <button className="might will" onClick={() => dispatch!({ type: 'reroll', roll: r.id, die: i, why: 'portents', model: oin.id })} title={`Reading the Portents: ${oin.name} spends 1 of his ${oin.will} Will to re-roll this die`}>
+          ↻ W
         </button>
       )}
       {will && d < 6 && !follow && (

@@ -1,7 +1,10 @@
 import { useMemo, useState } from 'react';
 import { modelStats } from '../shared/catalog.ts';
-import { duelLeader, duelSettled, strikeWounds, woundsTaken, type Fighter } from '../shared/fight.ts';
-import { combats, enemiesTouching, type Combat } from '../shared/flow.ts';
+import { duelLeader, duelSettled, strikeWounds, woundsTaken, type BrutalKind, type Fighter } from '../shared/fight.ts';
+import { CONTACT_SLACK, combats, enemiesTouching, type Combat } from '../shared/flow.ts';
+import { distanceBetween } from '../shared/geometry.ts';
+import { fitsSack, keepsForLater, lingeringCold } from '../shared/trolls.ts';
+import { canHeadbutt, hasMattock, hasOakenshield } from '../shared/company.ts';
 import { oneSpearEach, supporters } from '../shared/support.ts';
 import { defence } from '../shared/barriers.ts';
 import { declared, phaseAllows } from '../shared/heroics.ts';
@@ -13,7 +16,7 @@ import { mountLabel, mountOf } from '../shared/cavalry.ts';
 import { hasMorgulBlade } from '../shared/morgul.ts';
 import { hasFryingPan, pannable } from '../shared/sam.ts';
 import { brutalOptions, chargeEffects } from '../shared/monsters.ts';
-import { BOT_NAME, type Action, type GameState, type Model, type Role, type Seat } from '../shared/types.ts';
+import { BOT_NAME, FIGHT_TARGETS, type Action, type GameState, type Model, type Role, type Seat } from '../shared/types.ts';
 import { useCatalog } from './ListBuilder.tsx';
 import { RollRow } from './Panels.tsx';
 
@@ -49,6 +52,8 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
   const [benched, setBenched] = useState<Set<string>>(new Set());
   /** A winning monster's Brutal Power Attack: '' to strike as normal, or 'rend:<id>', 'barge', 'hurl:<id>'. */
   const [brutal, setBrutal] = useState('');
+  // Other monsters on the winning side making theirs first (never a Barge or Hurl).
+  const [moreBrutal, setMoreBrutal] = useState<Record<string, string>>({});
 
   const choices = state.flow.choices ?? {};
   const chosen = ids.map(id => state.models[id]).filter((m): m is Model => !!m && !m.dead);
@@ -136,7 +141,7 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
     return canShieldSide(s) && sides[s].some(m => choices[m.id]?.shielding);
   }
   // Choices go to the game, so whichever player rolls the fight rolls it as both sides chose.
-  const choose = (m: Model, pick: { shielding?: boolean; twoHanded?: boolean; morgul?: string | null; pan?: string | null }) => dispatch({ type: 'fightChoice', id: m.id, ...choices[m.id], ...pick });
+  const choose = (m: Model, pick: { shielding?: boolean; twoHanded?: boolean } & { [K in (typeof FIGHT_TARGETS)[number]]?: string | null }) => dispatch({ type: 'fightChoice', id: m.id, ...choices[m.id], ...pick });
   const side = (s: Seat) => [...sides[s].map(fighter), ...(shieldingSide(s) ? [] : helping(s).map(m => ({ ...fighter(m), a: 1, support: true, shielding: undefined, noStrike: undefined })))];
   const request = () => {
     // The loser's model struck first; with more than one, the winner aims each strike after the duel.
@@ -150,7 +155,8 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
       trapped: false,
       aims,
       ...(combat ? { combat } : {}),
-      ...(brute && kind ? { brutal: { by: brute.id, kind: kind as 'rend' | 'barge' | 'hurl', ...(victim ? { target: victim } : {}) } } : {}),
+      ...(brute && kind ? { brutal: { by: brute.id, kind: kind as BrutalKind, ...(victim ? { target: victim } : {}) } } : {}),
+      ...(brute && moreBrutes().some(m => moreBrutal[m.id]) ? { more: moreBrutes().filter(m => moreBrutal[m.id]).map(m => { const [k, t] = moreBrutal[m.id].split(':'); return { by: m.id, kind: k as BrutalKind, ...(t ? { target: t } : {}) }; }) } : {}),
     };
   };
   const duel = () => dispatch({ type: 'fight', fight: request() });
@@ -162,11 +168,28 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
     const by = [...new Set(lastRolls.filter(r => r.against === at && r.model).map(r => r.model!))];
     dispatch({ type: 'wound', id: victim.id, count: wounds, by, how: 'fight', group: lastGroup, ...(mount ? { mount: true } : {}) });
   };
+  /** The Trolls' own Brutal Power Attacks, as choices for one of them. */
+  function trollOptions(m: Model, kinds: BrutalKind[]) {
+    const foes = sides[m.owner === 'p1' ? 'p2' : 'p1'];
+    return (
+      <>
+        {kinds.includes('mince') && foes.map(t => <option key={`mince:${t.id}`} value={`mince:${t.id}`}>Mince {tag(t)}: a Strength roll-off, the difference in Wounds</option>)}
+        {kinds.includes('roast') && foes.map(t => <option key={`roast:${t.id}`} value={`roast:${t.id}`}>Roast {tag(t)}: to the fire, Set Ablaze</option>)}
+        {kinds.includes('squash') && <option value="squash">Squash: a Strength 6 hit on every foe touching {m.name}</option>}
+      </>
+    );
+  }
   /** The monster on the winning side that may make a Brutal Power Attack, when it's this player's to choose. */
   function brutalBy(): Model | undefined {
     if (!leader || role === 'spectator') return undefined;
     const seat: Seat = leader.winner === 0 ? 'p1' : 'p2';
     return seat === role ? sides[seat].find(m => brutalOptions(state, catalog, m).length && !noStrikes(state, m)) : undefined;
+  }
+  /** The winning side's other monsters, which may make a Brutal Power Attack of their own (but not Barge or Hurl). */
+  function moreBrutes(): Model[] {
+    const brute = brutalBy();
+    if (!brute) return [];
+    return sides[brute.owner].filter(m => m.id !== brute.id && !noStrikes(state, m) && brutalOptions(state, catalog, m).some(k => k !== 'barge' && k !== 'hurl'));
   }
   // Models in this fight touching enemies in another one: the player with Priority can say who they fight, before any duel.
   const choosing = state.flow.started && state.phase === 'fight' && role === state.priority && !state.flow.duels?.length && !state.flow.resolved.length;
@@ -256,6 +279,38 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
                           🗡 Morgul Blade{sides[seat === 'p1' ? 'p2' : 'p1'].length > 1 ? ` on ${e.name}` : ''}
                         </button>
                       ))}
+                    {/* Tom's Lingering Cold, as the fight starts: a Will point to halve a foe's Fight this turn. */}
+                    {role === m.owner && !lastGroup && lingeringCold(catalog, m) && m.will > 0 &&
+                      sides[foe].filter(e => e.chilled !== state.turn && distanceBetween(e, m) <= CONTACT_SLACK).map(e => (
+                        <button key={`cold-${e.id}`} className={`toggle small ${choices[m.id]?.cold === e.id ? 'on' : ''}`} aria-pressed={choices[m.id]?.cold === e.id} title={`Lingering Cold: ${m.name} spends a Will point as the fight starts, and ${e.name}'s Fight is halved until the end of the turn.`} onClick={() => choose(m, { cold: choices[m.id]?.cold === e.id ? null : e.id })}>
+                          🤧 Sneeze on {e.name} (1 Will)
+                        </button>
+                      ))}
+                    {/* Once it has won: a Troll's sack, Bifur's headbutt, Bofur's Mattock, the Oakenshield's blow. */}
+                    {role === m.owner && !!leader && leader.winner === (seat === 'p1' ? 0 : 1) && !struck && (
+                      <>
+                        {keepsForLater(catalog, m) && sides[foe].filter(fitsSack).map(e => (
+                          <button key={`sack-${e.id}`} className={`toggle small ${choices[m.id]?.sack === e.id ? 'on' : ''}`} aria-pressed={choices[m.id]?.sack === e.id} title={`Keep 'em for Later: instead of striking (or a Brutal Power Attack), ${m.name} stuffs ${e.name} in a sack. It is Paralysed until it rolls a 6 in an End phase, and counts as slain if it's still in there when the game ends.`} onClick={() => choose(m, { sack: choices[m.id]?.sack === e.id ? null : e.id })}>
+                            🎒 Sack {e.name}
+                          </button>
+                        ))}
+                        {canHeadbutt(catalog, m) && sides[foe].map(e => (
+                          <button key={`butt-${e.id}`} className={`toggle small ${choices[m.id]?.headbutt === e.id ? 'on' : ''}`} aria-pressed={choices[m.id]?.headbutt === e.id} title={`Embedded Axe: instead of striking, ${m.name} headbutts ${e.name}: one Strength 4 strike, never doubled. If it wounds, the axe is out, and from then on he may test for a free Heroic Move each turn.`} onClick={() => choose(m, { headbutt: choices[m.id]?.headbutt === e.id ? null : e.id })}>
+                            Headbutt {e.name}
+                          </button>
+                        ))}
+                        {hasMattock(catalog, m) && sides[foe].map(e => (
+                          <button key={`knock-${e.id}`} className={`toggle small ${choices[m.id]?.knock === e.id ? 'on' : ''}`} aria-pressed={choices[m.id]?.knock === e.id} title={`Mattock: instead of striking, ${m.name} and ${e.name} each roll a D6 and add their Strength; if his is as high, ${e.name} is knocked down before anyone strikes.`} onClick={() => choose(m, { knock: choices[m.id]?.knock === e.id ? null : e.id })}>
+                            Knock {e.name} down
+                          </button>
+                        ))}
+                        {hasOakenshield(catalog, m) && shieldingSide(seat) && sides[foe].length > 1 && sides[foe].map(e => (
+                          <button key={`oak-${e.id}`} className={`toggle small ${(choices[m.id]?.oak ?? sides[foe][0].id) === e.id ? 'on' : ''}`} aria-pressed={(choices[m.id]?.oak ?? sides[foe][0].id) === e.id} title={`The Oakenshield: Shielding and winning, ${m.name} hits ${e.name} with it at Strength 4.`} onClick={() => choose(m, { oak: e.id })}>
+                            🛡 Oakenshield at {e.name}
+                          </button>
+                        ))}
+                      </>
+                    )}
                   </div>
                 );
               })}
@@ -289,10 +344,25 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
                       {kinds.includes('rend') && strikable(foe).map(t => <option key={`rend:${t.id}`} value={`rend:${t.id}`}>Rend {t.label}: To Wound against its Strength</option>)}
                       {kinds.includes('barge') && <option value="barge">Barge: every foe back 3", then move again</option>}
                       {kinds.includes('hurl') && sides[foe].filter(t => fighter(t).s < s).map(t => <option key={`hurl:${t.id}`} value={`hurl:${t.id}`}>Hurl {tag(t)} at another enemy</option>)}
+                      {trollOptions(brute, kinds)}
                     </select>
                   </label>
                 );
               })()}
+              {brutalBy()?.owner === seat &&
+                moreBrutes().map(m => {
+                  const kinds = brutalOptions(state, catalog, m).filter(k => k !== 'barge' && k !== 'hurl');
+                  return (
+                    <label className="strike-at" key={`more-${m.id}`}>
+                      {tag(m)} too:
+                      <select value={moreBrutal[m.id] ?? ''} onChange={e => setMoreBrutal({ ...moreBrutal, [m.id]: e.target.value })} aria-label={`Brutal Power Attack for ${m.name}`}>
+                        <option value="">Strike as normal</option>
+                        {kinds.includes('rend') && strikable(foe).map(t => <option key={`rend:${t.id}`} value={`rend:${t.id}`}>Rend {t.label}: To Wound against its Strength</option>)}
+                        {trollOptions(m, kinds)}
+                      </select>
+                    </label>
+                  );
+                })}
               {strikable(foe).length > 1 && leader?.winner === (seat === 'p1' ? 0 : 1) && !(brutal && brutalBy()?.owner === seat) &&
                 [...sides[seat], ...helping(seat)]
                   .filter(m => !noStrikes(state, m))

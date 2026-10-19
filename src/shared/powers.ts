@@ -87,6 +87,8 @@ const inTerrain = (state: GameState, m: Model, kinds: Set<string>, reach = 0.25)
  * its caster has Will left. Any effect ends with its caster slain or gone from the table.
  */
 export function effectActive(state: GameState, e: ModelEffect): boolean {
+  // A Troll's sack holds its victim whatever becomes of the Troll.
+  if (e.sack) return true;
   const caster = state.models[e.by];
   if (!caster || caster.dead || caster.escaped) return false;
   if (e.duration === 'Temporary') return e.turn === state.turn && state.phase !== 'end';
@@ -166,9 +168,15 @@ export function effectNotes(state: GameState, catalog: Catalog | null, m: Model)
   for (const e of effectsOn(state, m)) {
     const caster = state.models[e.by];
     const by = caster && caster.id !== m.id ? ` (${caster.name})` : '';
+    if (e.sack) {
+      out.push(`In ${caster?.name ?? 'a Troll'}'s sack: Paralysed until it rolls a 6 in the End phase`);
+      continue;
+    }
     const until = e.duration === 'Temporary' ? 'until the End phase' : 'while its caster has Will';
     out.push(`${e.power}${by}, ${until}`);
   }
+  if (m.chilled === state.turn) out.push('Lingering Cold: Fight halved this turn');
+  if (m.noMove === state.turn) out.push("Can't move this turn");
   if (m.prone) out.push('Prone: standing up costs half its Move');
   if (m.stunned === state.turn) out.push('Thrown from its mount: does nothing more this turn');
   if (m.drained) out.push(`Courage ${m.drained} worse (Drain Courage)`);
@@ -622,7 +630,8 @@ export function recoveryRolls(state: GameState, d6: () => number, uid: () => str
     for (const r of rollers) {
       const die = d6();
       free = die === 6;
-      out.push({ type: 'rolled', roll: { id: `e-${uid()}`, by: m.owner, label: `Recover from Paralyse: ${r.id === m.id ? m.name : `${r.name} helps ${m.name}`} (6)`.slice(0, 80), dice: [die], target: 6, at: now, ...(free ? { note: `${m.name} recovers.` } : {}) } });
+      // (A hero rolling may spend its own Might on the die: see reducer useMight.)
+      out.push({ type: 'rolled', roll: { id: `e-${uid()}`, by: m.owner, label: `Recover from Paralyse: ${r.id === m.id ? m.name : `${r.name} helps ${m.name}`} (6)`.slice(0, 80), dice: [die], target: 6, at: now, ...(r.hero ? { model: r.id, frees: m.id } : {}), ...(free ? { note: `${m.name} recovers.` } : {}) } });
       if (free) break;
     }
     if (free) out.push({ type: 'affect', id: m.id, patch: { effects: (m.effects ?? []).filter(e => basePower(e.power) !== 'Paralyse') } });

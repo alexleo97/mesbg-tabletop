@@ -7,7 +7,7 @@ import { strikeWounds, woundsTaken } from '../shared/fight.ts';
 import { CONTACT_SLACK, type Combat } from '../shared/flow.ts';
 import { engaged, fightDone, moveLeft, moveStart } from '../shared/movement.ts';
 import { atCrossing, crossBlocked, fallingHits, terrainName, type CrossTest } from '../shared/terrainTests.ts';
-import { heroicInfo, phaseAllows } from '../shared/heroics.ts';
+import { canActivate, heroicInfo, mayActivate, phaseAllows } from '../shared/heroics.ts';
 import { carriedBy, markerActions, OBJECT_NAMES } from '../shared/objects.ts';
 import { causesTerror } from '../shared/courage.ts';
 import { effectNotes, heldBy } from '../shared/powers.ts';
@@ -24,6 +24,7 @@ import { flooredAt, floorHeight, floorName, sightTo, standingAt } from '../share
 import RULES from '../data/special-rules.json';
 import { CastBox } from './MagicPanel.tsx';
 import { RollRow } from './Panels.tsx';
+import { mayTend } from '../shared/company.ts';
 import { useDraggable } from './useDraggable.tsx';
 import { distanceBetween, formatInches } from '../shared/geometry.ts';
 import { formatNeed, woundNeed } from '../shared/rules.ts';
@@ -150,6 +151,22 @@ function TerrainMoves({ state, dispatch, m }: { state: GameState; dispatch: (a: 
       </div>
     );
   return null;
+}
+
+/** Óin's Healing Herbs and Bombur's Raising Spirits: once a turn in his activation, on a friend of the Company. */
+function Tend({ state, dispatch, m, catalog }: { state: GameState; dispatch: (a: Action) => void; m: Model; catalog: Catalog | null }) {
+  const friends = Object.values(state.models).filter(t => t.owner === m.owner);
+  const picks = (['herbs', 'spirits'] as const).flatMap(how => friends.filter(t => !mayTend(state, catalog, how, m, t)).map(t => ({ how, t })));
+  if (!picks.length || !canActivate(state, m.owner) || !mayActivate(state, m)) return null;
+  return (
+    <div className="row wrap terrain-test">
+      {picks.map(({ how, t }) => (
+        <button key={`${how}-${t.id}`} className="small" title={how === 'herbs' ? 'On a 4+ the friend touching him heals a Wound (once a turn).' : 'On a 4+ a friend within 3" regains a Will point he has spent (once a turn).'} onClick={() => dispatch({ type: 'tend', how, model: m.id, target: t.id })}>
+          {how === 'herbs' ? `Healing Herbs on ${t.name}` : `Raise ${t.id === m.id ? 'his own' : `${t.name}'s`} spirits`}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 /** A selected model's card: its profile at a glance and the actions that make sense in this phase. */
@@ -482,6 +499,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
       <SiegePanel state={state} catalog={catalog} dispatch={dispatch} role={role} m={m} />
       {mine && (state.phase === 'move' || atCrossing(state, m)) && state.flow.started && !held && <TerrainMoves state={state} dispatch={dispatch} m={m} />}
       {mine && state.phase === 'move' && state.flow.started && !held && <PutBack state={state} dispatch={dispatch} m={m} />}
+      {mine && !held && <Tend state={state} dispatch={dispatch} m={m} catalog={catalog} />}
       {mine && state.phase === 'move' && <CastBox state={state} dispatch={dispatch} role={role} model={m} />}
       {carried.length > 0 && (
         <p className="muted carrying">

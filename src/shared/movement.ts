@@ -20,7 +20,7 @@ export function moveAllowance(state: GameState, m: Model): number | null {
   if (!state.flow.started || m.dead) return null;
   if (state.phase === 'move') {
     // A model held by a power or a Compel (or stunned by Sam's Frying Pan) stays put; one getting up from Prone has half its Move left.
-    if (!canActivate(state, m.owner) || state.flow.courage?.[m.id] === false || cannotAct(state, m) || state.flow.held?.includes(m.id) || m.panned === state.turn) return 0;
+    if (!canActivate(state, m.owner) || state.flow.courage?.[m.id] === false || cannotAct(state, m) || state.flow.held?.includes(m.id) || m.panned === state.turn || m.noMove === state.turn) return 0;
     // A model already in a fight when its turn to move comes can't move (one that has just charged may still adjust).
     if (!state.flow.starts?.[m.id] && engaged(state, m)) return 0;
     // A model whose move has ended (a failed test, or a test passed on 2-5) goes no further; a Prone one crawls 1".
@@ -286,12 +286,12 @@ export function moveStart(state: GameState, m: Model): Point {
  * The furthest a model can get towards `to` from where it started this phase, spending at most `move` inches
  * (difficult terrain counts double). Returns `to` itself when it's in reach.
  */
-export function limitMove(state: GameState, from: Point, to: Point, move: number, seat?: Seat, m?: Model, skip?: ReadonlySet<string>): Point {
+export function limitMove(state: GameState, from: Point, to: Point, move: number, seat?: Seat, m?: Model, skip?: ReadonlySet<string>, charge = true): Point {
   // Terrain that needs a test stops the model at it first, whatever its Move would allow beyond.
   const ahead = m && state.flow.started && testsTerrain(state, m) ? crossingAhead(state, m, from, to) : null;
   if (ahead) to = ahead.stop;
   const reached = reachable(state, from, to, move, seat, m);
-  return m ? blockMove(state, m, from, reached, skip) : reached;
+  return m ? blockMove(state, m, from, reached, skip, charge) : reached;
 }
 
 function reachable(state: GameState, from: Point, to: Point, move: number, seat?: Seat, m?: Model): Point {

@@ -9,6 +9,7 @@ import { declared } from './heroics.ts';
 import { under } from './powers.ts';
 import { inDifficult, sightTo } from './sight.ts';
 import { immovable, isChariot, isWarBeast } from './warBeasts.ts';
+import type { BrutalKind } from './fight.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
 const unitOf = (catalog: Catalog | null | undefined, m: Model) => (m.profileId ? catalog?.units[m.profileId] : undefined);
@@ -103,13 +104,24 @@ export function knockedDown(catalog: Catalog | null | undefined, kind: 'cavalry'
 }
 
 /** A Brutal Power Attack a winning monster may make instead of striking. */
-export type Brutal = { by: string; kind: 'rend' | 'barge' | 'hurl'; target?: string; at?: string };
+export type Brutal = { by: string; kind: BrutalKind; target?: string; at?: string };
 
 /** Whether a model may make a Brutal Power Attack this turn, and which: one a turn, and no Barge or Hurl after a Heroic Combat. */
 export function brutalOptions(state: GameState, catalog: Catalog | null | undefined, m: Model): Brutal['kind'][] {
   // A Prone monster that wins its fight simply stands up (Rulebook FAQ).
   if (!isMonster(catalog, m) || m.prone || state.flow.brutal?.includes(m.id)) return [];
-  return declared(state, m.id, 'Heroic Combat') ? ['rend'] : ['rend', 'barge', 'hurl'];
+  // The Trolls' own: Bill minces, Bert roasts (by a campfire) and Tom squashes.
+  const own: BrutalKind[] = [];
+  const has = (re: RegExp) => rules(catalog, m).some(r => re.test(r));
+  if (has(/^Mince 'em/i)) own.push('mince');
+  if (has(/^Roast 'em/i) && nearCampfire(state, m)) own.push('roast');
+  if (has(/^Squash 'em/i)) own.push('squash');
+  return declared(state, m.id, 'Heroic Combat') ? ['rend', ...own] : ['rend', 'barge', 'hurl', ...own];
+}
+
+/** A Campfire on the table within this far of a model (Bert roasts his foes within 6" of one). */
+export function nearCampfire(state: GameState, m: Model, within = 6) {
+  return Object.values(state.terrain).find(t => t.object === 'campfire' && !t.gone && Math.max(0, Math.hypot(t.x - m.x, t.y - m.y) - t.w / 2 - radius(m)) <= within);
 }
 
 type D6 = () => number;

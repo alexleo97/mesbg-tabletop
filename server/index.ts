@@ -24,12 +24,15 @@ import { endRollDue, phaseFinished } from '../src/shared/autoPhase.ts';
 import { endRollLabel, gameWinner } from '../src/shared/status.ts';
 import { diffForUndo, mergeReverts, UNDOABLE } from '../src/shared/undo.ts';
 import { BOT_PACE, botStep, newMemo, type BotMemo } from '../src/shared/bot.ts';
-import { startingPoints, type Catalog } from '../src/shared/catalog.ts';
+import { rulesFor, startingPoints, type Catalog } from '../src/shared/catalog.ts';
 import catalogJson from '../src/data/mesbg-data.json';
 import { tierOf } from '../src/shared/warbands.ts';
 import { terrainRules } from '../src/shared/wargear.ts';
 import { gearOf } from '../src/shared/gear.ts';
 import { arrivalAuto, rollArrival } from '../src/shared/narrative.ts';
+import { dawnDue, reinforceDue, rollDawn, rollReinforcements as companyArrives } from '../src/shared/mutton.ts';
+import { isMonster } from '../src/shared/monsters.ts';
+import { chronicled, listenDue, listenFor, longbeardFor, trumpetDue } from '../src/shared/company.ts';
 import { sauronDue, sauronRoll } from '../src/shared/ring.ts';
 import { mightyBonus, mightyDue } from '../src/shared/mighty.ts';
 import { longshanksDue, longshanksMove } from '../src/shared/sam.ts';
@@ -287,6 +290,14 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
     case 'ringMark':
     case 'placing':
     case 'mightyHero':
+    case 'entering':
+    case 'usedTurn':
+    case 'freeHeroic':
+    case 'freeMove':
+    case 'heard':
+    case 'dieRerolled':
+    case 'listen':
+    case 'chronicle':
       return null; // only the server produces dice results, undo changes and account details
     case 'gameOver':
       return null;
@@ -320,7 +331,7 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
       const m = state.models[String(action.model)];
       if (!m || !mine(m.id)) return null;
       const unit = m.profileId ? CATALOG.units[m.profileId] : undefined;
-      if (state.flow.started && !mayDeclare(state, m, String(action.action), unit?.heroics)) return null;
+      if (state.flow.started && !mayDeclare(state, m, String(action.action), unit?.heroics, rulesFor(CATALOG, m))) return null;
       if (action.action !== 'Heroic Challenge') return { type: 'declareHeroic', model: m.id, action: action.action };
       const t = state.models[String(action.target)];
       const theirs = t?.profileId ? CATALOG.units[t.profileId] : undefined;
@@ -387,7 +398,8 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
       return r && mine(r.model) ? action : null;
     }
     case 'passHeroic':
-      return action.seat === client.role ? action : null;
+      // Not while Óin's player is deciding whether to listen through his trumpet.
+      return action.seat === client.role && !trumpetDue(state, CATALOG) ? action : null;
     case 'moveModels':
       // Each player moves only their own models (and the Palantír's, in a solo game, so they can deploy it and back its
       // models away after a fight).
@@ -424,7 +436,9 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
       // Your own name, and the end of your own move or shooting.
       return !state.flow.started || action.seat === client.role || action.seat === state.bot ? action : null;
     case 'choosePriority':
-      // Only the player who won the roll decides who has Priority.
+      // Only the player who won the roll decides who has Priority (once the other has said whether Balin re-rolls it).
+      if (client.role !== 'p1' && client.role !== 'p2') return null;
+      if (longbeardFor(state, CATALOG, client.role === 'p1' ? 'p2' : 'p1')) return null;
       return !state.flow.chooser || state.flow.chooser === client.role ? action : null;
     default:
       return action;
@@ -521,9 +535,15 @@ function apply(room: Room, action: Action) {
         return { ...m, ...(beast ? { beast } : {}), ...(siege ? { siege } : {}), ...(CATALOG.units[m.profileId].rules.some(r => /^Fly\b/.test(r)) ? { fly: true } : {}), ...(ground.length ? { ground } : {}), ...(drum ? { drum: true } : {}), ...(mount ? { mount, mountWounds: mountProfile(mount)?.w } : {}) };
       }),
     };
+  const before = room.state;
   room.state = reduce(room.state, action);
   broadcastAction(room, action);
   scheduleSave(room);
+  // Ori's Chronicler: a friend of the Company near him that slays an enemy hero or monster may get a point back.
+  if (Object.values(room.state.models).some(m => m.dead && before.models[m.id] && !before.models[m.id].dead)) {
+    const deeds = chronicled(before, room.state, CATALOG, m => isMonster(CATALOG, m));
+    if (deeds.length) apply(room, { type: 'chronicle', add: deeds });
+  }
   // The game declares its own winner as soon as it's over (and corrects it if the score changes before both confirm).
   if (action.type !== 'gameOver') {
     const winner = gameWinner(room.state);
@@ -676,12 +696,12 @@ function narrativeUpkeep(room: Room) {
     const s = room.state;
     const bearer = sauronDue(s);
     const sam = longshanksDue(s);
-    const out = mightyDue(s, CATALOG) ? mightyBonus(s, CATALOG, serverId) : sam ? longshanksMove(s, sam) : arrivalAuto(s) ? rollArrival(s, serverDice, serverId) : bearer ? sauronRoll(s, bearer, serverDice, serverId) : burnDue(s) ? burns(s, CATALOG, serverDice, serverId) : [];
+    const out = mightyDue(s, CATALOG) ? mightyBonus(s, CATALOG, serverId) : sam ? longshanksMove(s, sam) : arrivalAuto(s) ? rollArrival(s, serverDice, serverId) : reinforceDue(s) ? companyArrives(s, serverDice, serverId) : listenDue(s, CATALOG) ? listenFor(s, CATALOG) : dawnDue(s) ? rollDawn(s, serverDice, serverId) : bearer ? sauronRoll(s, bearer, serverDice, serverId) : burnDue(s) ? burns(s, CATALOG, serverDice, serverId) : [];
     for (const a of out) apply(room, a);
   } finally {
     upkeeping = false;
   }
-  if (mightyDue(room.state, CATALOG) || longshanksDue(room.state) || arrivalAuto(room.state) || sauronDue(room.state) || burnDue(room.state)) narrativeUpkeep(room);
+  if (mightyDue(room.state, CATALOG) || longshanksDue(room.state) || arrivalAuto(room.state) || reinforceDue(room.state) || listenDue(room.state, CATALOG) || dawnDue(room.state) || sauronDue(room.state) || burnDue(room.state)) narrativeUpkeep(room);
 }
 
 /** In the End phase, Paralysed models roll to recover. */

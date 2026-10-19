@@ -3,6 +3,7 @@ import { arrivalDue, other } from './flow.ts';
 import { halfExtents, type Point } from './geometry.ts';
 import { guessBase } from './importList.ts';
 import { offTable } from './maelstrom.ts';
+import { muttonWinner } from './mutton.ts';
 import type { Action, DiceRoll, GameState, Mat, Model, Seat, Terrain } from './types.ts';
 
 // Narrative scenarios: battles from the stories, each with its own table, a fixed cast on both sides and rules of its
@@ -19,7 +20,11 @@ export type Placement =
   /** Touching the outside of a round piece of terrain, at this angle round its centre. */
   | { rim: string; angle: number }
   /** Kept off the table until a rule brings it on. */
-  | { aside: true };
+  | { aside: true }
+  /** Starting at `at`, and kept within `within` inches of another member of the cast or a piece of terrain. */
+  | { near: string; within: number; at: [number, number] }
+  /** Touching the middle of a table edge. */
+  | { edge: 'north' | 'east' | 'south' | 'west' };
 
 export interface CastMember {
   /** Who it is, for the scenario's rules: 'frodo', 'aragorn'. */
@@ -114,6 +119,56 @@ export const NARRATIVES: Narrative[] = [
       { key: 'ringwraith', side: 'evil', unit: '[army-of-the-great-eye] ringwraith', stats: { A: 1 }, might: 0, will: 7, fate: 0, place: { rim: 'amon-sul', angle: 288 } },
     ],
   },
+  {
+    id: 'roast-mutton',
+    name: 'Roast Mutton',
+    from: 'The Hobbit: An Unexpected Journey',
+    blurb: 'Night in the Trollshaws: three hungry Trolls have caught Bilbo, and Thorin\'s Company charges out of the trees to get him back before they all end up in the pot.',
+    board: { w: 24, h: 24, mat: 'forest' },
+    terrain: [
+      piece({ id: 'campfire', kind: 'objective', object: 'campfire', shape: 'circle', x: 12, y: 12, w: 2, h: 2 }),
+      // The ponies' pen, and the Trolls' heap of supplies.
+      piece({ id: 'pen-n', kind: 'wall', x: 18.5, y: 3.5, w: 5, h: 0.4, height: 1 }),
+      piece({ id: 'pen-s', kind: 'wall', x: 18.5, y: 7.5, w: 5, h: 0.4, height: 1 }),
+      piece({ id: 'pen-e', kind: 'wall', x: 21, y: 5.5, w: 0.4, h: 4, height: 1 }),
+      piece({ id: 'supplies', kind: 'rock', x: 15.5, y: 16, w: 2, h: 1.4, rot: 15, height: 1 }),
+      piece({ id: 'trees-nw', kind: 'wood', shape: 'circle', x: 4, y: 4, w: 6, h: 6 }),
+      piece({ id: 'trees-sw', kind: 'wood', shape: 'circle', x: 4, y: 20, w: 6, h: 6 }),
+      piece({ id: 'trees-se', kind: 'wood', shape: 'circle', x: 20.5, y: 20.5, w: 5, h: 5 }),
+      piece({ id: 'rocks-n', kind: 'rock', x: 11, y: 2.5, w: 3, h: 2, rot: -10, height: 2 }),
+      piece({ id: 'rocks-e', kind: 'rock', x: 22, y: 13, w: 2, h: 3, rot: 20, height: 2 }),
+    ],
+    sides: {
+      good: { name: "Thorin's Company", cast: 'Bilbo, caught in the camp, Kíli coming for him, and the other twelve Dwarves close behind' },
+      evil: { name: 'The Trolls', cast: 'Bill, Bert and Tom' },
+    },
+    layout: 'A 2\' by 2\' clearing in the Trollshaws: the Trolls\' campfire in the middle, their supplies and the captured ponies\' pen beside it, and thick woods and rocky outcrops round the edges.',
+    deployment: 'The Trolls start within 3" of the campfire. Bilbo starts within 3" of Bill, and Kíli touching the middle of the west edge. The rest of the Company is kept off the table.',
+    objectives: 'The Company wins by slaying all three Trolls before the sun comes up. The Trolls win if every member of the Company is slain or stuffed in a sack before then. When the sun rises with neither done, it is a draw. If Bilbo is slain, the Company can do no better than a draw.',
+    rules: [
+      {
+        name: 'The Dawn',
+        text: 'From the start of turn 7, each turn begins with a D6 roll: on a 4+ Gandalf breaks open the rocks, sunlight floods the clearing, the Trolls turn to stone and the game ends.',
+      },
+      {
+        name: 'The Company Arrives',
+        text: 'When the Good side finishes its move in turn 1, it rolls a D6 for each Dwarf still off the table: on a 3+ that Dwarf comes on, moving onto the table from the middle of the west edge as reinforcements (a full move from the edge, but no charging). The rest come on the same way when the Good side finishes its move in turn 2, without a roll.',
+      },
+      {
+        name: 'A Burrahobbit?',
+        text: 'The Trolls don\'t know what to make of Bilbo: until turn 3 begins, none of them may strike him, unless he charges one of them first.',
+      },
+    ],
+    cast: [
+      { key: 'bill', side: 'evil', unit: '[the-three-trolls] bill-the-troll', place: { near: 'campfire', within: 3, at: [12, 8.6] } },
+      { key: 'bert', side: 'evil', unit: '[the-three-trolls] bert-the-troll', place: { near: 'campfire', within: 3, at: [15, 13.8] } },
+      { key: 'tom', side: 'evil', unit: '[the-three-trolls] tom-the-troll', place: { near: 'campfire', within: 3, at: [9, 13.8] } },
+      { key: 'bilbo', side: 'good', unit: "[thorin's-company] bilbo-baggins", place: { near: 'bill', within: 3, at: [9.4, 7.6] } },
+      { key: 'kili', side: 'good', unit: "[thorin's-company] kili-the-dwarf", place: { edge: 'west' } },
+      { key: 'thorin', side: 'good', unit: "[thorin's-company] thorin-oakenshield", options: ['The Oakenshield'], place: { aside: true } },
+      ...(['fili', 'balin', 'dwalin', 'bifur', 'bofur', 'bombur', 'ori', 'nori', 'dori', 'oin', 'gloin'] as const).map((k): CastMember => ({ key: k, side: 'good', unit: `[thorin's-company] ${k}-the-dwarf`, place: { aside: true } })),
+    ],
+  },
 ];
 
 export const narrativeById = (id: string | null | undefined) => NARRATIVES.find(n => n.id === id);
@@ -121,6 +176,13 @@ export const narrativeOf = (state: Pick<GameState, 'narrative'>) => narrativeByI
 
 /** The seat playing a side. */
 export const seatOf = (state: Pick<GameState, 'narrative'>, side: Side): Seat | undefined => (state.narrative ? (side === 'good' ? state.narrative.good : other(state.narrative.good)) : undefined);
+/** Where a model touching the middle of a table edge stands. */
+function edgeMiddle(board: { w: number; h: number }, edge: 'north' | 'east' | 'south' | 'west', r: number): Point {
+  if (edge === 'west') return { x: r, y: board.h / 2 };
+  if (edge === 'east') return { x: board.w - r, y: board.h / 2 };
+  return { x: board.w / 2, y: edge === 'north' ? r : board.h - r };
+}
+
 /** The model of the cast with this key (the first, where several share it). */
 export const castModel = (state: GameState, key: string): Model | undefined => Object.values(state.models).find(m => m.cast === key);
 
@@ -150,6 +212,7 @@ export function narrativeSetup(n: Narrative, good: Seat, catalog: Catalog, newId
       const t = terrain.find(x => x.id === `n-${p.rim}`)!;
       return along(t, p.angle, t.w / 2 + radius(m) + 0.02);
     }
+    if ('edge' in p) return edgeMiddle(n.board, p.edge, radius(m));
     return offTable(m.owner, n.board);
   };
   for (const c of n.cast) {
@@ -210,13 +273,27 @@ export function holdNarrative(state: GameState, mv: { id: string; x: number; y: 
     const t = rimPiece(state, p.rim);
     if (t) return { ...mv, ...along(t, angleOf(t, mv), t.w / 2 + radius(m) + 0.02) };
   }
+  if ('near' in p) {
+    // Within so far of a friend, or of a marker (measured to its edge): pulled back in if dragged further.
+    const friend = castModel(state, p.near);
+    const t = friend ? undefined : rimPiece(state, p.near);
+    const c = friend ?? t;
+    if (c) {
+      const reach = p.within + radius(m) + (friend ? radius(friend) : t!.w / 2);
+      const d = Math.hypot(mv.x - c.x, mv.y - c.y);
+      const k = d > reach ? reach / d : 1;
+      const r = radius(m);
+      return { ...mv, x: Math.max(r, Math.min(state.board.w - r, c.x + (mv.x - c.x) * k)), y: Math.max(r, Math.min(state.board.h - r, c.y + (mv.y - c.y) * k)) };
+    }
+  }
   return { ...mv, x: m.x, y: m.y };
 }
 
 /** The winner of a narrative scenario that has been decided, or null while it goes on. */
-export function narrativeWinner(state: GameState): Seat | null {
+export function narrativeWinner(state: GameState): Seat | 'draw' | null {
   const n = narrativeOf(state);
   if (!n || !state.flow.started) return null;
+  if (n.id === 'roast-mutton') return muttonWinner(state);
   if (n.id === 'weathertop') {
     // The Nazgûl win as soon as Frodo falls; the Hobbits when every one of them is gone.
     if (castModel(state, 'frodo')?.dead) return seatOf(state, 'evil') ?? null;

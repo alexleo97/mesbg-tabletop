@@ -61,7 +61,7 @@ export function isKind(catalog: Catalog | null | undefined, m: Model, kind: stri
 const TWO_HANDED = /two-handed|two handed|great ?axe|mattock|halberd|war ?hammer|great ?sword|\bmaul\b|scythe/;
 const HAND_AND_A_HALF = /hand-and-a-half|hand and a half/;
 /** Melee weapons other than two-handed ones: anything that isn't missile, armour or equipment. */
-const MELEE = /weapon|sword|blade|axe|spear|pike|dagger|knife|club|mace|hammer|whip|lance|staff|claws?|fangs?|teeth|beak|tusks?|glaive|flail|cleaver|scimitar|sting|glamdring|orcrist|and[uú]ril|herugrim|guthwin[eë]|narsil|grond|hand weapons?/;
+const MELEE = /weapon|sword|blade|axe|spear|pike|dagger|knife|club|mace|hammer|whip|lance|staff|claws?|fangs?|teeth|beak|tusks?|glaive|flail|cleaver|scimitar|sting|glamdring|orcrist|grasper|and[uú]ril|herugrim|guthwin[eë]|narsil|grond|hand weapons?/;
 const NOT_MELEE = /\bbow\b|bows\b|crossbow|throwing|sling|blowpipe|javelin|armour|amour|shield|cloak|war horn|banner|drum|ring\b|horse|warg\b|pony|goat|steed|camel|mount|chariot/;
 
 const melee = (catalog: Catalog | null | undefined, m: Model) => gearOf(catalog, m).filter(g => (MELEE.test(g) || TWO_HANDED.test(g) || HAND_AND_A_HALF.test(g)) && !NOT_MELEE.test(g.replace(/two-handed|hand weapons?/g, '')));
@@ -72,13 +72,16 @@ export function twoHandedChoice(catalog: Catalog | null | undefined, m: Model): 
   const big = weapons.filter(g => TWO_HANDED.test(g));
   const other = weapons.filter(g => !TWO_HANDED.test(g));
   if (big.length && !other.length) return 'must';
-  if (big.length || other.some(g => HAND_AND_A_HALF.test(g))) return 'may';
+  // (Bifur's Boar Spear is a spear or a two-handed weapon, as he likes.)
+  if (big.length || other.some(g => HAND_AND_A_HALF.test(g) || /boar spear/.test(g))) return 'may';
   return 'no';
 }
 
-export const hasShield = (catalog: Catalog | null | undefined, m: Model) => hasGear(catalog, m, /\bshields?\b/);
+export const hasShield = (catalog: Catalog | null | undefined, m: Model) => hasGear(catalog, m, /\bshields?\b|oakenshield/);
 const heavyShield = (catalog: Catalog | null | undefined, m: Model) => gearOf(catalog, m).some(g => /\bshields?\b/.test(g) && !/light shield/.test(g));
-export const isUnarmed = (catalog: Catalog | null | undefined, m: Model) => gearOf(catalog, m).some(g => g === 'unarmed') || (m.lostGear?.length ? !melee(catalog, m).length : false);
+export const isUnarmed = (catalog: Catalog | null | undefined, m: Model) =>
+  // (A Weapon Master never is.)
+  !hasRule(catalog, m, 'Weapon Master') && (gearOf(catalog, m).some(g => g === 'unarmed') || (m.lostGear?.length ? !melee(catalog, m).length : false));
 export const carriesBanner = (catalog: Catalog | null | undefined, m: Model) => hasGear(catalog, m, /\bbanner\b/);
 const missile = (catalog: Catalog | null | undefined, m: Model) => hasGear(catalog, m, /\bbows?\b|crossbow|sling|blowpipe/);
 
@@ -140,6 +143,8 @@ export function fighterOf(state: GameState, catalog: Catalog | null | undefined,
     if (better.length) notes.push(`${label}: its ${better.join(', ')}`);
     if (mount.left > 0) f.mount = { name: label, d: mount.d, s: mount.s, ...(mount.chariot ? { chariot: true } : {}) };
   }
+  // (Heroic Strength is for strikes only: a Brutal Power Attack or a Strength roll-off uses the model's own.)
+  if (declared(state, m.id, 'Heroic Strength')) f.baseS = mount && mount.s > strength ? mount.s : strength;
   if (isMonster(catalog, m)) f.monster = true;
   // A hero's Fate might yet save it, so only a model without Fate is known to be slain by its last wound.
   if (!(m.hero && m.fate > 0)) f.left = m.wounds;
@@ -163,6 +168,12 @@ export function fighterOf(state: GameState, catalog: Catalog | null | undefined,
     wound++;
     f.twoHanded = true;
     notes.push(hasRule(catalog, m, 'Burly') ? 'Two-handed: +1 to wound (Burly: no duel penalty)' : 'Two-handed: -1 duel (not on a 6), +1 to wound');
+  }
+  // Dwalin's Grasper & Keeper, when he fights with them rather than his two-handed axe: +1 Attack, and 6s to wound do 2.
+  if (!twoHanded && hasGear(catalog, m, /grasper/)) {
+    f.a = Math.min(10, f.a + (shielding ? 2 : 1));
+    if (!shielding) f.sixes = true;
+    notes.push('Grasper & Keeper: +1 Attack, 6s to wound do 2 Wounds');
   }
   // Andúril never needs worse than 4+ to wound (a two-handed blow still adds its +1). Strider has it only when he
   // takes it as an option (our data lists it among his rules either way).
@@ -290,6 +301,8 @@ export function terrainRules(catalog: Catalog | null | undefined, m: Model): str
   if (hasRule(catalog, m, 'Cave Dweller')) out.push('cave');
   if (hasRule(catalog, m, 'Spectral Walk')) out.push('spectral');
   if (hasRule(catalog, m, 'Swift Movement')) out.push('swift');
+  // (Bombur's Lumbering: a natural 6 on one of these tests must be rolled again.)
+  if (hasRule(catalog, m, 'Lumbering')) out.push('lumbering');
   // (Not terrain, but carried the same way: a Burly model or a monster carries a Heavy Object at full speed.)
   if (hasRule(catalog, m, 'Burly') || isMonster(catalog, m)) out.push('burly');
   return out;

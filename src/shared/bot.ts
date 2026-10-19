@@ -5,7 +5,7 @@ import { hasFryingPan, longshanksFree, pannable } from './sam.ts';
 import { breachOptions } from './breach.ts';
 import { gateStanding, ladderable, nearestEdge, overThe, TOWER, towerMove } from './fortress.ts';
 import { hurlOptions } from './defenders.ts';
-import { modelStats, type Catalog } from './catalog.ts';
+import { modelStats, rulesFor, type Catalog } from './catalog.ts';
 import { fighterOf } from './wargear.ts';
 import { duelLeader, duelSettled, strikeWounds, woundsTaken, type BrutalAttack, type Fighter, type FightRequest } from './fight.ts';
 import { supporters } from './support.ts';
@@ -30,6 +30,8 @@ import { chargeAim, chargesDue, straightOn } from './trample.ts';
 import { arrivalAuto, arrivalDue, castModel, mayCry } from './narrative.ts';
 import { willOfEvil } from './courage.ts';
 import { hasMorgulBlade } from './morgul.ts';
+import { AXE_FREED, canHeadbutt, hasMattock, longbeardFor, mayAxeTest, mayTend, rerollFor, spentPoints, swapPair, trumpetDue } from './company.ts';
+import { fitsSack, keepsForLater, lingeringCold } from './trolls.ts';
 import { canThrowBrand, FLAMING_BRAND } from './shooting.ts';
 import type { Action, DiceRoll, GameState, Model, Seat, Terrain } from './types.ts';
 
@@ -190,7 +192,7 @@ export function botStep(state: GameState, seat: Seat, catalog: Catalog | null, m
   const spell = spellStep(ctx) ?? compelStep(ctx);
   if (spell) return spell;
   if (++memo.steps > MAX_STEPS) return finish(ctx);
-  return fateStep(ctx) ?? challengeStep(ctx) ?? (state.flow.shotPause ? pausedShot(ctx) : null) ?? phaseStep(ctx);
+  return fateStep(ctx) ?? challengeStep(ctx) ?? (state.flow.shotPause ? pausedShot(ctx) : null) ?? companyStep(ctx) ?? phaseStep(ctx);
 }
 
 function phaseStep(ctx: Ctx): BotStep | null {
@@ -305,6 +307,8 @@ function priorityStep(ctx: Ctx): BotStep | null {
     return now - memo.since < wait ? { delay: wait + 100 - (now - memo.since) } : { action: { type: 'rollPriority' }, delay: DICE_PAUSE };
   }
   if (f.chooser !== seat || state.priority) return null;
+  // The other side's Balin may yet have the roll made again.
+  if (longbeardFor(state, ctx.catalog, other(seat))) return { delay: WAIT_PAUSE };
   // Moving first is worth it when the armies are close enough to charge; otherwise let the enemy show its hand.
   const ours = side(state, seat);
   const theirs = side(state, other(seat));
@@ -1212,7 +1216,132 @@ function brutalPick(ctx: Ctx, ours: Model[], theirs: Model[]): BrutalAttack | un
       if (v > Math.max(best.value, all * 1.15)) [best, picked] = [{ value: v, pick: { by: brute.id, kind: 'hurl', target: t.id, ...(others[0] ? { at: others[0].id } : {}) } }, true];
     }
   }
+  // The Trolls' own: Mince 'em Fine (the Strength roll-off's difference in Wounds), Squash 'em into Jelly (a Strength 6
+  // hit on every foe touching him) and Roast 'em Slowly (to the fire, Set Ablaze).
+  const s0 = profile(ctx, brute).s;
+  if (kinds.includes('mince'))
+    for (const t of theirs) {
+      let wounds = 0;
+      for (let a = 1; a <= 6; a++) for (let b = 1; b <= 6; b++) wounds += Math.max(0, a + s0 - (b + profile(ctx, t).s)) / 36;
+      const v = Math.min(1, wounds / Math.max(1, t.wounds)) * profile(ctx, t).value;
+      if (v > best.value) [best, picked] = [{ value: v, pick: { by: brute.id, kind: 'mince', target: t.id } }, true];
+    }
+  if (kinds.includes('squash')) {
+    const v = theirs.filter(t => distanceBetween(t, brute) <= CONTACT_SLACK).reduce((n, t) => n + Math.min(1, woundChance(6, profile(ctx, t).d) / Math.max(1, t.wounds)) * profile(ctx, t).value * 1.2, 0);
+    if (v > best.value) [best, picked] = [{ value: v, pick: { by: brute.id, kind: 'squash' } }, true];
+  }
+  if (kinds.includes('roast'))
+    for (const t of theirs) {
+      const v = Math.min(1, (2 * woundChance(5, profile(ctx, t).d)) / Math.max(1, t.wounds)) * profile(ctx, t).value * 0.8;
+      if (v > best.value) [best, picked] = [{ value: v, pick: { by: brute.id, kind: 'roast', target: t.id } }, true];
+    }
   return picked ? best.pick : undefined;
+}
+
+/**
+ * The Trolls, once they've won: a foe stuffed in a sack is out of the fight until it rolls a 6 (or for good), so a
+ * Troll bags the most valuable one that fits whenever it can; the rest strike, or make a Brutal Power Attack.
+ */
+function sackPick(ctx: Ctx, c: Combat, rolls: DiceRoll[]): BotStep | null {
+  const { state, seat } = ctx;
+  if (duelLeader(rolls)?.winner !== (seat === 'p1' ? 0 : 1)) return null;
+  const taken = new Set(Object.values(state.flow.choices ?? {}).map(x => x.sack).filter(Boolean));
+  for (const troll of c[seat].map(id => state.models[id]).filter(m => m && isUp(m) && keepsForLater(ctx.catalog, m))) {
+    if (state.flow.choices?.[troll.id]?.sack) continue;
+    // (Not one Bill would more likely than not mince to death: dead, it can't be got out of the sack.)
+    const minced = (t: Model) => {
+      if (!brutalOptions(state, ctx.catalog, troll).includes('mince') || declared(state, t.id, 'Heroic Defence')) return 0;
+      let p = 0;
+      for (let a = 1; a <= 6; a++) for (let b = 1; b <= 6; b++) if (a + profile(ctx, troll).s - (b + profile(ctx, t).s) >= t.wounds) p += 1 / 36;
+      return p;
+    };
+    const prey = c[other(seat)]
+      .map(id => state.models[id])
+      .filter(m => m && isUp(m) && fitsSack(m) && !taken.has(m.id) && minced(m) < 0.5)
+      .sort((a, b) => profile(ctx, b).value - profile(ctx, a).value)[0];
+    if (prey) return { action: { type: 'fightChoice', id: troll.id, ...state.flow.choices?.[troll.id], sack: prey.id }, delay: THINK_PAUSE };
+  }
+  return null;
+}
+
+/** Bofur's Mattock at a big foe others are fighting too (down, it is trapped), and Bifur's headbutt until his axe is out. */
+function companyPick(ctx: Ctx, c: Combat, rolls: DiceRoll[]): BotStep | null {
+  const { state, seat } = ctx;
+  if (duelLeader(rolls)?.winner !== (seat === 'p1' ? 0 : 1)) return null;
+  const foes = c[other(seat)].map(id => state.models[id]).filter(m => m && isUp(m) && !m.prone);
+  for (const m of c[seat].map(id => state.models[id]).filter(m => m && isUp(m))) {
+    const pick = state.flow.choices?.[m.id] ?? {};
+    if (hasMattock(ctx.catalog, m) && !pick.knock && c[seat].length > 1) {
+      const big = [...foes].sort((a, b) => profile(ctx, b).d - profile(ctx, a).d)[0];
+      if (big && profile(ctx, big).d >= 6) return { action: { type: 'fightChoice', id: m.id, ...pick, knock: big.id }, delay: THINK_PAUSE };
+    }
+    if (canHeadbutt(ctx.catalog, m) && !m.used?.includes(AXE_FREED) && !pick.headbutt && foes[0]) {
+      const soft = [...foes].sort((a, b) => profile(ctx, a).d - profile(ctx, b).d)[0];
+      return { action: { type: 'fightChoice', id: m.id, ...pick, headbutt: soft.id }, delay: THINK_PAUSE };
+    }
+  }
+  return null;
+}
+
+/** Tom sneezes on the strongest foe he's fighting, as each fight starts, while he has Will to spare. */
+function coldPick(ctx: Ctx): BotStep | null {
+  const { state, seat } = ctx;
+  for (const c of combats(state).filter(x => !fightDone(state, x) && x[seat].length)) {
+    for (const tom of c[seat].map(id => state.models[id]).filter(m => m && isUp(m) && lingeringCold(ctx.catalog, m) && m.will > 0)) {
+      if (state.flow.choices?.[tom.id]?.cold) continue;
+      const touching = c[other(seat)].map(id => state.models[id]).filter(m => m && isUp(m) && m.chilled !== state.turn && distanceBetween(m, tom) <= CONTACT_SLACK);
+      const best = [...touching].sort((a, b) => profile(ctx, b).f - profile(ctx, a).f)[0];
+      if (best) return { action: { type: 'fightChoice', id: tom.id, ...state.flow.choices?.[tom.id], cold: best.id }, delay: THINK_PAUSE };
+    }
+  }
+  return null;
+}
+
+/** Kíli and Fíli's re-roll, or Óin's Will for a friend's, on a duel die that would turn a lost duel. */
+function rerollInDuel(ctx: Ctx, rolls: DiceRoll[]): BotStep | null {
+  const { state, seat } = ctx;
+  const us = seat === 'p1' ? 0 : 1;
+  if (duelLeader(rolls)?.winner === us) return null;
+  const oin = side(state, seat).find(m => m.will > 0 && rulesFor(ctx.catalog, m).includes('Reading the Portents'));
+  for (const r of rolls.filter(x => x.side === us && x.f !== undefined && x.model && state.models[x.model]?.owner === seat)) {
+    const low = r.dice.indexOf(Math.min(...r.dice));
+    if (low < 0 || r.dice[low] >= 5) continue;
+    if (rerollFor(state, ctx.catalog, r, 'synergy')) return { action: { type: 'reroll', roll: r.id, die: low, why: 'synergy', model: r.model! }, delay: DICE_PAUSE };
+    if (oin && rerollFor(state, ctx.catalog, r, 'portents', oin)) return { action: { type: 'reroll', roll: r.id, die: low, why: 'portents', model: oin.id }, delay: DICE_PAUSE };
+  }
+  return null;
+}
+
+/**
+ * Thorin's Company's own abilities, as they come up: Balin's Longbeard on a lost roll for Priority, Óin listening
+ * through his trumpet, Bifur testing for his free Heroic Move, Kíli and Fíli swapping as a fight begins, and Óin's
+ * herbs and Bombur's cheer in the move.
+ */
+function companyStep(ctx: Ctx): BotStep | null {
+  const { state, seat } = ctx;
+  // Ori's Chronicler: the point goes to whoever it may, Might first.
+  const deed = state.flow.chronicles?.[0];
+  if (deed?.seat === seat) {
+    const m = deed.ids.map(id => state.models[id]).find(m => m && spentPoints(ctx.catalog, m).length);
+    return { action: { type: 'chronicled', ...(m ? { model: m.id, point: spentPoints(ctx.catalog, m)[0] } : {}) }, delay: THINK_PAUSE };
+  }
+  const balin = longbeardFor(state, ctx.catalog, seat);
+  if (balin) return { action: { type: 'longbeard', model: balin.id, ...(state.flow.chooser === seat ? { skip: true } : {}) }, delay: DICE_PAUSE };
+  const due = trumpetDue(state, ctx.catalog);
+  if (due) return due.oin.owner === seat ? { action: { type: 'trumpet', listen: due.oin.will > 0 }, delay: DICE_PAUSE } : { delay: WAIT_PAUSE };
+  const bifur = side(state, seat).find(m => mayAxeTest(state, ctx.catalog, m));
+  if (bifur) return { action: { type: 'axeTest', model: bifur.id }, delay: DICE_PAUSE };
+  const twins = swapPair(state, ctx.catalog, seat);
+  if (twins && state.phase === 'fight' && twins.every(m => engagedWith(state, m).length)) return { action: { type: 'swap', a: twins[0].id, b: twins[1].id }, delay: THINK_PAUSE };
+  if (state.phase === 'move' && canActivate(state, seat))
+    for (const m of side(state, seat)) {
+      if (!mayActivate(state, m)) continue;
+      for (const how of ['herbs', 'spirits'] as const) {
+        const t = side(state, seat).filter(f => !mayTend(state, ctx.catalog, how, m, f)).sort((a, b) => b.maxWounds - b.wounds - (a.maxWounds - a.wounds))[0];
+        if (t) return { action: { type: 'tend', how, model: m.id, target: t.id }, delay: DICE_PAUSE };
+      }
+    }
+  return null;
 }
 
 function strikeWorth(ctx: Ctx, strikers: Model[], t: Model): number {
@@ -1231,6 +1360,9 @@ function fightStep(ctx: Ctx): BotStep | null {
     const apply = woundsFor(ctx, g);
     if (apply) return apply;
   }
+  // Tom's cold goes on as fights start, whoever starts them.
+  const cold = coldPick(ctx);
+  if (cold) return cold;
   // A battering ram up against a gate swings before the other fights.
   for (const m of side(state, seat)) {
     const ram = breachOptions(state, ctx.catalog, m).find(b => b.how === 'ram');
@@ -1257,7 +1389,7 @@ function fightStep(ctx: Ctx): BotStep | null {
   if (raise) return raise;
   // Hold the strikes while the other player could still use Might; they roll the strikes themselves.
   if (ctx.person && humanCanRaise(state, other(seat), duel.rolls)) return { delay: WAIT_PAUSE };
-  const blade = morgulPick(ctx, c, duel.rolls) ?? panPick(ctx, c, duel.rolls);
+  const blade = morgulPick(ctx, c, duel.rolls) ?? panPick(ctx, c, duel.rolls) ?? sackPick(ctx, c, duel.rolls) ?? companyPick(ctx, c, duel.rolls) ?? rerollInDuel(ctx, duel.rolls);
   if (blade) return blade;
   return { action: { type: 'strikes', fight: fightRequest(ctx, c, duel.rolls), group: duel.group }, delay: DICE_PAUSE * 3 };
 }

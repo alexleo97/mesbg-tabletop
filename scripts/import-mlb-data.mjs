@@ -10,6 +10,9 @@ const read = f => JSON.parse(readFileSync(join(src, 'src/assets/data', f), 'utf8
 
 // Our own fixes to the source data, by option id: a shield the source forgot gives +1 Defence.
 const OPTION_MODS = { OPT1432: [['D', 1]], OPT1116: [['D', 1]] };
+// And rule names the source spells differently from the book.
+const RULE_NAMES = { 'Embedded Axe-blade': 'Embedded Axe' };
+const ruleName = name => RULE_NAMES[name] ?? name;
 
 const units = read('mesbg_data.json');
 const profiles = read('profile_data.json');
@@ -60,13 +63,13 @@ for (const u of Object.values(units)) {
         ...(o.modifiers?.length ? { mods: o.modifiers.map(m => [m.stat, m.mod]) } : OPTION_MODS[o.id] ? { mods: OPTION_MODS[o.id] } : {}),
       };
     }),
-    rules: p ? [...(p.special_rules ?? []), ...(p.active_or_passive_rules ?? []).map(r => r.name)] : [],
+    rules: p ? [...(p.special_rules ?? []), ...(p.active_or_passive_rules ?? []).map(r => ruleName(r.name))] : [],
     // Which explanation goes with each rule, heroic action and magical power on the card.
     ruleRefs: p
       ? Object.fromEntries(
           [
             ...(p.special_rules ?? []).map(r => [r, universalRef(r)]),
-            ...(p.active_or_passive_rules ?? []).map(r => [r.name, ref(textId('hero_rule', r.name, r.description))]),
+            ...(p.active_or_passive_rules ?? []).map(r => [ruleName(r.name), ref(textId('hero_rule', r.name, r.description))]),
             ...(p.heroic_actions ?? []).map(h => [h, universalRef(h)]),
             ...(p.magic_powers ?? []).map(m => [m.name, universalRef(m.name)]),
           ].filter(([, id]) => id),
