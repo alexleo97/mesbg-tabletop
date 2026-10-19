@@ -259,11 +259,13 @@ export function MapsPage() {
 }
 
 /** A card on the home page with a heading, a link to its full page, and a short preview. */
-function DashCard({ title, more, href, children }: { title: string; more: string; href: string; children: ReactNode }) {
+function DashCard({ icon, title, more, href, children }: { icon: ReactNode; title: string; more: string; href: string; children: ReactNode }) {
   return (
     <section className="dash-card">
       <header>
-        <h2>{title}</h2>
+        <h2>
+          <span aria-hidden>{icon}</span> {title}
+        </h2>
         <a href={href}>{more} →</a>
       </header>
       {children}
@@ -280,7 +282,7 @@ export function ArmiesCard() {
   }, [profile?.id]);
   const ready = lists.filter(r => r.entries.length).slice(0, 4);
   return (
-    <DashCard title="Your armies" more={ready.length ? 'All armies' : 'Build one'} href="?armies">
+    <DashCard icon="🛡" title="Your armies" more={ready.length ? 'All armies' : 'Build one'} href="?armies">
       {ready.length ? (
         <ul className="dash-list">
           {ready.map(r => (
@@ -306,7 +308,7 @@ export function MapsCard() {
   }, [enabled]);
   if (!enabled) return null;
   return (
-    <DashCard title="Community maps" more="All maps" href="?maps">
+    <DashCard icon={<MapIcon />} title="Community maps" more="All maps" href="?maps">
       {maps === null ? (
         <p className="muted">Loading…</p>
       ) : maps.length === 0 ? (
@@ -334,7 +336,7 @@ export function TopPlayersCard() {
   }, [enabled]);
   if (!enabled) return null;
   return (
-    <DashCard title="Top players" more="Leaderboard" href="?leaderboard">
+    <DashCard icon="🏆" title="Top players" more="Leaderboard" href="?leaderboard">
       {rows === null ? (
         <p className="muted">Loading…</p>
       ) : rows.length === 0 ? (

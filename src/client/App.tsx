@@ -84,20 +84,30 @@ function Lobby() {
           <h1>Play Middle-earth battles online</h1>
           <p className="lead">Bring your army, pick a table and play a friend. The game keeps track of turns, rolls and rules for you.</p>
           <div className="hero-actions">
-            <button className="primary big" onClick={() => go(randomRoom())}>
-              Start a new game
+            <button className="menu-card start" onClick={() => go(randomRoom())}>
+              <span className="menu-icon" aria-hidden>⚔</span>
+              <span>
+                <b>Start a new game</b>
+                <small>Set up a table and send a friend the room name.</small>
+              </span>
+              <span className="menu-go" aria-hidden>→</span>
             </button>
-            <button className="big" onClick={() => (location.search = `?room=${randomRoom()}&vs=computer`)}>
-              Solo battle
+            <button className="menu-card solo" onClick={() => (location.search = `?room=${randomRoom()}&vs=computer`)}>
+              <span className="menu-icon" aria-hidden>🔮</span>
+              <span>
+                <b>Solo battle</b>
+                <small>Take on {BOT_NAME.replace(/^The /, 'the ')} whenever you like.</small>
+              </span>
+              <span className="menu-go" aria-hidden>→</span>
             </button>
           </div>
-          <a className="learn-cta" href="?learn">
-            <span className="learn-icon" aria-hidden>📖</span>
+          <a className="menu-card learn" href="?learn">
+            <span className="menu-icon" aria-hidden>📖</span>
             <span>
               <b>New to the game? Learn to play</b>
               <small>Short lessons on a real table: moving, shooting, fighting and heroes.</small>
             </span>
-            <span className="learn-go" aria-hidden>→</span>
+            <span className="menu-go" aria-hidden>→</span>
           </a>
           <div className="join">
             <input placeholder="Have a game code? e.g. osgiliath-1234" value={code} onChange={e => setCode(e.target.value)} onKeyDown={e => e.key === 'Enter' && go(code)} />
@@ -107,9 +117,11 @@ function Lobby() {
       </section>
 
       <div className="home-grid">
-        <section className="open-games dash-card">
+        <section className={`open-games dash-card ${games?.length === 0 ? 'empty' : ''}`}>
           <header>
-            <h2>Open games</h2>
+            <h2>
+              <span aria-hidden>🏰</span> Open games
+            </h2>
             {!!games?.length && <small className="muted">{games.length} live</small>}
           </header>
           {games === null && <p className="muted">Looking for games…</p>}
