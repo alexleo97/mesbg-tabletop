@@ -88,7 +88,8 @@ export function statsWithOptions(unit: CatalogUnit, optionIds: string[]): string
   if (!unit.stats) return undefined;
   const stats = [...unit.stats];
   for (const o of unit.options) {
-    if (!optionIds.includes(o.id)) continue;
+    // Options a model comes with count as well as the ones picked.
+    if (!o.included && !optionIds.includes(o.id)) continue;
     for (const [stat, mod] of o.mods ?? []) {
       const i = STAT_NAMES.indexOf(stat as (typeof STAT_NAMES)[number]);
       const n = parseInt(stats[i], 10);

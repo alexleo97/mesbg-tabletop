@@ -8,6 +8,9 @@ import { join, resolve } from 'node:path';
 const src = resolve(process.argv[2] ?? '../mesbg-list-builder-v2024');
 const read = f => JSON.parse(readFileSync(join(src, 'src/assets/data', f), 'utf8').replace(/^﻿/, ''));
 
+// Our own fixes to the source data, by option id: a shield the source forgot gives +1 Defence.
+const OPTION_MODS = { OPT1432: [['D', 1]], OPT1116: [['D', 1]] };
+
 const units = read('mesbg_data.json');
 const profiles = read('profile_data.json');
 const armyLists = read('army_list_data.json');
@@ -54,7 +57,7 @@ for (const u of Object.values(units)) {
         points: o.points,
         ...(o.included ? { included: true } : {}),
         ...(mount ? { mount: true, mountMv: mp?.Mv ? parseFloat(mp.Mv) : undefined } : {}),
-        ...(o.modifiers?.length ? { mods: o.modifiers.map(m => [m.stat, m.mod]) } : {}),
+        ...(o.modifiers?.length ? { mods: o.modifiers.map(m => [m.stat, m.mod]) } : OPTION_MODS[o.id] ? { mods: OPTION_MODS[o.id] } : {}),
       };
     }),
     rules: p ? [...(p.special_rules ?? []), ...(p.active_or_passive_rules ?? []).map(r => r.name)] : [],
