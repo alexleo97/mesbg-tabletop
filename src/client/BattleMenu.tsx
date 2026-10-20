@@ -279,7 +279,7 @@ export function BattleMenu() {
             Premade
           </button>
           <button className={mode === 'table' ? 'on' : ''} onClick={() => setMode('table')}>
-            Pick it at the table
+            At the table
           </button>
         </div>
         {mode === 'lists' &&
