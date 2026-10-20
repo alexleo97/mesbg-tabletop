@@ -20,6 +20,23 @@ let catalog: Catalog | null = null;
 void loadCatalog().then(c => (catalog = c), () => {});
 
 /**
+ * What a lesson's table refuses: setting up armies, terrain, the scenario or the seats, editing models, ending the game,
+ * and the free choices no lesson teaches (lying down, dismounting). The lesson sets its own table, and the game rolls
+ * and tests for itself.
+ */
+const NOT_IN_LESSONS = new Set<Action['type']>([
+  'addModels', 'removeModels', 'updateModel', 'addTerrain', 'updateTerrain', 'removeTerrain', 'setScenery', 'setBoard', 'setScenario', 'setNarrative',
+  'startNarrative', 'setPick', 'setVP', 'setName', 'setBot', 'setBotSpeed', 'setListed', 'setPrivate', 'setAdvance', 'setPhase', 'setPriority', 'loadState',
+  'concede', 'proposeResult', 'answerResult', 'lieDown', 'dismount',
+]);
+
+/** Whether a lesson lets the player do this: before the battle starts, only start it. */
+export function lessonAllows(state: GameState, action: Action): boolean {
+  if (!state.flow.started) return action.type === 'startGame';
+  return !NOT_IN_LESSONS.has(action.type);
+}
+
+/**
  * A game played entirely in this browser, for the training. You play player 1; player 2 is a
  * quiet opponent that passes and finishes its turns straight away so the lesson keeps moving.
  */
@@ -39,6 +56,7 @@ export class PracticeGame implements Connection {
 
   dispatch(action: Action) {
     let state = this.snap.state;
+    if (!lessonAllows(state, action)) return;
     // As the server does: a model about to charge something terrifying tests its Courage first, and stays put if it fails.
     if (action.type === 'moveModels' && Array.isArray(action.moves)) {
       const moves = action.moves.filter(mv => {

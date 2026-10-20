@@ -128,7 +128,7 @@ export interface Settings {
   animations: boolean;
 }
 
-const DEFAULTS: Settings = { theme: 'classic', headingFont: 'cinzel', bodyFont: 'system', photos: true, zones: true, deployment: true, grid: true, names: false, terrainNames: false, animations: true };
+export const DEFAULTS: Settings = { theme: 'classic', headingFont: 'cinzel', bodyFont: 'system', photos: true, zones: true, deployment: true, grid: true, names: false, terrainNames: false, animations: true };
 const KEY = 'mesbg-tabletop:settings';
 
 function load(): Settings {

@@ -11,6 +11,7 @@ import { MATERIALS, textures } from './textures.ts';
 import { TERRAIN_INFO, terrainRules } from '../shared/terrain.ts';
 import { holdInZones } from '../shared/deployment.ts';
 import { frontFirst, limitMove, moveAllowance, moveLeft, moveStart, movesLimited, settleMove, spent } from '../shared/movement.ts';
+import { dropTarget } from '../shared/terrainTests.ts';
 import { inDifficult, standingAt, insidePolygon, inTheWay, isDifficult, moveCost, outline, shadowPath, sightTo, VINES_REACH } from '../shared/sight.ts';
 import { effectsOn } from '../shared/powers.ts';
 import { carried, drive, riders } from '../shared/warBeasts.ts';
@@ -506,7 +507,13 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
       else if (gesture.moved && dragPos) {
         // A model dropped just short of an enemy is charging it: finish the move into base contact.
         const settled: Record<string, Point> = {};
-        for (const [id, at] of Object.entries(dragPos)) settled[id] = state.models[id] ? settleMove(state, state.models[id], at) : at;
+        for (const [id, at] of Object.entries(dragPos)) {
+          const m = state.models[id];
+          settled[id] = m ? settleMove(state, m, at) : at;
+          // Held at terrain that needs a test, it sends where it was dragged to, so its card offers the test.
+          const o = gesture.origin[id];
+          if (m && o) settled[id] = dropTarget(state, m, settled[id], { x: o.x + p.x - gesture.start.x, y: o.y + p.y - gesture.start.y });
+        }
         sendMoves(settled, true);
       } else if (gesture.wasSelected && gesture.multi) {
         const next = new Set(selected);

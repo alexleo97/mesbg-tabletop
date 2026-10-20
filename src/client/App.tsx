@@ -419,7 +419,10 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
     const unit = settings.photos && m.profileId ? catalog?.units[m.profileId] : undefined;
     return unit && pictureUrl(unit);
   };
-  const tableView = (
+  // On a lesson's table there are no seats, game settings or saves: just what the tapped terrain does.
+  const tableView = practice ? (
+    <TablePanel state={state} dispatch={dispatch} role={role} selectedTerrain={selectedTerrain} setSelectedTerrain={setSelectedTerrain} lesson />
+  ) : (
     <>
 
                 <div className="panel-body game-panel">
@@ -523,9 +526,9 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
         <button className="leave" onClick={leave} title="Leave this game and go back to the home screen" aria-label="Home">
           🏠
         </button>
-        <button className="room" onClick={() => !state.bot && void copyRoom()} title={state.bot ? 'Solo battle' : state.private && seat ? 'Copy the invite link (only it lets a friend take the seat)' : 'Copy the link to this game'}>
+        <button className="room" disabled={!!practice} onClick={() => !state.bot && !practice && void copyRoom()} title={state.bot ? 'Solo battle' : state.private && seat ? 'Copy the invite link (only it lets a friend take the seat)' : 'Copy the link to this game'}>
           {state.private && <span title="Private game: only invited players can take a seat">🔒</span>}
-          <span className="room-name">{copied ? 'Link copied' : room}</span> <span className={`dot ${status}`} />
+          <span className="room-name">{practice ? 'Learn to play' : copied ? 'Link copied' : room}</span> <span className={`dot ${status}`} />
         </button>
         <div className="sides">
           {(['p1', 'p2'] as const).map(s => (
@@ -607,7 +610,7 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
                 table={<TablePanel state={state} dispatch={dispatch} role={role} selectedTerrain={selectedTerrain} setSelectedTerrain={setSelectedTerrain} />}
               />
             )}
-            <BattleCard tools={tools} state={state} dispatch={dispatch} role={role} tab={battleTab} setTab={setBattleTab} fight={fight} fights={fights} openFight={setFightKey} photoFor={photoFor} />
+            <BattleCard tools={tools} lesson={!!practice} state={state} dispatch={dispatch} role={role} tab={battleTab} setTab={setBattleTab} fight={fight} fights={fights} openFight={setFightKey} photoFor={photoFor} />
 
             {refusedNote && (
               <button className="sight-hint" onClick={() => setRefusedNote(null)}>
@@ -633,6 +636,7 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
                 combat={state.flow.started ? singleCombat : undefined}
                 openFight={setFightKey}
                 close={() => setSelected(new Set())}
+                lesson={!!practice}
               />
             )}
             {selected.size > 1 && (
@@ -678,7 +682,7 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
               </button>
             </div>
             {tab === 'model' && <SelectionPanel state={state} selected={selected} dispatch={dispatch} clear={() => setSelected(new Set())} />}
-            {tab === 'settings' && <SettingsPanel settings={settings} update={updateSettings} game={{ state, dispatch, role }} />}
+            {tab === 'settings' && <SettingsPanel settings={settings} update={updateSettings} game={practice ? undefined : { state, dispatch, role }} />}
           </aside>
         )}
       </main>

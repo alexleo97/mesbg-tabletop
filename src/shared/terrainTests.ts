@@ -115,6 +115,16 @@ export function crossingAhead(state: GameState, m: Model, from: Point, to: Point
 }
 
 /**
+ * Where to send a model dropped at `at` after being dragged towards `aim`. The board holds a dragged model at the
+ * stop in front of a wall, rock or stream that needs a test; sending that stop alone hides the crossing from the table,
+ * so the spot it was dragged to goes instead, and the table holds it at the stop with the test offered.
+ */
+export function dropTarget(state: GameState, m: Model, at: Point, aim: Point): Point {
+  const c = state.flow.started && testsTerrain(state, m) ? crossingAhead(state, m, { x: m.x, y: m.y }, aim) : null;
+  return c && Math.hypot(c.stop.x - at.x, c.stop.y - at.y) < 0.05 ? aim : at;
+}
+
+/**
  * Why a model can't take the test in front of it now; unset if it can. A jump or leap needs the Move to reach the
  * far side; a climb takes whatever Move is left (the climb itself is counted double, as difficult ground).
  */

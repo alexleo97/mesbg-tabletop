@@ -16,13 +16,14 @@ export type SetupTab = 'map' | 'scenario' | 'army';
  * The card down the left of the table: the board tools, then the armies, the scenario (victory points, special rules, game end) and the
  * fight being rolled. It stays put, and on a computer it can be dragged somewhere else and locked there.
  */
-export function BattleCard({ tools, state, dispatch, role, tab, setTab, fight, fights, openFight, photoFor }: { tools: ReactNode; state: GameState; dispatch: (a: Action) => void; role: Role; tab: BattleTab; setTab: (t: BattleTab) => void; fight?: Combat; fights: Combat[]; openFight: (key: string | null) => void; photoFor: (m: Model) => string | undefined }) {
+export function BattleCard({ tools, lesson, state, dispatch, role, tab, setTab, fight, fights, openFight, photoFor }: { tools: ReactNode; lesson?: boolean; state: GameState; dispatch: (a: Action) => void; role: Role; tab: BattleTab; setTab: (t: BattleTab) => void; fight?: Combat; fights: Combat[]; openFight: (key: string | null) => void; photoFor: (m: Model) => string | undefined }) {
   const drag = useDraggable('battle-card');
   const [small, setSmall] = useState(false);
   const shown = tab === 'fight' && !fight ? 'army' : tab;
   const tabs: [BattleTab, string][] = [
     ['army', 'Armies'],
-    ['scenario', scenarioById(state.scenario) || state.narrative ? 'Scenario' : 'No scenario'],
+    // A lesson is never fought over a scenario.
+    ...(lesson ? [] : [['scenario', scenarioById(state.scenario) || state.narrative ? 'Scenario' : 'No scenario'] as [BattleTab, string]]),
     ...(fight ? [['fight', 'Fight'] as [BattleTab, string]] : []),
   ];
   return (
