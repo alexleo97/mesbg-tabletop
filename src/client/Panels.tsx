@@ -19,6 +19,7 @@ import { botRoster, playableArmies } from '../shared/botList.ts';
 import { parseAdmiral } from '../shared/admiral.ts';
 import { BOT_NAME, DOOR_TYPES, MATS, TERRAIN_KINDS, type Action, type DiceRoll, type DoorType, type GameState, type Mat, type Model, type Role, type Seat, type Terrain, type TerrainKind } from '../shared/types.ts';
 import { BODY_FONTS, HEADING_FONTS, THEMES, type Settings } from './settings.ts';
+import { ControlsList, HelpButtons } from './Help.tsx';
 import { useLessonLock } from './lessonLock.ts';
 
 type Dispatch = (a: Action) => void;
@@ -906,6 +907,8 @@ export function SettingsPanel({ settings, update, game }: { settings: Settings; 
           </p>
         </>
       )}
+      <h4>Help</h4>
+      <HelpButtons />
       <p className="hint">{game ? 'The rest only changes' : 'These only change'} how the game looks for you.</p>
       <h4>Colour theme</h4>
       <div className="theme-swatches">
@@ -967,6 +970,9 @@ export function SettingsPanel({ settings, update, game }: { settings: Settings; 
       <label className="check">
         <input type="checkbox" checked={settings.grid} onChange={e => update({ grid: e.target.checked })} /> 1" grid
       </label>
+      <h4>Controls</h4>
+      <ControlsList />
+
       <p className="fine">Fonts are open-licence (SIL OFL). Ground textures are from the open-source game <a href="https://play0ad.com/" target="_blank" rel="noreferrer">0 A.D.</a> by Wildfire Games (<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noreferrer">CC BY-SA 3.0</a>).</p>
     </div>
   );
