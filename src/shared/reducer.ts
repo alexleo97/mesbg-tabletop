@@ -3,6 +3,8 @@ import { mounted, mountProfile } from './cavalry.ts';
 import { boardCommanders, carried, howdahFor, howdahSpot } from './warBeasts.ts';
 import { assignCrew, pushers } from './siege.ts';
 import { holdInZones, nearEdge } from './deployment.ts';
+import { bandKey, bandsOf, deployProblems, inCurrent, layBand, markerSpot, markerStart, mayPutDown, newMarker, nextTurn, procedureOf, swapEnds } from './deploy.ts';
+import { objectivesMissing } from './scenarios.ts';
 import { canActivate, heroicInfo, heroicNow, heroicQueue, mayActivate, shoutedFor } from './heroics.ts';
 import { pendingSpell } from './magic.ts';
 import { basePower, cannotAct, effectActive } from './powers.ts';
@@ -23,7 +25,7 @@ import { putOut } from './fire.ts';
 import { ringAfterMight } from './ring.ts';
 import { placeSpot, placingNow } from './placing.ts';
 import { longshanksFree } from './sam.ts';
-import { BOT_NAME, BOT_SPEEDS, DOOR_TYPES, FIGHT_TARGETS, MARKER_OBJECTS, MATS, PHASES, PICK_KEYS, TERRAIN_KINDS, type Action, type FightPicks, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type ModelEffect, type Phase, type Picks, type Placing, type Seat, type SpellPending, type Terrain } from './types.ts';
+import { BOT_NAME, BOT_SPEEDS, type Deploying, DOOR_TYPES, FIGHT_TARGETS, MARKER_OBJECTS, MATS, PHASES, PICK_KEYS, TERRAIN_KINDS, type Action, type FightPicks, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type ModelEffect, type Phase, type Picks, type Placing, type Seat, type SpellPending, type Terrain } from './types.ts';
 
 export const MAX_MODELS = 600;
 export const MAX_TERRAIN = 200;
@@ -629,15 +631,21 @@ function step(state: GameState, action: Action): GameState {
     case 'addModels': {
       if (!Array.isArray(action.models)) return state;
       const models = { ...state.models };
+      // Once the armies are being set up in turn, models added to one wait off the table for their turn.
+      const d = state.flow.deploy;
+      const later = !state.flow.started && !!d && ['side', 'warbands', 'done'].includes(d.step) && procedureOf(state)?.armies !== 'none';
       for (const raw of action.models) {
         if (Object.keys(models).length >= MAX_MODELS) break;
         const m = cleanModel(raw ?? {});
         // A siege engine is set up wholly within 6" of a table edge.
-        if (m) models[m.id] = m.siege && !m.waiting && !state.flow.started ? { ...m, ...nearEdge(state, m, m) } : m;
+        if (m) models[m.id] = later ? { ...m, waiting: true } : m.siege && !m.waiting && !state.flow.started ? { ...m, ...nearEdge(state, m, m) } : m;
       }
       // A war beast's Commander rides on it.
       const added = action.models.map(raw => (raw && typeof raw === 'object' ? String(raw.id) : '')).filter(i => models[i]);
-      return { ...state, models: assignCrew(boardCommanders(models, added), added, state.board) };
+      const out = { ...state, models: assignCrew(boardCommanders(models, added), added, state.board) };
+      // Everything was down: the side with new models has more to place.
+      const owner = added.length ? models[added[0]].owner : null;
+      return later && d!.step === 'done' && owner ? { ...out, flow: { ...out.flow, deploy: { ...d!, step: 'warbands', turn: owner } } } : out;
     }
     case 'moveModels': {
       if (!Array.isArray(action.moves)) return state;
@@ -947,6 +955,14 @@ function step(state: GameState, action: Action): GameState {
     case 'updateTerrain': {
       const prev = state.terrain[action.id];
       if (!prev || !action.patch || typeof action.patch !== 'object') return state;
+      // While markers are placed in turn, only the one being placed moves, and only where it may go.
+      const d = state.flow.deploy;
+      if (d && !state.flow.started && prev.kind === 'objective' && ('x' in action.patch || 'y' in action.patch)) {
+        if (d.marker !== prev.id) return state;
+        const spot = markerSpot(state, { x: num(action.patch.x, -24, 200, prev.x), y: num(action.patch.y, -24, 200, prev.y) }, prev.id, 6);
+        if (!spot) return state;
+        return { ...state, terrain: { ...state.terrain, [prev.id]: { ...prev, x: spot.x, y: spot.y } } };
+      }
       const t = cleanTerrain(action.patch, prev);
       return t ? { ...state, terrain: { ...state.terrain, [t.id]: t } } : state;
     }
@@ -986,6 +1002,89 @@ function step(state: GameState, action: Action): GameState {
       // (The last turn's chooser is kept, for a tie if Balin's Longbeard has the roll made again.)
       const lastChooser = state.flow.chooserTurn === state.turn ? state.flow.lastChooser : state.flow.chooser;
       return { ...state, flow: { ...state.flow, roll, chooser: action.chooser, chooserTurn: state.turn, ...(lastChooser ? { lastChooser } : {}) } };
+    }
+    case 'deployRolled': {
+      const d = state.flow.deploy;
+      if (state.flow.started || !isSeat(action.winner) || !procedureOf(state)) return state;
+      if (action.step === 'markers') {
+        if (d) return state;
+        return { ...state, flow: { ...state.flow, deploy: { step: 'markers', winner: action.winner, turn: action.winner, placed: [] } } };
+      }
+      if (action.step !== 'side' || (d && d.step !== 'roll')) return state;
+      // The armies come off the table, to go back on warband by warband.
+      const off = procedureOf(state)!.armies !== 'none';
+      const models = off ? Object.fromEntries(Object.entries(state.models).map(([k, m]) => [k, m.dead ? m : { ...m, waiting: true }])) : state.models;
+      return { ...state, models, flow: { ...state.flow, deploy: { step: 'side', winner: action.winner, turn: action.winner, placed: [] } } };
+    }
+    case 'pickSide': {
+      const d = state.flow.deploy;
+      const p = procedureOf(state);
+      if (state.flow.started || !p || d?.step !== 'side' || d.winner !== action.seat) return state;
+      let out = state;
+      if (action.far === true) {
+        // The table turns round under the armies. Terrain picked in the enemy half is picked again.
+        const unpick = ({ terrain: _, ...rest }: Picks = {}) => rest;
+        const picks = state.flow.picks ? { p1: unpick(state.flow.picks.p1), p2: unpick(state.flow.picks.p2) } : undefined;
+        out = { ...state, terrain: swapEnds(state, p.swap ?? 'round'), flow: { ...state.flow, ...(picks ? { picks } : {}) } };
+      }
+      const deploy: Deploying = p.armies === 'none' ? { ...d, step: 'done', turn: undefined } : { ...d, step: 'warbands', turn: d.winner };
+      return { ...out, flow: { ...out.flow, deploy } };
+    }
+    case 'placeMarker': {
+      const d = state.flow.deploy;
+      if (state.flow.started || d?.step !== 'markers' || d.turn !== action.seat || d.marker || !objectivesMissing(state)) return state;
+      const want = Number.isFinite(action.x) && Number.isFinite(action.y) ? { x: num(action.x, 0, 200, 0), y: num(action.y, 0, 200, 0) } : markerStart(state, action.seat);
+      const spot = markerSpot(state, want);
+      if (!spot) return state;
+      const t = newMarker(state, spot);
+      return { ...state, terrain: { ...state.terrain, [t.id]: t }, flow: { ...state.flow, deploy: { ...d, marker: t.id } } };
+    }
+    case 'markerDone': {
+      const d = state.flow.deploy;
+      if (state.flow.started || d?.step !== 'markers' || d.turn !== action.seat || !d.marker) return state;
+      const { marker: _, ...rest } = d;
+      const deploy: Deploying = objectivesMissing(state) ? { ...rest, turn: action.seat === 'p1' ? 'p2' : 'p1' } : { ...rest, step: 'roll', turn: undefined };
+      return { ...state, flow: { ...state.flow, deploy } };
+    }
+    case 'warbandDown': {
+      const d = state.flow.deploy;
+      const warband = typeof action.warband === 'string' ? action.warband.slice(0, 80) : '';
+      if (!isSeat(action.seat) || !d || !mayPutDown(state, action.seat, warband)) return state;
+      const roll = Number.isFinite(action.roll) ? int(action.roll, 1, 6, 1) : undefined;
+      const current = `${action.seat}:${warband}`;
+      const bands = bandsOf(state, action.seat, true).filter(b => warband === '*' || bandKey(b[0]) === current);
+      const total = bandsOf(state, action.seat).length;
+      let out: GameState = { ...state, flow: { ...state.flow, deploy: { ...d, current, ...(roll ? { roll } : {}) } } };
+      // Each warband comes on (its models off the table until now) in the next free lane of its zone.
+      for (const band of bands) {
+        const lane = d.placed.filter(k => k.startsWith(`${action.seat}:`)).length + bands.indexOf(band);
+        const models = { ...out.models };
+        for (const { waiting: _, ...m } of band) models[m.id] = m;
+        out = { ...out, models };
+        const p = procedureOf(state);
+        const lanes = p?.alternateZones ? Math.ceil(total / 2) : total;
+        const moves = layBand(out, band.map(m => out.models[m.id]), p?.alternateZones ? Math.floor(lane / 2) : lane, lanes);
+        // Any that found no room anywhere wait still (and are left off the table).
+        const room = new Set(moves.map(mv => mv.id));
+        for (const m of band) if (!room.has(m.id) && !m.aboard) out.models[m.id] = { ...out.models[m.id], waiting: true };
+        out = step(out, { type: 'moveModels', moves });
+      }
+      return out;
+    }
+    case 'warbandDone': {
+      const d = state.flow.deploy;
+      if (state.flow.started || !d || d.turn !== action.seat) return state;
+      let placed: string[];
+      if (d.step === 'sides') placed = [...d.placed, `${action.seat}:*`];
+      else if (d.step === 'warbands' && d.current && !deployProblems(state).length) {
+        const keys = d.current.endsWith(':*') ? [...new Set(Object.values(state.models).filter(m => !m.dead && inCurrent(d, m) && !m.waiting).map(bandKey))] : [d.current];
+        placed = [...d.placed, ...keys];
+      } else return state;
+      const { current: _c, roll: _r, ...rest } = d;
+      const after = { ...state, flow: { ...state.flow, deploy: { ...rest, placed } } };
+      const turn = nextTurn(after, { ...rest, placed }, action.seat);
+      const deploy: Deploying = turn ? { ...rest, placed, turn } : { ...rest, placed, step: 'done', turn: undefined };
+      return { ...state, flow: { ...state.flow, deploy } };
     }
     case 'choosePriority':
       if (!isSeat(action.seat)) return state;
@@ -1168,7 +1267,11 @@ function step(state: GameState, action: Action): GameState {
         if (t) terrain[t.id] = t;
       }
       const turns = n.turns ? (n.turns.choices.includes(Number(action.turns)) ? Number(action.turns) : n.turns.default) : undefined;
-      return { ...state, board: { ...n.board }, models, terrain, scenario: null, vp: { p1: {}, p2: {} }, narrative: { id: n.id, good: action.good, ...(turns ? { turns } : {}) } };
+      // Each side arranges its cast in the order the book sets them up.
+      const first = n.setupOrder?.[0];
+      const { deploy: _, ...flow } = state.flow;
+      const deploy: Deploying | undefined = first ? { step: 'sides', turn: first === 'good' ? action.good : action.good === 'p1' ? 'p2' : 'p1', placed: [] } : undefined;
+      return { ...state, board: { ...n.board }, models, terrain, scenario: null, vp: { p1: {}, p2: {} }, narrative: { id: n.id, good: action.good, ...(turns ? { turns } : {}) }, flow: { ...flow, ...(deploy ? { deploy } : {}) } };
     }
     case 'cry': {
       if (!isSeat(action.seat) || !mayCry(state, action.seat) || !state.narrative) return state;
@@ -1440,8 +1543,8 @@ function step(state: GameState, action: Action): GameState {
       return { ...state, priority: isSeat(action.seat) ? action.seat : null };
     case 'setScenario': {
       const id = action.id === null ? null : str(action.id, 40) || null;
-      // Choosing a matched play scenario (or open play) leaves any narrative one behind.
-      const { narrative: _, ...rest } = state;
+      // Choosing a matched play scenario (or open play) leaves any narrative one behind, and starts setting up afresh.
+      const { narrative: _, ...rest } = unDeploy(state);
       return { ...rest, scenario: id, vp: { p1: {}, p2: {} } };
     }
     case 'setVP': {
@@ -1469,7 +1572,7 @@ function step(state: GameState, action: Action): GameState {
       };
     case 'setScenery': {
       if (!Array.isArray(action.terrain)) return state;
-      let out: GameState = { ...state, terrain: {} };
+      let out: GameState = { ...unDeploy(state), terrain: {} };
       out = reduce(out, { type: 'setBoard', w: action.w, h: action.h, mat: action.mat });
       for (const t of action.terrain.slice(0, MAX_TERRAIN)) out = reduce(out, { type: 'addTerrain', terrain: t });
       return out;
@@ -1570,6 +1673,8 @@ function step(state: GameState, action: Action): GameState {
     case 'rollFate':
     case 'shoot':
     case 'rollPriority':
+    case 'rollDeploy':
+    case 'deployWarband':
     case 'roll':
     default:
       return state;
@@ -1587,6 +1692,31 @@ function cleanBlocked(raw: object): NonNullable<Flow['blocked']> {
     out[str(k, 80)] = { terrain: str(b.terrain, 80), test: b.test as (typeof TESTS)[number], stop: pt(b.stop), landing: pt(b.landing), drop: num(b.drop, 0, 50, 0) };
   }
   return out;
+}
+
+/** Setting up starts afresh (a new scenario or table): the armies that were waiting for their turn come back where they were. */
+function unDeploy(state: GameState): GameState {
+  if (!state.flow.deploy || state.flow.started) return state;
+  const { deploy: _, ...flow } = state.flow;
+  const { w, h } = state.board;
+  const models = Object.fromEntries(Object.entries(state.models).map(([k, m]) => [k, m.waiting && m.x >= 0 && m.y >= 0 && m.x <= w && m.y <= h ? (({ waiting: _w, ...rest }) => rest)(m) : m]));
+  return { ...state, models, flow };
+}
+
+const DEPLOY_STEPS = ['markers', 'roll', 'side', 'warbands', 'sides', 'done'] as const;
+/** Where setting up in turn is up to, from untrusted JSON. */
+function cleanDeploy(raw: unknown): Deploying | null {
+  const d = raw as Partial<Deploying> | null;
+  if (!d || typeof d !== 'object' || !DEPLOY_STEPS.includes(d.step as (typeof DEPLOY_STEPS)[number])) return null;
+  return {
+    step: d.step!,
+    placed: Array.isArray(d.placed) ? d.placed.slice(0, 200).map(k => str(k, 120)) : [],
+    ...(isSeat(d.winner) ? { winner: d.winner } : {}),
+    ...(isSeat(d.turn) ? { turn: d.turn } : {}),
+    ...(typeof d.current === 'string' ? { current: str(d.current, 120) } : {}),
+    ...(Number.isFinite(d.roll) ? { roll: int(d.roll, 1, 6, 1) } : {}),
+    ...(typeof d.marker === 'string' ? { marker: str(d.marker, 80) } : {}),
+  };
 }
 
 /** Rebuilds a full state from untrusted JSON (a saved game or a server snapshot). */
@@ -1693,6 +1823,7 @@ export function loadState(raw: unknown): GameState {
           : {}),
         ...(f.fort && typeof f.fort === 'object' ? { fort: { p1: int(f.fort.p1, 0, 999, 0), p2: int(f.fort.p2, 0, 999, 0) } } : {}),
         ...(f.picks && typeof f.picks === 'object' ? { picks: { p1: cleanPicks(f.picks.p1), p2: cleanPicks(f.picks.p2) } } : {}),
+        ...(cleanDeploy(f.deploy) ? { deploy: cleanDeploy(f.deploy)! } : {}),
         ...(Array.isArray(f.applied) ? { applied: f.applied.filter(g => typeof g === 'string').map(g => g.slice(0, 80)).slice(-60) } : {}),
         ...(Number.isFinite(f.burned) ? { burned: int(f.burned, 0, 99, 0) } : {}),
         ...(Array.isArray(f.sauron) ? { sauron: f.sauron.slice(0, 20).map(x => str(x, 80)) } : {}),

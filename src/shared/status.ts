@@ -48,6 +48,8 @@ export function endCheck(state: GameState, names: Record<Seat, string>): EndChec
   if (!rule) return null;
   const s = { p1: armyStatus(state, 'p1'), p2: armyStatus(state, 'p2') };
   const seats = ['p1', 'p2'] as const;
+  // Reconnoitre: once every model still alive has left the table, there's nothing left to play.
+  if (state.scenario === 'reconnoitre' && state.flow.started && !Object.values(state.models).some(m => !m.dead && !m.escaped)) return { over: true, rollNeeded: false, reason: 'Every model still standing has left the table, so the game ends.' };
   if (rule === 'broken-roll') {
     const broken = seats.filter(x => s[x].broken);
     return broken.length

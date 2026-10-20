@@ -2,7 +2,9 @@ import { NarrativeCast } from './NarrativePanel.tsx';
 import { useState, type ReactNode, type Ref } from 'react';
 import type { Combat } from '../shared/flow.ts';
 import { objectivesMissing, scenarioById } from '../shared/scenarios.ts';
-import { isMaelstrom } from '../shared/maelstrom.ts';
+import { arriveLater } from '../shared/maelstrom.ts';
+import { deployReady, procedureOf, takesTurns } from '../shared/deploy.ts';
+import { DeployTurns } from './DeployTurns.tsx';
 import { BOT_NAME, type Action, type GameState, type Model, type Role } from '../shared/types.ts';
 import { FightView } from './FightPanel.tsx';
 import { ArmyPanel } from './Panels.tsx';
@@ -59,11 +61,19 @@ export function BattleCard({ tools, lesson, state, dispatch, role, tab, setTab, 
 
 /** The foot of the set-up card: what still stands in the way, then the one button that starts the battle. */
 function StartBattle({ state, dispatch, role }: { state: GameState; dispatch: (a: Action) => void; role: Role }) {
-  if (role !== 'p1' && role !== 'p2') return <p className="setup-foot hint">The players set up the battle; it starts when one of them is ready.</p>;
+  if (role !== 'p1' && role !== 'p2')
+    return (
+      <div className="setup-foot">
+        {takesTurns(state) && !deployReady(state) && state.flow.deploy && <DeployTurns state={state} dispatch={dispatch} role={role} />}
+        <p className="hint">The players set up the battle; it starts when one of them is ready.</p>
+      </div>
+    );
   const count = (s: 'p1' | 'p2') => Object.values(state.models).filter(m => m.owner === s).length;
   const missing = objectivesMissing(state);
+  // Markers the players place in turn are placed before anything else (see DeployTurns).
+  const markersFirst = missing > 0 && !!procedureOf(state)?.markers;
   // A narrative scenario sets everything itself; otherwise both armies must be on the table, and a solo battle is fought over a scenario.
-  const waiting = state.narrative
+  const waiting = state.narrative || markersFirst
     ? ''
     : state.bot && !scenarioById(state.scenario)
       ? 'Pick a scenario first.'
@@ -76,12 +86,22 @@ function StartBattle({ state, dispatch, role }: { state: GameState; dispatch: (a
               ? `Deploy ${BOT_NAME}'s army first.`
               : 'Waiting for your opponent to deploy their army.'
             : '';
+  // Where the scenario sets the table out in turn, that comes first (the objectives, then the armies).
+  const turns = !waiting && takesTurns(state) && !deployReady(state);
   return (
     <div className="setup-foot">
-      {waiting ? <p className="hint">{waiting}</p> : <p className="hint">{isMaelstrom(state) ? 'Your warbands wait off the table and roll to arrive as your side starts to move.' : 'Drag your models where you want them in your zone, then start.'}</p>}
-      <button className="primary go" disabled={!!waiting} onClick={() => dispatch({ type: 'startGame' })}>
-        Start the battle
-      </button>
+      {waiting ? (
+        <p className="hint">{waiting}</p>
+      ) : turns ? (
+        <DeployTurns state={state} dispatch={dispatch} role={role} />
+      ) : (
+        <p className="hint">{arriveLater(state) ? 'Your warbands wait off the table and roll to arrive as your side starts to move.' : state.flow.deploy ? 'Everything is on the table.' : 'Drag your models where you want them in your zone, then start.'}</p>
+      )}
+      {!turns && (
+        <button className="primary go" disabled={!!waiting} onClick={() => dispatch({ type: 'startGame' })}>
+          Start the battle
+        </button>
+      )}
     </div>
   );
 }

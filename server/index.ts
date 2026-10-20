@@ -17,6 +17,7 @@ import { recoveryDue, recoveryRolls } from '../src/shared/powers.ts';
 import { arrivalsDue, rollArrivals } from '../src/shared/maelstrom.ts';
 import { cleanMark } from '../src/shared/marks.ts';
 import { objectivesMissing, scenarioById } from '../src/shared/scenarios.ts';
+import { deployReady } from '../src/shared/deploy.ts';
 import { announceGame, closeVoiceRoom, discordEnabled, discordMember, openVoiceRoom, sweepVoiceRooms, voiceEnabled } from './discord.ts';
 import { saveResult, verifyToken } from './accounts.ts';
 import { loadRoom, pruneRooms, saveRoom, storeEnabled, type StoredRoom } from './store.ts';
@@ -299,14 +300,25 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
     case 'dieRerolled':
     case 'listen':
     case 'chronicle':
+    case 'deployRolled':
+    case 'warbandDown':
       return null; // only the server produces dice results, undo changes and account details
     case 'gameOver':
       return null;
     case 'startGame':
-      // Not until the scenario's objectives are on the table.
-      return objectivesMissing(state) ? null : { type: 'startGame', at: Date.now() };
-    case 'addTerrain':
+      // Not until the scenario's objectives are on the table, and everything set out in turn is down.
+      return objectivesMissing(state) || !deployReady(state) ? null : { type: 'startGame', at: Date.now() };
+    case 'pickSide':
+    case 'placeMarker':
+    case 'markerDone':
+    case 'warbandDone':
+      // Each player takes their own turn at setting up (the game checks it is theirs).
+      return action.seat === client.role ? action : null;
     case 'updateTerrain':
+      // While objective markers are placed in turn, only the player placing one moves it.
+      if (!state.flow.started && state.flow.deploy && state.terrain[action.id]?.kind === 'objective' && state.flow.deploy.turn !== client.role) return null;
+      return state.flow.started ? null : action;
+    case 'addTerrain':
     case 'removeTerrain':
     case 'setScenery':
     case 'setBoard':
@@ -404,8 +416,9 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
       return action.seat === client.role && !trumpetDue(state, CATALOG) ? action : null;
     case 'moveModels':
       // Each player moves only their own models (and the Palantír's, in a solo game, so they can deploy it and back its
-      // models away after a fight).
+      // models away after a fight). While the armies are set up in turn, the Palantír places its own.
       if (!Array.isArray(action.moves)) return null;
+      if (!state.flow.started && state.flow.deploy) return { ...action, moves: action.moves.filter(mv => mine(mv?.id)) };
       return {
         ...action,
         moves: action.moves.filter(mv => {

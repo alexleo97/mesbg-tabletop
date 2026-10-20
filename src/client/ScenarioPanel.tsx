@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { newId } from '../shared/importList.ts';
+import { PROCEDURES } from '../shared/deploy.ts';
 import { COMMON_RULES, POOLS, SCENARIOS, scenarioById, scenarioFromDice, scenarioMarkers, SELECTION_RULE, vpTotal } from '../shared/scenarios.ts';
 import { PICKS, pickOptions } from '../shared/picks.ts';
 import { NarrativePanel } from './NarrativePanel.tsx';
@@ -37,7 +38,7 @@ export function ScenarioPanel({ state, dispatch, role }: { state: GameState; dis
     Object.values(state.terrain)
       .filter(t => t.kind === 'objective' && !['ladder', 'ram', 'rocks', 'oil', 'rally'].includes(t.object ?? ''))
       .forEach(t => dispatch({ type: 'removeTerrain', id: t.id }));
-    if (next) scenarioMarkers(next, state.board.w, state.board.h, newId).forEach(t => dispatch({ type: 'addTerrain', terrain: t }));
+    if (next) scenarioMarkers(next, state.board.w, state.board.h, newId, Math.random, !PROCEDURES[next.id]?.markers).forEach(t => dispatch({ type: 'addTerrain', terrain: t }));
   };
 
   const choose = (id: string | null) => {
@@ -157,14 +158,14 @@ export function ScenarioPanel({ state, dispatch, role }: { state: GameState; dis
                 <b>Markers ({s.objectives.count}):</b> {s.objectives.placement}
               </p>
               {!!s.objectives.fixedPositions?.length && (
-                <button disabled={fixed} onClick={() => placeMarkers()}>
+                <button disabled={fixed || !!state.flow.deploy} onClick={() => placeMarkers()}>
                   {s.objectives.count === 1 ? 'Place the marker' : 'Place the markers'}
                 </button>
               )}
             </>
           )}
           {s.deployment.zones.some(z => z.label?.startsWith('example')) && (
-            <p className="fine">Corner zones show one example; players choose their corners.</p>
+            <p className="fine">The roll-off's winner chooses their corner: taking the other one turns the table round.</p>
           )}
 
           {s.specialRules.length > 0 && (

@@ -198,7 +198,10 @@ export function AppGuide() {
           </li>
         </ol>
         <p>
-          Drag your models into place; they stop at the edge of your deployment zone. When both armies are down, press the button at the foot of the card to start the battle.
+          Then you set up as the scenario says, from the foot of the card. Roll off: the winner chooses their end of the table (taking the far end turns the table round) and goes
+          first. You then take turns putting one warband on the table at a time. The game lays each one out by its Captain; drag its models where you want them (they stop at
+          the edge of where they may go, and within 6" of their Captain), then say you're done. In Domination you first take turns placing the objective markers the same way.
+          When everything is down, press the button at the foot of the card to start the battle.
         </p>
       </Part>
 

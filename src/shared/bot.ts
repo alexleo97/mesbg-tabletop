@@ -39,6 +39,8 @@ import { inHornburg, onDeepingWall } from './helmsMap.ts';
 import { deadlyShot, shotsPerPhase, shotsTaken, unsteady } from './towers.ts';
 import { distanceToTerrain } from './sight.ts';
 import { hasRule } from './wargear.ts';
+import { deployProblems, markerSpot, nextBandFor, placedMarkers, swapEnds, procedureOf } from './deploy.ts';
+import { inZone, zonesOf } from './objects.ts';
 import type { Action, DiceRoll, GameState, Model, Seat, Terrain } from './types.ts';
 
 // The computer player. Each call looks at the game and picks the one thing it would do next, so the server can play
@@ -189,7 +191,7 @@ export function botStep(state: GameState, seat: Seat, catalog: Catalog | null, m
   if (!Object.values(state.models).some(m => m.owner === seat && !m.dead && !m.escaped)) return null;
   const picks = picksStep(ctx);
   if (picks) return picks;
-  if (!state.flow.started) return null;
+  if (!state.flow.started) return deployStep(ctx);
   // A model waiting to be placed: the game already put it where the computer would, so it just says so.
   const place = placingNow(state);
   if (place) return place.seat === seat ? { action: { type: 'placed', seat }, delay: THINK_PAUSE } : null;
@@ -291,6 +293,50 @@ function picksStep(ctx: Ctx): BotStep | null {
     return { action: { type: 'setPick', seat, key: p.key, value: choice }, delay: THINK_PAUSE };
   }
   return null;
+}
+
+/**
+ * Setting up in turn: the computer takes the end of the table with more cover in its zone, puts its objective markers
+ * on its own side of the table (apart, so it can hold them), and puts its warbands down one at a time, its Champion's
+ * first, then the biggest, each spread along its zone (the game lays them out within 6" of their Captain).
+ */
+function deployStep({ state, seat }: Ctx): BotStep | null {
+  const d = state.flow.deploy;
+  if (!d) return null;
+  switch (d.step) {
+    case 'markers': {
+      if (d.turn !== seat) return null;
+      if (d.marker) return { action: { type: 'markerDone', seat }, delay: THINK_PAUSE };
+      const { w, h } = state.board;
+      const y = seat === 'p1' ? h * 0.72 : h * 0.28;
+      const mine = placedMarkers(state).filter(t => (seat === 'p1' ? t.y > h / 2 : t.y < h / 2)).length;
+      const wants = [{ x: w * 0.25, y }, { x: w * 0.75, y }, { x: w / 2, y }];
+      const ownHalf = (p: Point) => (seat === 'p1' ? p.y > h / 2 : p.y < h / 2);
+      const spot = [...wants.slice(mine % 3), ...wants].map(p => markerSpot(state, p, undefined, 12)).find(p => p && ownHalf(p)) ?? markerSpot(state, wants[0]);
+      return spot ? { action: { type: 'placeMarker', seat, x: spot.x, y: spot.y }, delay: THINK_PAUSE } : null;
+    }
+    case 'side': {
+      if (d.winner !== seat) return null;
+      const p = procedureOf(state);
+      const cover = (terrain: Record<string, Terrain>) => {
+        const zones = zonesOf(state, seat);
+        return Object.values(terrain).filter(t => t.kind !== 'objective' && t.kind !== 'road' && (zones.length ? zones.some(z => inZone(z, t)) : seat === 'p1' ? t.y > state.board.h / 2 : t.y < state.board.h / 2)).length;
+      };
+      const far = !!p && cover(swapEnds(state, p.swap ?? 'round')) > cover(state.terrain);
+      return { action: { type: 'pickSide', seat, far }, delay: THINK_PAUSE };
+    }
+    case 'warbands': {
+      if (d.turn !== seat) return null;
+      if (d.current) return deployProblems(state).length ? null : { action: { type: 'warbandDone', seat }, delay: THINK_PAUSE };
+      const warband = nextBandFor(state, seat);
+      return warband === null ? null : { action: { type: 'deployWarband', seat, warband }, delay: DICE_PAUSE };
+    }
+    case 'sides':
+      // A narrative scenario's cast is already where its story puts it.
+      return d.turn === seat ? { action: { type: 'warbandDone', seat }, delay: THINK_PAUSE } : null;
+    default:
+      return null;
+  }
 }
 
 /** A hero of the computer's with wounds waiting: Fate when the wound would kill it or it has Fate to spare, Might to rescue a 3. */

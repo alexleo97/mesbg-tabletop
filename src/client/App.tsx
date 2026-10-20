@@ -16,6 +16,7 @@ import { canThrowBrand, isThrowing } from '../shared/shooting.ts';
 import { waitingOnMight } from '../shared/bot.ts';
 import { distanceBetween, formatInches } from '../shared/geometry.ts';
 import { scenarioById, scenarioMarkers } from '../shared/scenarios.ts';
+import { procedureOf } from '../shared/deploy.ts';
 import { reduce } from '../shared/reducer.ts';
 import { deployList, newId } from '../shared/importList.ts';
 import { vpTotals } from '../shared/scoring.ts';
@@ -314,7 +315,7 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
     if (setup.table) send({ type: 'setScenery', ...setup.table });
     send({ type: 'setScenario', id: setup.scenario });
     const scn = scenarioById(setup.scenario);
-    if (scn) for (const t of scenarioMarkers(scn, next.board.w, next.board.h, newId)) send({ type: 'addTerrain', terrain: t });
+    if (scn) for (const t of scenarioMarkers(scn, next.board.w, next.board.h, newId, Math.random, !procedureOf(next)?.markers)) send({ type: 'addTerrain', terrain: t });
     if (setup.army) send({ type: 'addModels', models: deployList(setup.army.entries, 'p1', next, scn) });
     if (setup.foe && state.bot) {
       send({ type: 'addModels', models: deployList(setup.foe.entries, state.bot, next, scn) });

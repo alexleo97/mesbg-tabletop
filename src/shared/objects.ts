@@ -56,22 +56,23 @@ export function inZone(z: Zone, p: Point): boolean {
   return false;
 }
 
+/** A scenario zone (in inches on a 48" table) scaled to the board, across and down separately. */
+export function scaleZone(board: { w: number; h: number }, z: Zone): Zone {
+  const k = board.w / 48;
+  const ky = board.h / 48;
+  return z.shape === 'rect'
+    ? { ...z, x: z.x * k, y: z.y * ky, w: z.w * k, h: z.h * ky }
+    : z.shape === 'polygon'
+      ? { ...z, points: z.points.map(([x, y]) => [x * k, y * ky] as [number, number]) }
+      : z.shape === 'edge'
+        ? z
+        : { ...z, cx: z.cx * k, cy: z.cy * ky, r: z.r * k, ry: z.r * ky };
+}
+
 /** A side's deployment zone(s) from the scenario, scaled to the board (across and down separately). */
 export function zonesOf(state: GameState, seat: Seat): Zone[] {
   const s = scenarioById(state.scenario);
-  const k = state.board.w / 48;
-  const ky = state.board.h / 48;
-  return (s?.deployment.zones ?? [])
-    .filter(z => z.seat === seat && z.shape !== 'edge' && !z.label?.includes('sub-zone') && !z.label?.includes('Champion'))
-    .map(z =>
-      z.shape === 'rect'
-        ? { ...z, x: z.x * k, y: z.y * ky, w: z.w * k, h: z.h * ky }
-        : z.shape === 'polygon'
-          ? { ...z, points: z.points.map(([x, y]) => [x * k, y * ky] as [number, number]) }
-          : z.shape === 'edge'
-            ? z
-            : { ...z, cx: z.cx * k, cy: z.cy * ky, r: z.r * k, ry: z.r * ky },
-    );
+  return (s?.deployment.zones ?? []).filter(z => z.seat === seat && z.shape !== 'edge' && !z.label?.includes('sub-zone') && !z.label?.includes('Champion')).map(z => scaleZone(state.board, z));
 }
 
 /** Whether a model stands wholly inside one of the zones. */

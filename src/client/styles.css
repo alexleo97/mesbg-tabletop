@@ -463,6 +463,9 @@ small.muted, p.small { font-size: 0.8rem; }
 .deploy-zone.p2 { fill: var(--p2); fill-opacity: 0.12; stroke: var(--p2); }
 .deploy-zone.either { fill: #fff; fill-opacity: 0.08; stroke: #fff; }
 .deploy-zone.sub { fill-opacity: 0.08; stroke-dasharray: 0.2 0.3; }
+.deploy.now .deploy-zone { fill-opacity: 0.2; stroke-width: 0.25; stroke-dasharray: none; }
+.deploy-bands { display: flex; flex-wrap: wrap; gap: 6px; }
+.deploy-bands .go { flex: 1 1 45%; min-width: 0; }
 .deploy-edge { stroke-width: 1; stroke-opacity: 0.6; stroke-dasharray: 1 0.5; }
 .deploy-edge.p1 { stroke: var(--p1); }
 .deploy-edge.p2 { stroke: var(--p2); }
