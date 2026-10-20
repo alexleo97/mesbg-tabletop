@@ -411,6 +411,40 @@ export function limitMove(state: GameState, from: Point, to: Point, move: number
   return m ? blockMove(state, m, from, reached, skip, charge) : reached;
 }
 
+/**
+ * Where a model a player drags from `from` and drops at `to` ends up: as limitMove, except that models move freely
+ * over an objective marker but may not end on it, so one dropped on a marker goes on past it instead of back, when
+ * that's nearer and the model's Move gets it there clear of everything else.
+ */
+export function dropMove(state: GameState, from: Point, to: Point, move: number, seat: Seat, m: Model, skip?: ReadonlySet<string>, charge = true): Point {
+  const ahead = state.flow.started && testsTerrain(state, m) ? crossingAhead(state, m, from, to) : null;
+  if (ahead) to = ahead.stop;
+  const reached = reachable(state, from, to, move, seat, m);
+  const stop = blockMove(state, m, from, reached, skip, charge);
+  const past = pastMarker(state, m, from, reached);
+  if (!past || Math.hypot(past.x - reached.x, past.y - reached.y) >= Math.hypot(stop.x - reached.x, stop.y - reached.y)) return stop;
+  const there = reachable(state, from, past, move, seat, m);
+  if (Math.hypot(there.x - past.x, there.y - past.y) > 1e-3) return stop;
+  const end = blockMove(state, m, from, past, skip, charge);
+  return Math.hypot(end.x - past.x, end.y - past.y) < 1e-3 ? end : stop;
+}
+
+/** The first spot past the objective markers a model would end on at `to`, going on the way it came from `from`; null if it's on none. */
+function pastMarker(state: GameState, m: Model, from: Point, to: Point): Point | null {
+  const d = Math.hypot(to.x - from.x, to.y - from.y);
+  if (d < 1e-6) return null;
+  const r = mmToIn(m.base.w) / 2;
+  const markers = Object.values(state.terrain).filter(t => t.kind === 'objective' && !t.carrier && !t.gone);
+  const onMarker = (p: Point) => markers.some(t => Math.hypot(t.x - p.x, t.y - p.y) < t.w / 2 + r - 0.05);
+  if (!onMarker(to)) return null;
+  const [ux, uy] = [(to.x - from.x) / d, (to.y - from.y) / d];
+  for (let k = 0.05; k < 6; k += 0.05) {
+    const p = { x: to.x + ux * k, y: to.y + uy * k };
+    if (!onMarker(p)) return p;
+  }
+  return null;
+}
+
 function reachable(state: GameState, from: Point, to: Point, move: number, seat?: Seat, m?: Model): Point {
   const cost = (p: Point) => (m ? costOf(state, m, from, p) : moveCost(state, from, p, seat).cost);
   if (cost(to) <= move + 1e-6) return to;
