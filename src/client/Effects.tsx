@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { strikeWounds } from '../shared/fight.ts';
 import { halfExtents } from '../shared/geometry.ts';
+import { engagements } from '../shared/movement.ts';
 import type { GameState, Model } from '../shared/types.ts';
 
-// Short animations on the table that show what just happened: wounds, models falling, and shots flying.
+// Short animations on the table that show what just happened: wounds, models falling, shots flying, and enemies
+// coming into base contact.
 // Each lasts about a second, then goes; none of them change the game.
 
 type Effect =
   | { id: string; kind: 'hit'; x: number; y: number; n: number; owner: string }
   | { id: string; kind: 'slain'; model: Model }
-  | { id: string; kind: 'shot'; from: { x: number; y: number }; to: { x: number; y: number }; result: string; hit: boolean };
+  | { id: string; kind: 'shot'; from: { x: number; y: number }; to: { x: number; y: number }; result: string; hit: boolean }
+  | { id: string; kind: 'clash'; x: number; y: number; models: Model[] };
 
 const LIFE_MS = 1600;
 let seq = 0;
@@ -30,6 +33,7 @@ export function Effects({ state, fontSize, turn = 0 }: { state: GameState; fontS
   const [effects, setEffects] = useState<Effect[]>([]);
   const prev = useRef<Record<string, Model> | null>(null);
   const seenLog = useRef<Set<string> | null>(null);
+  const engagedBefore = useRef<Set<string> | null>(null);
 
   const add = (list: Effect[]) => {
     if (!list.length) return;
@@ -52,6 +56,15 @@ export function Effects({ state, fontSize, turn = 0 }: { state: GameState; fontS
     }
     add(out);
   }, [state.models]);
+
+  // Enemies newly in base contact: a clash where they meet, and both bases flare.
+  useEffect(() => {
+    const now = state.flow.started ? engagements(state) : [];
+    const before = engagedBefore.current;
+    engagedBefore.current = new Set(now.map(c => c.key));
+    if (!before) return;
+    add(now.filter(c => !before.has(c.key)).map(c => ({ id: `e${seq++}`, kind: 'clash', x: c.at.x, y: c.at.y, models: [c.a, c.b] })));
+  }, [state.models, state.flow.started]);
 
   // New shots: a streak from shooter to target, then what it did.
   useEffect(() => {
@@ -108,6 +121,30 @@ export function Effects({ state, fontSize, turn = 0 }: { state: GameState; fontS
             </g>
           );
         }
+        if (e.kind === 'clash')
+          return (
+            <g key={e.id} className="fx-clash">
+              {e.models.map(m => {
+                const { rx, ry } = halfExtents(m.base);
+                return (
+                  <g key={m.id} transform={`translate(${m.x} ${m.y}) rotate(${m.rot})`}>
+                    {m.base.shape === 'rect' ? <rect className="fx-flare" x={-rx} y={-ry} width={2 * rx} height={2 * ry} rx={0.04} /> : <ellipse className="fx-flare" rx={rx} ry={ry} />}
+                  </g>
+                );
+              })}
+              <g transform={`translate(${e.x} ${e.y})`}>
+                <circle className="fx-burst" r={0.5} />
+                <g transform={`rotate(${-turn})`}>
+                  <text className="fx-swords" textAnchor="middle" dominantBaseline="central" style={{ fontSize: fontSize * 1.6 }}>
+                    ⚔
+                  </text>
+                  <text className="fx-engaged" textAnchor="middle" y={-fontSize * 1.4} style={{ fontSize: fontSize * 1.1 }}>
+                    Engaged!
+                  </text>
+                </g>
+              </g>
+            </g>
+          );
         const len = Math.hypot(e.to.x - e.from.x, e.to.y - e.from.y);
         return (
           <g key={e.id} className={`fx-shot ${e.hit ? 'hit' : 'miss'}`}>
