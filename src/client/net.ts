@@ -363,5 +363,5 @@ export class RoomConnection implements Connection {
 }
 
 export function useRoom(conn: Connection) {
-  return useSyncExternalStore(conn.subscribe, conn.getSnapshot);
+  return useSyncExternalStore(conn.subscribe, conn.getSnapshot, conn.getSnapshot);
 }

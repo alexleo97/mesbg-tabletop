@@ -16,11 +16,11 @@ import { pendingSpell } from '../shared/magic.ts';
 import { freeResistDice, isAreaPower, isLinePower } from '../shared/powers.ts';
 import { formatInches } from '../shared/geometry.ts';
 import { useCatalog } from './ListBuilder.tsx';
-import { arrivalAuto, arrivalDue, mayCry, narrativeById } from '../shared/narrative.ts';
+import { arrivalAuto, arrivalDue, mayCry } from '../shared/narrative.ts';
 import { placingNow } from '../shared/placing.ts';
 import { longshanksFree } from '../shared/sam.ts';
-import { isMaelstrom, waitingWarbands, warbandName } from '../shared/maelstrom.ts';
-import { objectivesMissing, scenarioById } from '../shared/scenarios.ts';
+import { waitingWarbands, warbandName } from '../shared/maelstrom.ts';
+import { scenarioById } from '../shared/scenarios.ts';
 import { scoreLines, vpTotals } from '../shared/scoring.ts';
 import { armyStatus, endCheck, endRollLabel } from '../shared/status.ts';
 import { PHASES, type Action, type GameState, type Model, type Role, type Seat } from '../shared/types.ts';
@@ -33,7 +33,6 @@ interface Props {
   role: Role;
   combats: Combat[];
   /** Opens a tab of the battle card on the left. */
-  openTab: (t: 'map' | 'army' | 'scenario') => void;
   /** What the card shows: the turn guide, or the table's settings or the dice log in its place. */
   view: CoachView;
   setView: (v: CoachView) => void;
@@ -446,7 +445,7 @@ function Reinforcements({ state, name }: { state: GameState; name: (s: Seat) => 
   );
 }
 
-export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, openFight, auto, view, setView, table, log }: Props) {
+export function CoachBar({ state, dispatch, role, combats: allCombats, openFight, auto, view, setView, table, log }: Props) {
   let combats = allCombats;
   const [small, setSmall] = useState(false);
   const drag = useDraggable('coach');
@@ -462,66 +461,13 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
   let body: React.ReactNode;
 
   if (!flow.started) {
-    const count = (s: Seat) => Object.values(state.models).filter(m => m.owner === s).length;
-    // A narrative scenario stands in for a matched play one.
-    const scenario = scenarioById(state.scenario);
-    // Both armies must be on the table first; a solo battle is always fought over a scenario.
-    const missing = objectivesMissing(state);
-    const waiting = state.bot && !scenario ? 'Pick a scenario first.' : missing ? `Place ${missing} more objective marker${missing === 1 ? '' : 's'} first.` : !count('p1') || !count('p2') ? 'Deploy both armies first.' : '';
+    // At a real table the set-up card starts the battle; this is only shown in a lesson, which lays out the table itself.
     title = 'Set up the battle';
-    const story = narrativeById(state.narrative?.id);
-    const sideOf = (s: Seat) => (state.narrative?.good === s ? 'Good' : 'Evil');
-    body = story ? (
+    body = (
       <>
-        <ol className="setup-steps">
-          <li className="ok">
-            <span>
-              {story.name}: the table and both casts are set by the scenario.
-            </span>
-          </li>
-          <li className="ok">
-            <span>
-              <b className="p1">{name('p1')}</b> plays {sideOf('p1')}, <b className="p2">{name('p2')}</b> plays {sideOf('p2')}.
-            </span>
-          </li>
-          <li>
-            <span>Each side starts where the story puts it; drag models round where it lets them stand.</span>
-          </li>
-        </ol>
+        <p>The table and both armies are ready.</p>
         {me && (
           <button className="primary go" onClick={() => dispatch({ type: 'startGame' })}>
-            Start the battle
-          </button>
-        )}
-      </>
-    ) : (
-      <>
-        <ol className="setup-steps">
-          <li className={Object.keys(state.terrain).length ? 'ok' : ''}>
-            <span>{Object.keys(state.terrain).length ? `${Object.keys(state.terrain).length} pieces of terrain` : 'Lay out the terrain'}</span>
-            <button onClick={() => openTab('map')}>Table</button>
-          </li>
-          <li className={scenario ? 'ok' : ''}>
-            <span>{scenario ? scenario.name : state.bot ? 'Pick a scenario' : 'Pick a scenario, or play without one'}</span>
-            <button onClick={() => openTab('scenario')}>Scenario</button>
-          </li>
-          <li className={count('p1') && count('p2') ? 'ok' : ''}>
-            <span>
-              Armies: <b className="p1">{name('p1')}</b> {count('p1')} · <b className="p2">{name('p2')}</b> {count('p2')}
-            </span>
-            <button onClick={() => openTab('army')}>Army</button>
-          </li>
-          <li>
-            <span>
-              {isMaelstrom(state)
-                ? 'Maelstrom of Battle: deploy your list and it waits off the table. Each warband rolls to arrive as its side starts to move.'
-                : `Deploy each army in its zone${scenario ? ' (shown on the board)' : ''}.`}
-            </span>
-          </li>
-        </ol>
-        {me && waiting && <p className="hint">{waiting}</p>}
-        {me && (
-          <button className="primary go" disabled={!!waiting} onClick={() => dispatch({ type: 'startGame' })}>
             Start the battle
           </button>
         )}

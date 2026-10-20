@@ -67,7 +67,7 @@ export interface Lesson {
   setup: () => GameState;
   /** Carry on from the last lesson's table when coming straight from it. */
   continues?: boolean;
-  /** Shows the setup card (with Start the battle), for a lesson that starts the battle. */
+  /** Shows the turn guide before the start, with Start the battle, for a lesson that starts the battle. */
   setupCard?: boolean;
   done?: (s: GameState, start: GameState) => boolean;
 }
@@ -130,9 +130,7 @@ export const CHAPTERS: Chapter[] = [
             <p>The table rolls every die for you and shows the result in the Log on the turn guide card, so both players see the same thing. Fights, shots, Courage, Fate and every other test are rolled as they happen.</p>
           </>
         ),
-        task: 'Tap your Captain and press Courage on his card to roll a Courage test.',
         setup: () => table(),
-        done: rolled('Courage test'),
       },
       {
         title: 'How a turn runs',
@@ -416,43 +414,38 @@ export const CHAPTERS: Chapter[] = [
         body: (
           <>
             <p>A Courage test is a 2D6 roll: add the dice, and if the total reaches the model's Courage value it passes. A Courage of 7+ needs a total of 7 or more.</p>
-            <p>Tests come up when an army is Broken, when charging something terrifying, and from some spells.</p>
+            <p>Tests come up when an army is Broken, when charging something terrifying, and from some spells. You never roll one yourself: the table rolls each test the moment the rules call for it, and shows it in the Log.</p>
           </>
         ),
-        task: 'Tap your Warrior and press Courage on its card.',
-        setup: () => inPhase('move'),
-        done: rolled('Courage test'),
+        setup: () => table(),
       },
       {
         title: 'Broken',
         body: (
           <>
             <p>An army that has lost more than half the models it started with is Broken. From then on, each of its models must pass a Courage test when it activates, or flee the battle.</p>
-            <p>The turn guide tracks every army's losses and warns you when one breaks.</p>
+            <p>The turn guide tracks every army's losses and warns you when one breaks. As a Broken side starts its move, the table tests every model that can act, heroes first.</p>
           </>
         ),
-        task: 'Your patrol has lost four warriors and is Broken. Test Courage for your Ranger.',
-        setup: () =>
-          inPhase(
-            'move',
-            {
-              add: [0, 1, 2, 3].map(i => model(`lost${i}`, 'Warrior of Minas Tirith', 'p1', 2 + i * 2, 22.5, WARRIOR, { dead: true })),
-            },
-            2,
-          ),
-        done: rolled('Courage test'),
+        task: 'Your patrol has lost four warriors and is Broken. Pass on heroic actions to start your move, and watch the table test your Courage.',
+        setup: () => {
+          const s = inPhase('move', { add: [0, 1, 2, 3].map(i => model(`lost${i}`, 'Warrior of Minas Tirith', 'p1', 2 + i * 2, 22.5, WARRIOR, { dead: true })) }, 2);
+          // Heroic actions still to settle, so the tests come as the move starts.
+          return { ...s, flow: { ...s.flow, passed: [] } };
+        },
+        done: rolled('Broken army'),
       },
       {
         title: 'Terror',
         body: (
           <>
             <p>Some creatures cause Terror. A model that wants to charge one must pass a Courage test first, and if it fails it can't charge or move that turn.</p>
-            <p>Select a model near the Troll: its card offers the test when the Troll is within reach.</p>
+            <p>The table rolls the test as you move a model into contact with the Troll. If it passes, the charge goes ahead.</p>
           </>
         ),
-        task: 'Try to charge the Troll: tap your Warrior and roll its Courage test against Terror.',
+        task: 'Try to charge the Troll: drag your Warrior into contact with it.',
         setup: () => inPhase('move', { drop: ['orc1'], add: [model('troll', 'Mordor Troll', 'p2', 13.5, 13, TROLL, { base: { shape: 'round', w: 40, h: 40 }, wounds: 3, maxWounds: 3 })] }),
-        done: rolled('Courage'),
+        done: rolled('Courage to charge'),
       },
     ],
   },

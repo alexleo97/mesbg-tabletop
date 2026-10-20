@@ -579,6 +579,10 @@ div.strike-at select { width: auto; flex: 1 1 40%; }
 .setup-card .battle-head { top: -8px; }
 .setup-card h3 { margin: 0; flex: 1; color: var(--gold); font-size: 1.05rem; }
 .setup-steps-nav { margin: 4px 0 2px; }
+/* Start the battle stays in sight at the foot of the set-up card, however far its tab scrolls. */
+.setup-foot { position: sticky; bottom: -12px; z-index: 1; background: #26231f; margin: 8px -12px -12px; padding: 8px 12px 12px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
+.setup-foot .hint { margin: 0; }
+.setup-foot .go { width: 100%; }
 .setup-steps-nav button { flex: 1; }
 .setup-steps-nav button.done:not(.on) { border-color: var(--ok); color: var(--ok); }
 .battle-head { display: flex; align-items: center; gap: 6px; position: sticky; top: 46px; background: #26231f; padding: 4px 0; z-index: 1; }
@@ -1100,3 +1104,15 @@ table.vp tr.auto .vp-cell b { color: var(--gold); }
 select.ready-made {
   width: 100%;
 }
+
+/* The new battle menu: the narrative menu's cards, with smaller scenario cards in a tighter grid. */
+.battle-menu .pool h3 { margin: 4px 0 6px; font-size: 0.95rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.battle-menu .scenario-grid { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
+.battle-menu .scenario-grid .story-card { padding: 8px; }
+.battle-menu .scenario-grid .map-preview { width: 64px; height: 64px; }
+.battle-menu .scenario-grid .story-text b { font-size: 1rem; }
+.battle-menu .scenario-grid .story-text span, .battle-menu .scenario-grid .story-text small { font-size: 0.82rem; }
+.battle-menu .die-art { width: 64px; height: 64px; flex: none; display: grid; place-items: center; font-size: 2rem; border-radius: 6px; background: var(--panel-2); }
+.battle-menu .army-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+.battle-menu .page-tabs { align-self: flex-start; }
+.battle-menu .mini-stat { align-self: flex-start; }

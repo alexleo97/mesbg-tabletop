@@ -42,8 +42,8 @@ interface Props {
   combat: Combat | undefined;
   openFight: (key: string) => void;
   close: () => void;
-  /** In a lesson, where the reader rolls a Courage test themselves to see how it works. */
-  practice?: boolean;
+  /** On a Learn to play table, which leaves out the choices no lesson teaches. */
+  lesson?: boolean;
 }
 
 /** What the gear of a model says it can shoot with, if anything. */
@@ -98,7 +98,7 @@ function PutBack({ state, dispatch, m }: { state: GameState; dispatch: (a: Actio
   );
 }
 
-function TerrainMoves({ state, dispatch, m }: { state: GameState; dispatch: (a: Action) => void; m: Model }) {
+function TerrainMoves({ state, dispatch, m, lesson }: { state: GameState; dispatch: (a: Action) => void; m: Model; lesson?: boolean }) {
   const at = atCrossing(state, m);
   const left = moveLeft(state, m);
   const moved = !!state.flow.starts?.[m.id];
@@ -133,6 +133,8 @@ function TerrainMoves({ state, dispatch, m }: { state: GameState; dispatch: (a: 
       </div>
     );
   if (m.prone && state.flow.crawling?.includes(m.id)) return <p className="hint">{m.name} is crawling: up to 1", staying Prone.</p>;
+  // A lesson keeps to what it teaches: no lesson is about dismounting or lying down.
+  if (lesson) return null;
   // A rider can get down at any point in its move, and go on on foot with what's left of its foot Move.
   if (mounted(m) && left !== null)
     return (
@@ -170,7 +172,7 @@ function Tend({ state, dispatch, m, catalog }: { state: GameState; dispatch: (a:
 }
 
 /** A selected model's card: its profile at a glance and the actions that make sense in this phase. */
-export function ModelCard({ state, dispatch, role, model: m, catalog, target, clearTarget, combat, openFight, close, practice }: Props) {
+export function ModelCard({ state, dispatch, role, model: m, catalog, target, clearTarget, combat, openFight, close, lesson }: Props) {
   const drag = useDraggable('model-card');
   const [photoFailed, setPhotoFailed] = useState(false);
   /** A Sharpshooter's pick: aim at a rider's mount rather than the rider. */
@@ -497,7 +499,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
       )}
       <BeastPanel state={state} catalog={catalog} dispatch={dispatch} role={role} m={m} />
       <SiegePanel state={state} catalog={catalog} dispatch={dispatch} role={role} m={m} />
-      {mine && (state.phase === 'move' || atCrossing(state, m)) && state.flow.started && !held && <TerrainMoves state={state} dispatch={dispatch} m={m} />}
+      {mine && (state.phase === 'move' || atCrossing(state, m)) && state.flow.started && !held && <TerrainMoves state={state} dispatch={dispatch} m={m} lesson={lesson} />}
       {mine && state.phase === 'move' && state.flow.started && !held && <PutBack state={state} dispatch={dispatch} m={m} />}
       {mine && !held && <Tend state={state} dispatch={dispatch} m={m} catalog={catalog} />}
       {mine && state.phase === 'move' && <CastBox state={state} dispatch={dispatch} role={role} model={m} />}
@@ -560,11 +562,6 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
         <ol className="log card-roll">
           <RollRow r={recent} state={state} role={role} dispatch={dispatch} />
         </ol>
-      )}
-      {practice && mine && (
-        <div className="row wrap card-actions">
-          <button onClick={() => dispatch({ type: 'roll', count: 2, label: `Courage test: ${m.name}`, model: m.id, ...(stats?.C ? { sum: stats.C } : {}) })}>Courage</button>
-        </div>
       )}
     </div>
   );
