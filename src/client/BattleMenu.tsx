@@ -318,6 +318,13 @@ export function BattleMenu() {
             <h2>5. Choose {BOT_NAME}'s army</h2>
             <div className="row wrap">
               <select value={foe} onChange={e => setFoe(e.target.value)} aria-label={`${BOT_NAME}'s army`}>
+                <optgroup label="Premade armies">
+                  {PREMADE.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.army})
+                    </option>
+                  ))}
+                </optgroup>
                 <optgroup label="A random list from">
                   <option value="random">Any army</option>
                   {catalog &&
@@ -326,13 +333,6 @@ export function BattleMenu() {
                         {a}
                       </option>
                     ))}
-                </optgroup>
-                <optgroup label="Premade armies">
-                  {PREMADE.map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} ({p.army})
-                    </option>
-                  ))}
                 </optgroup>
               </select>
               <label className="mini-stat">
