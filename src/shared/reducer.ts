@@ -375,7 +375,7 @@ function cleanObject(t: Partial<Terrain>, base: Terrain, out: Terrain) {
   if (out.kind !== 'objective' || !MARKER_OBJECTS.includes(object as never)) return;
   // A ladder or ram can be broken, and a ladder raised against a piece of terrain.
   const wounds = pick('wounds');
-  if ((object === 'ladder' || object === 'ram') && wounds !== undefined && wounds !== null) out.wounds = int(wounds, 0, 20, 0);
+  if ((object === 'ladder' || object === 'ram' || object === 'charge') && wounds !== undefined && wounds !== null) out.wounds = int(wounds, 0, 20, 0);
   const raised = pick('raised');
   if (object === 'ladder' && typeof raised === 'string' && raised) out.raised = id(raised);
   out.object = object;

@@ -51,7 +51,7 @@ export const causeway = (state: GameState) => Object.values(state.terrain).find(
 /** The stretch of the Deeping Wall by the culvert, while it stands. */
 export const culvertWall = (state: GameState) => state.terrain[`n-${CULVERT_ID}`];
 /** Whether the Deeping Wall has been destroyed. */
-export const deepingDown = (state: GameState) => !!culvertWall(state)?.gone;
+export const deepingDown = (state: GameState) => !!state.narrative?.breach;
 
 /** The seven objectives as they stand right now. */
 export function helmsObjectives(state: GameState): HelmsObjective[] {
@@ -325,9 +325,10 @@ export function explode(state: GameState, catalog: Catalog | null, t: Terrain, s
  */
 export function breachDeeping(state: GameState, catalog: Catalog | null, seat: Seat, d6: D6, push: Push, out: Action[], group: string): void {
   const wall = culvertWall(state);
-  if (!wall || wall.gone) return;
+  if (!wall || deepingDown(state)) return;
   push('The Deeping Wall is breached!', [], { note: 'The stretch by the culvert is blown apart.' });
-  out.push({ type: 'updateTerrain', id: wall.id, patch: { gone: 'destroyed', by: seat } }, { type: 'narrativeNote', breach: state.turn });
+  // (The stretch is taken off the table: the breach is open ground.)
+  out.push({ type: 'narrativeNote', breach: state.turn }, { type: 'removeTerrain', id: wall.id });
   const ladders = onTable(state).filter(l => l.object === 'ladder' && l.raised === wall.id);
   const on = Object.values(state.models).filter(m => alive(m) && (distanceToTerrain(m, wall) <= 0.25 || ladders.some(l => touchingMarker(m, l))));
   for (const m of on) {
