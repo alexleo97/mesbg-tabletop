@@ -210,7 +210,7 @@ function ruinWalls(t: Terrain): ReactElement[] {
   return out;
 }
 
-export function TerrainArt({ t, mat }: { t: Terrain; mat: Mat }) {
+export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How far the table is turned, so a marker's letter stays upright. */ turn?: number }) {
   const d = outline(t);
   const tex = `url(#tex-${t.look === 'stone' ? (t.kind === 'rock' ? 'cliff' : t.kind === 'building' ? 'wall' : 'stone') : MATERIAL[t.kind]})`;
 
@@ -505,7 +505,7 @@ export function TerrainArt({ t, mat }: { t: Terrain; mat: Mat }) {
           <circle className="ground objective" r={t.w / 2} filter="url(#hard-shadow)" />
           <circle className="objective-ring" r={t.w / 2 - 0.08} />
           {t.object ? (
-            <text className={`objective-glyph ${t.side ?? ''}`} fontSize={t.w * 0.62} textAnchor="middle" dominantBaseline="central">
+            <text className={`objective-glyph ${t.side ?? ''}`} fontSize={t.w * 0.62} textAnchor="middle" dominantBaseline="central" transform={turn ? `rotate(${-turn})` : undefined}>
               {t.hidden ? '?' : GLYPHS[t.object]}
             </text>
           ) : (
@@ -567,8 +567,14 @@ function star(r: number) {
 // shows its south and east faces below its top, the stone dropping away to the ground. Looks only; the top is where
 // the piece stands for play.
 
-/** How far down the table a face reaches for each inch of height. */
+/** How far down the screen a face reaches for each inch of height. */
 const LEAN = { x: 0.17, y: 0.34 };
+
+/** That lean on the table itself, turned `turn` degrees on screen, so the faces always drop towards the viewer. */
+function leanOn(turn: number): Point {
+  const a = (-turn * Math.PI) / 180;
+  return { x: LEAN.x * Math.cos(a) - LEAN.y * Math.sin(a), y: LEAN.x * Math.sin(a) + LEAN.y * Math.cos(a) };
+}
 
 function hull(pts: Point[]): Point[] {
   const p = [...pts].sort((a, b) => a.x - b.x || a.y - b.y);
@@ -590,25 +596,26 @@ function hull(pts: Point[]): Point[] {
 const tall = (t: Terrain) => !t.gone && (t.sheer || t.kind === 'gate' || (t.look === 'stone' && t.kind !== 'road'));
 
 /** The ground a piece's faces cover, from its top down to its foot; a causeway slopes from the gate to the ground. */
-function face(t: Terrain): Point[] {
+function face(t: Terrain, lean: Point): Point[] {
   const top = boardOutline(t, 28);
   if (t.kind === 'road') {
     // The causeway: its gate end (local -x) stands high, its far end on the ground.
     const a = (t.rot * Math.PI) / 180;
     const along = (p: Point) => ((p.x - t.x) * Math.cos(a) + (p.y - t.y) * Math.sin(a)) / t.w + 0.5;
-    return hull([...top, ...top.map(p => ({ x: p.x + LEAN.x * 2.2 * (1 - along(p)), y: p.y + LEAN.y * 2.2 * (1 - along(p)) }))]);
+    return hull([...top, ...top.map(p => ({ x: p.x + lean.x * 2.2 * (1 - along(p)), y: p.y + lean.y * 2.2 * (1 - along(p)) }))]);
   }
   const h = heightOf(t);
-  return hull([...top, ...top.map(p => ({ x: p.x + LEAN.x * h, y: p.y + LEAN.y * h }))]);
+  return hull([...top, ...top.map(p => ({ x: p.x + lean.x * h, y: p.y + lean.y * h }))]);
 }
 
 /** The faces of every tall fortress piece, drawn on the ground before any of their tops. */
-export function TerrainFaces({ terrain }: { terrain: Terrain[] }) {
+export function TerrainFaces({ terrain, turn = 0 }: { terrain: Terrain[]; /** How far the table is turned. */ turn?: number }) {
+  const lean = leanOn(turn);
   const pieces = terrain.filter(t => tall(t) || (t.kind === 'road' && t.look === 'stone' && t.shape === 'rect' && !t.stairs));
   return (
     <g className="fortress-faces" pointerEvents="none">
       {pieces.map(t => {
-        const pts = face(t).map(p => `${p.x.toFixed(3)},${p.y.toFixed(3)}`).join(' ');
+        const pts = face(t, lean).map(p => `${p.x.toFixed(3)},${p.y.toFixed(3)}`).join(' ');
         return (
           <g key={t.id}>
             <polygon className="face-shadow" points={pts} transform="translate(0.35 0.45)" filter="url(#bank-blur)" />

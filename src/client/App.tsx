@@ -31,6 +31,7 @@ import { getMap } from './cloud.ts';
 import { MapEditor } from './MapEditor.tsx';
 import { LeaderboardPage } from './Leaderboard.tsx';
 import { useAuth } from './auth.ts';
+import { LessonLockContext, type LessonLock } from './lessonLock.ts';
 
 
 const storage = {
@@ -177,9 +178,11 @@ interface GameProps {
   overlay?: React.ReactNode;
   /** In the training, whether the setup card shows before the battle starts (only lessons that use it). */
   setupCard?: boolean;
+  /** In the training, told which models are selected or aimed at, for a lesson that asks you to tap one. */
+  onPick?: (ids: string[]) => void;
 }
 
-export function Game({ room, settings, updateSettings, practice, overlay, setupCard }: GameProps) {
+export function Game({ room, settings, updateSettings, practice, overlay, setupCard, onPick }: GameProps) {
   const roleKey = `role:${room}`;
   // Arriving to play the computer: you take player 1 and it takes player 2.
   const vsComputer = useMemo(() => !practice && new URLSearchParams(location.search).get('vs') === 'computer', []);
@@ -234,9 +237,14 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
     if (selectedTerrain && !state.terrain[selectedTerrain]) setSelectedTerrain(null);
   }, [state.models, state.terrain, selected, selectedTerrain]);
 
+  // On a Learn to play table, each step only lets you do what it teaches.
+  const lock = useMemo<LessonLock | null>(() => (practice?.allows && practice.uses && practice.refuse ? { can: a => practice.allows!(a), uses: id => practice.uses!(id), refuse: () => practice.refuse!() } : null), [practice]);
+
   // A new shooter, or a new phase, starts without a target.
   const single = selected.size === 1 ? state.models[[...selected][0]] : undefined;
   useEffect(() => setAimAt(null), [single?.id, state.phase]);
+  // A lesson that asks you to tap a model, or aim at one, hears which.
+  useEffect(() => onPick?.([...selected, ...(aimAt ? [aimAt] : [])]), [selected, aimAt]);
 
   const dispatch = conn.dispatch.bind(conn);
   // Signed-in players sit down under their profile name unless they've already typed one.
@@ -336,7 +344,7 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey && !practice) {
         e.preventDefault();
         conn.dispatch({ type: 'undo' });
       }
@@ -521,14 +529,18 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
           <small>Arrows</small>
         </button>
       )}
-      <button onClick={() => dispatch({ type: 'undo' })} disabled={!canUndo} title="Undo your last change (Ctrl+Z)" aria-label="Undo">
-        <span>↶</span>
-        <small>Undo</small>
-      </button>
+      {/* A lesson is put back with its Restart button instead. */}
+      {!practice && (
+        <button onClick={() => dispatch({ type: 'undo' })} disabled={!canUndo} title="Undo your last change (Ctrl+Z)" aria-label="Undo">
+          <span>↶</span>
+          <small>Undo</small>
+        </button>
+      )}
     </div>
   );
 
-  return (
+  // On a Learn to play table, the lock reaches every control that could act.
+  const page = (
     <div className="game">
       <header className="topbar">
         <button className="leave" onClick={leave} title="Leave this game and go back to the home screen" aria-label="Home">
@@ -647,7 +659,7 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
                 lesson={!!practice}
               />
             )}
-            {selected.size > 1 && (
+            {selected.size > 1 && !practice && (
               <button className="selection-chip" onClick={() => showTab('model')}>
                 {selected.size} models selected · Details
               </button>
@@ -696,6 +708,7 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
       </main>
     </div>
   );
+  return <LessonLockContext.Provider value={lock}>{page}</LessonLockContext.Provider>;
 }
 
 export function App() {

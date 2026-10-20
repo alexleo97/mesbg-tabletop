@@ -11,7 +11,7 @@ import { sabotageActions } from '../shared/siege.ts';
 import { chargeSabotage } from '../shared/helms.ts';
 import { brokenSideToTest, brokenTests, terrorAhead, terrorTest } from '../shared/courage.ts';
 import { cleanMark } from '../shared/marks.ts';
-import type { Action, GameState, Mark, Role } from '../shared/types.ts';
+import type { Action, GameState, Mark, Phase, Role } from '../shared/types.ts';
 import { showMark, turnMarks, type Connection, type Snapshot } from './net.ts';
 
 const d6 = () => 1 + Math.floor(Math.random() * 6);
@@ -37,6 +37,56 @@ export function lessonAllows(state: GameState, action: Action): boolean {
   return !NOT_IN_LESSONS.has(action.type);
 }
 
+/** What one step of a lesson lets you do on its table. Everything else is refused. */
+export interface LessonRule {
+  /** The kinds of action the step teaches. */
+  actions: Action['type'][];
+  /** The only models of yours the step uses, when it isn't all of them. */
+  models?: string[];
+  /** The only phases these are done in, when it isn't any. */
+  phases?: Phase[];
+  /** Actions the step only takes once the table is ready for them, such as Done moving once the charge is in. */
+  only?: Partial<Record<Action['type'], (s: GameState) => boolean>>;
+}
+
+/** Your models an action moves or acts with, for a step that only uses some of them. */
+function actorsOf(state: GameState, action: Action): string[] {
+  switch (action.type) {
+    case 'moveModels':
+      // A model your caster has Compelled is moved by you, whoever it belongs to.
+      return action.moves.map(mv => mv.id).filter(id => id !== state.flow.compel?.model);
+    case 'shoot':
+      return [action.shot.shooter.id];
+    case 'cast':
+    case 'declareHeroic':
+      return [action.model];
+    case 'cross':
+    case 'crossed':
+    case 'crawl':
+    case 'climb':
+    case 'rollFate':
+    case 'takeWound':
+    case 'fightChoice':
+      return [action.id];
+    case 'useMight': {
+      const by = state.log.find(r => r.id === action.roll)?.model;
+      return by ? [by] : [];
+    }
+    default:
+      return [];
+  }
+}
+
+/** Whether this step of a lesson lets the player do this. A step without a rule is only read. */
+export function stepAllows(state: GameState, action: Action, rule: LessonRule | undefined): boolean {
+  if (!lessonAllows(state, action) || !rule) return false;
+  if (rule.phases && !rule.phases.includes(state.phase)) return false;
+  if (!rule.actions.includes(action.type)) return false;
+  if (rule.only?.[action.type] && !rule.only[action.type]!(state)) return false;
+  const models = rule.models;
+  return !models || actorsOf(state, action).every(id => models.includes(id));
+}
+
 /**
  * A game played entirely in this browser, for the training. You play player 1; player 2 is a
  * quiet opponent that passes and finishes its turns straight away so the lesson keeps moving.
@@ -45,19 +95,44 @@ export class PracticeGame implements Connection {
   readonly room = 'practice';
   private listeners = new Set<() => void>();
   private snap: Snapshot;
+  /** On a Learn to play table, what the step on it lets you do (a step without a rule is only read). Without one, as in the map editor, the table is free. */
+  private lesson: { rule?: LessonRule } | undefined;
+  /** How many times something the step doesn't teach was tried, so the lesson card can say what to do instead. */
+  refused = 0;
 
-  constructor(state: GameState) {
+  constructor(state: GameState, lesson?: { rule?: LessonRule }) {
     this.snap = { state, status: 'online', players: ['p1', 'p2'], undoDepth: 0 };
+    this.lesson = lesson;
   }
 
-  /** Starts a lesson from a fresh board. */
-  load(state: GameState) {
+  /** Starts a lesson from a fresh board, with what its step lets you do. */
+  load(state: GameState, rule?: LessonRule) {
+    this.lesson = { rule };
+    this.refused = 0;
     this.set(state);
+  }
+
+  /** Whether the table lets you do this: anything on a free table, only what the step teaches in a lesson. */
+  allows(action: Action): boolean {
+    return !this.lesson || stepAllows(this.snap.state, action, this.lesson.rule);
+  }
+
+  /** Whether the step uses this model of yours: any, on a free table or a step that names none. */
+  uses(id: string): boolean {
+    if (!this.lesson) return true;
+    const rule = this.lesson.rule;
+    return !!rule && (!rule.models || rule.models.includes(id));
+  }
+
+  /** Something the step doesn't teach was tried. */
+  refuse() {
+    this.refused++;
+    this.patch({});
   }
 
   dispatch(action: Action) {
     let state = this.snap.state;
-    if (!lessonAllows(state, action)) return;
+    if (!this.allows(action)) return this.refuse();
     // As the server does: a model about to charge something terrifying tests its Courage first, and stays put if it fails.
     if (action.type === 'moveModels' && Array.isArray(action.moves)) {
       const moves = action.moves.filter(mv => {

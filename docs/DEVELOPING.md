@@ -39,3 +39,4 @@ The production server is a single Node process: it serves the built app, the Web
 | Zoom | scroll wheel | pinch |
 | Turn models | Q / E, or the Turn buttons | Turn buttons |
 | Fit board | F | ⤢ button |
+| Turn the table view | R / Shift+R, ⟲ ⟳ buttons, or Shift + scroll wheel to turn freely | ⟲ ⟳ buttons, or twist two fingers |

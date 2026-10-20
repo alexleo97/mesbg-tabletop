@@ -2,7 +2,8 @@ import type { ReactNode } from 'react';
 import { combats } from '../shared/flow.ts';
 import { heroicsSettled } from '../shared/heroics.ts';
 import { initialState, reduce } from '../shared/reducer.ts';
-import type { DiceRoll, GameState, Model, Phase, Seat, Terrain } from '../shared/types.ts';
+import type { Action, DiceRoll, GameState, Model, Phase, Seat, Terrain } from '../shared/types.ts';
+import type { LessonRule } from './practice.ts';
 
 // The Learn to play course: chapters of short lessons, each on its own practice table.
 // Every explanation here is written in our own words.
@@ -53,6 +54,19 @@ function table({ changes = {}, add = [], drop = [], terrain = SCENERY() }: Table
   return { ...s, names: { p1: 'You', p2: 'Mordor' }, listed: false };
 }
 
+/** A table with the battle started and the first turn's Priority still to roll, so the turn guide shows. */
+function atStart(log: DiceRoll[] = []): GameState {
+  const s = table();
+  return { ...s, log, flow: { ...s.flow, started: true } };
+}
+
+/** Some dice to look at in the Log, rolled the way the table rolls them. */
+const SAMPLE_ROLLS: DiceRoll[] = [
+  { id: 'sample-1', by: 'p1', label: 'Ranger of Gondor shoots: needs 3+ to hit', dice: [4], target: 3, at: 0, note: 'A 4 beats the 3 needed: a hit.' },
+  { id: 'sample-2', by: 'p2', label: 'Orc Warrior in a duel: 1 Attack, 1 die', dice: [2], at: 0 },
+  { id: 'sample-3', by: 'p1', label: 'Captain of Minas Tirith to wound: needs 4+', dice: [6, 3], target: 4, at: 0, note: 'One of two dice wounds.' },
+];
+
 /** A table already in the given phase of turn 1, with you holding Priority and heroic actions done. */
 function inPhase(phase: Phase, opts?: TableOptions, turn = 1): GameState {
   const s = table(opts);
@@ -69,7 +83,13 @@ export interface Lesson {
   continues?: boolean;
   /** Shows the turn guide before the start, with Start the battle, for a lesson that starts the battle. */
   setupCard?: boolean;
-  done?: (s: GameState, start: GameState) => boolean;
+  /**
+   * What the lesson lets you do on its table, and with which of your models. Everything else is refused, and the
+   * lesson card says what to do instead. A lesson without one is only looked at: tap and read, but change nothing.
+   */
+  allow?: LessonRule;
+  /** Whether the task is done, from the table now, the table as the lesson began and the models you have tapped. */
+  done?: (s: GameState, start: GameState, picked: ReadonlySet<string>) => boolean;
 }
 
 export interface Chapter {
@@ -91,6 +111,14 @@ const rolled = (prefix: string) => (s: GameState, start: GameState) => newRolls(
 const rolledWith = (text: string) => (s: GameState, start: GameState) => newRolls(s, start).some(r => r.label.includes(text));
 const fought = (s: GameState, start: GameState) => newRolls(s, start).some(r => r.group?.startsWith('f-') && (r.against || r.note));
 const shot = (s: GameState, start: GameState) => newRolls(s, start).some(r => r.group?.startsWith('s-'));
+/** Tapped this model since the lesson began. */
+const picked = (id: string) => (_s: GameState, _start: GameState, ids: ReadonlySet<string>) => ids.has(id);
+/** Whether this model is in a fight. */
+const inFight = (id: string) => (s: GameState) => combats(s).some(c => [...c.p1, ...c.p2].includes(id));
+
+/** What each kind of lesson lets you do. */
+const FIGHTING: Action['type'][] = ['fight', 'strikes', 'wound', 'rollFate', 'takeWound'];
+const SHOOTING: Action['type'][] = ['shoot', 'shotOn', 'wound'];
 
 /** The two Gondor models already locked in combat with the nearest Orc. */
 const IN_COMBAT = { captain: { x: 13.5, y: 14.48 }, warrior: { x: 16, y: 19 } };
@@ -116,11 +144,12 @@ export const CHAPTERS: Chapter[] = [
         body: (
           <>
             <p>Every model has a profile. Mv is how far it moves, Fv how well it fights, Sv what it needs to hit when shooting, S how hard it hits, D how tough it is, A how many dice it rolls in a fight, W how many wounds it can take, C its Courage and I its Intelligence.</p>
-            <p>Heroes also have Might, Will and Fate points, which you'll meet in the Heroes chapter. Hover or press a stat on the card to see what it means.</p>
+            <p>Heroes also have Might, Will and Fate points, which you'll meet in the Heroes chapter. Hover over a stat on the card to see what it means.</p>
           </>
         ),
         task: 'Tap your Captain to open his card and look at his profile.',
         setup: () => table(),
+        done: picked('captain'),
       },
       {
         title: 'Dice',
@@ -128,19 +157,20 @@ export const CHAPTERS: Chapter[] = [
           <>
             <p>The game uses ordinary six-sided dice, called D6. When a roll says 4+, you need a 4, 5 or 6. A D3 is a D6 halved: 1-2 is 1, 3-4 is 2, 5-6 is 3.</p>
             <p>The table rolls every die for you and shows the result in the Log on the turn guide card, so both players see the same thing. Fights, shots, Courage, Fate and every other test are rolled as they happen.</p>
+            <p>Open the Log on the turn guide card at the bottom right to see a few rolls.</p>
           </>
         ),
-        setup: () => table(),
+        setup: () => atStart(SAMPLE_ROLLS),
       },
       {
         title: 'How a turn runs',
         body: (
           <>
             <p>Every turn has five phases, always in the same order: Priority, Move, Shoot, Fight and End. Both players act in each phase before the game moves on.</p>
-            <p>The bar along the bottom of the screen is the turn guide. It always says what happens next and gives you the button for it.</p>
+            <p>The card at the bottom right of the screen is the turn guide. The phases run along its top, with the one you're in lit up, and it always says what happens next and gives you the button for it.</p>
           </>
         ),
-        setup: () => table(),
+        setup: () => atStart(),
       },
       {
         title: 'Who goes first',
@@ -153,6 +183,7 @@ export const CHAPTERS: Chapter[] = [
         task: 'Press Start the battle, then Roll for priority. If you win, take Priority.',
         setupCard: true,
         setup: () => table(),
+        allow: { actions: ['startGame', 'rollPriority', 'choosePriority'] },
         done: s => s.flow.started && s.phase !== 'priority',
       },
     ],
@@ -172,6 +203,7 @@ export const CHAPTERS: Chapter[] = [
         ),
         task: 'Drag your Ranger at least 2" towards the rocks.',
         setup: () => inPhase('move'),
+        allow: { actions: ['moveModels'], models: ['ranger'], phases: ['move'] },
         done: (s, start) => moved(s, start, 'ranger'),
       },
       {
@@ -182,8 +214,9 @@ export const CHAPTERS: Chapter[] = [
             <p>A model that starts its move inside an enemy's zone can stay put, charge that enemy, or move away without getting any closer to it.</p>
           </>
         ),
-        task: 'Select the Warrior and look at the small ring around the nearest Orc: that is its control zone.',
+        task: 'Tap your Warrior. The thin gold ring 1" around his base is his control zone; every Orc has one too.',
         setup: () => inPhase('move'),
+        done: picked('warrior'),
       },
       {
         title: 'Difficult terrain',
@@ -195,6 +228,7 @@ export const CHAPTERS: Chapter[] = [
         ),
         task: 'Move your Warrior into the edge of the woods on the right. Watch the distance count double inside.',
         setup: () => inPhase('move', { changes: { warrior: { x: 15, y: 19.5 } } }),
+        allow: { actions: ['moveModels'], models: ['warrior'], phases: ['move'] },
         done: s => Math.hypot(s.models.warrior.x - 19, s.models.warrior.y - 15) < 2.5,
       },
       {
@@ -207,6 +241,7 @@ export const CHAPTERS: Chapter[] = [
         ),
         task: 'Move your Warrior up to the wall, then press Jump on his card.',
         setup: () => inPhase('move', { terrain: [...SCENERY(), piece('wall', 'wall', 13.5, 17, 8, 0.6, 'rect')] }),
+        allow: { actions: ['moveModels', 'cross'], models: ['warrior'], phases: ['move'] },
         done: rolledWith(': Jump test'),
       },
       {
@@ -219,6 +254,8 @@ export const CHAPTERS: Chapter[] = [
         ),
         task: 'Drag your Warrior into base contact with the nearest Orc, then press Done moving.',
         setup: () => inPhase('move'),
+        // Done moving waits for the charge, so the lesson can't be passed by without it.
+        allow: { actions: ['moveModels', 'endActivation'], models: ['warrior'], phases: ['move'], only: { endActivation: inFight('warrior') } },
         done: s => s.phase !== 'move' && combats(s).length > 0,
       },
     ],
@@ -238,6 +275,7 @@ export const CHAPTERS: Chapter[] = [
         ),
         task: 'Tap your Ranger, tap an Orc, then press Shoot.',
         setup: () => inPhase('shoot'),
+        allow: { actions: SHOOTING, models: ['ranger'], phases: ['shoot'] },
         done: shot,
       },
       {
@@ -250,6 +288,7 @@ export const CHAPTERS: Chapter[] = [
         ),
         task: 'Shoot at the Orc behind the crops and watch the In the Way roll.',
         setup: () => inPhase('shoot', { terrain: [piece('crops', 'field', 11, 13, 5, 4, 'rect')], changes: { orc2: { x: 15, y: 9 } } }),
+        allow: { actions: SHOOTING, models: ['ranger'], phases: ['shoot'] },
         done: shot,
       },
       {
@@ -262,6 +301,7 @@ export const CHAPTERS: Chapter[] = [
         ),
         task: 'Shoot at an Orc and watch the second row of dice: that is the roll to wound.',
         setup: () => inPhase('shoot'),
+        allow: { actions: SHOOTING, models: ['ranger'], phases: ['shoot'] },
         done: shot,
       },
       {
@@ -272,7 +312,11 @@ export const CHAPTERS: Chapter[] = [
             <p>Either side can shoot past their own models, but those friends count as In the Way.</p>
           </>
         ),
-        setup: () => inPhase('shoot'),
+        task: 'Tap your Ranger, then the Orc fighting your Captain: the card says why it can’t shoot.',
+        setup: () => inPhase('shoot', { changes: { captain: IN_COMBAT.captain } }),
+        allow: { actions: SHOOTING, models: ['ranger'], phases: ['shoot'] },
+        done: (_s, _start, ids) => ids.has('ranger') && ids.has('orc1'),
+
       },
     ],
   },
@@ -291,6 +335,7 @@ export const CHAPTERS: Chapter[] = [
         ),
         task: 'Tap the ⚔ marker, press Roll the duel, then Roll strikes.',
         setup: () => inPhase('fight', { changes: IN_COMBAT }),
+        allow: { actions: FIGHTING, phases: ['fight'] },
         done: fought,
       },
       {
@@ -301,7 +346,10 @@ export const CHAPTERS: Chapter[] = [
             <p>The loser backs away 1" before the winner strikes. A friend who isn't fighting can shuffle up to 1" to make room.</p>
           </>
         ),
+        task: 'Fight the Orc, and watch the loser back away 1" after the duel.',
         setup: () => inPhase('fight', { changes: IN_COMBAT }),
+        allow: { actions: FIGHTING, phases: ['fight'] },
+        done: fought,
       },
       {
         title: 'Trapped',
@@ -317,6 +365,7 @@ export const CHAPTERS: Chapter[] = [
             changes: { captain: { x: 13.5, y: 14.48 }, warrior: { x: 13.5, y: 12.52 } },
             add: [model('ally', 'Warrior of Minas Tirith', 'p1', 14.48, 13.5, WARRIOR)],
           }),
+        allow: { actions: FIGHTING, phases: ['fight'] },
         done: fought,
       },
       {
@@ -327,7 +376,11 @@ export const CHAPTERS: Chapter[] = [
             <p>A pike reaches further and can support through a second friend. A supporting model can't be in a fight of its own.</p>
           </>
         ),
-        setup: () => inPhase('fight', { changes: IN_COMBAT }),
+        task: 'Fight the Orc: your Warrior with a spear, right behind the Captain, joins in.',
+        // The Warrior with a spear stands just behind the Captain, away from the Orc.
+        setup: () => inPhase('fight', { changes: { captain: IN_COMBAT.captain, warrior: { x: 13.5, y: 15.46, options: ['Shield and spear'] } } }),
+        allow: { actions: FIGHTING, phases: ['fight'] },
+        done: (s, start) => newRolls(s, start).some(r => r.group?.startsWith('f-') && r.model === 'warrior'),
       },
       {
         title: 'Shields and big weapons',
@@ -337,7 +390,10 @@ export const CHAPTERS: Chapter[] = [
             <p>A two-handed weapon hits harder, adding 1 to each roll to wound, but its wielder takes 1 off its duel roll.</p>
           </>
         ),
-        setup: () => inPhase('fight', { changes: IN_COMBAT }),
+        task: 'Open the fight, press Shield for your side, then roll the duel: the Captain rolls 4 dice instead of 2.',
+        setup: () => inPhase('fight', { changes: { captain: IN_COMBAT.captain } }),
+        allow: { actions: [...FIGHTING, 'fightChoice'], phases: ['fight'] },
+        done: (s, start) => newRolls(s, start).some(r => r.group?.startsWith('f-') && r.model === 'captain' && r.dice.length >= 4),
       },
     ],
   },
@@ -356,6 +412,7 @@ export const CHAPTERS: Chapter[] = [
         ),
         task: 'Fight the Orc, and after the duel dice land press +1 under one of the Captain’s dice.',
         setup: () => inPhase('fight', { changes: IN_COMBAT }),
+        allow: { actions: [...FIGHTING, 'useMight'], phases: ['fight'] },
         done: (s, start) => s.models.captain.might < start.models.captain.might,
       },
       {
@@ -368,6 +425,7 @@ export const CHAPTERS: Chapter[] = [
         ),
         task: 'Declare a heroic action for your Captain, or press Pass.',
         setup: () => ({ ...inPhase('move'), flow: { ...inPhase('move').flow, passed: [] } }),
+        allow: { actions: ['declareHeroic', 'passHeroic'] },
         done: s => heroicsSettled(s),
       },
       {
@@ -380,6 +438,7 @@ export const CHAPTERS: Chapter[] = [
         ),
         task: 'The Orc has wounded your Captain. Press Roll Fate in the turn guide, or take the wound.',
         setup: () => inPhase('fight', { changes: { ...IN_COMBAT, captain: { ...IN_COMBAT.captain, pending: 1 } } }),
+        allow: { actions: ['rollFate', 'takeWound', 'useMight'] },
         done: s => !s.models.captain.pending,
       },
       {
@@ -433,6 +492,7 @@ export const CHAPTERS: Chapter[] = [
           // Heroic actions still to settle, so the tests come as the move starts.
           return { ...s, flow: { ...s.flow, passed: [] } };
         },
+        allow: { actions: ['passHeroic'] },
         done: rolled('Broken army'),
       },
       {
@@ -445,6 +505,7 @@ export const CHAPTERS: Chapter[] = [
         ),
         task: 'Try to charge the Troll: drag your Warrior into contact with it.',
         setup: () => inPhase('move', { drop: ['orc1'], add: [model('troll', 'Mordor Troll', 'p2', 13.5, 13, TROLL, { base: { shape: 'round', w: 40, h: 40 }, wounds: 3, maxWounds: 3 })] }),
+        allow: { actions: ['moveModels'], models: ['warrior'], phases: ['move'] },
         done: rolled('Courage to charge'),
       },
     ],
@@ -468,6 +529,8 @@ export const CHAPTERS: Chapter[] = [
             drop: ['captain'],
             add: [model('gandalf', 'Gandalf the White', 'p1', 10, 19, GANDALF, { hero: true, might: 3, will: 6, fate: 3, wounds: 3, maxWounds: 3 })],
           }),
+        // Might can raise a cast die that falls short, and a power that hands you an enemy to move (Command) is finished here.
+        allow: { actions: ['cast', 'useMight', 'letSpellFail', 'compel', 'moveModels'], models: ['gandalf'], phases: ['move'], only: { moveModels: s => !!s.flow.compel } },
         done: rolled('Cast '),
       },
       {
@@ -484,6 +547,7 @@ export const CHAPTERS: Chapter[] = [
           const roll = { id: 'w-lesson-0', by: 'p2' as const, label: 'Cast Transfix (5+) by Orc Shaman at Captain of Minas Tirith', dice: [5, 2], target: 5, model: 'shaman', aim: 'captain', note: 'Cast on a 5. Captain of Minas Tirith may resist with Will, needing a 5 or more.', at: 0 };
           return { ...s, log: [roll], flow: { ...s.flow, spell: { roll: roll.id, caster: 'shaman', target: 'captain', power: 'Transfix', cv: 5 } } };
         },
+        allow: { actions: ['resist'] },
         done: rolled('Resist '),
       },
       {
@@ -517,6 +581,7 @@ export const CHAPTERS: Chapter[] = [
             drop: ['warrior'],
             add: [model('knight', 'Knight of Minas Tirith', 'p1', 15, 21, KNIGHT, { move: 10, base: { shape: 'round', w: 40, h: 40 } })],
           }),
+        allow: { actions: ['moveModels', 'endActivation'], models: ['knight'], phases: ['move'], only: { endActivation: inFight('knight') } },
         done: s => s.phase !== 'move' && combats(s).some(c => [...c.p1, ...c.p2].includes('knight')),
       },
       {
@@ -526,7 +591,11 @@ export const CHAPTERS: Chapter[] = [
             <p>If a mount is slain or knocked down, its rider is thrown, and the game rolls on the Thrown Rider table for you: a 1 means it takes a hit and lands on the ground, 2-5 means it stands up but loses the rest of the turn, and a 6 means it lands ready to fight.</p>
           </>
         ),
-        setup: () => inPhase('fight'),
+        setup: () =>
+          inPhase('fight', {
+            drop: ['warrior'],
+            add: [model('knight', 'Knight of Minas Tirith', 'p1', 15, 21, KNIGHT, { move: 10, base: { shape: 'round', w: 40, h: 40 } })],
+          }),
       },
       {
         title: 'Monsters',
@@ -538,6 +607,7 @@ export const CHAPTERS: Chapter[] = [
         ),
         task: 'Tap the Troll and read its card.',
         setup: () => inPhase('move', { drop: ['orc1'], add: [model('troll', 'Mordor Troll', 'p2', 13.5, 12, TROLL, { base: { shape: 'round', w: 40, h: 40 }, wounds: 3, maxWounds: 3 })] }),
+        done: picked('troll'),
       },
     ],
   },

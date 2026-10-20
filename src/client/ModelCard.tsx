@@ -27,6 +27,8 @@ import { CastBox } from './MagicPanel.tsx';
 import { RollRow } from './Panels.tsx';
 import { mayTend } from '../shared/company.ts';
 import { useDraggable } from './useDraggable.tsx';
+import { useLessonLock, useLocked } from './lessonLock.ts';
+import { STAT_TITLES } from './ListBuilder.tsx';
 import { distanceBetween, formatInches } from '../shared/geometry.ts';
 import { formatNeed, woundNeed } from '../shared/rules.ts';
 import type { Action, GameState, Model, Role } from '../shared/types.ts';
@@ -88,11 +90,12 @@ const TEST_HELP: Record<CrossTest, string> = {
 /** In the Move phase: the test for terrain the model was stopped at, and crawling or lying down. */
 /** Takes a model back to where it began this Move phase, with its whole Move to try again (not once its move has ended). */
 function PutBack({ state, dispatch, m }: { state: GameState; dispatch: (a: Action) => void; m: Model }) {
+  const locked = useLocked();
   const from = moveStart(state, m);
   if (!state.flow.starts?.[m.id] || state.flow.stopped?.includes(m.id) || (from.x === m.x && from.y === m.y)) return null;
   return (
     <div className="row wrap">
-      <button className="small" title="Back to where it started this phase, with its whole Move. You can also drag it back along the way it came." onClick={() => dispatch({ type: 'moveModels', moves: [{ id: m.id, x: from.x, y: from.y }] })}>
+      <button className="small" title="Back to where it started this phase, with its whole Move. You can also drag it back along the way it came." {...locked({ type: 'moveModels', moves: [{ id: m.id, x: from.x, y: from.y }] })} onClick={() => dispatch({ type: 'moveModels', moves: [{ id: m.id, x: from.x, y: from.y }] })}>
         ↶ Put it back
       </button>
     </div>
@@ -100,6 +103,7 @@ function PutBack({ state, dispatch, m }: { state: GameState; dispatch: (a: Actio
 }
 
 function TerrainMoves({ state, dispatch, m, lesson }: { state: GameState; dispatch: (a: Action) => void; m: Model; lesson?: boolean }) {
+  const locked = useLocked();
   const at = atCrossing(state, m);
   const left = moveLeft(state, m);
   const moved = !!state.flow.starts?.[m.id];
@@ -117,7 +121,7 @@ function TerrainMoves({ state, dispatch, m, lesson }: { state: GameState; dispat
         </p>
         {why && <p className="warn">{why}.</p>}
         <div className="row wrap">
-          <button className="primary" disabled={!!why} onClick={() => dispatch({ type: 'cross', id: m.id })}>
+          <button className="primary" disabled={!!why} {...locked({ type: 'cross', id: m.id })} onClick={() => dispatch({ type: 'cross', id: m.id })}>
             {at.test === 'Climb down' ? 'Climb down' : at.test}
           </button>
           {at.test === 'Leap' && <button onClick={() => dispatch({ type: 'crossed', id: m.id, terrain: at.terrain })}>Wade in</button>}
@@ -203,7 +207,10 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
     loadRulesText().then(setRulesText, () => {});
   }, []);
   const explain = (r: string) => rulesText[unit?.ruleRefs?.[r] ?? ''] ?? ruleSummary(r);
-  const mine = role === m.owner;
+  // On a Learn to play table, only the models a step uses offer anything to do.
+  const lock = useLessonLock();
+  const locked = useLocked();
+  const mine = role === m.owner && (!lock || lock.uses(m.id));
   // Objectives are handled as models move (dropping one is always allowed).
   const markers = markerActions(state, m).filter(a => a.kind === 'drop' || phaseAllows(state, m.owner, { type: a.kind }));
   const carried = carriedBy(state, m);
@@ -294,6 +301,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
           <div className="row wrap">
             <button
               className="primary"
+              {...locked({ type: 'shoot', shot: { shooter: { id: m.id } } } as Action)}
               disabled={!ok}
               title={hasShot ? `${m.name} has shot this turn. Each model shoots once a turn.` : !phaseAllows(state, role, { type: 'shoot', shot: { shooter: { id: m.id }, charge } }) ? 'Models shoot in the Shoot phase, when it is their side’s turn.' : undefined}
               onClick={() =>
@@ -364,7 +372,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
           {printed && (
             <div className="stat-line">
               {STAT_NAMES.map((k, i) => (
-                <span key={k}>
+                <span key={k} title={STAT_TITLES[k]}>
                   <small>{k}</small>
                   {printed[i]}
                 </span>

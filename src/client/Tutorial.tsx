@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { GameState } from '../shared/types.ts';
 import { Game } from './App.tsx';
 import { SitePage } from './Home.tsx';
@@ -9,6 +9,8 @@ import { useDraggable } from './useDraggable.tsx';
 import type { Settings } from './settings.ts';
 
 const PROGRESS_KEY = 'mesbg-tabletop:learn';
+/** How long the lesson card says why something was refused. */
+const REFUSAL_MS = 4500;
 
 function readProgress(): string[] {
   try {
@@ -131,7 +133,7 @@ function ChapterRun({
   const LESSONS = CHAPTERS[chapter].lessons;
   const lastChapter = chapter === CHAPTERS.length - 1;
   const drag = useDraggable('lesson');
-  const game = useMemo(() => new PracticeGame(LESSONS[0].setup()), []);
+  const game = useMemo(() => new PracticeGame(LESSONS[0].setup(), { rule: LESSONS[0].allow }), []);
   const { state } = useRoom(game);
   const [step, setStep] = useState(0);
   const [start, setStart] = useState<GameState>(() => game.getSnapshot().state);
@@ -139,16 +141,35 @@ function ChapterRun({
   // On a phone the card would cover the table, so the explanation folds away behind a button.
   const narrow = typeof matchMedia === 'function' && matchMedia('(max-width: 800px)').matches;
   const [more, setMore] = useState(!narrow);
+  // The models you have tapped or aimed at in this lesson, for one that asks you to.
+  const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const lesson = LESSONS[step];
-  const checked = lesson.done ? lesson.done(state, start) : false;
+  const checked = lesson.done ? lesson.done(state, start, picked) : false;
   // A lesson without a check never holds you up.
   const done = !lesson.done || checked;
+  // Something the lesson doesn't teach was tried: the card says what to do instead, for a few seconds.
+  const [refusal, setRefusal] = useState(0);
+  useEffect(() => {
+    if (!game.refused) return;
+    setRefusal(game.refused);
+    setSmall(false);
+    const t = setTimeout(() => setRefusal(0), REFUSAL_MS);
+    return () => clearTimeout(t);
+  }, [game.refused]);
+  const refusedText =
+    !lesson.allow && !lesson.task
+      ? 'Nothing on the table changes in this lesson: read it, then press Next.'
+      : checked
+        ? 'That isn’t part of this lesson. Press Next to carry on.'
+        : `That isn’t part of this lesson. ${lesson.task}`;
 
   const go = (next: number, keep = false) => {
     const s = keep ? state : LESSONS[next].setup();
-    if (!keep) game.load(s);
+    game.load(s, LESSONS[next].allow);
     setStart(s);
     setStep(next);
+    setPicked(new Set());
+    setRefusal(0);
     setSmall(false);
     setMore(!narrow);
   };
@@ -173,6 +194,11 @@ function ChapterRun({
         <>
           {(more || !lesson.task) && <div className="lesson-body">{lesson.body}</div>}
           {lesson.task && <p className={`lesson-task ${checked ? 'done' : ''}`}>{checked ? `✓ ${lesson.task}` : lesson.task}</p>}
+          {refusal > 0 && (
+            <p key={refusal} className="lesson-refused" role="status">
+              🔒 {refusedText}
+            </p>
+          )}
           {lesson.task && !more && (
             <button className="link lesson-more" onClick={() => setMore(true)}>
               Why?
@@ -183,13 +209,13 @@ function ChapterRun({
             {lesson.done && <button onClick={() => go(step)}>Restart</button>}
             {last && lastChapter ? (
               <>
-                <button className="primary" onClick={onPlay}>
+                <button className={done ? 'primary' : ''} onClick={onPlay}>
                   Start a real game
                 </button>
                 <button onClick={onNext}>Chapters</button>
               </>
             ) : last ? (
-              <button className="primary" onClick={onNext}>
+              <button className={done ? 'primary' : ''} onClick={onNext}>
                 Next chapter
               </button>
             ) : (
@@ -204,5 +230,16 @@ function ChapterRun({
   );
 
   // A fresh game screen per lesson clears selections and fits the table again.
-  return <Game key={step} room="practice" settings={settings} updateSettings={updateSettings} practice={game} overlay={card} setupCard={lesson.setupCard} />;
+  return (
+    <Game
+      key={step}
+      room="practice"
+      settings={settings}
+      updateSettings={updateSettings}
+      practice={game}
+      overlay={card}
+      setupCard={lesson.setupCard}
+      onPick={ids => setPicked(had => (ids.some(id => !had.has(id)) ? new Set([...had, ...ids]) : had))}
+    />
+  );
 }

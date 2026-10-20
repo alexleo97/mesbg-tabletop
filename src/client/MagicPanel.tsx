@@ -8,6 +8,7 @@ import { canCast, castTargets, powersOf, untargeted } from '../shared/magic.ts';
 import { cannotAct, isAreaPower, isLinePower } from '../shared/powers.ts';
 import { useCatalog, useRulesText } from './ListBuilder.tsx';
 import { RollRow } from './Panels.tsx';
+import { useLocked } from './lessonLock.ts';
 
 interface Power {
   name: string;
@@ -41,6 +42,7 @@ function powerEffect(catalog: Catalog | null, rulesText: Record<string, string>,
  * much Will to spend. The game rolls, takes the Will off and asks the target's player about resisting.
  */
 export function CastBox({ state, dispatch, role, model: m }: { state: GameState; dispatch: (a: Action) => void; role: Role; model: Model }) {
+  const locked = useLocked();
   const { catalog } = useCatalog();
   const rulesText = useRulesText();
   const powers = powersOf(catalog, m);
@@ -108,7 +110,7 @@ export function CastBox({ state, dispatch, role, model: m }: { state: GameState;
       ) : (
         <div className="row wrap">
           <Num label="Will" value={n} min={1} max={Math.max(1, m.will)} onChange={setWill} />
-          <button className="primary" onClick={() => dispatch({ type: 'cast', model: m.id, target: target!.id, power: power.name, cv: power.cv, will: n })}>
+          <button className="primary" {...locked({ type: 'cast', model: m.id, target: target!.id, power: power.name, cv: power.cv, will: n })} onClick={() => dispatch({ type: 'cast', model: m.id, target: target!.id, power: power.name, cv: power.cv, will: n })}>
             Cast with {n} {n === 1 ? 'die' : 'dice'}
           </button>
         </div>
