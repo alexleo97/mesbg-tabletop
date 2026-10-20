@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { BOT_NAME, BOT_SPEEDS, type Action, type Terrain, type Model, type Role, type RoomSummary, type Seat } from '../shared/types.ts';
+import { BOT_NAME, BOT_SPEEDS, type Action, type GameState, type Terrain, type Model, type Role, type RoomSummary, type Seat } from '../shared/types.ts';
 import { Board, type Tool } from './Board.tsx';
 import { RoomConnection, useRoom, type Connection } from './net.ts';
 import { pictureUrl } from '../shared/catalog.ts';
@@ -51,6 +51,8 @@ const storage = {
   },
 };
 
+// What a table holds, to tell when the server has caught up with the set-up sent to it.
+const shape = (s: GameState) => `${Object.keys(s.models).length}/${Object.keys(s.terrain).length}/${s.scenario ?? ''}`;
 const cleanRoom = (room: string) =>
   room.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
 
@@ -282,6 +284,7 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
     url.searchParams.delete('turns');
     history.replaceState(null, '', url);
     if (!state.narrative && !state.flow.started) dispatch({ type: 'setNarrative', id: story, good: storySide === 'evil' ? 'p2' : 'p1', ...(storyTurns ? { turns: storyTurns } : {}) });
+    else setPreparing(false);
   }, [seat, players.includes('p1'), status, !!state.bot]);
   useEffect(() => {
     if (!vsComputer || seat !== 'p1' || !players.includes('p1') || status !== 'online') return;
@@ -292,13 +295,16 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
   }, [seat, players.includes('p1'), status]);
   // Arriving from the new battle menu: lay out its table, scenario and armies once you've sat down.
   const fromMenu = useMemo(() => !practice && new URLSearchParams(location.search).has('setup'), []);
+  // Arriving from either menu, the scenario is still on its way to the server: hold the table until it's laid out.
+  const [preparing, setPreparing] = useState(() => !!story || fromMenu);
+  const menuTable = useRef<string | null>(null);
   useEffect(() => {
     if (!fromMenu || seat !== 'p1' || !players.includes('p1') || status !== 'online' || (vsComputer && !state.bot)) return;
     const url = new URL(location.href);
     url.searchParams.delete('setup');
     history.replaceState(null, '', url);
     const setup = takeSetup(room);
-    if (!setup || state.flow.started || Object.keys(state.models).length) return;
+    if (!setup || state.flow.started || Object.keys(state.models).length) return setPreparing(false);
     // Each step is worked out on the table as the ones before it leave it, so the armies stand clear of the terrain.
     let next = state;
     const send = (a: Action) => {
@@ -315,7 +321,19 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
       send({ type: 'setName', seat: state.bot, name: `${BOT_NAME} (${setup.foe.name})` });
     }
     setSetupTab('army');
+    menuTable.current = shape(next);
   }, [seat, players.includes('p1'), status, !!state.bot]);
+  // Until then the table is held behind a loading card, so the empty table and the regular set-up never flash up first.
+  useEffect(() => {
+    if (!preparing) return;
+    if ((role && role !== 'p1') || state.flow.started || (story && state.narrative) || (menuTable.current && shape(state) === menuTable.current)) setPreparing(false);
+  }, [preparing, role, state]);
+  useEffect(() => {
+    if (!preparing) return;
+    // Should the server never answer, the table shows as it is rather than loading for ever.
+    const t = setTimeout(() => setPreparing(false), 10000);
+    return () => clearTimeout(t);
+  }, [preparing]);
   // A duel rolled by either side opens its fight, so it can be followed as it happens.
   const seenDuels = useRef(new Set(state.log.map(r => r.id)));
   useEffect(() => {
@@ -622,7 +640,7 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
               onMark={m => conn.mark(m)}
             />
 
-            {!state.flow.started && !practice && (
+            {!state.flow.started && !practice && !preparing && (
               <SetupCard
                 state={state}
                 dispatch={dispatch}
@@ -682,7 +700,15 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
               log={<DicePanel state={state} dispatch={dispatch} role={role} />}
             />
           )}
-          {!practice && status !== 'online' && (
+          {preparing && (
+            <div className="link-overlay preparing" role="status" aria-live="polite">
+              <div className="link-card">
+                <span className="link-spinner" aria-hidden />
+                <b>{story ? `Setting up ${narrativeById(story)?.name ?? 'the scenario'}…` : 'Setting up the battle…'}</b>
+              </div>
+            </div>
+          )}
+          {!practice && !preparing && status !== 'online' && (
             // Covers the table while the link is down, so nothing is clicked into the void; it fades in after a moment
             // so a quick reconnect doesn't flash it.
             <div className="link-overlay" role="status" aria-live="polite">

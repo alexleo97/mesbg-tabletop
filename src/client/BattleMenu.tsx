@@ -56,6 +56,7 @@ const DEPLOY: Record<string, string> = {
 };
 
 type ArmyMode = 'lists' | 'premade' | 'table';
+type FoeMode = 'random' | 'premade' | 'lists';
 
 /**
  * The menu for a regular game, laid out like the narrative scenarios one: the scenario, the table, your army and
@@ -77,6 +78,7 @@ export function BattleMenu() {
   const [list, setList] = useState<string>(() => loadSaved().find(r => r.entries.length)?.id ?? '');
   const [premade, setPremade] = useState(PREMADE[0].id);
   const [points, setPoints] = useState(500);
+  const [foeMode, setFoeMode] = useState<FoeMode>('random');
   const [foe, setFoe] = useState('random');
   const [foePoints, setFoePoints] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
@@ -106,8 +108,13 @@ export function BattleMenu() {
   const roster = lists.find(r => r.id === list);
   const listPoints = (r: Roster) => (catalog ? r.entries.reduce((a, e) => a + entryPoints(catalog.units[e.unitId], e.optionIds, e.count), 0) : 0);
   const myPoints = mode === 'lists' && roster ? listPoints(roster) : mode === 'premade' ? points : 0;
+  const foeList = foe.startsWith('list:') ? lists.find(r => `list:${r.id}` === foe) : undefined;
   const theirPoints = foePoints ?? (myPoints ? Math.max(200, Math.round(myPoints / 50) * 50) : 500);
-  const armyReady = mode === 'table' || (mode === 'lists' ? !!roster : true);
+  const pickFoeMode = (m: FoeMode) => {
+    setFoeMode(m);
+    setFoe(m === 'premade' ? PREMADE[0].id : m === 'lists' && lists.length ? `list:${lists[0].id}` : 'random');
+  };
+  const armyReady = (mode === 'table' || (mode === 'lists' ? !!roster : true)) && (!solo || foeMode !== 'lists' || !!foeList);
   const chosenMap = [...(maps ?? []), ...(fromLink ? [fromLink] : [])].find(m => `map:${m.id}` === table);
 
   const play = async () => {
@@ -128,7 +135,8 @@ export function BattleMenu() {
       const p = PREMADE.find(x => x.id === premade)!;
       setup.army = { name: p.name, entries: listEntries(premadeRoster(catalog, p.id, points)!, catalog).flatMap(g => g.entries) };
     }
-    if (solo) {
+    if (solo && foeList) setup.foe = { name: foeList.name, entries: listEntries(foeList, catalog).flatMap(g => g.entries) };
+    else if (solo) {
       const p = PREMADE.find(x => x.id === foe);
       const armies = playableArmies(catalog);
       const army = p?.army ?? (foe.startsWith('army:') ? foe.slice(5) : armies[Math.floor(Math.random() * armies.length)]);
@@ -271,7 +279,7 @@ export function BattleMenu() {
             Premade
           </button>
           <button className={mode === 'table' ? 'on' : ''} onClick={() => setMode('table')}>
-            Pick it at the table
+            At the table
           </button>
         </div>
         {mode === 'lists' &&
@@ -316,30 +324,83 @@ export function BattleMenu() {
         {solo && (
           <>
             <h2>5. Choose {BOT_NAME}'s army</h2>
-            <div className="row wrap">
-              <select value={foe} onChange={e => setFoe(e.target.value)} aria-label={`${BOT_NAME}'s army`}>
-                <optgroup label="A random list from">
-                  <option value="random">Any army</option>
-                  {catalog &&
-                    playableArmies(catalog).map(a => (
-                      <option key={a} value={`army:${a}`}>
-                        {a}
-                      </option>
+            <div className="row seg page-tabs">
+              <button className={foeMode === 'random' ? 'on' : ''} onClick={() => pickFoeMode('random')}>
+                Random
+              </button>
+              <button className={foeMode === 'premade' ? 'on' : ''} onClick={() => pickFoeMode('premade')}>
+                Premade
+              </button>
+              <button className={foeMode === 'lists' ? 'on' : ''} onClick={() => pickFoeMode('lists')}>
+                My lists
+              </button>
+            </div>
+            {foeMode === 'random' && (
+              <>
+                <div className="story-grid army-grid">
+                  <button className={`side-card ${foe === 'random' ? 'on' : ''}`} aria-pressed={foe === 'random'} onClick={() => setFoe('random')}>
+                    <b>Any army</b>
+                    <span>A random list from any army</span>
+                  </button>
+                </div>
+                {catalog && (
+                  <details className="story-brief">
+                    <summary>Or a random list from one army</summary>
+                    {(['Good', 'Evil'] as const).map(side => (
+                      <div key={side} className="pool">
+                        <h3>{side}</h3>
+                        <div className="story-grid army-grid">
+                          {playableArmies(catalog)
+                            .filter(a => catalog.armies[a].side.startsWith(side))
+                            .map(a => (
+                              <button key={a} className={`side-card ${foe === `army:${a}` ? 'on' : ''}`} aria-pressed={foe === `army:${a}`} onClick={() => setFoe(`army:${a}`)}>
+                                <b>{a}</b>
+                                <span>A random list</span>
+                              </button>
+                            ))}
+                        </div>
+                      </div>
                     ))}
-                </optgroup>
-                <optgroup label="Premade armies">
-                  {PREMADE.map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} ({p.army})
-                    </option>
+                  </details>
+                )}
+              </>
+            )}
+            {foeMode === 'premade' &&
+              (['Good', 'Evil'] as const).map(side => (
+                <div key={side} className="pool">
+                  <h3>{side}</h3>
+                  <div className="story-grid army-grid">
+                    {PREMADE.filter(p => (side === 'Good' ? p.seed < 20 : p.seed >= 20)).map(p => (
+                      <button key={p.id} className={`side-card ${foe === p.id ? 'on' : ''}`} aria-pressed={foe === p.id} onClick={() => setFoe(p.id)}>
+                        <b>{p.name}</b>
+                        <span>{p.army}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            {foeMode === 'lists' &&
+              (lists.length ? (
+                <div className="story-grid army-grid">
+                  {lists.map(r => (
+                    <button key={r.id} className={`side-card ${foe === `list:${r.id}` ? 'on' : ''}`} aria-pressed={foe === `list:${r.id}`} onClick={() => setFoe(`list:${r.id}`)}>
+                      <b>{r.name}</b>
+                      <span>{r.army}</span>
+                      <small>{catalog ? `${listPoints(r)} pts` : ' '}</small>
+                    </button>
                   ))}
-                </optgroup>
-              </select>
+                </div>
+              ) : (
+                <p className="muted">
+                  You haven't built any lists yet. Build one on the <a href="?armies">Armies</a> page, or give {BOT_NAME} a premade army.
+                </p>
+              ))}
+            {foeMode !== 'lists' && (
               <label className="mini-stat">
                 Points
                 <input className="points" type="number" min={100} max={2000} step={50} value={theirPoints} onChange={e => setFoePoints(Math.max(100, Math.min(2000, Number(e.target.value) || 500)))} />
               </label>
-            </div>
+            )}
           </>
         )}
 
