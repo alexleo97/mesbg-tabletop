@@ -14,6 +14,7 @@ import { listEntries } from '../src/shared/warbands.ts';
 import type { Action, GameState, Seat } from '../src/shared/types.ts';
 import { openDuel } from '../src/shared/bot.ts';
 import { arrivalAuto, rollArrival } from '../src/shared/narrative.ts';
+import { chargeSabotage, reliefArrives, reliefDue } from '../src/shared/helms.ts';
 import { dawnDue, reinforceDue, rollDawn, rollReinforcements } from '../src/shared/mutton.ts';
 import { chronicled, listenDue, listenFor } from '../src/shared/company.ts';
 import { isMonster } from '../src/shared/monsters.ts';
@@ -94,13 +95,15 @@ export function play(state: GameState, rand: () => number, maxSteps = 20000) {
     if (state.narrative) {
       for (let k = 0; k < 4; k++) {
         const bearer = sauronDue(state);
-        const out = arrivalAuto(state) ? rollArrival(state, d6, uid, now) : reinforceDue(state) ? rollReinforcements(state, d6, uid, now) : listenDue(state, catalog) ? listenFor(state, catalog) : dawnDue(state) ? rollDawn(state, d6, uid, now) : bearer ? sauronRoll(state, bearer, d6, uid, now) : burnDue(state) ? burns(state, catalog, d6, uid, now) : willOfEvilDue(state) ? willOfEvilToll(state, catalog, uid, now) : [];
+        const out = arrivalAuto(state) ? rollArrival(state, d6, uid, now) : reinforceDue(state) ? rollReinforcements(state, d6, uid, now) : reliefDue(state) ? reliefArrives(state, uid, now) : listenDue(state, catalog) ? listenFor(state, catalog) : dawnDue(state) ? rollDawn(state, d6, uid, now) : bearer ? sauronRoll(state, bearer, d6, uid, now) : burnDue(state) ? burns(state, catalog, d6, uid, now) : willOfEvilDue(state) ? willOfEvilToll(state, catalog, uid, now) : [];
         for (const a of out) state = reduce(state, a);
         if (!out.length) break;
       }
     }
     // And Paralysed models (or those in a Troll's sack) rolling to recover in the End phase.
     if (recoveryDue(state)) for (const a of recoveryRolls(state, d6, uid, now)) state = reduce(state, a);
+    // And Demolition Charges disabled by an enemy beside them as the turn ends.
+    for (const a of chargeSabotage(state, uid, now)) state = reduce(state, a);
     if (gameWinner(state) && !state.result) state = reduce(state, { type: 'gameOver', winner: gameWinner(state)! });
     if (state.result) break;
     let acted = false;

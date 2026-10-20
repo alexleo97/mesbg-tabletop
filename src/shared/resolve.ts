@@ -26,6 +26,7 @@ import { touching } from './objects.ts';
 import { brandRetreats } from './fire.ts';
 import { placingNow } from './placing.ts';
 import { fryingPans } from './sam.ts';
+import { resolveDetonate, rideOut } from './helms.ts';
 import { arrivalAuto, arrivalDue, mayCry, narrativeById, narrativeSetup, rollArrival, skipArrival } from './narrative.ts';
 import { invisibleTo, ringRequest, seekRequest } from './ring.ts';
 import { isTroll, spareFor } from './mutton.ts';
@@ -37,7 +38,7 @@ import { MAX_DICE } from './reducer.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
 /** Dice requests a player sends, which only whoever holds the dice (the server, or the browser in practice games) can answer. */
-export const DICE_REQUESTS = new Set<Action['type']>(['setNarrative', 'ring', 'cry', 'aragorn', 'seek', 'roll', 'fight', 'strikes', 'shoot', 'shotOn', 'banner', 'dismount', 'trample', 'cross', 'rollFate', 'rollPriority', 'uncover', 'cast', 'resist', 'breach', 'hurl', 'swap', 'reroll', 'tend', 'longbeard', 'trumpet', 'axeTest', 'chronicled']);
+export const DICE_REQUESTS = new Set<Action['type']>(['setNarrative', 'ring', 'cry', 'aragorn', 'seek', 'roll', 'fight', 'strikes', 'shoot', 'shotOn', 'banner', 'dismount', 'trample', 'cross', 'rollFate', 'rollPriority', 'uncover', 'cast', 'resist', 'breach', 'hurl', 'swap', 'reroll', 'tend', 'longbeard', 'trumpet', 'axeTest', 'chronicled', 'detonate', 'rideOut']);
 
 export interface Resolved {
   /** Results everyone applies, in order. */
@@ -216,7 +217,7 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       const n = narrativeById(String(action.id));
       if (!n || !catalog || state.flow.started || (action.good !== 'p1' && action.good !== 'p2')) return null;
       const { models } = narrativeSetup(n, action.good, catalog, p => `${p}-${uid()}`);
-      return { apply: [{ type: 'startNarrative', id: n.id, good: action.good, models }] };
+      return { apply: [{ type: 'startNarrative', id: n.id, good: action.good, models, ...(n.turns ? { turns: Number(action.turns) || n.turns.default } : {}) }] };
     }
     case 'ring': {
       const out = ringRequest(state, catalog, seat, String(action.id), action.on === true, d6, uid, now);
@@ -639,6 +640,15 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       const shooter = p && state.models[p.shot.shooter.id];
       if (!p || !shooter || p.group !== String(action.group) || shooter.owner !== seat) return null;
       return { apply: [{ type: 'shotPaused', pause: null }, ...shotActions(state, p.shot, shooter, d6, seat, p.group, now, state.log.filter(r => r.group === p.group))] };
+    }
+    case 'detonate': {
+      const out = resolveDetonate(state, catalog, seat, String(action.model), String(action.charge), d6, uid, now);
+      return out && { apply: out };
+    }
+    case 'rideOut': {
+      const m = state.models[String(action.model)];
+      const out = m && mine(m.id) ? rideOut(state, catalog, m, uid, now) : null;
+      return out && { apply: out };
     }
     case 'hurl': {
       if (action.how !== 'rocks' && action.how !== 'oil') return null;

@@ -4,7 +4,9 @@ import { halfExtents, type Point } from './geometry.ts';
 import { guessBase } from './importList.ts';
 import { offTable } from './maelstrom.ts';
 import { muttonWinner } from './mutton.ts';
-import type { Action, DiceRoll, GameState, Mat, Model, Seat, Terrain } from './types.ts';
+import { helmsWinner } from './helms.ts';
+import { BALLISTA_BASE, deepingSlots, evilSlots, GATE_ANGLE, HELMS_TEAMS, helmsTerrain, hornburgSlots, inHelmsZone, onArc, OUTER, type HelmsZone } from './helmsMap.ts';
+import type { Action, Base, DiceRoll, GameState, Mat, Model, Seat, Terrain } from './types.ts';
 
 // Narrative scenarios: battles from the stories, each with its own table, a fixed cast on both sides and rules of its
 // own, all in our own words. Positions are inches from the top-left corner of the scenario's own table.
@@ -31,7 +33,9 @@ export type Placement =
   /** Starting at `at`, and kept within `within` inches of another member of the cast or a piece of terrain. */
   | { near: string; within: number; at: [number, number] }
   /** Touching the middle of a table edge. */
-  | { edge: 'north' | 'east' | 'south' | 'west' };
+  | { edge: 'north' | 'east' | 'south' | 'west' }
+  /** Starting at `at`, and kept within one of the scenario's own areas (Helm's Deep: the Hornburg, the Deeping Wall). */
+  | { zone: HelmsZone; at: [number, number] };
 
 export interface CastMember {
   /** Who it is, for the scenario's rules: 'frodo', 'aragorn'. */
@@ -48,8 +52,19 @@ export interface CastMember {
   fate?: number;
   /** A flaming brand (Weathertop). */
   brand?: boolean;
+  /** A lit torch, to set off a Demolition Charge (Helm's Deep). */
+  torch?: boolean;
+  /** A name of its own, where the scenario's model uses another's profile (an Uruk-hai Engineer). */
+  name?: string;
+  /** Its base, where the book gives one the data doesn't. */
+  base?: Base;
+  /** Which way it faces at the start, in degrees (0 up the table); unset, it faces the middle of the table. */
+  facing?: number;
   place: Placement;
 }
+
+/** A piece of a scenario's table; a gate or a marker can belong to one side, whichever seat plays it. */
+export type NarrativeTerrain = Terrain & { held?: Side };
 
 export interface NarrativeRule {
   name: string;
@@ -66,7 +81,7 @@ export interface Narrative {
   blurb: string;
   board: { w: number; h: number; mat: Mat };
   /** The table's terrain; a piece's `id` is what the cast's placements refer to. */
-  terrain: Terrain[];
+  terrain: NarrativeTerrain[];
   /** What each side is called, and a line on who is in it. */
   sides: Record<Side, { name: string; cast: string }>;
   layout: string;
@@ -74,6 +89,8 @@ export interface Narrative {
   objectives: string;
   rules: NarrativeRule[];
   cast: CastMember[];
+  /** How long the battle lasts when the players choose (Helm's Deep), in turns, and the choices offered. */
+  turns?: { choices: number[]; default: number };
 }
 
 const piece = (t: Partial<Terrain> & Pick<Terrain, 'id' | 'kind' | 'x' | 'y' | 'w' | 'h'>): Terrain => ({ shape: 'rect', rot: 0, locked: true, ...t });
@@ -179,7 +196,123 @@ export const NARRATIVES: Narrative[] = [
       ...(['fili', 'balin', 'dwalin', 'bifur', 'bofur', 'bombur', 'ori', 'nori', 'dori', 'oin', 'gloin'] as const).map((k): CastMember => ({ key: k, side: 'good', unit: `[thorin's-company] ${k}-the-dwarf`, place: { aside: true } })),
     ],
   },
+  {
+    id: 'helms-deep',
+    name: "Helm's Deep",
+    from: 'The Two Towers',
+    saga: 'lotr',
+    blurb: "Night and rain over the Hornburg: Saruman's ten thousand storm the Deeping Wall and the great gate, and the defenders hold on for the dawn and Éomer's riders.",
+    board: { w: 48, h: 48, mat: 'dirt' },
+    terrain: helmsTerrain(),
+    sides: {
+      good: { name: "The Defenders of Helm's Deep", cast: 'Théoden, Aragorn, Legolas, Gimli and Haldir with the Rohirrim and the Galadhrim, and Éomer and Gandalf riding to the rescue' },
+      evil: { name: 'The Host of Isengard', cast: 'Uruk-hai Captains, warriors, Berserkers, Demolition Teams, an Assault Ballista and ten Siege Ladders' },
+    },
+    layout:
+      'A 4\' by 4\' table. The Hornburg fills the north-west corner, behind its curved outer wall with the great gate in it and the causeway leading up to it; an inner wall and the keep stand further in. The Deeping Wall runs from the Hornburg to the middle of the south edge, the Deeping Stream passing under it through the culvert halfway along. Everything east of the Deeping Wall is open ground.',
+    deployment:
+      "The Defenders of the Hornburg (Théoden, Gamling and 25 Warriors of Rohan) start inside the Hornburg. The Defenders of the Deeping Wall (Aragorn, Legolas, Gimli, Haldir, Haleth, Aldor, 25 Warriors of Rohan and 25 Galadhrim) start on the Deeping Wall. The Relief Force (Éomer, Gandalf the White, a Captain of Rohan and 24 Riders of Rohan) is kept off the table. The Host of Isengard starts wholly within 12\" of the east edge, with its ladders and Demolition Charges.",
+    objectives:
+      "The battle lasts the number of turns chosen before it starts. Then seven objectives are scored, and whoever holds more of them wins (the same number is a draw): Théoden alive or slain; the Deeping Wall standing or breached; more models wholly inside the Hornburg; more models wholly on the causeway; more of the heroes of Helm's Deep (Aragorn, Legolas, Gimli, Théoden, Gamling, Haldir, Haleth and Aldor) alive than slain, or the other way round; Éomer alive or slain; and at least three of the five Uruk-hai Captains slain (Good) or alive (Evil). If one side is wiped out, the other wins at once.",
+    rules: [
+      {
+        name: 'Ride Out',
+        text: 'From the start of turn 8, a Good hero within 6" of the Hornburg\'s gate who could ride a horse may mount one there and then: Théoden on Snowmane, Aragorn on Brego, and Gamling and Legolas on horses.',
+      },
+      {
+        name: 'The Deeping Wall',
+        text: 'The stretch of the Deeping Wall within 6" of the culvert can be blown apart: a Demolition Charge that goes off within 3" of the culvert brings it down. Every model on it takes a Strength 9 hit and then falls from it. Once it is down, the Deeping Wall counts as destroyed.',
+      },
+      {
+        name: '"Look to my coming"',
+        text: 'At the end of the Good side\'s 10th Move phase the Relief Force arrives from the eastern half of the south edge, as reinforcements, except that they may charge as they come on.',
+      },
+      {
+        name: 'A Great Siege',
+        text: 'All the siege rules are in play: the gates and doors keep the Evil side out until they are broken down, the walls are too sheer to climb without a Siege Ladder, and the defenders can push ladders down.',
+      },
+    ],
+    cast: helmsCast(),
+    turns: { choices: [10, 12, 15, 20], default: 15 },
+  },
 ];
+
+/** Helm's Deep: the book's cast for both sides, set out where the scenario starts them. */
+function helmsCast(): CastMember[] {
+  const out: CastMember[] = [];
+  const H = "[defenders-of-helm's-deep]";
+  const E = '[riders-of-eomer]';
+  const U = "[assault-upon-helm's-deep]";
+  type Member = Omit<CastMember, 'place'>;
+  const times = (n: number, f: (i: number) => Member): Member[] => Array.from({ length: n }, (_, i) => f(i));
+  // The defenders of the Deeping Wall, front rank first: fighters on the wall, spears and bows behind them.
+  const wall: Member[] = [
+    { key: 'aragorn', side: 'good', unit: `${H} aragorn-strider` },
+    { key: 'gimli', side: 'good', unit: `${H} gimli` },
+    { key: 'haleth', side: 'good', unit: `${H} haleth-son-of-hama` },
+    ...times(8, () => ({ key: 'wall-rohan', side: 'good', unit: `${H} warrior-of-rohan`, options: ['Shield'] })),
+    ...times(8, () => ({ key: 'wall-galadhrim', side: 'good', unit: `${H} galadhrim-warrior`, options: ['Shield'] })),
+    { key: 'wall-rohan', side: 'good', unit: `${H} warrior-of-rohan`, options: ['Banner'] },
+    { key: 'wall-galadhrim', side: 'good', unit: `${H} galadhrim-warrior`, options: ['Banner'] },
+    ...times(8, () => ({ key: 'wall-galadhrim', side: 'good', unit: `${H} galadhrim-warrior`, options: ['Shield and Elven spear'] })),
+    ...times(8, () => ({ key: 'wall-rohan', side: 'good', unit: `${H} warrior-of-rohan`, options: ['Shield and throwing spears'] })),
+    { key: 'legolas', side: 'good', unit: `${H} legolas`, options: ['Armour'] },
+    { key: 'haldir', side: 'good', unit: `${H} haldir-galadhrim-captain` },
+    { key: 'aldor', side: 'good', unit: `${H} aldor` },
+    ...times(8, () => ({ key: 'wall-galadhrim', side: 'good', unit: `${H} galadhrim-warrior`, options: ['Elf bow'] })),
+    ...times(8, () => ({ key: 'wall-rohan', side: 'good', unit: `${H} warrior-of-rohan`, options: ['Bow'] })),
+  ];
+  const ws = deepingSlots();
+  wall.forEach((c, i) => out.push({ ...c, facing: 90, place: { zone: 'deeping', at: [ws[i].x, ws[i].y] } }));
+  // The defenders of the Hornburg along its outer wall, facing out, Théoden and Gamling behind the gate.
+  const keep: Member[] = [
+    ...times(8, () => ({ key: 'hornburg-rohan', side: 'good', unit: `${H} warrior-of-rohan`, options: ['Shield'] })),
+    ...times(8, () => ({ key: 'hornburg-rohan', side: 'good', unit: `${H} warrior-of-rohan`, options: ['Shield and throwing spears'] })),
+    { key: 'hornburg-rohan', side: 'good', unit: `${H} warrior-of-rohan`, options: ['Banner'] },
+    ...times(8, () => ({ key: 'hornburg-rohan', side: 'good', unit: `${H} warrior-of-rohan`, options: ['Bow'] })),
+  ];
+  const hs = hornburgSlots();
+  keep.forEach((c, i) => out.push({ ...c, facing: Math.round(GATE_ANGLE + 90), place: { zone: 'hornburg', at: [hs[i].x, hs[i].y] } }));
+  const behind = (k: number) => onArc(OUTER.r - 5.5, GATE_ANGLE + k);
+  out.push(
+    { key: 'theoden', side: 'good', unit: `${H} theoden`, options: ['Shield'], facing: GATE_ANGLE + 90, place: { zone: 'hornburg', at: [behind(-2.6).x, behind(-2.6).y] } },
+    { key: 'gamling', side: 'good', unit: `${H} gamling`, options: ['Royal Standard of Rohan'], facing: GATE_ANGLE + 90, place: { zone: 'hornburg', at: [behind(2.6).x, behind(2.6).y] } },
+  );
+  // The Relief Force, kept off the table until the end of the Good side's 10th move.
+  out.push(
+    { key: 'eomer', side: 'good', unit: '[kingdom-of-rohan] eomer', options: ['Firefoot with armour'], place: { aside: true } },
+    { key: 'gandalf', side: 'good', unit: `${E} gandalf-the-white`, place: { aside: true } },
+    { key: 'captain-rohan', side: 'good', unit: `${E} captain-of-rohan`, options: ['Shield'], place: { aside: true } },
+    ...times(8, () => ({ key: 'rider', side: 'good', unit: `${E} rider-of-rohan`, options: ['Throwing spears'] })).map((c): CastMember => ({ ...c, place: { aside: true } })),
+    ...times(16, () => ({ key: 'rider', side: 'good', unit: `${E} rider-of-rohan` })).map((c): CastMember => ({ ...c, place: { aside: true } })),
+  );
+  // The Host of Isengard: the ballista (with its crew of three) at the back, the Demolition Teams with their torches
+  // beside their charges, and the rest in ranks along the front of the zone.
+  const ballista = { x: 45.2, y: 24 };
+  out.push({ key: 'ballista', side: 'evil', unit: `${U} isengard-assault-ballista`, base: BALLISTA_BASE, facing: 270, place: { zone: 'evil', at: [ballista.x, ballista.y] } });
+  const teams = HELMS_TEAMS.map(y => ({ x: 41.6, y }));
+  const nearTeam = (p: Point) => teams.some(t => Math.abs(p.x - t.x) < 1.9 && Math.abs(p.y - t.y) < 1.6);
+  const nearBallista = (p: Point) => Math.abs(p.x - ballista.x) < 3.6 && Math.abs(p.y - ballista.y) < 3.6;
+  for (const t of teams)
+    out.push(
+      { key: 'engineer', side: 'evil', unit: `${U} uruk-hai-warrior`, name: 'Uruk-hai Engineer', stats: { C: 6 }, facing: 270, place: { zone: 'evil', at: [t.x - 1.05, t.y - 0.52] } },
+      { key: 'engineer', side: 'evil', unit: `${U} uruk-hai-warrior`, name: 'Uruk-hai Engineer', stats: { C: 6 }, facing: 270, place: { zone: 'evil', at: [t.x - 1.05, t.y + 0.52] } },
+      { key: 'torch', side: 'evil', unit: `${U} uruk-hai-berserker`, torch: true, facing: 270, place: { zone: 'evil', at: [t.x + 1.05, t.y] } },
+    );
+  // Each group spread evenly through the ranks (crossbows at the back), so every stretch of the line has its share.
+  const groups: Member[][] = [
+    times(35, () => ({ key: 'uruk', side: 'evil', unit: `${U} uruk-hai-warrior`, options: ['Shield'] })),
+    times(35, () => ({ key: 'uruk', side: 'evil', unit: `${U} uruk-hai-warrior`, options: ['Pike'] })),
+    times(16, () => ({ key: 'berserker', side: 'evil', unit: `${U} uruk-hai-berserker` })),
+    times(5, () => ({ key: 'uruk-captain', side: 'evil', unit: `${U} uruk-hai-captain` })),
+    times(3, () => ({ key: 'uruk', side: 'evil', unit: `${U} uruk-hai-warrior`, options: ['Banner'] })),
+  ];
+  const line = groups.flatMap(g => g.map((c, i) => ({ c, k: (i + 0.5) / g.length }))).sort((a, b) => a.k - b.k).map(x => x.c);
+  line.push(...times(12, () => ({ key: 'uruk', side: 'evil', unit: `${U} uruk-hai-warrior`, options: ['Crossbow'] })));
+  const es = evilSlots(p => nearTeam(p) || nearBallista(p));
+  line.forEach((c, i) => out.push({ ...c, facing: 270, place: { zone: 'evil', at: [es[i].x, es[i].y] } }));
+  return out;
+}
 
 export const narrativeById = (id: string | null | undefined) => NARRATIVES.find(n => n.id === id);
 export const narrativeOf = (state: Pick<GameState, 'narrative'>) => narrativeById(state.narrative?.id);
@@ -208,7 +341,7 @@ export const rimPiece = (state: GameState, id: string) => state.terrain[`n-${id}
  * the bundled data, with the scenario's own wargear and characteristics on top.
  */
 export function narrativeSetup(n: Narrative, good: Seat, catalog: Catalog, newId: (p: string) => string): { terrain: Terrain[]; models: Model[] } {
-  const terrain = n.terrain.map(t => ({ ...t, id: `n-${t.id}` }));
+  const terrain = narrativeTerrain(n, good);
   const models: Model[] = [];
   const at = (c: CastMember, m: Model): Point => {
     const p = c.place;
@@ -225,19 +358,21 @@ export function narrativeSetup(n: Narrative, good: Seat, catalog: Catalog, newId
     if ('edge' in p) return edgeMiddle(n.board, p.edge, radius(m));
     return offTable(m.owner, n.board);
   };
+  const mid = { x: n.board.w / 2, y: n.board.h / 2 };
+  const facing = (c: CastMember, p: Point, owner: Seat) => c.facing ?? (Math.hypot(p.x - mid.x, p.y - mid.y) < 0.5 ? (owner === 'p1' ? 0 : 180) : Math.round(angleOf(p, mid)));
   for (const c of n.cast) {
     const unit = catalog.units[c.unit];
     if (!unit) continue;
     const ids = unit.options.filter(o => c.options?.includes(o.name)).map(o => o.id);
-    const e = entriesFor(c.unit, unit, ids, 1)[0];
+    const [e, ...crew] = entriesFor(c.unit, unit, ids, 1);
     if (!e) continue;
     const owner = c.side === 'good' ? good : other(good);
-    const base = e.base ?? guessBase(e.name);
+    const base = c.base ?? e.base ?? guessBase(e.name);
     const wounds = Math.max(1, e.wounds ?? 1);
     const m: Model = {
       id: newId('m'),
       owner,
-      name: e.name,
+      name: c.name ?? e.name,
       x: 0,
       y: 0,
       rot: 0,
@@ -252,17 +387,30 @@ export function narrativeSetup(n: Narrative, good: Seat, catalog: Catalog, newId
       dead: false,
       profileId: c.unit,
       ...(e.options?.length ? { options: e.options } : {}),
+      ...(e.siege ? { siege: e.siege } : {}),
       cast: c.key,
       ...(c.stats ? { stats: c.stats } : {}),
       ...(c.brand ? { brand: true } : {}),
+      ...(c.torch ? { torch: true } : {}),
       ...('aside' in c.place ? { waiting: true } : {}),
     };
     const p = at(c, m);
-    // Facing the middle of the table.
-    const mid = { x: n.board.w / 2, y: n.board.h / 2 };
-    models.push({ ...m, ...p, rot: Math.hypot(p.x - mid.x, p.y - mid.y) < 0.5 ? (owner === 'p1' ? 0 : 180) : Math.round(angleOf(p, mid)) });
+    models.push({ ...m, ...p, rot: facing(c, p, owner) });
+    // A siege engine's crew stand behind it, the side away from where it faces.
+    const hands = e.siege ? crew.flatMap(x => Array.from({ length: x.count }, () => x)) : [];
+    hands.forEach((x, i) => {
+      const back = along(p, facing(c, p, owner) + 180 + (i - (hands.length - 1) / 2) * 40, radius(m) + 0.6);
+      const r = (x.base?.w ?? 25) / 50.8;
+      const spot = { x: Math.min(n.board.w - r, Math.max(r, back.x)), y: Math.min(n.board.h - r, Math.max(r, back.y)) };
+      models.push({ id: newId('m'), owner, name: x.name, ...spot, rot: facing(c, p, owner), base: x.base ?? { shape: 'round', w: 25, h: 25 }, move: x.move ?? 6, wounds: x.wounds ?? 1, maxWounds: x.wounds ?? 1, might: x.might ?? 0, will: x.will ?? 0, fate: x.fate ?? 0, hero: x.hero, dead: false, profileId: c.unit, crewOf: m.id, cast: `${c.key}-crew` });
+    });
   }
   return { terrain, models };
+}
+
+/** The scenario's table for this game: pieces held by a side go to whichever seat plays it. */
+export function narrativeTerrain(n: Narrative, good: Seat): Terrain[] {
+  return n.terrain.map(({ held, ...t }) => ({ ...t, id: `n-${t.id}`, ...(held ? { side: held === 'good' ? good : other(good) } : {}) }));
 }
 
 /**
@@ -296,6 +444,10 @@ export function holdNarrative(state: GameState, mv: { id: string; x: number; y: 
       return { ...mv, x: Math.max(r, Math.min(state.board.w - r, c.x + (mv.x - c.x) * k)), y: Math.max(r, Math.min(state.board.h - r, c.y + (mv.y - c.y) * k)) };
     }
   }
+  if ('zone' in p) {
+    // Anywhere in its area: a model dragged out of it stays where it was.
+    return inHelmsZone(p.zone, mv, radius(m)) ? mv : { ...mv, x: m.x, y: m.y };
+  }
   return { ...mv, x: m.x, y: m.y };
 }
 
@@ -304,6 +456,7 @@ export function narrativeWinner(state: GameState): Seat | 'draw' | null {
   const n = narrativeOf(state);
   if (!n || !state.flow.started) return null;
   if (n.id === 'roast-mutton') return muttonWinner(state);
+  if (n.id === 'helms-deep') return helmsWinner(state);
   if (n.id === 'weathertop') {
     // The Nazgûl win as soon as Frodo falls; the Hobbits when every one of them is gone.
     if (castModel(state, 'frodo')?.dead) return seatOf(state, 'evil') ?? null;

@@ -16,8 +16,9 @@ import { touching as inContact, touchingEnemies } from './barriers.ts';
 import { canPickUp, markerUpkeep, syncCarried, touching, canEscape } from './objects.ts';
 import { aboard, raiseLadders, towerMove } from './fortress.ts';
 import { endPhaseUpkeep } from './scoring.ts';
-import { arrivalDue, mayCry, narrativeById } from './narrative.ts';
-import { entering, isMutton, isTroll, nextEntering, onEdge, reinforcementsPending, stillEntering } from './mutton.ts';
+import { arrivalDue, mayCry, narrativeById, narrativeTerrain, radius } from './narrative.ts';
+import { entering, enteringNoCharge, entryEdge, isMutton, isTroll, nextEntering, onEdge, reinforcementsPending, stillEntering } from './mutton.ts';
+import { isHelms, mayChooseRelief, reliefPending, RELIEF_SPAN } from './helms.ts';
 import { putOut } from './fire.ts';
 import { ringAfterMight } from './ring.ts';
 import { placeSpot, placingNow } from './placing.ts';
@@ -60,19 +61,21 @@ function bilboCharged(before: GameState, after: GameState): GameState {
 }
 
 /**
- * Reinforcements step onto the table one at a time, at the middle of the west edge, once the way in is clear: the
- * Move they have already used to get their base onto the table is counted from just off the edge.
+ * Reinforcements step onto the table one at a time, where their side comes on, once the way in is clear: the Move
+ * they have already used to get their base onto the table is counted from just off the edge.
  */
 function comeOn(state: GameState): GameState {
   const next = nextEntering(state);
   if (!next) return state;
   const { model, at } = next;
   const { waiting: _, ...rest } = model;
-  const r = at.x;
+  const { edge, facing } = entryEdge(state);
+  const r = radius(model);
+  const off: [number, number] = edge === 'west' ? [-r, at.y] : edge === 'east' ? [state.board.w + r, at.y] : edge === 'north' ? [at.x, -r] : [at.x, state.board.h + r];
   return {
     ...state,
-    models: { ...state.models, [model.id]: { ...rest, ...at, rot: 90 } },
-    flow: { ...state.flow, entering: { ...state.flow.entering!, on: model.id, at: [at.x, at.y] }, starts: { ...state.flow.starts, [model.id]: [-r, at.y] }, walked: { ...state.flow.walked, [model.id]: 2 * r }, paths: { ...state.flow.paths, [model.id]: [[-r, at.y], [at.x, at.y]] } },
+    models: { ...state.models, [model.id]: { ...rest, ...at, rot: facing } },
+    flow: { ...state.flow, entering: { ...state.flow.entering!, on: model.id, at: [at.x, at.y] }, starts: { ...state.flow.starts, [model.id]: off }, walked: { ...state.flow.walked, [model.id]: 2 * r }, paths: { ...state.flow.paths, [model.id]: [off, [at.x, at.y]] } },
   };
 }
 
@@ -281,6 +284,7 @@ export function cleanModel(m: Partial<Model>, prev?: Model): Model | null {
   const cast = 'cast' in m ? (m.cast ? str(m.cast, 40) : undefined) : base.cast;
   if (cast) out.cast = cast;
   if ('brand' in m ? m.brand === true : base.brand) out.brand = true;
+  if ('torch' in m ? m.torch === true : base.torch) out.torch = true;
   for (const k of ['ablaze', 'ringOn', 'slay'] as const) if ((k in m ? m[k] === true : base[k]) && !out.dead) out[k] = true;
   const used = 'used' in m ? (Array.isArray(m.used) ? [...new Set(m.used.slice(0, 8).map(u => str(u, 40)))] : undefined) : base.used;
   if (used?.length) out.used = used;
@@ -727,7 +731,7 @@ function step(state: GameState, action: Action): GameState {
           const back = Math.hypot(to.x - from.x, to.y - from.y) < RETRACE / 2;
           const undone = back ? null : retrace(paths?.[prev.id], to);
           // (Reinforcements coming on may not charge.)
-          const arriving = state.phase === 'move' && entering(state, prev);
+          const arriving = state.phase === 'move' && enteringNoCharge(state, prev);
           to = back ? from : undone ? undone.at : limitMove(state, here, to, Math.max(0, allowance - spent(state, prev)), prev.owner, prev, together, !arriving);
           // A model that stops inside an enemy's control zone is charging it: it must reach base contact, or stay out.
           if ((state.phase === 'move' || fightsAgain(state, prev)) && !arriving) to = finishCharge(state, prev, here, to, together);
@@ -1008,7 +1012,7 @@ function step(state: GameState, action: Action): GameState {
         return { ...state, flow: { ...state.flow, heroicDone: [...(state.flow.heroicDone ?? []), hero.id], heroicNow: undefined, activated: [...new Set([...(state.flow.activated ?? []), ...went])] } };
       }
       // Roast Mutton: the Company still to come rolls (or comes) first, and moves on before the side is done.
-      if (state.flow.started && reinforcementsPending(state, action.seat)) return state.flow.reinforce === action.seat ? state : { ...state, flow: { ...state.flow, reinforce: action.seat } };
+      if (state.flow.started && (reinforcementsPending(state, action.seat) || reliefPending(state, action.seat))) return state.flow.reinforce === action.seat ? state : { ...state, flow: { ...state.flow, reinforce: action.seat } };
       // Ending it with a newcomer still at the edge lets it stay there, and the next one comes on.
       if (state.flow.started && state.flow.entering?.seat === action.seat && stillEntering(state)) {
         const waved = onEdge(state) ? comeOn({ ...state, flow: { ...state.flow, entering: { ...state.flow.entering, on: undefined, at: undefined } } }) : state;
@@ -1167,11 +1171,12 @@ function step(state: GameState, action: Action): GameState {
         if (m) models[m.id] = m;
       }
       const terrain: Record<string, Terrain> = {};
-      for (const raw of n.terrain) {
-        const t = cleanTerrain({ ...raw, id: `n-${raw.id}` });
+      for (const raw of narrativeTerrain(n, action.good)) {
+        const t = cleanTerrain(raw);
         if (t) terrain[t.id] = t;
       }
-      return { ...state, board: { ...n.board }, models, terrain, scenario: null, vp: { p1: {}, p2: {} }, narrative: { id: n.id, good: action.good } };
+      const turns = n.turns ? (n.turns.choices.includes(Number(action.turns)) ? Number(action.turns) : n.turns.default) : undefined;
+      return { ...state, board: { ...n.board }, models, terrain, scenario: null, vp: { p1: {}, p2: {} }, narrative: { id: n.id, good: action.good, ...(turns ? { turns } : {}) } };
     }
     case 'cry': {
       if (!isSeat(action.seat) || !mayCry(state, action.seat) || !state.narrative) return state;
@@ -1181,14 +1186,21 @@ function step(state: GameState, action: Action): GameState {
       if (!state.narrative) return state;
       const rolled = action.rolled === undefined ? state.narrative.rolled : [...new Set([...(state.narrative.rolled ?? []), int(action.rolled, 0, 99, 0)])];
       const dawn = action.dawn === undefined ? state.narrative.dawn : int(action.dawn, 1, 99, 1);
-      return moveOn({ ...state, narrative: { ...state.narrative, ...(rolled ? { rolled } : {}), ...(dawn ? { dawn } : {}) } });
+      const breach = action.breach === undefined ? state.narrative.breach : int(action.breach, 0, 99, 0);
+      return moveOn({ ...state, narrative: { ...state.narrative, ...(rolled ? { rolled } : {}), ...(dawn ? { dawn } : {}), ...(breach ? { breach } : {}) } });
+    }
+    case 'reliefPoint': {
+      // Helm's Deep: where on the eastern half of the south edge the Relief Force rides on.
+      if (!isSeat(action.seat) || !isHelms(state) || !mayChooseRelief(state, action.seat)) return state;
+      return { ...state, narrative: { ...state.narrative!, relief: num(action.x, RELIEF_SPAN[0], RELIEF_SPAN[1], 36) } };
     }
     case 'entering': {
       // Reinforcements have come on (see mutton.ts): they step onto the table one by one, and then the side is done.
       if (!isSeat(action.seat) || !Array.isArray(action.ids) || state.flow.entering?.turn === state.turn) return state;
-      const ids = action.ids.filter(i => state.models[i]?.waiting && state.models[i].owner === action.seat).slice(0, 20);
+      const ids = action.ids.filter(i => state.models[i]?.waiting && state.models[i].owner === action.seat).slice(0, 40);
       const from: [number, number] = Array.isArray(action.from) ? [num(action.from[0], -24, 200, 0), num(action.from[1], -24, 200, 0)] : [0, state.board.h / 2];
-      const next = comeOn({ ...state, flow: { ...state.flow, entering: { seat: action.seat, ids, from, turn: state.turn } } });
+      const span: [number, number] | undefined = Array.isArray(action.span) ? [num(action.span[0], 0, 200, 0), num(action.span[1], 0, 200, 200)] : undefined;
+      const next = comeOn({ ...state, flow: { ...state.flow, entering: { seat: action.seat, ids, from, turn: state.turn, ...(span ? { span } : {}), ...(action.charge === true ? { charge: true } : {}) } } });
       // Nobody came: the side's move is over.
       return ids.length ? next : step(next, { type: 'endActivation', seat: action.seat });
     }
@@ -1604,7 +1616,7 @@ export function loadState(raw: unknown): GameState {
   if (o.advance === 'click') out = { ...out, advance: 'click' };
   const n = o.narrative;
   if (n && typeof n === 'object' && narrativeById(n.id) && isSeat(n.good))
-    out = { ...out, narrative: { id: n.id, good: n.good, ...(Number.isFinite(n.cry) ? { cry: int(n.cry, 0, 99, 0) } : {}), ...(Array.isArray(n.rolled) ? { rolled: n.rolled.slice(0, 40).map(t => int(t, 0, 99, 0)) } : {}), ...(Number.isFinite(n.dawn) ? { dawn: int(n.dawn, 1, 99, 1) } : {}), ...(n.bilbo === true ? { bilbo: true } : {}) } };
+    out = { ...out, narrative: { id: n.id, good: n.good, ...(Number.isFinite(n.cry) ? { cry: int(n.cry, 0, 99, 0) } : {}), ...(Array.isArray(n.rolled) ? { rolled: n.rolled.slice(0, 40).map(t => int(t, 0, 99, 0)) } : {}), ...(Number.isFinite(n.dawn) ? { dawn: int(n.dawn, 1, 99, 1) } : {}), ...(n.bilbo === true ? { bilbo: true } : {}), ...(Number.isFinite(n.turns) ? { turns: int(n.turns, 1, 40, 15) } : {}), ...(Number.isFinite(n.relief) ? { relief: num(n.relief, 0, 200, 36) } : {}), ...(Number.isFinite(n.breach) ? { breach: int(n.breach, 0, 99, 0) } : {}) } };
   if (o.flow && typeof o.flow === 'object') {
     const f = o.flow as Partial<Flow>;
     const seats = (v: unknown) => (Array.isArray(v) ? [...new Set(v.filter(isSeat))] : []);
@@ -1690,7 +1702,7 @@ export function loadState(raw: unknown): GameState {
         ...(Array.isArray(f.sought) ? { sought: f.sought.slice(0, 40).map(x => str(x, 80)) } : {}),
         ...(f.mighty && typeof f.mighty === 'object' && f.mighty.base && typeof f.mighty.base === 'object' ? { mighty: { turn: int(f.mighty.turn, 0, 99, 0), base: cleanCounts(f.mighty.base, 9) } } : {}),
         ...(Array.isArray(f.joined) ? { joined: f.joined.slice(0, 20).map(x => str(x, 80)) } : {}),
-        ...(f.entering && typeof f.entering === 'object' && isSeat(f.entering.seat) && Array.isArray(f.entering.ids) ? { entering: { seat: f.entering.seat, ids: f.entering.ids.slice(0, 20).map(x => str(x, 80)), from: [num(f.entering.from?.[0], -24, 200, 0), num(f.entering.from?.[1], -24, 200, 0)] as [number, number], turn: int(f.entering.turn, 0, 99, 0), ...(typeof f.entering.on === 'string' && Array.isArray(f.entering.at) ? { on: str(f.entering.on, 80), at: [num(f.entering.at[0], -24, 200, 0), num(f.entering.at[1], -24, 200, 0)] as [number, number] } : {}) } } : {}),
+        ...(f.entering && typeof f.entering === 'object' && isSeat(f.entering.seat) && Array.isArray(f.entering.ids) ? { entering: { seat: f.entering.seat, ids: f.entering.ids.slice(0, 40).map(x => str(x, 80)), from: [num(f.entering.from?.[0], -24, 200, 0), num(f.entering.from?.[1], -24, 200, 0)] as [number, number], turn: int(f.entering.turn, 0, 99, 0), ...(Array.isArray(f.entering.span) ? { span: [num(f.entering.span[0], 0, 200, 0), num(f.entering.span[1], 0, 200, 200)] as [number, number] } : {}), ...(f.entering.charge === true ? { charge: true } : {}), ...(typeof f.entering.on === 'string' && Array.isArray(f.entering.at) ? { on: str(f.entering.on, 80), at: [num(f.entering.at[0], -24, 200, 0), num(f.entering.at[1], -24, 200, 0)] as [number, number] } : {}) } } : {}),
         ...(isSeat(f.reinforce) ? { reinforce: f.reinforce } : {}),
         ...(Array.isArray(f.placing) ? { placing: f.placing.map(p => cleanPlacing(p, out)).filter((p): p is Placing => !!p).slice(0, 20) } : {}),
       },

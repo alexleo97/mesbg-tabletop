@@ -30,6 +30,7 @@ import { tierOf } from '../src/shared/warbands.ts';
 import { terrainRules } from '../src/shared/wargear.ts';
 import { gearOf } from '../src/shared/gear.ts';
 import { arrivalAuto, rollArrival } from '../src/shared/narrative.ts';
+import { chargeSabotage, reliefArrives, reliefDue } from '../src/shared/helms.ts';
 import { dawnDue, reinforceDue, rollDawn, rollReinforcements as companyArrives } from '../src/shared/mutton.ts';
 import { isMonster } from '../src/shared/monsters.ts';
 import { chronicled, listenDue, listenFor, longbeardFor, trumpetDue } from '../src/shared/company.ts';
@@ -374,6 +375,7 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
       return mine(carrier) ? action : null;
     }
     case 'setPick':
+    case 'reliefPoint':
       return action.seat === client.role ? action : null;
     case 'pairOff':
       // Only the player with Priority pairs off the fights.
@@ -656,7 +658,7 @@ function rollBeastTests(room: Room) {
 let sabotaging = false;
 function sabotageEngines(room: Room) {
   if (sabotaging) return;
-  const out = sabotageActions(room.state, serverId);
+  const out = [...sabotageActions(room.state, serverId), ...chargeSabotage(room.state, serverId)];
   if (!out.length) return;
   sabotaging = true;
   try {
@@ -696,12 +698,12 @@ function narrativeUpkeep(room: Room) {
     const s = room.state;
     const bearer = sauronDue(s);
     const sam = longshanksDue(s);
-    const out = mightyDue(s, CATALOG) ? mightyBonus(s, CATALOG, serverId) : sam ? longshanksMove(s, sam) : arrivalAuto(s) ? rollArrival(s, serverDice, serverId) : reinforceDue(s) ? companyArrives(s, serverDice, serverId) : listenDue(s, CATALOG) ? listenFor(s, CATALOG) : dawnDue(s) ? rollDawn(s, serverDice, serverId) : bearer ? sauronRoll(s, bearer, serverDice, serverId) : burnDue(s) ? burns(s, CATALOG, serverDice, serverId) : [];
+    const out = mightyDue(s, CATALOG) ? mightyBonus(s, CATALOG, serverId) : sam ? longshanksMove(s, sam) : arrivalAuto(s) ? rollArrival(s, serverDice, serverId) : reinforceDue(s) ? companyArrives(s, serverDice, serverId) : reliefDue(s) ? reliefArrives(s, serverId) : listenDue(s, CATALOG) ? listenFor(s, CATALOG) : dawnDue(s) ? rollDawn(s, serverDice, serverId) : bearer ? sauronRoll(s, bearer, serverDice, serverId) : burnDue(s) ? burns(s, CATALOG, serverDice, serverId) : [];
     for (const a of out) apply(room, a);
   } finally {
     upkeeping = false;
   }
-  if (mightyDue(room.state, CATALOG) || longshanksDue(room.state) || arrivalAuto(room.state) || reinforceDue(room.state) || listenDue(room.state, CATALOG) || dawnDue(room.state) || sauronDue(room.state) || burnDue(room.state)) narrativeUpkeep(room);
+  if (mightyDue(room.state, CATALOG) || longshanksDue(room.state) || arrivalAuto(room.state) || reinforceDue(room.state) || reliefDue(room.state) || listenDue(room.state, CATALOG) || dawnDue(room.state) || sauronDue(room.state) || burnDue(room.state)) narrativeUpkeep(room);
 }
 
 /** In the End phase, Paralysed models roll to recover. */
