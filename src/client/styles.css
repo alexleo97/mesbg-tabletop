@@ -488,7 +488,7 @@ table.vp .vp-cell button { width: 28px; height: 28px; padding: 0; }
 table.vp .vp-cell b { display: inline-block; min-width: 20px; text-align: center; }
 table.vp tr.total td { font-weight: 700; font-size: 1rem; text-align: center; }
 table.vp tr.total td:first-child { text-align: left; }
-.bot-speed { white-space: nowrap; }
+.bot-speed, .bot-moves { white-space: nowrap; }
 .vp-chip { white-space: nowrap; }
 .vp-chip .p1 { color: var(--p1); }
 .vp-chip .p2 { color: var(--p2); }
@@ -1094,6 +1094,8 @@ table.vp tr.auto .vp-cell b { color: var(--gold); }
 
 /* Animations: short, and only to show what just happened. Settings can turn them off. */
 .board g.model.glide { transition: transform 0.35s ease-out; }
+.moved-flash { fill: var(--gold); fill-opacity: 0.25; stroke: var(--gold); stroke-width: 0.12; pointer-events: none; animation: moved-flash 1.6s ease-out forwards; }
+@keyframes moved-flash { 0%, 50% { opacity: 1; } 100% { opacity: 0; } }
 .move-trail { fill: none; stroke-linejoin: round; stroke-width: 0.08; stroke-dasharray: 0.3 0.25; opacity: 0.55; }
 .move-trail.p1 { stroke: var(--p1); }
 .move-trail.p2 { stroke: var(--p2); }

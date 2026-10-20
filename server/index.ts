@@ -24,7 +24,7 @@ import { loadRoom, pruneRooms, saveRoom, storeEnabled, type StoredRoom } from '.
 import { endRollDue, phaseFinished } from '../src/shared/autoPhase.ts';
 import { endRollLabel, gameWinner } from '../src/shared/status.ts';
 import { diffForUndo, mergeReverts, UNDOABLE } from '../src/shared/undo.ts';
-import { BOT_PACE, botStep, newMemo, type BotMemo } from '../src/shared/bot.ts';
+import { BOT_PACE, botPause, botStep, newMemo, type BotMemo } from '../src/shared/bot.ts';
 import { rulesFor, startingPoints, type Catalog } from '../src/shared/catalog.ts';
 import catalogJson from '../src/data/mesbg-data.json';
 import { arrivalAuto, rollArrival } from '../src/shared/narrative.ts';
@@ -383,6 +383,8 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
       return state.priority === client.role ? action : null;
     case 'setBotSpeed':
       return action;
+    case 'setBotInstantMoves':
+      return client.role === 'p1' || client.role === 'p2' ? action : null;
     case 'setAdvance':
       return client.role === 'p1' || client.role === 'p2' ? action : null;
     case 'compel':
@@ -776,7 +778,7 @@ function testTerror(room: Room, action: Action): Action | null {
 const BOT_PAUSE = 500;
 
 /** Lines up the computer's next step, if it plays in this game and someone is here to see it. */
-function scheduleBot(room: Room, delay = BOT_PAUSE) {
+function scheduleBot(room: Room, delay = BOT_PAUSE * BOT_PACE[room.state.botSpeed ?? 'normal']) {
   if (!room.state.bot) {
     if (room.bot?.timer) clearTimeout(room.bot.timer);
     room.bot = undefined;
@@ -788,7 +790,7 @@ function scheduleBot(room: Room, delay = BOT_PAUSE) {
   bot.timer = setTimeout(() => {
     bot.timer = undefined;
     runBot(room);
-  }, Math.max(30, delay * BOT_PACE[room.state.botSpeed ?? 'normal']));
+  }, Math.max(30, delay));
 }
 
 /** Plays the computer's next step: one move, roll or choice, then a pause before the next. */
@@ -805,19 +807,23 @@ function runBot(room: Room) {
   }
   if (!step) return;
   bot.busy = true;
+  let pause = botPause(room.state, step);
   try {
     const action = step.action;
     if (action && DICE_REQUESTS.has(action.type)) {
       const out = resolveRequest(room.state, seat, action, () => randomInt(1, 7), () => `${Date.now().toString(36)}-${randomInt(1e9).toString(36)}`, Date.now(), CATALOG);
       for (const a of [...(out?.apply ?? []), ...(out?.record ? [out.record] : [])]) apply(room, a);
     } else if (action) {
+      const log = room.state.log;
       const moved = testTerror(room, action);
+      // A Courage roll for terror still gets its usual pause, so it can be seen.
+      if (room.state.log !== log) pause = Math.max(pause, step.delay * BOT_PACE[room.state.botSpeed ?? 'normal']);
       if (moved) apply(room, moved);
     }
   } finally {
     bot.busy = false;
   }
-  scheduleBot(room, step.delay);
+  scheduleBot(room, pause);
 }
 
 /** Applies a player's action and remembers how to take it back. */
