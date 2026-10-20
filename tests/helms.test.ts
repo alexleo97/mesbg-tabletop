@@ -6,7 +6,7 @@ import { distanceToTerrain } from '../src/shared/sight.ts';
 import { inEvilZone, inHornburg, onDeepingWall } from '../src/shared/helmsMap.ts';
 import type { Action, GameState, Seat } from '../src/shared/types.ts';
 import { catalog } from './botsim.ts';
-import { chargeSabotage, deepingDown, detonateBlocked, helmsObjectives, helmsTally, reliefArrives, reliefDue } from '../src/shared/helms.ts';
+import { chargeSabotage, deepingDown, detonateBlocked, helmsObjectives, helmsTally, raiseLadderTargets, reliefArrives, reliefDue } from '../src/shared/helms.ts';
 import { gameWinner } from '../src/shared/status.ts';
 
 const run = (s: GameState, ...actions: Action[]) => actions.reduce(reduce, s);
@@ -244,5 +244,30 @@ describe("Helm's Deep: who wins", () => {
     let s = battle(3);
     for (const m of Object.values(s.models)) if (m.owner === 'p2') s = { ...s, models: { ...s.models, [m.id]: { ...m, dead: true } } };
     expect(gameWinner(s)).toBe('p1');
+  });
+});
+
+describe('Raise the Ladders!', () => {
+  it('the ballista grapples the battlements above a ladder, and its bearer goes up with it', () => {
+    let s = battle(2);
+    s = run(s, { type: 'setPhase', phase: 'shoot' });
+    s = run({ ...s, priority: 'p2', flow: { ...s.flow, done: [] } }, { type: 'passHeroic', seat: 'p1' }, { type: 'passHeroic', seat: 'p2' });
+    const engine = who(s, 'ballista');
+    const ladder = s.terrain['n-ladder-6'];
+    s = { ...s, terrain: { ...s.terrain, [ladder.id]: { ...ladder, x: 26, y: 31.5 } } };
+    const uruk = Object.values(s.models).find(m => m.cast === 'uruk')!;
+    s = put(s, uruk.id, 27.0, 31.5);
+    const targets = raiseLadderTargets(s, catalog, engine);
+    expect(targets.map(t => t.ladder.id)).toContain(ladder.id);
+    // A miss (the crew need 4+) does nothing.
+    expect(ask(s, 'p2', { type: 'raiseLadder', model: engine.id, ladder: ladder.id }, [3]).terrain[ladder.id].raised).toBeUndefined();
+    const after = ask(s, 'p2', { type: 'raiseLadder', model: engine.id, ladder: ladder.id }, [5]);
+    expect(after.terrain[ladder.id].raised).toBe('n-deeping-culvert');
+    // The Uruk is now at the top, in contact with the defender there.
+    const up = after.models[uruk.id];
+    expect(up.x).toBeLessThan(23.6);
+    expect(Object.values(after.models).some(m => m.owner === 'p1' && !m.dead && Math.hypot(m.x - up.x, m.y - up.y) <= radius(m) + radius(up) + 0.05)).toBe(true);
+    // It counts as the ballista's shot this turn.
+    expect(raiseLadderTargets(after, catalog, after.models[engine.id])).toEqual([]);
   });
 });

@@ -26,7 +26,7 @@ import { touching } from './objects.ts';
 import { brandRetreats } from './fire.ts';
 import { placingNow } from './placing.ts';
 import { fryingPans } from './sam.ts';
-import { resolveDetonate, rideOut } from './helms.ts';
+import { resolveDetonate, resolveRaiseLadder, rideOut } from './helms.ts';
 import { arrivalAuto, arrivalDue, mayCry, narrativeById, narrativeSetup, rollArrival, skipArrival } from './narrative.ts';
 import { invisibleTo, ringRequest, seekRequest } from './ring.ts';
 import { isTroll, spareFor } from './mutton.ts';
@@ -38,7 +38,7 @@ import { MAX_DICE } from './reducer.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
 /** Dice requests a player sends, which only whoever holds the dice (the server, or the browser in practice games) can answer. */
-export const DICE_REQUESTS = new Set<Action['type']>(['setNarrative', 'ring', 'cry', 'aragorn', 'seek', 'roll', 'fight', 'strikes', 'shoot', 'shotOn', 'banner', 'dismount', 'trample', 'cross', 'rollFate', 'rollPriority', 'uncover', 'cast', 'resist', 'breach', 'hurl', 'swap', 'reroll', 'tend', 'longbeard', 'trumpet', 'axeTest', 'chronicled', 'detonate', 'rideOut']);
+export const DICE_REQUESTS = new Set<Action['type']>(['setNarrative', 'ring', 'cry', 'aragorn', 'seek', 'roll', 'fight', 'strikes', 'shoot', 'shotOn', 'banner', 'dismount', 'trample', 'cross', 'rollFate', 'rollPriority', 'uncover', 'cast', 'resist', 'breach', 'hurl', 'swap', 'reroll', 'tend', 'longbeard', 'trumpet', 'axeTest', 'chronicled', 'detonate', 'rideOut', 'raiseLadder']);
 
 export interface Resolved {
   /** Results everyone applies, in order. */
@@ -643,6 +643,10 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
     }
     case 'detonate': {
       const out = resolveDetonate(state, catalog, seat, String(action.model), String(action.charge), d6, uid, now);
+      return out && { apply: out };
+    }
+    case 'raiseLadder': {
+      const out = resolveRaiseLadder(state, catalog, seat, String(action.model), String(action.ladder), d6, uid, now);
       return out && { apply: out };
     }
     case 'rideOut': {

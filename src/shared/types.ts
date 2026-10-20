@@ -657,6 +657,8 @@ export type Action =
   | { type: 'rideOut'; model: string }
   /** A model tries to set off a Demolition Charge it touches (resolved with dice). */
   | { type: 'detonate'; model: string; charge: string }
+  /** An Assault Ballista's Raise the Ladders! shot at the battlements above one of its side's ladders. */
+  | { type: 'raiseLadder'; model: string; ladder: string }
   /** Server only: reinforcements have come on and move onto the table now, from `from` (see mutton.ts). */
   | { type: 'entering'; seat: Seat; ids: string[]; from: [number, number]; span?: [number, number]; charge?: boolean }
   /** Server only: a once-a-turn ability (Healing Herbs, Raising Spirits, Combat Synergy's re-roll) has been used. */

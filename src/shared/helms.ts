@@ -1,9 +1,10 @@
 import { entriesFor, modelStats, type Catalog } from './catalog.ts';
 import { mounted, mountName, mountProfile } from './cavalry.ts';
 import { courageOf } from './courage.ts';
-import { breakable, isGate } from './fortress.ts';
+import { breakable, isGate, ladderable, nearestEdge, overThe } from './fortress.ts';
 import { basePerimeter, distanceToBase, type Point } from './geometry.ts';
-import { heroicsSettled } from './heroics.ts';
+import { canActivate, heroicsSettled } from './heroics.ts';
+import { engineFor, firingCrew, inArc } from './siege.ts';
 import { CULVERT_ID, DEEPING, GATE_ANGLE, inHornburg } from './helmsMap.ts';
 import { engaged, foughtThisTurn } from './movement.ts';
 import { castModel, radius, seatOf } from './narrative.ts';
@@ -20,6 +21,7 @@ import type { Action, DiceRoll, GameState, Model, Seat, Terrain } from './types.
 
 export const isHelms = (state: Pick<GameState, 'narrative'>) => state.narrative?.id === 'helms-deep';
 const alive = (m: Model) => !m.dead && !m.waiting && !m.escaped;
+const unitOf = (catalog: Catalog | null | undefined, m: Model) => (m.profileId ? catalog?.units[m.profileId] : undefined);
 type D6 = () => number;
 type Push = (label: string, dice: number[], extra?: Partial<DiceRoll>) => DiceRoll | void;
 
@@ -384,3 +386,68 @@ export const culvertDistance = (p: Point) => Math.hypot(p.x - CULVERT.x, p.y - C
 export const gateInside = (): Point => ({ x: 23.6 * Math.cos((GATE_ANGLE * Math.PI) / 180) - 2.5, y: 23.6 * Math.sin((GATE_ANGLE * Math.PI) / 180) - 0.8 });
 
 export { distanceToBase };
+
+// ——— Raise the Ladders! (the Assault Ballista) ———
+
+/**
+ * The Siege Ladders an Assault Ballista could raise with a grappling shot: its own side's, lying (not carried) within
+ * 6" of the foot of a wall, where the point of the battlements above it is in range (12"-60") and in its arc.
+ */
+export function raiseLadderTargets(state: GameState, catalog: Catalog | null, engine: Model): { ladder: Terrain; wall: Terrain; at: Point }[] {
+  if (!engine.siege || engine.dead || !/assault ballista/i.test(unitOf(catalog, engine)?.name ?? engine.name)) return [];
+  if (!state.flow.started || state.phase !== 'shoot' || !canActivate(state, engine.owner) || state.flow.shot?.includes(engine.id) || !firingCrew(state, catalog, engine)) return [];
+  const e = engineFor('Isengard Assault Ballista')!;
+  const out: { ladder: Terrain; wall: Terrain; at: Point }[] = [];
+  for (const l of onTable(state).filter(t => t.object === 'ladder' && !t.raised && !t.carrier && t.side === engine.owner)) {
+    const wall = Object.values(state.terrain)
+      .filter(w => ladderable(w) && w.sheer && distanceToTerrainPoint(w, l) - l.w / 2 <= 6)
+      .sort((a, b) => distanceToTerrainPoint(a, l) - distanceToTerrainPoint(b, l))[0];
+    if (!wall) continue;
+    const at = nearestEdge(wall, l);
+    const d = Math.hypot(at.x - engine.x, at.y - engine.y);
+    if (d < e.min || d > e.max || !inArc(engine, at)) continue;
+    out.push({ ladder: l, wall, at });
+  }
+  return out;
+}
+
+/**
+ * Raise the Ladders!: instead of shooting to kill, the ballista fires a grapple at the battlements above a ladder. On a
+ * hit (its crew's Shoot value) the ladder is pulled up against the wall there, and one model that was carrying it (here,
+ * one touching it) is placed at the top: over the wall, or in contact with the defender standing there (a charge).
+ */
+export function resolveRaiseLadder(state: GameState, catalog: Catalog | null, seat: Seat, engineId: string, ladderId: string, d6: D6, uid: () => string, now: number): Action[] | null {
+  const engine = state.models[engineId];
+  if (!engine || engine.owner !== seat) return null;
+  const target = raiseLadderTargets(state, catalog, engine).find(t => t.ladder.id === ladderId);
+  const crew = firingCrew(state, catalog, engine);
+  if (!target || !crew) return null;
+  const group = `s-${uid()}`;
+  const need = Math.min(6, crew.sv + (state.flow.turned?.includes(engine.id) ? 1 : 0));
+  const hit = d6();
+  const out: Action[] = [{ type: 'rolled', roll: { id: `${group}-0`, by: seat, label: `${engine.name}: Raise the Ladders! (${need}+)`, dice: [hit], target: need, model: engine.id, at: now, group, note: hit >= need ? 'The grapple bites: the ladder swings up against the wall.' : 'The grapple misses.' } }];
+  if (hit < need) return out;
+  const { ladder, wall, at } = target;
+  out.push({ type: 'updateTerrain', id: ladder.id, patch: { x: at.x, y: at.y, raised: wall.id, side: seat } });
+  // Its bearer goes up with it.
+  const bearer = Object.values(state.models)
+    .filter(m => m.owner === seat && alive(m) && !m.siege && !mounted(m) && touchingMarker(m, ladder) && !engaged(state, m))
+    .sort((a, b) => Math.hypot(a.x - ladder.x, a.y - ladder.y) - Math.hypot(b.x - ladder.x, b.y - ladder.y))[0];
+  if (!bearer) return out;
+  const r = radius(bearer);
+  const top = overThe(wall, at, r + 0.05);
+  const foe = Object.values(state.models).filter(m => m.owner !== seat && alive(m) && Math.hypot(m.x - top.x, m.y - top.y) < radius(m) + r).sort((a, b) => Math.hypot(a.x - top.x, a.y - top.y) - Math.hypot(b.x - top.x, b.y - top.y))[0];
+  let spot = top;
+  if (foe) {
+    // The defender is there: the climber ends in contact with it, on the ladder's side of it.
+    const d = Math.hypot(at.x - foe.x, at.y - foe.y) || 1;
+    spot = { x: foe.x + ((at.x - foe.x) / d) * (radius(foe) + r + 0.01), y: foe.y + ((at.y - foe.y) / d) * (radius(foe) + r + 0.01) };
+  }
+  const blocked = Object.values(state.models).some(m => m.id !== bearer.id && m.id !== foe?.id && alive(m) && Math.hypot(m.x - spot.x, m.y - spot.y) < radius(m) + r - 0.02);
+  if (blocked) return out;
+  out.push(
+    { type: 'rolled', roll: { id: `${group}-1`, by: seat, label: `${bearer.name} rides the ladder up${foe ? ` onto ${foe.name}` : ''}`.slice(0, 80), dice: [], model: bearer.id, at: now, group, note: foe ? 'It charges the defender at the top.' : 'It reaches the top of the wall.' } },
+    { type: 'backAway', moves: [{ id: bearer.id, x: spot.x, y: spot.y }] },
+  );
+  return out;
+}

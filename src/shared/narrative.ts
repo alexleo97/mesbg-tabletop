@@ -1,6 +1,6 @@
 import { entriesFor, type Catalog, type StatName } from './catalog.ts';
 import { arrivalDue, other } from './flow.ts';
-import { halfExtents, type Point } from './geometry.ts';
+import { distanceBetween, halfExtents, type Point } from './geometry.ts';
 import { guessBase } from './importList.ts';
 import { offTable } from './maelstrom.ts';
 import { muttonWinner } from './mutton.ts';
@@ -396,14 +396,27 @@ export function narrativeSetup(n: Narrative, good: Seat, catalog: Catalog, newId
     };
     const p = at(c, m);
     models.push({ ...m, ...p, rot: facing(c, p, owner) });
-    // A siege engine's crew stand behind it, the side away from where it faces.
+    // A siege engine's crew stand in base contact with it, behind or beside it, as close to the back as there is room.
     const hands = e.siege ? crew.flatMap(x => Array.from({ length: x.count }, () => x)) : [];
-    hands.forEach((x, i) => {
-      const back = along(p, facing(c, p, owner) + 180 + (i - (hands.length - 1) / 2) * 40, radius(m) + 0.6);
-      const r = (x.base?.w ?? 25) / 50.8;
-      const spot = { x: Math.min(n.board.w - r, Math.max(r, back.x)), y: Math.min(n.board.h - r, Math.max(r, back.y)) };
-      models.push({ id: newId('m'), owner, name: x.name, ...spot, rot: facing(c, p, owner), base: x.base ?? { shape: 'round', w: 25, h: 25 }, move: x.move ?? 6, wounds: x.wounds ?? 1, maxWounds: x.wounds ?? 1, might: x.might ?? 0, will: x.will ?? 0, fate: x.fate ?? 0, hero: x.hero, dead: false, profileId: c.unit, crewOf: m.id, cast: `${c.key}-crew` });
-    });
+    const engine = models[models.length - 1];
+    for (const x of hands) {
+      const base: Base = x.base ?? { shape: 'round', w: 25, h: 25 };
+      const r = Math.max(base.w, base.h) / 50.8;
+      const hand: Model = { id: newId('m'), owner, name: x.name, x: 0, y: 0, rot: engine.rot, base, move: x.move ?? 6, wounds: x.wounds ?? 1, maxWounds: x.wounds ?? 1, might: x.might ?? 0, will: x.will ?? 0, fate: x.fate ?? 0, hero: x.hero, dead: false, profileId: c.unit, crewOf: m.id, cast: `${c.key}-crew` };
+      let spot: Point | undefined;
+      for (const turn of [180, 150, 210, 120, 240, 90, 270, 60, 300]) {
+        // Out from the engine's middle until the bases just touch.
+        let d = 0;
+        let p = along(engine, engine.rot + turn, d);
+        while (distanceBetween({ ...hand, ...p }, engine) < 0.02 && d < 10) p = along(engine, engine.rot + turn, (d += 0.02));
+        const inside = p.x >= r && p.y >= r && p.x <= n.board.w - r && p.y <= n.board.h - r && (!('zone' in c.place) || inHelmsZone(c.place.zone, p, r));
+        if (inside && models.every(o => o.id === engine.id || Math.hypot(o.x - p.x, o.y - p.y) >= radius(o) + r)) {
+          spot = p;
+          break;
+        }
+      }
+      if (spot) models.push({ ...hand, ...spot });
+    }
   }
   return { terrain, models };
 }
