@@ -26,7 +26,8 @@ import { touching } from './objects.ts';
 import { brandRetreats } from './fire.ts';
 import { placingNow } from './placing.ts';
 import { fryingPans } from './sam.ts';
-import { arrivalAuto, arrivalDue, mayCry, narrativeById, narrativeSetup, rollArrival, skipArrival } from './narrative.ts';
+import { arrivalAuto, arrivalDue, mayCry, narrativeById, narrativeSetup, radius, rollArrival, skipArrival } from './narrative.ts';
+import { terrorAhead, terrorTest } from './courage.ts';
 import { invisibleTo, ringRequest, seekRequest } from './ring.ts';
 import { isTroll, spareFor } from './mutton.ts';
 import { bag, roast, sneeze, steadyAgainst, trollSacks } from './trolls.ts';
@@ -598,6 +599,17 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
         if (!(state.phase === 'move' && canActivate(state, seat))) return null;
         const at = throwingPoint(state, shooter, target);
         if (!at) return null;
+        // Charging something terrifying takes a Courage test as the move begins, so before the throw: a model that
+        // fails can't move this turn, and so can't throw as it charges either.
+        const gap = Math.hypot(shooter.x - target.x, shooter.y - target.y) || 1;
+        const reach = radius(shooter) + radius(target) + 0.01;
+        const contact = { x: target.x + ((shooter.x - target.x) * reach) / gap, y: target.y + ((shooter.y - target.y) * reach) / gap };
+        const dread = terrorAhead(state, shooter, contact, catalog);
+        if (dread) {
+          const test = terrorTest(shooter, dread, catalog, d6, uid, now, state);
+          if (!test.pass) return { apply: test.actions };
+          before.push(...test.actions);
+        }
         if (at.x !== shooter.x || at.y !== shooter.y) before.push({ type: 'moveModels', moves: [{ id: shooter.id, x: at.x, y: at.y }] });
       }
       if (state.flow.shotPause) return null;

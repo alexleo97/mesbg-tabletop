@@ -12,7 +12,7 @@ import { ModelCard, weaponOf } from './ModelCard.tsx';
 import { SightHint } from './SightHint.tsx';
 import { combatFromKey, combats, other } from '../shared/flow.ts';
 import { engaged, fightDone } from '../shared/movement.ts';
-import { isThrowing } from '../shared/shooting.ts';
+import { canThrowBrand, isThrowing } from '../shared/shooting.ts';
 import { waitingOnMight } from '../shared/bot.ts';
 import { distanceBetween, formatInches } from '../shared/geometry.ts';
 import { scenarioById, scenarioMarkers } from '../shared/scenarios.ts';
@@ -393,10 +393,12 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
   };
 
   // In the Shoot phase, tapping an enemy while your archer is selected aims at it instead of selecting it; in the
-  // Move phase the same goes for a model with a throwing weapon, which can throw as it charges.
+  // Move phase the same goes for a model with a throwing weapon (Aragorn's flaming brand at Weathertop among them),
+  // which can throw as it charges.
   const missile = single && weaponOf(single, catalog);
+  const thrower = !!single && ((!!missile && isThrowing(missile)) || canThrowBrand(single));
   const shooter =
-    single && single.owner === role && state.flow.started && missile && (state.phase === 'shoot' || (state.phase === 'move' && isThrowing(missile) && !state.flow.shot?.includes(single.id) && !engaged(state, single)))
+    single && single.owner === role && state.flow.started && (missile || thrower) && (state.phase === 'shoot' || (state.phase === 'move' && thrower && !state.flow.shot?.includes(single.id) && !engaged(state, single)))
       ? single
       : undefined;
   const onModelTap = (m: Model) => {

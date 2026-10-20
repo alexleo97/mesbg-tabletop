@@ -28,7 +28,7 @@ import { armyStatus } from './status.ts';
 import { pushers } from './siege.ts';
 import { chargeAim, chargesDue, straightOn } from './trample.ts';
 import { arrivalAuto, arrivalDue, castModel, mayCry } from './narrative.ts';
-import { willOfEvil } from './courage.ts';
+import { courageOf, willOfEvil } from './courage.ts';
 import { hasMorgulBlade } from './morgul.ts';
 import { AXE_FREED, canHeadbutt, hasMattock, longbeardFor, mayAxeTest, mayTend, rerollFor, spentPoints, swapPair, trumpetDue } from './company.ts';
 import { fitsSack, keepsForLater, lingeringCold } from './trolls.ts';
@@ -203,6 +203,8 @@ function phaseStep(ctx: Ctx): BotStep | null {
     case 'move':
     case 'shoot':
     case 'fight': {
+      // The Cry of the Nazgûl comes as the Move phase begins, whichever side moves first.
+      if (state.phase === 'move' && wantsCry(ctx)) return { action: { type: 'cry', seat }, delay: THINK_PAUSE };
       if (heroicTurn(state) === seat) return heroicStep(ctx);
       if (!heroicsSettled(state)) return null;
       if (orderRollNeeded(state) && state.priority === seat && !state.log.some(r => r.label === orderRollLabel(state))) {
@@ -316,6 +318,14 @@ function priorityStep(ctx: Ctx): BotStep | null {
   return { action: { type: 'choosePriority', seat: close ? seat : other(seat) }, delay: THINK_PAUSE };
 }
 
+/** The Cry of the Nazgûl, once Aragorn is here anyway (or late in the game): it would only bring him sooner. */
+function wantsCry(ctx: Ctx): boolean {
+  const { state, seat } = ctx;
+  if (!mayCry(state, seat)) return false;
+  const aragorn = castModel(state, 'aragorn');
+  return !aragorn || !aragorn.waiting || state.turn >= 4;
+}
+
 function heroicStep(ctx: Ctx): BotStep {
   const { state, seat } = ctx;
   const pass: BotStep = { action: { type: 'passHeroic', seat }, delay: THINK_PAUSE };
@@ -381,12 +391,6 @@ function moveStep(ctx: Ctx): BotStep {
     if (memo.acted.includes(m.id)) continue;
     const t = seekTargets(state, ctx.catalog, m).find(x => x.need <= 12 && centre(m, x.target) <= (moveAllowance(state, m) ?? 6) + 1);
     if (t) return { action: { type: 'seek', id: m.id, target: t.target.id }, delay: DICE_PAUSE };
-  }
-
-  // The Cry of the Nazgûl, once Aragorn is here anyway (or late in the game): it would only bring him sooner.
-  if (mayCry(state, seat)) {
-    const aragorn = castModel(state, 'aragorn');
-    if (!aragorn || !aragorn.waiting || state.turn >= 4) return { action: { type: 'cry', seat }, delay: THINK_PAUSE };
   }
 
   const cast = castStep(ctx);
@@ -464,7 +468,7 @@ function moveStep(ctx: Ctx): BotStep {
 
 function courageTest(ctx: Ctx, m: Model, label: string): BotStep {
   ctx.memo.pending = { kind: 'courage', model: m.id };
-  return { action: { type: 'roll', count: 2, sum: profile(ctx, m).c, label, model: m.id }, delay: DICE_PAUSE };
+  return { action: { type: 'roll', count: 2, sum: courageOf(ctx.state, ctx.catalog, m), label, model: m.id }, delay: DICE_PAUSE };
 }
 
 /** The model's latest roll this phase whose label starts with `prefix`. */
