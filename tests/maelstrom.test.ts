@@ -71,3 +71,25 @@ describe('Maelstrom of Battle reinforcements', () => {
     expect(b.every(m => m.x < 12)).toBe(true);
   });
 });
+
+describe('Reconnoitre', () => {
+  it('waits off the table and comes on by its own edge, needing 4+ on turn 1 and less each turn after', async () => {
+    const { reconnoitreNeed } = await import('../src/shared/maelstrom.ts');
+    expect([1, 2, 3, 4, 5].map(reconnoitreNeed)).toEqual([4, 3, 2, 1, 1]);
+    let s: GameState = { ...initialState(), scenario: 'reconnoitre' };
+    const list = [{ name: 'Captain', count: 1, hero: true, group: 'a' }, { name: 'Warrior', count: 4, hero: false, group: 'a' }, { name: 'Lieutenant', count: 1, hero: true, group: 'b' }];
+    s = run(s, { type: 'addModels', models: deployList(list, 'p1', s, scenarioById('reconnoitre')) });
+    s = run(s, { type: 'addModels', models: deployList(list, 'p2', s, scenarioById('reconnoitre')) }, { type: 'startGame' }, { type: 'setPhase', phase: 'move' });
+    expect(Object.values(s.models).every(m => m.waiting)).toBe(true);
+    expect(arrivalsDue(s)).toBe('p1');
+    // A 3 isn't enough on turn 1; a 5 is, and it comes on by player 1's own (south) edge.
+    const out = rollArrivals(s, 'p1', dice(3, 5), uid, () => 0.5);
+    const after = run(s, ...out);
+    const labels = out.filter(a => a.type === 'rolled').map(a => (a as Extract<Action, { type: 'rolled' }>).roll.label);
+    expect(labels.some(l => /doesn't arrive/.test(l))).toBe(true);
+    expect(labels.some(l => /arrives on the south edge/.test(l))).toBe(true);
+    const on = Object.values(after.models).filter(m => m.owner === 'p1' && !m.waiting);
+    expect(on.length).toBeGreaterThan(0);
+    expect(on.every(m => m.y > 36)).toBe(true);
+  });
+});

@@ -6,7 +6,8 @@ import { markerName, markerNotes } from '../shared/objects.ts';
 import { Effects } from './Effects.tsx';
 import { useLessonLock } from './lessonLock.ts';
 import { TerrainArt, TerrainDefs, TerrainFaces } from './TerrainArt.tsx';
-import { ScenarioZones } from './ScenarioZones.tsx';
+import { ScenarioZones, ZoneArt } from './ScenarioZones.tsx';
+import { zonesNow } from '../shared/deploy.ts';
 import { scenarioById } from '../shared/scenarios.ts';
 import { MATERIALS, textures } from './textures.ts';
 import { drawLayer, isMarker, TERRAIN_INFO, terrainRules } from '../shared/terrain.ts';
@@ -764,6 +765,14 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
             </g>
           )}
           {showDeployment && scenarioById(state.scenario) && <ScenarioZones s={scenarioById(state.scenario)!} w={state.board.w} h={state.board.h} />}
+          {/* Where the warband being set up may stand, by its D6, its corner or its Champion. */}
+          {!state.flow.started && state.flow.deploy?.current && (
+            <g className="deploy now" pointerEvents="none" clipPath="url(#board-clip)">
+              {zonesNow(state).map((z, i) => (
+                <ZoneArt key={i} z={z} sx={1} sy={1} w={state.board.w} h={state.board.h} />
+              ))}
+            </g>
+          )}
 
           {showZones && <MoveZones state={state} models={models.filter(m => selected.has(m.id))} />}
           {/* A selected siege engine's 45° Arc of Sight, and the Iron Hills Ballista's lines across the table. */}

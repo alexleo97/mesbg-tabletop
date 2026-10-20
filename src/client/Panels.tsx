@@ -697,7 +697,7 @@ export function TablePanel({
       </label>
       <div className="row">
         {objectives.length ? (
-          <button onClick={() => objectives.forEach(o => dispatch({ type: 'removeTerrain', id: o.id }))}>Remove objective markers</button>
+          <button disabled={!!state.flow.deploy} onClick={() => objectives.forEach(o => dispatch({ type: 'removeTerrain', id: o.id }))}>Remove objective markers</button>
         ) : (
           <button onClick={() => objectiveMarkers(state.board.w, state.board.h, newId).forEach(o => dispatch({ type: 'addTerrain', terrain: o }))}>
             Place 5 objectives

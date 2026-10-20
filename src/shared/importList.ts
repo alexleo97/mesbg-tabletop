@@ -226,8 +226,8 @@ export function deployList(entries: ListEntry[], owner: Seat, state: Pick<GameSt
     groups.set(e.group ?? '', list);
   }
 
-  // Maelstrom of Battle: the army waits off the table and arrives warband by warband during the game.
-  if (scenario?.deployment.type === 'maelstrom') {
+  // Maelstrom of Battle and Reconnoitre: the army waits off the table and arrives warband by warband during the game.
+  if (scenario?.deployment.type === 'maelstrom' || scenario?.deployment.type === 'reconnoitre') {
     const at = offTable(owner, state.board);
     // Siege engines (and their crew) are set up before the battle instead, within 6" of the player's own table edge.
     const engineUnits = new Set(entries.filter(e => e.siege).map(e => e.profileId));

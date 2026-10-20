@@ -387,6 +387,28 @@ export interface Placing {
   stay?: boolean;
 }
 
+/**
+ * Where setting up in turn is up to. `markers`: players take turns placing objective markers; `roll`: the markers are
+ * down and the roll-off for deployment is next; `side`: its winner is choosing their end of the table; `warbands`:
+ * players take turns placing a warband (or, in some scenarios, their whole army); `sides`: in a narrative scenario each
+ * side sets up its cast in the book's order; `done`: everything is on the table.
+ */
+export interface Deploying {
+  step: 'markers' | 'roll' | 'side' | 'warbands' | 'sides' | 'done';
+  /** Who won the last roll-off. */
+  winner?: Seat;
+  /** Whose turn it is to place something. */
+  turn?: Seat;
+  /** Warbands on the table, as `${seat}:${warband}` (or `${seat}:*` for a whole army or cast), in the order placed. */
+  placed: string[];
+  /** The warband being placed now: only it moves until its player is done. */
+  current?: string;
+  /** Its D6, in scenarios where that decides how far forward it may go. */
+  roll?: number;
+  /** The objective marker being placed now. */
+  marker?: string;
+}
+
 export interface Flow {
   /** Setup is over and turns are being played. */
   started: boolean;
@@ -496,6 +518,8 @@ export interface Flow {
   fort?: Record<Seat, number>;
   /** Each player's secret choices, shown to the other player once the game is over. */
   picks?: Record<Seat, Picks>;
+  /** Setting the table out in turn before the battle: objective markers, then the armies (see deploy.ts). */
+  deploy?: Deploying;
   /** The fights paired off at the start of this Fight phase, by combat key. */
   pairs?: string[];
   /** The Priority player's choices of who fights whom, where a model could be paired off more than one way. */
@@ -631,6 +655,21 @@ export type Action =
   | { type: 'setPrivate'; private: boolean }
   /** `at`: when the server started it, which tells one game in a room from the next. */
   | { type: 'startGame'; at?: number }
+  /** Request from a client: the server rolls off to place the objective markers, or to deploy (see deploy.ts). */
+  | { type: 'rollDeploy' }
+  /** Server only: who won that roll-off. */
+  | { type: 'deployRolled'; step: 'markers' | 'side'; winner: Seat }
+  /** The roll-off's winner keeps their end of the table, or takes the far one (the table is turned round). */
+  | { type: 'pickSide'; seat: Seat; far: boolean }
+  /** A player puts down an objective marker (at the nearest legal spot to x, y), then says they're done with it. */
+  | { type: 'placeMarker'; seat: Seat; x?: number; y?: number }
+  | { type: 'markerDone'; seat: Seat }
+  /** Request from a client: put this warband (`*`: the whole army) on the table; the server rolls any D6 it needs. */
+  | { type: 'deployWarband'; seat: Seat; warband: string }
+  /** Server only: the warband comes onto the table, laid out by the game, for its player to arrange. */
+  | { type: 'warbandDown'; seat: Seat; warband: string; roll?: number }
+  /** The player has finished placing their warband (or, in a narrative scenario, their side). */
+  | { type: 'warbandDone'; seat: Seat }
   /** Request from a client; the server rolls off and sends `priorityRolled`. */
   | { type: 'rollPriority' }
   | { type: 'priorityRolled'; roll: [number, number]; chooser: Seat }

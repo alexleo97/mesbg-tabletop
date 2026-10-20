@@ -91,6 +91,8 @@ export interface Narrative {
   cast: CastMember[];
   /** How long the battle lasts when the players choose (Helm's Deep), in turns, and the choices offered. */
   turns?: { choices: number[]; default: number };
+  /** Which side sets up first, as the book's Starting Positions order it: each side in turn arranges its cast. */
+  setupOrder?: Side[];
 }
 
 const piece = (t: Partial<Terrain> & Pick<Terrain, 'id' | 'kind' | 'x' | 'y' | 'w' | 'h'>): Terrain => ({ shape: 'rect', rot: 0, locked: true, ...t });
@@ -129,6 +131,7 @@ export const NARRATIVES: Narrative[] = [
       evil: { name: 'The Nazgûl', cast: 'The Witch-king and four Ringwraiths' },
     },
     layout: 'A 2\' by 2\' table: the ruined watchtower of Amon Sûl, 12" across, fills the middle, with trees and piles of rubble dotted round it.',
+    setupOrder: ['good', 'evil'],
     deployment: 'Frodo stands in the middle of the ruin with the other three Hobbits touching him. The Nazgûl start touching the edge of the ruin, wherever their player likes round it. Aragorn is kept off the table.',
     objectives: 'The Nazgûl win the moment Frodo is slain. The Hobbits win if every one of the Nazgûl is slain first.',
     rules: [
@@ -183,6 +186,7 @@ export const NARRATIVES: Narrative[] = [
       evil: { name: 'The Trolls', cast: 'Bill, Bert and Tom' },
     },
     layout: 'A 2\' by 2\' clearing in the Trollshaws: the Trolls\' campfire in the middle, their supplies and the captured ponies\' pen beside it, and thick woods and rocky outcrops round the edges.',
+    setupOrder: ['evil', 'good'],
     deployment: 'The Trolls start within 3" of the campfire. Bilbo starts within 3" of Bill, and Kíli touching the middle of the west edge. The rest of the Company is kept off the table.',
     objectives: 'The Company wins by slaying all three Trolls before the sun comes up. The Trolls win if every member of the Company is slain or stuffed in a sack before then. When the sun rises with neither done, it is a draw. If Bilbo is slain, the Company can do no better than a draw.',
     rules: [
@@ -223,6 +227,7 @@ export const NARRATIVES: Narrative[] = [
     },
     layout:
       'A 4\' by 4\' table. The Hornburg fills the north-west corner, behind its curved outer wall with the great gate in it and the causeway leading up to it; an inner wall and the keep stand further in. The Deeping Wall runs from the Hornburg to the middle of the south edge, the Deeping Stream passing under it through the culvert halfway along. Everything east of the Deeping Wall is open ground.',
+    setupOrder: ['good', 'evil'],
     deployment:
       "The Defenders of the Hornburg (Théoden, Gamling and 25 Warriors of Rohan) start inside the Hornburg. The Defenders of the Deeping Wall (Aragorn, Legolas, Gimli, Haldir, Haleth, Aldor, 25 Warriors of Rohan and 25 Galadhrim) start on the Deeping Wall. The Relief Force (Éomer, Gandalf the White, a Captain of Rohan and 24 Riders of Rohan) is kept off the table. The Host of Isengard starts wholly within 12\" of the east edge, with its ladders and Demolition Charges.",
     objectives:

@@ -1,5 +1,6 @@
-import { halfExtents, type Point } from './geometry.ts';
-import { inZone, whollyIn, zonesOf } from './objects.ts';
+import { distanceBetween, halfExtents, type Point } from './geometry.ts';
+import { inZone, whollyIn } from './objects.ts';
+import { bandKey, captainOf, CAPTAIN_RANGE, deployFits, deployZones, inCurrent, mayArrange } from './deploy.ts';
 import type { Zone } from './scenarios.ts';
 import { holdNarrative } from './narrative.ts';
 import { crowded, frontFirst } from './movement.ts';
@@ -68,7 +69,7 @@ export function nearestSpot(p: Point, fits: (q: Point) => boolean, reach = 6, st
  * Places models as near as they fit to a point: wholly inside the zone and on the table, clear of other models (by
  * `gap`, a hair by default) and off buildings and cliffs. Used for a warband following one of its models into another zone, and for reinforcements.
  */
-export function placeNear(state: GameState, mates: Model[], zone: Zone, near: Point, taken: Model[], gap: (o: Model) => number = () => 0.1): Move[] {
+export function placeNear(state: GameState, mates: Model[], zone: Zone, near: Point, taken: Model[], gap: (o: Model) => number = () => 0.1, ok: (m: Model, p: Point) => boolean = () => true): Move[] {
   const { w, h } = state.board;
   const solid = solidOutlines(state, true);
   const step = 0.25;
@@ -84,7 +85,8 @@ export function placeNear(state: GameState, mates: Model[], zone: Zone, near: Po
       p =>
         within(state, zone, { ...m, x: p.x, y: p.y }) &&
         !onOutlines(solid, p, r) &&
-        others.every(o => Math.hypot(o.x - p.x, o.y - p.y) >= r + radius(o) + gap(o)),
+        others.every(o => Math.hypot(o.x - p.x, o.y - p.y) >= r + radius(o) + gap(o)) &&
+        ok(m, p),
     );
     // No room left: it stays where it is.
     if (!at) continue;
@@ -95,14 +97,16 @@ export function placeNear(state: GameState, mates: Model[], zone: Zone, near: Po
 }
 
 /** The moves of a drag before the battle, held inside each side's deployment zones, plus any warband that follows. */
-export function holdInZones(state: GameState, moves: Move[]): Move[] {
-  if (state.flow.started) return moves;
+export function holdInZones(state: GameState, asked: Move[]): Move[] {
+  if (state.flow.started) return asked;
+  // Once setting up in turn has begun, only the warband (or narrative side) being placed moves.
+  const moves = asked.filter(mv => state.models[mv.id] && mayArrange(state, state.models[mv.id]));
   // A narrative scenario's cast stays where its story puts it.
   if (state.narrative) return keepClear(state, moves.map(mv => holdNarrative(state, mv)), false);
   const out = new Map<string, Move>();
   for (const mv of moves) {
     const m = state.models[mv.id];
-    const zones = m ? zonesOf(state, m.owner) : [];
+    const zones = m ? deployZones(state, m) : [];
     if (!m || !zones.length) {
       out.set(mv.id, mv);
       continue;
@@ -119,7 +123,7 @@ export function holdInZones(state: GameState, moves: Move[]): Move[] {
   for (const mv of out.values()) {
     const m = state.models[mv.id];
     if (!m?.warband || done.has(`${m.owner}:${m.warband}`)) continue;
-    const zones = zonesOf(state, m.owner);
+    const zones = deployZones(state, m);
     if (zones.length < 2) continue;
     const there = zoneOf(state, zones, { ...m, x: mv.x, y: mv.y });
     const mates = Object.values(state.models).filter(o => o.owner === m.owner && o.warband === m.warband && !o.dead && !moving.has(o.id));
@@ -135,7 +139,34 @@ export function holdInZones(state: GameState, moves: Move[]): Move[] {
     const m = state.models[mv.id];
     if (m?.siege) Object.assign(mv, nearEdge(state, m, mv));
   }
-  return keepClear(state, [...out.values()], true);
+  return pullIn(state, keepClear(state, [...out.values()], true));
+}
+
+/**
+ * While a warband is being set up, a Captain dragged away takes along those of its warband it would leave more than
+ * 6" behind: each comes in towards it to the nearest spot that fits.
+ */
+function pullIn(state: GameState, moves: Move[]): Move[] {
+  const d = state.flow.deploy;
+  if (!d?.current || d.step !== 'warbands') return moves;
+  const moved = new Map(moves.map(mv => [mv.id, mv]));
+  const models = { ...state.models };
+  for (const mv of moves) if (models[mv.id]) models[mv.id] = { ...models[mv.id], x: mv.x, y: mv.y };
+  const extra: Move[] = [];
+  const band = Object.values(models).filter(m => !m.dead && !m.waiting && !m.aboard && inCurrent(d, m));
+  for (const key of new Set(band.map(bandKey))) {
+    const mates = band.filter(m => bandKey(m) === key);
+    const cap = captainOf(state, mates);
+    if (!cap || !moved.has(cap.id)) continue;
+    for (const m of mates) {
+      if (m.id === cap.id || moved.has(m.id) || distanceBetween(m, cap) <= CAPTAIN_RANGE) continue;
+      const far = Math.hypot(m.x - cap.x, m.y - cap.y) || 1;
+      const k = Math.max(0, CAPTAIN_RANGE - 0.3) / far + (reachOf(m) + reachOf(cap)) / far;
+      extra.push({ id: m.id, x: cap.x + (m.x - cap.x) * Math.min(1, k), y: cap.y + (m.y - cap.y) * Math.min(1, k) });
+    }
+  }
+  if (!extra.length) return moves;
+  return [...moves, ...keepClear({ ...state, models }, extra, true)];
 }
 
 /**
@@ -146,10 +177,13 @@ export function holdInZones(state: GameState, moves: Move[]): Move[] {
 function keepClear(state: GameState, moves: Move[], search: boolean): Move[] {
   const models = { ...state.models };
   const solid = solidOutlines(state);
-  return frontFirst(state, moves).map(mv => {
+  // A Captain goes first, so the rest of its warband keeps within 6" of where it ends up.
+  const captains = new Set(moves.map(mv => state.models[mv.id]).filter(m => m && inCurrent(state.flow.deploy, m)).map(m => captainOf(state, Object.values(state.models).filter(o => !o.dead && bandKey(o) === bandKey(m)))?.id));
+  const ordered = frontFirst(state, moves);
+  return [...ordered.filter(mv => captains.has(mv.id)), ...ordered.filter(mv => !captains.has(mv.id))].map(mv => {
     const m = models[mv.id];
     if (!m || m.dead || m.waiting || m.escaped || m.aboard) return mv;
-    const zones = zonesOf(state, m.owner);
+    const zones = deployZones(state, m);
     const zone = zoneOf(state, zones, { ...m, x: mv.x, y: mv.y });
     const now = { ...state, models };
     const r = reachOf(m);
@@ -157,7 +191,7 @@ function keepClear(state: GameState, moves: Move[], search: boolean): Move[] {
       const there = { ...m, x: p.x, y: p.y };
       if (zone >= 0 && !within(state, zones[zone], there)) return false;
       if (m.siege && (Math.abs(nearEdge(state, m, p).x - p.x) > 1e-6 || Math.abs(nearEdge(state, m, p).y - p.y) > 1e-6)) return false;
-      return !onOutlines(solid, p, r) && !crowded(now, m, p);
+      return !onOutlines(solid, p, r) && !crowded(now, m, p) && deployFits(state, models, m, p);
     };
     const asked = { x: mv.x, y: mv.y };
     const spot = (search ? nearestSpot(asked, fits) : fits(asked) ? asked : null) ?? { x: m.x, y: m.y };

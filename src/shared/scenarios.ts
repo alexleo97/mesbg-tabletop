@@ -52,11 +52,11 @@ export function scenarioFromDice(dice: number[]): Scenario | undefined {
 }
 
 /** Objective markers for the scenario's fixed positions, scaled to the board size, set up as what they stand for. */
-export function scenarioMarkers(s: Scenario, w: number, h: number, newId: (p: string) => string, rand: () => number = Math.random): Terrain[] {
+export function scenarioMarkers(s: Scenario, w: number, h: number, newId: (p: string) => string, rand: () => number = Math.random, extras = true): Terrain[] {
   const spots = (s.objectives.fixedPositions ?? []).map(([x, y]) => [(x / 48) * w, (y / 48) * h] as [number, number]);
-  // Markers the players place themselves (Domination's) start in legal spots: 12" from each other and 6" from the
-  // edges. Players can still drag them before the battle.
-  for (let tries = 0; spots.length < s.objectives.count && s.objectives.markerKind === 'objective' && tries < 500; tries++) {
+  // Markers the players place themselves (Domination's) are placed in turn after a roll-off (see deploy.ts); with
+  // `extras` they're set out at once instead, in legal spots: 12" from each other and 6" from the edges.
+  for (let tries = 0; extras && spots.length < s.objectives.count && s.objectives.markerKind === 'objective' && tries < 500; tries++) {
     const p: [number, number] = [6 + rand() * (w - 12), 6 + rand() * (h - 12)];
     if (spots.every(([x, y]) => Math.hypot(x - p[0], y - p[1]) >= 12)) spots.push(p);
   }

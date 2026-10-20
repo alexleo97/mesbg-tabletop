@@ -39,6 +39,7 @@ export function takeSetup(room: string): BattleSetup | null {
 const DEPLOY: Record<string, string> = {
   'long-edges': 'From the long edges',
   maelstrom: 'Maelstrom of Battle: warbands arrive during the game',
+  reconnoitre: 'Warbands arrive by their own edge during the game',
   corners: 'From the corners',
   'centre-edge-semicircle': 'Round the centre of each edge',
 };

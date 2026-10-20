@@ -12,11 +12,12 @@ import { botRoster } from '../src/shared/botList.ts';
 import { deployList } from '../src/shared/importList.ts';
 import { initialState, reduce } from '../src/shared/reducer.ts';
 import { scenarioById, scenarioMarkers } from '../src/shared/scenarios.ts';
+import { deployReady, procedureOf, rollDue } from '../src/shared/deploy.ts';
 import { listEntries } from '../src/shared/warbands.ts';
 import type { Action, GameState } from '../src/shared/types.ts';
 import { catalog, seeded } from './botsim.ts';
 
-const [scenario, seedArg, armyA = 'Minas Tirith', armyB = 'Mordor'] = process.argv.slice(2);
+const [scenario, seedArg, armyA = 'Minas Tirith', armyB = 'Legions of Mordor'] = process.argv.slice(2);
 const rand = seeded(Number(seedArg ?? 1));
 const room = `FG${Date.now() % 100000}${seedArg ?? ''}`;
 const ws = new WebSocket(`ws://localhost:${process.env.PORT ?? 8789}/ws?room=${room}`);
@@ -50,7 +51,7 @@ ws.on('open', async () => {
     send({ type: 'setScenario', id: sc.id });
     await sleep(200);
     let n = 0;
-    for (const t of scenarioMarkers(sc, state.board.w, state.board.h, p => `${p}${n++}`, rand)) send({ type: 'addTerrain', terrain: t });
+    for (const t of scenarioMarkers(sc, state.board.w, state.board.h, p => `${p}${n++}`, rand, !procedureOf(state)?.markers)) send({ type: 'addTerrain', terrain: t });
   }
   // BOARD=farmstead (or another starter board's id) plays over that board's terrain.
   const board = STARTER_BOARDS.find(b => b.id === process.env.BOARD);
@@ -68,6 +69,15 @@ ws.on('open', async () => {
     send({ type: 'addModels', models: deployList(entries, seat, state, sc ?? undefined) });
     await sleep(400);
   }
+  // Set up in turn as the scenario says: this side by the computer's logic, the Palantír its own.
+  const setupMemo = newMemo();
+  for (const t = Date.now(); !deployReady(state) && Date.now() - t < 60_000; ) {
+    if (rollDue(state)) send({ type: 'rollDeploy' });
+    const step = botStep(state, 'p1', catalog, setupMemo, Date.now(), false);
+    if (step?.action) send(step.action);
+    await sleep(150);
+  }
+  if (!deployReady(state)) issues.push(`set-up stuck at ${JSON.stringify(state.flow.deploy)}`);
   send({ type: 'startGame' });
   await sleep(500);
   const memo = newMemo();

@@ -1277,7 +1277,7 @@
       "pool": 5,
       "board": "48x48",
       "deployment": {
-        "type": "long-edges",
+        "type": "reconnoitre",
         "description": "No one deploys at the start. Roll off; winner picks their board edge, opponent gets the opposite. At the end of each own Activation Phase roll a D6 per off-board Warband (Captain may use Might): 1-3 it waits and gets a cumulative +1 next turn (arrives on 3+ turn 2, 2+ turn 3, automatically turn 4); 4-6 it enters via Reinforcements from a point on own edge at least 6\" from a corner. Rules letting models arrive from any edge must use own edge.",
         "zones": [
           {

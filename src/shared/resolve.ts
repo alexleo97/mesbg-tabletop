@@ -37,10 +37,11 @@ import { AXE_FREED, axeMastery, axeTest, canHeadbutt, deadeye, goodSort, hasMatt
 import { tierOf } from './warbands.ts';
 import { MORGUL, morgulBlades } from './morgul.ts';
 import { MAX_DICE } from './reducer.ts';
+import { bandName, bandsOf, mayPutDown, procedureOf, rollDue, rollMeans } from './deploy.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
 /** Dice requests a player sends, which only whoever holds the dice (the server, or the browser in practice games) can answer. */
-export const DICE_REQUESTS = new Set<Action['type']>(['setNarrative', 'ring', 'cry', 'aragorn', 'seek', 'roll', 'fight', 'strikes', 'shoot', 'shotOn', 'banner', 'dismount', 'trample', 'cross', 'rollFate', 'rollPriority', 'uncover', 'cast', 'resist', 'breach', 'hurl', 'swap', 'reroll', 'tend', 'longbeard', 'trumpet', 'axeTest', 'chronicled', 'detonate', 'rideOut', 'raiseLadder']);
+export const DICE_REQUESTS = new Set<Action['type']>(['setNarrative', 'ring', 'cry', 'aragorn', 'seek', 'roll', 'fight', 'strikes', 'shoot', 'shotOn', 'banner', 'dismount', 'trample', 'cross', 'rollFate', 'rollPriority', 'rollDeploy', 'deployWarband', 'uncover', 'cast', 'resist', 'breach', 'hurl', 'swap', 'reroll', 'tend', 'longbeard', 'trumpet', 'axeTest', 'chronicled', 'detonate', 'rideOut', 'raiseLadder']);
 
 export interface Resolved {
   /** Results everyone applies, in order. */
@@ -785,6 +786,31 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       const m = state.models[String(action.model)];
       if (!m || m.owner !== seat || !mayAxeTest(state, catalog, m)) return null;
       return { apply: axeTest(catalog, m, d6, uid, now) };
+    }
+    case 'rollDeploy': {
+      // Whoever asks first rolls for both players: for the objective markers, or for deployment. A tie is rolled again.
+      const due = rollDue(state);
+      if (!due) return null;
+      const apply: Action[] = [];
+      let roll: [number, number];
+      do {
+        roll = [d6(), d6()];
+        apply.push({ type: 'rolled', roll: { id: `r-${uid()}`, by: seat, label: due === 'markers' ? 'Roll-off to place the objectives' : 'Roll-off for deployment', dice: roll, at: now } });
+      } while (roll[0] === roll[1]);
+      apply.push({ type: 'deployRolled', step: due, winner: roll[0] > roll[1] ? 'p1' : 'p2' });
+      return { apply };
+    }
+    case 'deployWarband': {
+      // A player puts their next warband down; where the scenario says, a D6 first decides how far forward it may go.
+      const warband = typeof action.warband === 'string' ? action.warband.slice(0, 80) : '';
+      if (action.seat !== seat || !mayPutDown(state, seat, warband)) return null;
+      const p = procedureOf(state)!;
+      const firstChampion = p.champion && !state.flow.deploy!.placed.some(k => k.startsWith(`${seat}:`));
+      if (!p.d6 || firstChampion || warband === '*') return { apply: [{ type: 'warbandDown', seat, warband }] };
+      const band = bandsOf(state, seat, true).find(b => (b[0].warband ?? '') === warband)!;
+      const roll = d6();
+      const label = `Deployment: ${bandName(state, band)}`.slice(0, 80);
+      return { apply: [{ type: 'rolled', roll: { id: `r-${uid()}`, by: seat, label, dice: [roll], at: now, note: `${roll}: ${rollMeans(state, roll)}.` } }, { type: 'warbandDown', seat, warband, roll }] };
     }
     case 'rollPriority': {
       // Once per turn: whoever asks first rolls for both players.
