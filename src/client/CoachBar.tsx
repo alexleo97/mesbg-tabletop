@@ -12,6 +12,7 @@ import { onEdge, reinforceDue } from '../shared/mutton.ts';
 import { tierOf } from '../shared/warbands.ts';
 import { RollRow } from './Panels.tsx';
 import { useDraggable } from './useDraggable.tsx';
+import { useLocked } from './lessonLock.ts';
 import { pendingSpell } from '../shared/magic.ts';
 import { freeResistDice, isAreaPower, isLinePower } from '../shared/powers.ts';
 import { formatInches } from '../shared/geometry.ts';
@@ -49,6 +50,7 @@ export type CoachView = 'turn' | 'table' | 'log';
 /** Declaring heroic actions at the start of the Move, Shoot and Fight phases, taking turns from the player without Priority. */
 /** A power cast and waiting: its target's player chooses whether to resist, or its caster whether to spend Might. */
 function SpellStep({ state, dispatch, role, name }: { state: GameState; dispatch: Dispatch; role: Role; name: (s: Seat) => string }) {
+  const locked = useLocked();
   const p = pendingSpell(state);
   const { catalog } = useCatalog();
   const [will, setWill] = useState(1);
@@ -65,7 +67,7 @@ function SpellStep({ state, dispatch, role, name }: { state: GameState; dispatch
         <ol className="log">
           <RollRow r={p.rollEntry} state={state} role={role} dispatch={dispatch} />
         </ol>
-        {caster.owner === role && <button onClick={() => dispatch({ type: 'letSpellFail' })}>Let it fail</button>}
+        {caster.owner === role && <button {...locked({ type: 'letSpellFail' })} onClick={() => dispatch({ type: 'letSpellFail' })}>Let it fail</button>}
       </div>
     );
   const n = Math.max(1, Math.min(will, target.will));
@@ -91,12 +93,12 @@ function SpellStep({ state, dispatch, role, name }: { state: GameState; dispatch
                 <b>{n}</b>
                 <button onClick={() => setWill(Math.min(target.will, n + 1))} aria-label="More Will">+</button>
               </label>
-              <button className="primary" onClick={() => dispatch({ type: 'resist', will: n })}>
+              <button className="primary" {...locked({ type: 'resist', will: n })} onClick={() => dispatch({ type: 'resist', will: n })}>
                 Resist with {n + free} {n + free === 1 ? 'die' : 'dice'}
               </button>
             </>
           )}
-          <button className={target.will > 0 ? '' : 'primary'} onClick={() => dispatch({ type: 'resist', will: 0 })}>
+          <button className={target.will > 0 ? '' : 'primary'} {...locked({ type: 'resist', will: 0 })} onClick={() => dispatch({ type: 'resist', will: 0 })}>
             {free ? `Roll only the free ${free === 1 ? 'die' : 'dice'}` : "Don't resist"}
           </button>
         </div>
@@ -125,6 +127,7 @@ function ShotPauseStep({ state, dispatch, role, name }: { state: GameState; disp
 
 /** A Compel that worked: its caster's player drags the enemy model, then says they're done. */
 function CompelStep({ state, dispatch, role }: { state: GameState; dispatch: Dispatch; role: Role }) {
+  const locked = useLocked();
   const c = state.flow.compel;
   const t = c && state.models[c.model];
   const caster = c && state.models[c.caster];
@@ -141,7 +144,7 @@ function CompelStep({ state, dispatch, role }: { state: GameState; dispatch: Dis
           : `${caster.name} has Compelled ${t.name}: the other player moves it up to ${formatInches(c.max)}.`}
       </p>
       {caster.owner === role && (
-        <button className="primary" onClick={() => dispatch({ type: 'compel', compel: null })}>
+        <button className="primary" {...locked({ type: 'compel', compel: null })} onClick={() => dispatch({ type: 'compel', compel: null })}>
           Done moving {t.name}
         </button>
       )}
@@ -151,6 +154,7 @@ function CompelStep({ state, dispatch, role }: { state: GameState; dispatch: Dis
 
 /** A model its player places before play goes on: Aragorn arriving, or a Ringwraith fleeing a flaming brand. */
 function PlacingStep({ state, dispatch, role, name }: { state: GameState; dispatch: Dispatch; role: Role; name: (s: Seat) => string }) {
+  const locked = useLocked();
   const p = placingNow(state);
   const m = p && state.models[p.model];
   if (!p || !m) return null;
@@ -174,7 +178,7 @@ function PlacingStep({ state, dispatch, role, name }: { state: GameState; dispat
     <div className="spell-step">
       <p>{what}</p>
       {mine && (
-        <button className="primary" onClick={() => dispatch({ type: 'placed', seat: p.seat })}>
+        <button className="primary" {...locked({ type: 'placed', seat: p.seat })} onClick={() => dispatch({ type: 'placed', seat: p.seat })}>
           {p.kind === 'retreat' ? `Done moving ${m.name}` : `${m.name} stands here`}
         </button>
       )}
@@ -187,6 +191,7 @@ function PlacingStep({ state, dispatch, role, name }: { state: GameState; dispat
  * Fíli swapping places as a phase starts, Bifur's test for a free Heroic Move, and the Company coming on from the west.
  */
 function CompanyStep({ state, dispatch, role, name }: { state: GameState; dispatch: Dispatch; role: Role; name: (s: Seat) => string }) {
+  const locked = useLocked();
   const { catalog } = useCatalog();
   const me = role === 'spectator' ? null : role;
   const heard = trumpetDue(state, catalog);
@@ -203,11 +208,11 @@ function CompanyStep({ state, dispatch, role, name }: { state: GameState; dispat
         <>
           <p>Chronicler: Ori has seen the deed. {deed.ids.length === 1 && state.models[deed.ids[0]] ? `${state.models[deed.ids[0]].name} may get back a point spent earlier.` : 'The hero who did it has nothing spent, so another friend near Ori may get back a point instead.'}</p>
           {deed.ids.map(id => state.models[id]).filter(Boolean).flatMap(m => spentPoints(catalog, m).map(p => (
-            <button key={`${m.id}-${p}`} onClick={() => dispatch({ type: 'chronicled', model: m.id, point: p })}>
+            <button key={`${m.id}-${p}`} {...locked({ type: 'chronicled', model: m.id, point: p })} onClick={() => dispatch({ type: 'chronicled', model: m.id, point: p })}>
               {deed.ids.length > 1 ? `${m.name}: ` : ''}a {POINT[p]} point
             </button>
           )))}
-          <button onClick={() => dispatch({ type: 'chronicled' })}>Let it go</button>
+          <button {...locked({ type: 'chronicled' })} onClick={() => dispatch({ type: 'chronicled' })}>Let it go</button>
         </>
       ) : (
         <p>{name(deed.seat)} is choosing who gets a point back from Ori's Chronicler.</p>
@@ -217,8 +222,8 @@ function CompanyStep({ state, dispatch, role, name }: { state: GameState; dispat
           <p>
             {caller.name} calls a {heard.heroic.action} within 6" of {heard.oin.name}. Listen through the Hearing Trumpet? On a 5+ he calls the same for nothing; on a 1 he loses a Will point ({heard.oin.will ? `he has ${heard.oin.will}` : "he has none, so he can't move this turn"}).
           </p>
-          <button className="primary" onClick={() => dispatch({ type: 'trumpet', listen: true })}>Listen (roll a D6)</button>
-          <button onClick={() => dispatch({ type: 'trumpet', listen: false })}>Let it pass</button>
+          <button className="primary" {...locked({ type: 'trumpet', listen: true })} onClick={() => dispatch({ type: 'trumpet', listen: true })}>Listen (roll a D6)</button>
+          <button {...locked({ type: 'trumpet', listen: false })} onClick={() => dispatch({ type: 'trumpet', listen: false })}>Let it pass</button>
         </>
       ) : (
         <p>{name(heard.oin.owner)} is deciding whether {heard.oin.name} listens through his Hearing Trumpet.</p>
@@ -226,13 +231,13 @@ function CompanyStep({ state, dispatch, role, name }: { state: GameState; dispat
       {twins && (
         <>
           <p>Combat Synergy: before any heroic action this phase, {twins[0].name} and {twins[1].name} may swap places (not a move). If they do, each may re-roll a die in his duels this turn.</p>
-          <button onClick={() => dispatch({ type: 'swap', a: twins[0].id, b: twins[1].id })}>Swap {twins[0].name} and {twins[1].name}</button>
+          <button {...locked({ type: 'swap', a: twins[0].id, b: twins[1].id })} onClick={() => dispatch({ type: 'swap', a: twins[0].id, b: twins[1].id })}>Swap {twins[0].name} and {twins[1].name}</button>
         </>
       )}
       {bifur && (
         <>
           <p>Embedded Axe: with the axe out of his head, {bifur.name} may take an Intelligence test now; passed, he can declare a Heroic Move this turn for nothing.</p>
-          <button onClick={() => dispatch({ type: 'axeTest', model: bifur.id })}>Test {bifur.name}'s Intelligence</button>
+          <button {...locked({ type: 'axeTest', model: bifur.id })} onClick={() => dispatch({ type: 'axeTest', model: bifur.id })}>Test {bifur.name}'s Intelligence</button>
         </>
       )}
       {reinforceDue(state) && <p>Rolling for the rest of the Company…</p>}
@@ -246,6 +251,7 @@ function CompanyStep({ state, dispatch, role, name }: { state: GameState; dispat
 }
 
 function HeroicStep({ state, dispatch, role, name }: { state: GameState; dispatch: Dispatch; role: Role; name: (s: Seat) => string }) {
+  const locked = useLocked();
   const me = role === 'spectator' ? null : role;
   const { catalog } = useCatalog();
   const heroes = me ? canDeclare(state, me) : [];
@@ -292,10 +298,10 @@ function HeroicStep({ state, dispatch, role, name }: { state: GameState; dispatc
           <p>
             <b>{state.models[c.by]?.name}</b> challenges <b>{state.models[c.target]?.name}</b> to a duel. Accept, and the two get +1 Attack and +1 to wound against each other.
           </p>
-          <button className="primary" onClick={() => dispatch({ type: 'answerChallenge', target: c.target, accept: true })}>
+          <button className="primary" {...locked({ type: 'answerChallenge', target: c.target, accept: true })} onClick={() => dispatch({ type: 'answerChallenge', target: c.target, accept: true })}>
             Accept
           </button>
-          <button onClick={() => dispatch({ type: 'answerChallenge', target: c.target, accept: false })}>Decline</button>
+          <button {...locked({ type: 'answerChallenge', target: c.target, accept: false })} onClick={() => dispatch({ type: 'answerChallenge', target: c.target, accept: false })}>Decline</button>
         </div>
       ))}
       {!settled && turn && (
@@ -339,6 +345,7 @@ function HeroicStep({ state, dispatch, role, name }: { state: GameState; dispatc
               <div className="row choice-pair">
                 <button
                   className="go"
+                  {...locked({ type: 'declareHeroic', model: pickedHero.id, action: pickedAction?.name ?? '' })}
                   disabled={!pickedAction || (challenge && !pickedRival)}
                   onClick={() =>
                     pickedAction &&
@@ -347,7 +354,7 @@ function HeroicStep({ state, dispatch, role, name }: { state: GameState; dispatc
                 >
                   Declare
                 </button>
-                <button className="go" onClick={() => dispatch({ type: 'passHeroic', seat: me })}>{declaredNow.some(h => state.models[h.model]?.owner === me) ? 'No more' : 'Pass'}</button>
+                <button className="go" {...locked({ type: 'passHeroic', seat: me })} onClick={() => dispatch({ type: 'passHeroic', seat: me })}>{declaredNow.some(h => state.models[h.model]?.owner === me) ? 'No more' : 'Pass'}</button>
               </div>
             </>
           )}
@@ -370,7 +377,7 @@ function HeroicStep({ state, dispatch, role, name }: { state: GameState; dispatc
               Rolled a <b>{orderRoll.dice[0]}</b>: the <b>{orderRoll.dice[0] <= 3 ? 'Evil' : 'Good'}</b> player picks a hero to go first, then the players alternate.
             </>
           ) : state.priority === role ? (
-            <button className="primary" onClick={() => dispatch({ type: 'roll', count: 1, label: orderLabel })}>
+            <button className="primary" {...locked({ type: 'roll', count: 1, label: orderLabel })} onClick={() => dispatch({ type: 'roll', count: 1, label: orderLabel })}>
               Roll for who goes first
             </button>
           ) : (
@@ -384,6 +391,7 @@ function HeroicStep({ state, dispatch, role, name }: { state: GameState; dispatc
 
 /** Heroes with wounds waiting on Fate rolls. */
 function FateStep({ state, dispatch, role, name }: { state: GameState; dispatch: Dispatch; role: Role; name: (s: Seat) => string }) {
+  const locked = useLocked();
   const waiting = Object.values(state.models).filter(m => m.pending && !m.dead);
   if (!waiting.length) return null;
   return (
@@ -404,12 +412,12 @@ function FateStep({ state, dispatch, role, name }: { state: GameState; dispatch:
             {m.owner === role ? (
               <div className="row wrap">
                 {m.fate > 0 && (
-                  <button className="primary" onClick={() => dispatch({ type: 'rollFate', id: m.id })}>
+                  <button className="primary" {...locked({ type: 'rollFate', id: m.id })} onClick={() => dispatch({ type: 'rollFate', id: m.id })}>
                     Roll Fate
                   </button>
                 )}
-                <button onClick={() => dispatch({ type: 'takeWound', id: m.id })}>Take {n === 1 ? 'the wound' : 'one wound'}</button>
-                {n > 1 && <button onClick={() => dispatch({ type: 'takeWound', id: m.id, all: true })}>Take all {n}</button>}
+                <button {...locked({ type: 'takeWound', id: m.id })} onClick={() => dispatch({ type: 'takeWound', id: m.id })}>Take {n === 1 ? 'the wound' : 'one wound'}</button>
+                {n > 1 && <button {...locked({ type: 'takeWound', id: m.id, all: true })} onClick={() => dispatch({ type: 'takeWound', id: m.id, all: true })}>Take all {n}</button>}
               </div>
             ) : (
               <p className="muted">Waiting for {name(m.owner)} to roll Fate.</p>
@@ -446,6 +454,7 @@ function Reinforcements({ state, name }: { state: GameState; name: (s: Seat) => 
 }
 
 export function CoachBar({ state, dispatch, role, combats: allCombats, openFight, auto, view, setView, table, log }: Props) {
+  const locked = useLocked();
   let combats = allCombats;
   const [small, setSmall] = useState(false);
   const drag = useDraggable('coach');
@@ -467,7 +476,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openFight
       <>
         <p>The table and both armies are ready.</p>
         {me && (
-          <button className="primary go" onClick={() => dispatch({ type: 'startGame' })}>
+          <button className="primary go" {...locked({ type: 'startGame' })} onClick={() => dispatch({ type: 'startGame' })}>
             Start the battle
           </button>
         )}
@@ -481,7 +490,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openFight
         <>
           <p>Both players roll a D6. The winner chooses who has Priority this turn and acts first in each phase.</p>
           {me && (
-            <button className="primary go" onClick={() => dispatch({ type: 'rollPriority' })}>
+            <button className="primary go" {...locked({ type: 'rollPriority' })} onClick={() => dispatch({ type: 'rollPriority' })}>
               Roll for priority
             </button>
           )}
@@ -505,10 +514,10 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openFight
           </p>
           {balin && balin.owner === me && (
             <div className="row choice-pair">
-              <button className="primary go" onClick={() => dispatch({ type: 'longbeard', model: balin.id })} title="Longbeard: Balin spends a Will point and your Priority die is rolled again">
+              <button className="primary go" {...locked({ type: 'longbeard', model: balin.id })} onClick={() => dispatch({ type: 'longbeard', model: balin.id })} title="Longbeard: Balin spends a Will point and your Priority die is rolled again">
                 Balin: re-roll our die (1 Will)
               </button>
-              <button className="go" onClick={() => dispatch({ type: 'longbeard', model: balin.id, skip: true })}>
+              <button className="go" {...locked({ type: 'longbeard', model: balin.id, skip: true })} onClick={() => dispatch({ type: 'longbeard', model: balin.id, skip: true })}>
                 Keep the roll
               </button>
             </div>
@@ -516,10 +525,10 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openFight
           {balin && balin.owner !== me && <p className="hint">Waiting for <Who s={balin.owner} /> to say whether Balin has the roll made again.</p>}
           {me === c && !balin && (
             <div className="row choice-pair">
-              <button className="primary go" onClick={() => dispatch({ type: 'choosePriority', seat: c })}>
+              <button className="primary go" {...locked({ type: 'choosePriority', seat: c })} onClick={() => dispatch({ type: 'choosePriority', seat: c })}>
                 Take priority
               </button>
-              <button className="go" onClick={() => dispatch({ type: 'choosePriority', seat: other(c) })}>
+              <button className="go" {...locked({ type: 'choosePriority', seat: other(c) })} onClick={() => dispatch({ type: 'choosePriority', seat: other(c) })}>
                 Give it to {name(other(c))}
               </button>
             </div>
@@ -568,7 +577,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openFight
           </p>
         )}
         {state.flow.shotPause ? null : me === act ? (
-          <button className="primary go" onClick={() => dispatch({ type: 'endActivation', seat: act })}>
+          <button className="primary go" {...locked({ type: 'endActivation', seat: act })} onClick={() => dispatch({ type: 'endActivation', seat: act })}>
             Done {verb}
           </button>
         ) : (
@@ -580,7 +589,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openFight
       <>
         <p>Both sides have finished {verb}.</p>
         {me && !placingNow(state) && !arrivalDue(state) && (
-          <button className="primary go" onClick={() => dispatch({ type: 'nextPhase' })}>
+          <button className="primary go" {...locked({ type: 'nextPhase' })} onClick={() => dispatch({ type: 'nextPhase' })}>
             Go to the {state.phase === 'move' ? 'Shoot' : 'Fight'} phase
           </button>
         )}
@@ -614,7 +623,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openFight
         )}
         {auto && state.advance !== 'click' && phaseFinished(state) && <p className="muted">Nothing left to fight: moving on to the End phase.</p>}
         {me && (
-          <button className={open.length ? 'go' : 'primary go'} onClick={() => dispatch({ type: 'nextPhase' })}>
+          <button className={open.length ? 'go' : 'primary go'} {...locked({ type: 'nextPhase' })} onClick={() => dispatch({ type: 'nextPhase' })}>
             {open.length ? `End fights (${open.length} not rolled)` : 'End the Fight phase'}
           </button>
         )}
@@ -635,7 +644,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openFight
         {scenarioById(state.scenario) && manual && <p>The game keeps the score. Enter the lines it can't see, like secret picks or carried objects, in the Scenario tab on the left.</p>}
         {check && <p className="warn">{check.reason}</p>}
         {check?.rollNeeded && !endRoll && me && (
-          <button className="primary go" onClick={() => dispatch({ type: 'roll', count: 1, label: rollLabel })}>
+          <button className="primary go" {...locked({ type: 'roll', count: 1, label: rollLabel })} onClick={() => dispatch({ type: 'roll', count: 1, label: rollLabel })}>
             Roll for game end
           </button>
         )}
@@ -656,7 +665,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openFight
           (!check?.rollNeeded || endRoll) && (
             <>
               {auto && state.advance !== 'click' && phaseFinished(state) && <p className="muted">Turn {state.turn + 1} starts in a moment.</p>}
-              <button className="primary go" onClick={() => dispatch({ type: 'nextPhase' })}>
+              <button className="primary go" {...locked({ type: 'nextPhase' })} onClick={() => dispatch({ type: 'nextPhase' })}>
                 Start turn {state.turn + 1}
               </button>
             </>
@@ -707,7 +716,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openFight
           {flow.started && role !== 'spectator' && mayCry(state, role) && (
             <div className="spell-step">
               <p>Once a game, before anyone moves, the Nazgûl can give their Cry: every Good model's Courage is 3 worse this turn, and Aragorn comes at once.</p>
-              <button onClick={() => dispatch({ type: 'cry', seat: role })}>Give the Cry of the Nazgûl</button>
+              <button {...locked({ type: 'cry', seat: role })} onClick={() => dispatch({ type: 'cry', seat: role })}>Give the Cry of the Nazgûl</button>
             </div>
           )}
           {flow.started && arrivalDue(state) && !arrivalAuto(state) && (
@@ -715,8 +724,8 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openFight
               {role === state.narrative?.good ? (
                 <>
                   <p>Your move is done. You may roll a D6 for Aragorn: on a 4+ he arrives at the edge of the ruin.</p>
-                  <button className="primary" onClick={() => dispatch({ type: 'aragorn', roll: true })}>Roll for Aragorn</button>
-                  <button onClick={() => dispatch({ type: 'aragorn', roll: false })}>Not this turn</button>
+                  <button className="primary" {...locked({ type: 'aragorn', roll: true })} onClick={() => dispatch({ type: 'aragorn', roll: true })}>Roll for Aragorn</button>
+                  <button {...locked({ type: 'aragorn', roll: false })} onClick={() => dispatch({ type: 'aragorn', roll: false })}>Not this turn</button>
                 </>
               ) : (
                 <p>{name(state.narrative!.good)} is deciding whether to roll for Aragorn.</p>

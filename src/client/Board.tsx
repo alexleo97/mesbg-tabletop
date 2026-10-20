@@ -4,6 +4,7 @@ import { distanceBetween, distanceToBase, formatInches, halfExtents, type Point 
 import type { Action, GameState, Mark, Model, Seat, Terrain } from '../shared/types.ts';
 import { markerName, markerNotes } from '../shared/objects.ts';
 import { Effects } from './Effects.tsx';
+import { useLessonLock } from './lessonLock.ts';
 import { TerrainArt, TerrainDefs } from './TerrainArt.tsx';
 import { ScenarioZones } from './ScenarioZones.tsx';
 import { scenarioById } from '../shared/scenarios.ts';
@@ -173,6 +174,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
   const [view, setView] = useState<View>({ x: 0, y: 0, s: 10, r: 0 });
   const turn = view.r;
   const [gesture, setGesture] = useState<Gesture | null>(null);
+  const lock = useLessonLock();
   const [dragPos, setDragPos] = useState<Record<string, Point> | null>(null);
   // A siege tower being pushed: shown where it is dragged, and only sent (as a push) when let go.
   const [towerAt, setTowerAt] = useState<{ id: string } & Point | null>(null);
@@ -367,7 +369,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
 
   const sendMoves = (pos: Record<string, Point>, force: boolean) => {
     const now = performance.now();
-    if (!force && now - lastSend.current < SEND_EVERY_MS) return;
+    if (!Object.keys(pos).length || (!force && now - lastSend.current < SEND_EVERY_MS)) return;
     lastSend.current = now;
     dispatch({ type: 'moveModels', moves: Object.entries(pos).map(([id, p]) => ({ id, x: p.x, y: p.y })) });
   };
@@ -420,7 +422,10 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
       };
       // Only your own models move (and the Palantír's in a solo game, and a model your caster has Compelled).
       const compel = state.flow.compel;
-      const movable = (id: string) => !role || state.models[id].owner === role || state.models[id].owner === state.bot || (compel?.model === id && state.models[compel.caster]?.owner === role);
+      const movable = (id: string) =>
+        (!role || state.models[id].owner === role || state.models[id].owner === state.bot || (compel?.model === id && state.models[compel.caster]?.owner === role)) &&
+        // On a Learn to play table, only the models the step moves.
+        (!lock || lock.can({ type: 'moveModels', moves: [{ id, x: state.models[id].x, y: state.models[id].y }] }));
       for (const id of [...group].map(ridden)) if (state.models[id] && movable(id)) origin[id] = { x: state.models[id].x, y: state.models[id].y };
       setGesture({ kind: 'drag', start: p, origin, moved: false, tapId: hit.id, multi, wasSelected });
       return;
@@ -559,7 +564,9 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
     if (gesture.kind === 'drag') {
       const charge = charging.current;
       charging.current = null;
-      if (gesture.moved && charge) dispatch({ type: 'trample', id: charge.id, x: charge.toward.x, y: charge.toward.y });
+      // Dragging one of your models a lesson step doesn't move: the lesson card says what to do instead.
+      if (gesture.moved && lock && !Object.keys(gesture.origin).length && state.models[gesture.tapId]?.owner === role) lock.refuse();
+      else if (gesture.moved && charge) dispatch({ type: 'trample', id: charge.id, x: charge.toward.x, y: charge.toward.y });
       else if (gesture.moved && dragPos) {
         // A model dropped just short of an enemy is charging it: finish the move into base contact.
         const settled: Record<string, Point> = {};
@@ -769,6 +776,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
             return (
               <g
                 key={m.id}
+                data-model={m.id}
                 // A CSS transform, so models moved by the other player glide to where they went.
                 style={{ transform: `translate(${m.x}px, ${m.y}px) rotate(${m.rot}deg)` }}
                 className={`model ${animate && !dragPos?.[m.id] ? 'glide' : ''} ${m.owner} ${m.hero ? 'hero' : ''} ${selected.has(m.id) ? 'selected' : ''} ${sight?.seen.has(m.id) ? `seen-${sight.seen.get(m.id)}` : ''}`}
