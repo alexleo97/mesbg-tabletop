@@ -8,6 +8,7 @@ import { recoveryDue, recoveryRolls } from '../shared/powers.ts';
 import { riderTests, riderTestsDue } from '../shared/cavalry.ts';
 import { beastTests, beastTestsDue } from '../shared/warBeasts.ts';
 import { sabotageActions } from '../shared/siege.ts';
+import { chargeSabotage } from '../shared/helms.ts';
 import { brokenSideToTest, brokenTests, terrorAhead, terrorTest } from '../shared/courage.ts';
 import { cleanMark } from '../shared/marks.ts';
 import type { Action, GameState, Mark, Phase, Role } from '../shared/types.ts';
@@ -156,7 +157,7 @@ export class PracticeGame implements Connection {
     if (recoveryDue(state)) for (const a of recoveryRolls(state, d6, uid)) state = reduce(state, a);
     if (riderTestsDue(state)) for (const a of riderTests(state, catalog, d6, uid)) state = reduce(state, a);
     if (beastTestsDue(state)) for (const a of beastTests(state, catalog, d6, uid)) state = reduce(state, a);
-    for (const a of sabotageActions(state, uid)) state = reduce(state, a);
+    for (const a of [...sabotageActions(state, uid), ...chargeSabotage(state, uid)]) state = reduce(state, a);
     this.set(this.upkeep(this.opponent(state)));
   }
 

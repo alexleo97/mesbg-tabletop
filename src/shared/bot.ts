@@ -3,7 +3,7 @@ import { placingNow } from './placing.ts';
 import { woundNeed } from './rules.ts';
 import { hasFryingPan, longshanksFree, pannable } from './sam.ts';
 import { breachOptions } from './breach.ts';
-import { gateStanding, ladderable, nearestEdge, overThe, TOWER, towerMove } from './fortress.ts';
+import { gateStanding, HEAVY, ladderable, nearestEdge, overThe, TOWER, towerMove } from './fortress.ts';
 import { hurlOptions } from './defenders.ts';
 import { modelStats, rulesFor, type Catalog } from './catalog.ts';
 import { fighterOf } from './wargear.ts';
@@ -16,12 +16,13 @@ import { canCast, castTargets, pendingSpell, powersOf, untargeted, type KnownPow
 import { brutalOptions } from './monsters.ts';
 import { fightDone, limitMove, moveAllowance, moveLeft } from './movement.ts';
 import { affected, basePower, cannotAct, effectsOn, isCavalry, isLinePower, under } from './powers.ts';
-import { carriedBy, exitEdges, markerActions, onTable, sanctuary } from './objects.ts';
+import { carriedBy, exitEdges, markerActions, onTable, sanctuary, touching as touchingMarker } from './objects.ts';
+import { reaches as reachesFoe, touching as touchingFoe } from './barriers.ts';
 import { chance, fightOdds, woundChance, type Side } from './odds.ts';
 import { PICKS, pickOptions } from './picks.ts';
 import { scoreLines } from './scoring.ts';
 import { seekTargets } from './ring.ts';
-import { flooredAt, floorHeight, heightOf } from './sight.ts';
+import { climbedLevel, flooredAt, floorHeight, heightOf } from './sight.ts';
 import { planShot, weaponFor } from './shooting.ts';
 import { atCrossing, crossBlocked, fallingHits } from './terrainTests.ts';
 import { armyStatus } from './status.ts';
@@ -33,6 +34,11 @@ import { hasMorgulBlade } from './morgul.ts';
 import { AXE_FREED, canHeadbutt, hasMattock, longbeardFor, mayAxeTest, mayTend, rerollFor, spentPoints, swapPair, trumpetDue } from './company.ts';
 import { fitsSack, keepsForLater, lingeringCold } from './trolls.ts';
 import { canThrowBrand, FLAMING_BRAND } from './shooting.ts';
+import { byCulvert, charges, CULVERT, culvertWall, deepingDown, detonateOptions, helmsGate, isHelms, mayChooseRelief, raiseLadderTargets, RELIEF_SPAN, RELIEF_TURN, rideOutBlocked } from './helms.ts';
+import { inHornburg, onDeepingWall } from './helmsMap.ts';
+import { deadlyShot, shotsPerPhase, shotsTaken, unsteady } from './towers.ts';
+import { distanceToTerrain } from './sight.ts';
+import { hasRule } from './wargear.ts';
 import type { Action, DiceRoll, GameState, Model, Seat, Terrain } from './types.ts';
 
 // The computer player. Each call looks at the game and picks the one thing it would do next, so the server can play
@@ -197,6 +203,8 @@ export function botStep(state: GameState, seat: Seat, catalog: Catalog | null, m
 
 function phaseStep(ctx: Ctx): BotStep | null {
   const { state, seat } = ctx;
+  const relief = reliefStep(ctx);
+  if (relief) return relief;
   switch (state.phase) {
     case 'priority':
       return priorityStep(ctx);
@@ -395,6 +403,8 @@ function moveStep(ctx: Ctx): BotStep {
 
   const cast = castStep(ctx);
   if (cast) return cast;
+  const ride = rideOutStep(ctx);
+  if (ride) return ride;
 
   const broken = armyStatus(state, seat).broken;
   const enemies = side(state, other(seat));
@@ -424,10 +434,14 @@ function moveStep(ctx: Ctx): BotStep {
   // Models that can charge go first, nearest the enemy leading, so others can join their fights; then the rest
   // from the back forward, so the line closes up rather than strings out.
   const reach = (m: Model) => nearest(m) <= m.move + 2;
+  // Those hauling siege gear go last, once the ranks in front of them have moved out of the way, and those helping
+  // carry it after them, to take hold of it again where it was set down.
+  const heavy = onTable(state).filter(t => (t.object === 'ladder' || t.object === 'ram' || t.object === 'charge') && t.carrier && state.models[t.carrier]?.owner === seat);
+  const hauling = (m: Model) => (heavy.some(t => t.carrier === m.id) ? 1 : heavy.some(t => touchingMarker(m, t)) ? 2 : 0);
   // A siege engine doesn't move itself, and its crew stay beside it to shoot it.
   const queue = side(state, seat)
     .filter(m => !memo.acted.includes(m.id) && !m.siege && !(m.crewOf && state.models[m.crewOf] && !state.models[m.crewOf].dead))
-    .sort((a, b) => Number(reach(b)) - Number(reach(a)) || (reach(a) ? nearest(a) - nearest(b) : nearest(b) - nearest(a)));
+    .sort((a, b) => Number(hauling(a)) - Number(hauling(b)) || Number(reach(b)) - Number(reach(a)) || (reach(a) ? nearest(a) - nearest(b) : nearest(b) - nearest(a)));
   const goals = assignGoals(ctx);
   for (const m of queue) {
     // Not now: waiting for a hero's heroic activation to finish (or gone with one already).
@@ -488,6 +502,15 @@ function markerStep(ctx: Ctx, m: Model): BotStep | null {
     // Only its own side's ladders and rams are worth hauling about.
     const object = a.marker ? state.terrain[a.marker] : undefined;
     if (a.kind === 'pickUp' && (object?.object === 'ladder' || object?.object === 'ram') && object.side !== m.owner) continue;
+    // A Demolition Team keeps to its own charge, and leaves it to the team while the team is there to carry it.
+    const team = (x: Model) => !!x.torch || x.cast === 'engineer';
+    if (a.kind === 'pickUp' && (object?.object === 'ladder' || object?.object === 'ram') && team(m)) continue;
+    if (a.kind === 'pickUp' && object?.object === 'charge' && !team(m) && side(state, m.owner).some(x => team(x) && centre(x, object) <= 3)) continue;
+    // A charge already where it is going stays put, to be lit.
+    if (a.kind === 'pickUp' && object?.object === 'charge') {
+      const goal = chargeGoal(state, object, m.owner);
+      if (goal && centre(object, goal.at) <= 1) continue;
+    }
     // Rocks and oil are thrown from where they stand.
     if (a.kind === 'pickUp' && (object?.object === 'rocks' || object?.object === 'oil')) continue;
     if (a.kind === 'escape') {
@@ -519,6 +542,12 @@ interface Goal {
   near?: number;
   /** A rider sent where only those on foot can do the job, so it gets down when it's close. */
   foot?: boolean;
+  /** Going in whatever the danger (Helm's Deep's Relief Force, riding to the rescue, and the Demolition Teams). */
+  bold?: boolean;
+  /** Never sitting still: with nothing better, it moves on as far as it can (the Relief Force). */
+  ride?: boolean;
+  /** Keeps this far back from the foot of these walls (where the ladders and charges need room to get in). */
+  holdOff?: { from: Terrain[]; by: number; lanes: [Point, Point][] };
 }
 
 /**
@@ -538,6 +567,19 @@ function engineTurn(ctx: Ctx, m: Model): number | undefined {
   return best?.rot;
 }
 
+/**
+ * Where a friend helping carry a ladder or ram stands: beside the carrier on the load's side, square to the way it's
+ * going, so it shares the weight without standing in the carrier's path.
+ */
+function besideLoad(carrier: Model, load: Terrain, to: Point | undefined): Point {
+  if (!to) return carrier;
+  const d = Math.hypot(to.x - carrier.x, to.y - carrier.y) || 1;
+  const dir = { x: (to.x - carrier.x) / d, y: (to.y - carrier.y) / d };
+  const side = (load.x - carrier.x) * -dir.y + (load.y - carrier.y) * dir.x >= 0 ? 1 : -1;
+  const k = radius(carrier) * 2 + 0.05;
+  return { x: carrier.x - dir.y * side * k, y: carrier.y + dir.x * side * k };
+}
+
 /** Where a siege tower should be pushed: the nearest point on the nearest tall wall. */
 function towerAim(state: GameState, t: Terrain): Point | undefined {
   const walls = Object.values(state.terrain).filter(w => ladderable(w) && (w.sheer || heightOf(w) > 2));
@@ -555,17 +597,31 @@ function assignGoals(ctx: Ctx): Map<string, Goal> {
   // A Siege Ladder goes to the nearest wall before the enemy, a ram to the enemy's gate.
   const gates = Object.values(state.terrain).filter(t => gateStanding(t) && t.side && t.side !== seat);
   const walls = Object.values(state.terrain).filter(t => ladderable(t) && (t.sheer || heightOf(t) > 2));
+  // (A ladder goes where the foot of the wall is clear: along it from the nearest point, past friends already there.)
+  const freeEdge = (m: Model, x: Terrain): Point => {
+    const a = (x.rot * Math.PI) / 180;
+    const along = x.w >= x.h ? { x: Math.cos(a), y: Math.sin(a) } : { x: -Math.sin(a), y: Math.cos(a) };
+    const crowd = side(state, seat).filter(f => f.id !== m.id && centre(f, m) < 10);
+    for (const k of [0, 1, -1, 2, -2, 3, -3, 4, -4]) {
+      const q = nearestEdge(x, { x: m.x + along.x * k * 1.2, y: m.y + along.y * k * 1.2 });
+      if (!crowd.some(f => centre(f, q) < radius(f) + radius(m))) return q;
+    }
+    return nearestEdge(x, m);
+  };
   const heavyGoal = (m: Model, t: Terrain): Goal | undefined => {
-    const to = (t.object === 'ram' ? gates : walls).map(x => nearestEdge(x, m)).sort((a, b) => centre(m, a) - centre(m, b))[0];
+    if (t.object === 'charge') return chargeGoal(state, m, seat);
+    const to = (t.object === 'ram' ? gates.map(x => nearestEdge(x, m)) : walls.map(x => freeEdge(m, x))).sort((a, b) => centre(m, a) - centre(m, b))[0];
     return to && { at: to, pull: 1.2 };
   };
+  const lanes: [Point, Point][] = [];
   for (const m of ours) {
     const carried = carriedBy(state, m);
     if (!carried.length) continue;
-    const gear = carried.find(t => t.object === 'ladder' || t.object === 'ram');
+    const gear = carried.find(t => t.object === 'ladder' || t.object === 'ram' || t.object === 'charge');
     const goal = gear && heavyGoal(m, gear);
     if (goal) {
       out.set(m.id, goal);
+      if (gear.object !== 'ram') lanes.push([{ x: m.x, y: m.y }, goal.at]);
       continue;
     }
     const edges = exitEdges(state, m);
@@ -576,7 +632,7 @@ function assignGoals(ctx: Ctx): Map<string, Goal> {
     out.set(m.id, { at, pull: 1.2 });
   }
 
-  const wants: { at: Point; need: number; pull: number; near?: number; infantry?: boolean }[] = [];
+  const wants: { at: Point; need: number; pull: number; near?: number; infantry?: boolean; team?: boolean }[] = [];
   // Our siege tower: a crew behind it to push it at the walls, then climbers up its ramp.
   for (const t of Object.values(state.terrain).filter(t => t.kind === 'tower' && !t.gone && t.side === seat)) {
     const wall = t.raised ? state.terrain[t.raised] : undefined;
@@ -592,6 +648,14 @@ function assignGoals(ctx: Ctx): Map<string, Goal> {
     wants.push({ at: back, need: TOWER.crew + 1, pull: 1.1, infantry: true });
   }
   for (const t of onTable(state)) {
+    if (t.object === 'charge') {
+      // A Demolition Charge: its team carries it to the culvert (or, that blown, an enemy gate), its torch beside it.
+      if (t.side !== seat || !chargeGoal(state, t, seat)) continue;
+      const c = t.carrier ? state.models[t.carrier] : undefined;
+      if (c) wants.push({ at: besideLoad(c, t, chargeGoal(state, c, seat)?.at), need: 1, pull: 1.1, infantry: true, team: true });
+      else wants.push({ at: t, need: 2, pull: 1, infantry: true, team: true });
+      continue;
+    }
     if (t.object === 'ladder' || t.object === 'ram') {
       // Our own siege gear: hands to carry it (and a ram's second pair to share the load), then climbers up a raised
       // ladder, over the top.
@@ -599,7 +663,7 @@ function assignGoals(ctx: Ctx): Map<string, Goal> {
       const c = t.carrier ? state.models[t.carrier] : undefined;
       const wall = t.raised ? state.terrain[t.raised] : undefined;
       if (wall) wants.push({ at: overThe(wall, t), need: 4, pull: 1, infantry: true });
-      else if (c) wants.push({ at: c, need: t.object === 'ram' ? 2 : 1, pull: 1.1, infantry: true });
+      else if (c) wants.push({ at: besideLoad(c, t, (t.object === 'ram' ? gates : walls).map(x => nearestEdge(x, c)).sort((a, b) => centre(c, a) - centre(c, b))[0]), need: t.object === 'ram' ? 2 : 1, pull: 1.1, infantry: true });
       else if (t.object === 'ram' ? gates.length : walls.length) wants.push({ at: t, need: t.object === 'ram' ? 3 : 2, pull: 0.9, infantry: true });
       continue;
     }
@@ -619,12 +683,18 @@ function assignGoals(ctx: Ctx): Map<string, Goal> {
     } else if (t.object === 'ally' && t.side === seat) wants.push({ at: t, need: 1, pull: 0.8 });
   }
   const free = ours.filter(m => !out.has(m.id));
+  const teamRank = (m: Model) => (m.torch ? 2 : m.cast === 'engineer' ? 1 : 0);
   for (const want of wants) {
+    // (Its own team: those beside the charge, not another team's torch from down the line.)
+    const rankBy = (m: Model) => (centre(m, want.at) <= 4 ? teamRank(m) : 0);
     const takers = free
       .filter(m => !out.has(m.id) && (!want.infantry || !cavalry(m)))
-      .sort((a, b) => centre(a, want.at) - centre(b, want.at))
+      // (A Demolition Team carries its own charge: the torch-bearer, so it is touching it when it's time to light it,
+      // and its engineers.)
+      .sort((a, b) => (want.team ? rankBy(b) - rankBy(a) : 0) || centre(a, want.at) - centre(b, want.at))
       .slice(0, want.need);
-    for (const m of takers) out.set(m.id, { at: { x: want.at.x, y: want.at.y }, pull: want.pull, near: want.near });
+    // (A Demolition Team keeps to its charge under the defenders' arrows.)
+    for (const m of takers) out.set(m.id, { at: { x: want.at.x, y: want.at.y }, pull: want.pull, near: want.near, ...(want.team ? { bold: true } : {}) });
     // With nobody on foot to spare, a rider goes and dismounts to do it.
     if (want.infantry && takers.length < want.need) {
       const riders = free.filter(m => !out.has(m.id) && cavalry(m)).sort((a, b) => centre(a, want.at) - centre(b, want.at));
@@ -647,6 +717,38 @@ function assignGoals(ctx: Ctx): Map<string, Goal> {
         else if (hunters.length) out.set(m.id, { at: { x: state.board.w / 2, y: state.board.h / 2 }, pull: 0.3 });
       }
     }
+  }
+
+  // Helm's Deep: the Relief Force rides for the enemy, the Demolition Teams first, and the rest of the attackers make
+  // for the walls (once the Deeping Wall is breached, the gap in it).
+  if (isHelms(state)) {
+    const foes = side(state, other(seat));
+    const good = seat === state.narrative?.good;
+    const taken = new Map<string, number>();
+    for (const m of ours) {
+      if (out.has(m.id)) continue;
+      if (good && cavalry(m)) {
+        // Each its own target, so they spread along the enemy's back rather than queue behind the first: the nearest,
+        // the gear carriers first, less any that others are already riding at.
+        const cost = (e: Model) => centre(m, e) - (carriedBy(state, e).length ? 20 : 0) + 4 * (taken.get(e.id) ?? 0);
+        const foe = [...foes].sort((a, b) => cost(a) - cost(b))[0];
+        if (foe) {
+          taken.set(foe.id, (taken.get(foe.id) ?? 0) + 1);
+          out.set(m.id, { at: { x: foe.x, y: foe.y }, pull: 1.5, bold: true, ride: true });
+        }
+      } else if (!good && !m.siege && !m.crewOf && !m.torch && !cavalry(m)) {
+        // (Short of the walls until a ladder is up, and clear of the culvert, where the charges are going.)
+        const gap = deepingDown(state) ? { x: CULVERT.x - 4, y: CULVERT.y } : undefined;
+        const to = gap ?? walls.filter(x => x.id !== culvertWall(state)?.id).map(x => nearestEdge(x, m)).sort((a, b) => centre(m, a) - centre(m, b))[0];
+        if (to && (gap || Math.hypot(to.x - CULVERT.x, to.y - CULVERT.y) > 5)) out.set(m.id, { at: to, pull: 0.5, near: gap ? 0 : 3, ...(gap ? {} : { holdOff: { from: walls, by: 2.5, lanes } }) });
+      }
+    }
+  }
+
+  // A torch with no charge to carry goes with the nearest of ours, to set it off.
+  for (const m of ours.filter(x => x.torch && !out.has(x.id))) {
+    const charge = charges(state).filter(t => t.side === seat).sort((a, b) => centre(m, a) - centre(m, b))[0];
+    if (charge) out.set(m.id, { at: { x: charge.x, y: charge.y }, pull: 1.1, near: 0.6 });
   }
 
   // Reconnoitre scores getting models off the far edge, so everyone else heads that way.
@@ -682,6 +784,10 @@ function planMove(ctx: Ctx, m: Model, goal: Goal | undefined): Plan | null {
     if (d > stop) {
       const k = Math.max(0, (d - stop) / d);
       spots.push({ at: reach({ x: from.x + (goal.at.x - from.x) * k, y: from.y + (goal.at.y - from.y) * k }) });
+      // And round whatever is in the way: either side of the straight line to it.
+      const aim = Math.atan2(goal.at.x - from.x, -(goal.at.y - from.y));
+      const go = Math.min(mv, d - stop);
+      for (const off of [0.5, -0.5, 1, -1]) spots.push({ at: reach({ x: from.x + Math.sin(aim + off) * go, y: from.y - Math.cos(aim + off) * go }) });
     }
   }
   // Charges: into base contact with each enemy in reach, from a spread of angles so others can join the fight.
@@ -693,10 +799,13 @@ function planMove(ctx: Ctx, m: Model, goal: Goal | undefined): Plan | null {
     for (const off of [0, 0.45, -0.45, 0.9, -0.9, 1.4, -1.4, 2, -2, Math.PI]) {
       const at = { x: e.x + Math.sin(base + off) * r, y: e.y - Math.cos(base + off) * r };
       const got = reach(at);
-      if (centre(got, at) < 1e-3) spots.push({ at, charge: e });
+      // (Only where it can actually fight it: not at the foot of a wall with the enemy up on top, say.)
+      if (centre(got, at) < 1e-3 && touchingFoe(state, { ...m, ...at }, e)) spots.push({ at, charge: e });
     }
   }
 
+  // Éomer, in his grief for Théoden, charges whenever he can.
+  if (grieving(ctx, m) && spots.some(s => s.charge)) spots.splice(0, spots.length, ...spots.filter(s => s.charge));
   const before = scoreFor(ctx, m, from);
   let best: { at: Point; score: number; charge?: Model } = { at: from, score: before.score };
   const vpBefore = before.vp;
@@ -705,9 +814,23 @@ function planMove(ctx: Ctx, m: Model, goal: Goal | undefined): Plan | null {
     const sc = scoreFor(ctx, m, s.at, goal, vpBefore);
     if (sc.score > best.score + 0.05) best = { at: s.at, score: sc.score, charge: s.charge };
   }
+  // Riding to the rescue, it doesn't sit where it came on: with nothing better, it rides on as far as it can.
+  if (goal?.ride && centre(best.at, from) < 0.05) {
+    const far = spots.filter(s => centre(s.at, from) >= mv / 2 && fits(ctx, m, s.at, s.charge)).map(s => ({ ...s, score: scoreFor(ctx, m, s.at, goal, vpBefore).score }));
+    const pick = far.sort((a, b) => b.score - a.score)[0];
+    if (pick) best = pick;
+  }
   if (centre(best.at, from) < 0.05) return null;
   const look = best.charge ?? [...enemies].sort((a, b) => centre(best.at, a) - centre(best.at, b))[0];
   return { at: best.at, rot: look ? facing(best.at, look) : m.rot };
+}
+
+/** How far a point is from the line between two others. */
+function lineGap(p: Point, a: Point, b: Point): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy || 1)));
+  return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
 }
 
 /** Whether a model can stand at `at`: on the table, clear of other bases, and out of enemy control zones unless fighting. */
@@ -715,15 +838,17 @@ function fits(ctx: Ctx, m: Model, at: Point, charge?: Model): boolean {
   const { state } = ctx;
   const { rx, ry } = halfExtents(m.base);
   if (at.x - rx < 0 || at.y - ry < 0 || at.x + rx > state.board.w || at.y + ry > state.board.h) return false;
-  const here = { ...m, ...at };
+  // (A charger turns to face its target, as the move it is given does: a long base meets it end on.)
+  const here = { ...m, ...at, ...(charge ? { rot: facing(at, charge) } : {}) };
   const r = radius(m);
   for (const o of Object.values(state.models)) {
     if (o.id === m.id || !isUp(o) || Math.abs(o.x - at.x) > 6 || Math.abs(o.y - at.y) > 6) continue;
     // Bases mustn't overlap: round ones by their centres, others by their outlines pulled in a little so touching is fine.
     if (here.base.shape === 'round' && o.base.shape === 'round' ? centre(at, o) < (r + radius(o)) * 0.95 : distanceBetween(shrink(here), shrink(o)) === 0) return false;
-    if (o.owner !== m.owner && o !== charge) {
+    // (Charging one enemy, it may end beside others: it's in the fight, so their control zones no longer hold it.)
+    if (o.owner !== m.owner && !charge) {
       const d = distanceBetween(here, o);
-      if (d > CONTACT_SLACK && d < 1) return false;
+      if (d > CONTACT_SLACK && d < 1 && reachesFoe(state, here, o)) return false;
     }
   }
   return !charge || distanceBetween(here, charge) <= CONTACT_SLACK;
@@ -756,21 +881,25 @@ function scoreFor(ctx: Ctx, m: Model, at: Point, goal?: Goal, vpBefore?: number)
       const ep = profile(ctx, e);
       if (Math.abs(e.x - at.x) > ep.mv + 4 || Math.abs(e.y - at.y) > ep.mv + 4) continue;
       if (distanceBetween(e, here) > ep.mv + 1) continue;
+      // (One up on a wall's walkway won't come down to it, nor one below get up to it, without steps or a ladder.)
+      if (Math.abs(climbedLevel(state, e) - climbedLevel(state, at)) > 2) continue;
       const o = fightOdds(fighterSide(ctx, [here]), fighterSide(ctx, [e]));
       danger += Math.min(0, o.score) * (engagedWith(after, e).length ? 0.3 : 1);
     }
     const support = friends.filter(f => centre(f, at) <= 2.5).length;
-    score += danger * (support >= 2 ? 0.4 : support ? 0.7 : 1) * (p.weapon ? 1.5 : 1) * (standoff(ctx) ? 0.15 : 1);
+    score += danger * (support >= 2 ? 0.4 : support ? 0.7 : 1) * (p.weapon ? 1.5 : 1) * (standoff(ctx) ? 0.15 : 1) * (goal?.bold ? 0.2 : 1);
 
     // Archers want a target in range from a spot they can still shoot from; with none, they come closer.
-    const shot = p.weapon && centre(moved, at) <= p.mv / 2 + 0.05 ? (bestShot(ctx, here, after)?.value ?? 0) : 0;
+    // (Not while hauling siege gear to the walls: that's its job this turn.)
+    const hauling = carriedBy(state, m).some(t => HEAVY.has(t.object ?? ''));
+    const shot = p.weapon && !hauling && centre(moved, at) <= p.mv / 2 + 0.05 ? (bestShot(ctx, here, after)?.value ?? 0) : 0;
     score += shot;
 
     // Closing in when the army is the stronger one; holding together otherwise.
     const near = (q: Point) => Math.min(...enemies.map(e => centre(q, e)), 60);
     // Neither side giving ground for turns on end: the stronger one goes in (and in a long one, both do).
     if (!p.weapon) score += (near(moved) - near(at)) * (standoff(ctx) ? 0.4 : aggressive(ctx) ? 0.22 : 0.06);
-    else if (!shot && !bestShot(ctx, moved)) score += (near(moved) - near(at)) * 0.12;
+    else if (!shot && (hauling || !bestShot(ctx, moved))) score += (near(moved) - near(at)) * 0.12;
     // Fast models and heroes don't run far ahead of the battle line on their own.
     if (!goal && !standoff(ctx)) {
       const ahead = front(ctx, m) - 3 - near(at);
@@ -785,6 +914,21 @@ function scoreFor(ctx: Ctx, m: Model, at: Point, goal?: Goal, vpBefore?: number)
   if (goal) {
     const dist = (q: Point) => Math.max(goal.near ?? 0, centre(q, goal.at));
     score += (dist(moved) - dist(at)) * goal.pull;
+  }
+  if (goal?.holdOff) {
+    const d = Math.min(...goal.holdOff.from.filter(t => Math.abs(t.x - at.x) < 30 && Math.abs(t.y - at.y) < 30).map(t => distanceToTerrain(here, t)), 99);
+    if (d < goal.holdOff.by) score -= (goal.holdOff.by - d) * 1.5;
+    // (And out of the way of the gear being carried up to them.)
+    for (const [a, b] of goal.holdOff.lanes) {
+      const gap = lineGap(at, a, b);
+      if (gap < 1.8) score -= (1.8 - gap) * 2;
+    }
+  }
+  // Helm's Deep: the defenders on foot hold the walls they started on.
+  if (isHelms(state) && !mounted(m) && seat === state.narrative?.good) {
+    const r = radius(m);
+    const held = inHornburg(moved, r) ? inHornburg : onDeepingWall(moved, r) ? onDeepingWall : undefined;
+    if (held && !held(at, r)) score -= 8;
   }
 
   // What the scenario's scoring would say if the game ended with the model here.
@@ -1021,10 +1165,15 @@ function shootStep(ctx: Ctx): BotStep {
     const apply = woundsFor(ctx, group);
     if (apply) return apply;
   }
-  for (const m of side(state, seat)) {
+  // The Assault Ballista's grapnel puts up a ladder near a wall first.
+  const raise = raiseStep(ctx);
+  if (raise) return raise;
+  // Aldor's nerves make him shoot before the rest of his side.
+  for (const m of side(state, seat).sort((a, b) => Number(unsteady(ctx.catalog, b)) - Number(unsteady(ctx.catalog, a)))) {
     // Not now: waiting for a hero's heroic activation to finish (or gone with one already).
-    if (memo.acted.includes(m.id) || !mayActivate(state, m)) continue;
-    memo.acted.push(m.id);
+    if (memo.acted.includes(m.id) || !(mayActivate(state, m) || unsteady(ctx.catalog, m))) continue;
+    // (Legolas and Haldir come back for their next Shooting Attack.)
+    if (shotsTaken(state, m) + 1 >= shotsPerPhase(ctx.catalog, m)) memo.acted.push(m.id);
     const p = profile(ctx, m);
     // A defender by a pile of rocks or a vat of oil drops it on the nearest attacker below.
     const hurl = !cannotAct(state, m) && hurlOptions(state, m).sort((a, b) => Number(b.how === 'oil') - Number(a.how === 'oil'))[0];
@@ -1041,10 +1190,21 @@ function shootStep(ctx: Ctx): BotStep {
         return { action: { type: 'shoot', shot: { shooter: { id: m.id, name: m.name, weapon: FLAMING_BRAND.name, shoot: p.shoot, s: FLAMING_BRAND.s, shots: 1 }, target: { id: prey.e.id, name: prey.e.name, d: profile(ctx, prey.e).d }, obstacles: Math.min(5, prey.plan.inWay.length), brand: true } }, delay: DICE_PAUSE };
       }
     }
-    if (!p.weapon || engagedWith(state, m).length || m.prone || cannotAct(state, m)) continue;
+    if (!p.weapon || (engagedWith(state, m).length && !deadlyShot(ctx.catalog, m)) || m.prone || cannotAct(state, m)) {
+      memo.acted.push(m.id);
+      continue;
+    }
     if (memo.courage[m.id] === false && armyStatus(state, seat).broken) continue;
     const shot = bestShot(ctx, m);
+    // Legolas picks a foe out of a fight with a friend when he has nothing better.
+    const pin = (!shot || shot.value < 0.02) && !shotsTaken(state, m) && hasRule(ctx.catalog, m, 'Pinpoint Shot') ? pinpointShot(ctx, m) : undefined;
+    if (pin) {
+      memo.acted.push(m.id);
+      memo.pending = { kind: 'shot', model: m.id };
+      return { action: { type: 'shoot', shot: { shooter: { id: m.id, name: m.name, weapon: p.weapon.name, shoot: p.shoot, s: p.weapon.s, shots: 1 }, target: { id: pin.id, name: pin.name, d: profile(ctx, pin).d }, obstacles: 0, pinpoint: true } }, delay: DICE_PAUSE };
+    }
     if (!shot || shot.value < 0.02) {
+      memo.acted.push(m.id);
       // With nothing better to shoot, a strong enough bow or an engine shoots at an enemy gate.
       const gate = breachOptions(state, ctx.catalog, m).find(b => b.how === 'shoot' && state.terrain[b.target]?.kind === 'gate');
       if (gate) return { action: { type: 'breach', how: 'shoot', model: m.id, target: gate.target }, delay: DICE_PAUSE };
@@ -1339,7 +1499,7 @@ function companyStep(ctx: Ctx): BotStep | null {
   if (twins && state.phase === 'fight' && twins.every(m => engagedWith(state, m).length)) return { action: { type: 'swap', a: twins[0].id, b: twins[1].id }, delay: THINK_PAUSE };
   if (state.phase === 'move' && canActivate(state, seat))
     for (const m of side(state, seat)) {
-      if (!mayActivate(state, m)) continue;
+      if (!mayActivate(state, m) || !rulesFor(ctx.catalog, m).some(r => /^(Healing Herbs|Raising Spirits)$/.test(r))) continue;
       for (const how of ['herbs', 'spirits'] as const) {
         const t = side(state, seat).filter(f => !mayTend(state, ctx.catalog, how, m, f)).sort((a, b) => b.maxWounds - b.wounds - (a.maxWounds - a.wounds))[0];
         if (t) return { action: { type: 'tend', how, model: m.id, target: t.id }, delay: DICE_PAUSE };
@@ -1367,6 +1527,9 @@ function fightStep(ctx: Ctx): BotStep | null {
   // Tom's cold goes on as fights start, whoever starts them.
   const cold = coldPick(ctx);
   if (cold) return cold;
+  // A Demolition Charge set off where it would do the most good.
+  const boom = detonateStep(ctx);
+  if (boom) return boom;
   // A battering ram up against a gate swings before the other fights.
   for (const m of side(state, seat)) {
     const ram = breachOptions(state, ctx.catalog, m).find(b => b.how === 'ram');
@@ -1475,3 +1638,98 @@ function mightOnStrikes(ctx: Ctx, group: string): BotStep | null {
   return null;
 }
 
+
+// ——— Helm's Deep ———
+
+/** Where a Demolition Charge should go: the culvert while that stretch of the Deeping Wall stands, else an enemy gate. */
+function chargeGoal(state: GameState, from: Point, seat: Seat): Goal | undefined {
+  if (!isHelms(state)) return undefined;
+  const wall = culvertWall(state);
+  // (Set down a little short of the wall, out of reach of its defenders, so they can't stop the team lighting it.)
+  // (Bold: the defenders up on the wall shoot at it, and it goes on regardless.)
+  if (wall && !deepingDown(state)) return { at: { x: CULVERT.x + 2.6, y: CULVERT.y }, pull: 1.2, bold: true };
+  const gate = Object.values(state.terrain).filter(t => gateStanding(t) && t.side && t.side !== seat).sort((a, b) => centre(from, a) - centre(from, b))[0];
+  return gate ? { at: nearestEdge(gate, from), pull: 1.2 } : undefined;
+}
+
+/** Good chooses where on the south edge the Relief Force rides on: where most of the enemy's back ranks are. */
+function reliefStep(ctx: Ctx): BotStep | null {
+  const { state, seat } = ctx;
+  if (!isHelms(state) || state.turn < RELIEF_TURN - 1 || state.narrative?.relief !== undefined || !mayChooseRelief(state, seat)) return null;
+  const foes = side(state, other(seat));
+  let best = { x: 36, n: -1 };
+  for (let x = RELIEF_SPAN[0] + 2; x <= RELIEF_SPAN[1] - 2; x += 2) {
+    const n = foes.filter(e => centre(e, { x, y: state.board.h }) <= 18).reduce((k, e) => k + (e.siege ? 4 : profile(ctx, e).weapon ? 1.5 : 1), 0);
+    if (n > best.n) best = { x, n };
+  }
+  return { action: { type: 'reliefPoint', seat, x: best.x }, delay: THINK_PAUSE };
+}
+
+/** A hero by the Hornburg's gate mounts up and rides out once the enemy is at the gate. */
+function rideOutStep(ctx: Ctx): BotStep | null {
+  const { state, seat } = ctx;
+  const gate = isHelms(state) ? helmsGate(state) : undefined;
+  if (!gate || !side(state, other(seat)).some(e => distanceToTerrain(e, gate) <= 12)) return null;
+  const m = side(state, seat).find(x => !rideOutBlocked(state, x) && mayActivate(state, x));
+  return m ? { action: { type: 'rideOut', model: m.id }, delay: DICE_PAUSE } : null;
+}
+
+/** Éomer once Théoden has fallen: The Price of Grief has him charge whenever he can. */
+function grieving(ctx: Ctx, m: Model): boolean {
+  if (!hasRule(ctx.catalog, m, 'The Price of Grief')) return false;
+  return Object.values(ctx.state.models).some(o => o.owner === m.owner && o.dead && hasRule(ctx.catalog, o, 'Herugrim'));
+}
+
+/** A charge one of ours could set off now that is worth it: more enemies than friends in the blast, or the culvert. */
+function detonateStep(ctx: Ctx): BotStep | null {
+  const { state, seat, memo } = ctx;
+  if (!isHelms(state)) return null;
+  const ours = side(state, seat).sort((a, b) => Number(!!b.torch) - Number(!!a.torch));
+  for (const m of ours) {
+    for (const t of detonateOptions(state, m)) {
+      const key = `boom:${m.id}:${t.id}`;
+      if ((memo.tested ??= []).includes(key)) continue;
+      const hit = Object.values(state.models).filter(o => isUp(o) && distanceBetween(o, { ...m, x: t.x, y: t.y, base: { shape: 'round', w: 25, h: 25 } }) <= 2);
+      const foes = hit.filter(o => o.owner !== seat).length;
+      if (!byCulvert(state, t) && foes <= hit.length - foes) continue;
+      memo.tested.push(key);
+      return { action: { type: 'detonate', model: m.id, charge: t.id }, delay: DICE_PAUSE };
+    }
+  }
+  return null;
+}
+
+/**
+ * The Assault Ballista's Raise the Ladders!: a ladder lying near a wall goes up. A ladder still carried that close is
+ * put down first, so the grapnel can take it.
+ */
+function raiseStep(ctx: Ctx): BotStep | null {
+  const { state, seat, memo } = ctx;
+  if (!isHelms(state)) return null;
+  const tested = (memo.tested ??= []);
+  for (const engine of side(state, seat).filter(m => m.siege && !tested.includes(`raise:${m.id}`))) {
+    const ready = raiseLadderTargets(state, ctx.catalog, engine)[0];
+    if (ready) {
+      tested.push(`raise:${engine.id}`);
+      return { action: { type: 'raiseLadder', model: engine.id, ladder: ready.ladder.id }, delay: DICE_PAUSE };
+    }
+    for (const t of onTable(state).filter(x => x.object === 'ladder' && x.side === seat && x.carrier && !x.raised)) {
+      const key = `drop:${t.id}`;
+      if (tested.includes(key)) continue;
+      const { carrier: _c, ...down } = t;
+      const dropped: GameState = { ...state, terrain: { ...state.terrain, [t.id]: down } };
+      if (!raiseLadderTargets(dropped, ctx.catalog, engine).some(x => x.ladder.id === t.id)) continue;
+      tested.push(key);
+      return { action: { type: 'drop', marker: t.id }, delay: MOVE_PAUSE };
+    }
+  }
+  return null;
+}
+
+/** An enemy fighting one of our models that a Pinpoint Shot could pick out, the most worth it first. */
+function pinpointShot(ctx: Ctx, m: Model): Model | undefined {
+  const { state } = ctx;
+  return side(state, other(m.owner))
+    .filter(e => !planShot(state, ctx.catalog, m, e, { pinpoint: true }).why)
+    .sort((a, b) => profile(ctx, b).value - profile(ctx, a).value)[0];
+}

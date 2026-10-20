@@ -3,12 +3,12 @@
 import { hitModel, mounted, mountOf } from './cavalry.ts';
 import { modelStats, type Catalog } from './catalog.ts';
 import { distanceBetween, halfExtents, type Point } from './geometry.ts';
-import { HEAVY, helpers, ladderAt } from './fortress.ts';
+import { HEAVY, helpers, ladderAt, stairsAt } from './fortress.ts';
 import { canActivate } from './heroics.ts';
 import { onTable } from './objects.ts';
 import { crowded, engaged, moveLeft, settleMove, testsTerrain } from './movement.ts';
 import { formatNeed, woundNeed } from './rules.ts';
-import { climbedLevel, distanceToTerrain, heightOf, heightOfModel, insidePolygon, outline } from './sight.ts';
+import { climbedLevel, distanceToTerrain, heightOf, heightOfModel, insidePolygon, outline, walkway } from './sight.ts';
 import type { Action, DiceRoll, GameState, Model, Seat, Terrain } from './types.ts';
 
 export type CrossTest = 'Jump' | 'Climb' | 'Climb down' | 'Leap';
@@ -65,9 +65,12 @@ export function crossingAhead(state: GameState, m: Model, from: Point, to: Point
   };
   const pieces = Object.values(state.terrain).filter(t => !passed.has(t.id) && !t.gone && near(t));
   if (!pieces.length) return null;
-  const walls = pieces.filter(t => t.kind === 'wall' && testFor(heightOf(t), tall)).map(t => ({ t, poly: outline(t) }));
+  // (A rampart's walkway is climbed onto, like a rock, rather than crossed.)
+  const walls = pieces.filter(t => t.kind === 'wall' && !walkway(t) && testFor(heightOf(t), tall)).map(t => ({ t, poly: outline(t) }));
   const water = pieces.filter(t => t.kind === 'water').map(t => ({ t, poly: outline(t) }));
-  const climbed = pieces.filter(t => (t.kind === 'rock' || t.kind === 'cliff' || (t.kind === 'building' && !t.floors)) && heightOf(t) > 0).map(t => ({ t, poly: outline(t), top: heightOf(t) }));
+  const climbed = pieces.filter(t => (t.kind === 'rock' || t.kind === 'cliff' || (t.kind === 'building' && !t.floors) || walkway(t)) && heightOf(t) > 0).map(t => ({ t, poly: outline(t), top: heightOf(t) }));
+  // Steps or a ladder take a model up onto a piece, or down off it, without a test.
+  const free = (piece: Terrain, p: Point) => ladderAt(state, piece.id, p, r) || (walkway(piece) && stairsAt(state, p, r));
   if (!walls.length && !water.length && !climbed.length) return null;
   const overlaps = (poly: Point[], p: Point) => insidePolygon(poly, p) || edgeDistance(poly, p) < r - 0.01;
   const startOn = new Set(walls.filter(w => overlaps(w.poly, from)).map(w => w.t.id));
@@ -104,8 +107,8 @@ export function crossingAhead(state: GameState, m: Model, from: Point, to: Point
       const piece = climbed.filter(c => insidePolygon(c.poly, level > prevLevel ? p : along(t - 0.05))).sort((a, b) => b.top - a.top)[0]?.t;
       if (level > prevLevel) {
         const test = testFor(level - prevLevel, tall);
-        if (test && piece && !ladderAt(state, piece.id, p, r)) return { terrain: piece.id, test, stop: along(Math.max(0, t - r - 0.01)), landing: along(t + r + 0.02), drop: prevLevel };
-      } else if (prevLevel - level > tall + 1e-6 && piece && !ladderAt(state, piece.id, p, r)) {
+        if (test && piece && !free(piece, p)) return { terrain: piece.id, test, stop: along(Math.max(0, t - r - 0.01)), landing: along(t + r + 0.02), drop: prevLevel };
+      } else if (prevLevel - level > tall + 1e-6 && piece && !free(piece, p)) {
         return { terrain: piece.id, test: 'Climb down', stop: along(Math.max(0, t - 0.06)), landing: along(t + r + 0.02), drop: prevLevel - level };
       }
       prevLevel = level;
@@ -137,7 +140,7 @@ export function crossBlocked(state: GameState, m: Model, c: Crossing): string | 
   const t = state.terrain[c.terrain];
   if (t?.sheer && c.test === 'Climb' && !m.ground?.includes('swift')) return 'Too sheer to climb: it needs a Siege Ladder';
   // An enemy defending a wall stops anyone crossing it within its reach (1"), unless it's already in a fight.
-  if (t?.kind === 'wall') {
+  if (t?.kind === 'wall' && !walkway(t)) {
     const guard = Object.values(state.models).find(e => e.owner !== m.owner && !e.dead && !e.waiting && !e.escaped && !e.prone && Math.abs(e.x - c.stop.x) < 4 && Math.abs(e.y - c.stop.y) < 4 && distanceToTerrain(e, t) <= 0.2 && (distanceBetween({ ...m, ...c.stop }, e) < 1 || distanceBetween({ ...m, ...c.landing }, e) < 1) && !engaged(state, e));
     if (guard) return `${guard.name} is defending the wall here: charge it instead`;
   }
@@ -222,6 +225,17 @@ function crossOne(state: GameState, seat: Seat, id: string, d6: () => number, ui
   if (shared) push(`${m.name}: ${c.test} test, ${terrainName(t)}: the same roll as ${shared.with}, who carries the load with it`, [], { model: m.id });
   else {
     push(`${m.name}: ${c.test} test, ${terrainName(t)} (1 fails, 6 carries on)${sure ? `: ${sure}` : ''}`, sure ? [] : [roll], { model: m.id });
+    // Shadowfax, Lord of the Mearas, rolls two dice and takes the better.
+    if (isCavalryBase(m) && /shadowfax/i.test(m.mount ?? '') && (c.test === 'Jump' || c.test === 'Leap') && roll < 6) {
+      const best = Math.max(roll, d6());
+      push(`${m.name}: ${c.test} test, the better of two dice (Lord of the Mearas)`, [best], { model: m.id });
+      roll = best;
+    }
+    // An Expert Rider tries a jump again if it would fall.
+    if (roll === 1 && isCavalryBase(m) && (c.test === 'Jump' || c.test === 'Leap') && catalog && m.profileId && catalog.units[m.profileId]?.rules.includes('Expert Rider')) {
+      roll = d6();
+      push(`${m.name}: ${c.test} test re-rolled (Expert Rider)`, [roll], { model: m.id });
+    }
     if (roll === 1 && ground.includes('rock')) {
       roll = d6();
       push(`${m.name}: ${c.test} test re-rolled (Mountain Dweller)`, [roll], { model: m.id });

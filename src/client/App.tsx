@@ -19,7 +19,7 @@ import { scenarioById, scenarioMarkers } from '../shared/scenarios.ts';
 import { reduce } from '../shared/reducer.ts';
 import { deployList, newId } from '../shared/importList.ts';
 import { vpTotals } from '../shared/scoring.ts';
-import { useSettings, type Settings } from './settings.ts';
+import { setEvilSeat, useSettings, type Settings } from './settings.ts';
 import { Tutorial } from './Tutorial.tsx';
 import { HeroArt } from './HeroArt.tsx';
 import { ProfilePage } from './Account.tsx';
@@ -217,6 +217,12 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
   const [copied, setCopied] = useState(false);
 
   useEffect(() => () => conn.close(), [conn]);
+  // A narrative scenario's Evil side is red, whichever seat it sits in.
+  const evilSeat = state.narrative ? (state.narrative.good === 'p1' ? 'p2' : 'p1') : undefined;
+  useEffect(() => {
+    setEvilSeat(evilSeat);
+    return () => setEvilSeat(undefined);
+  }, [evilSeat]);
   useEffect(() => {
     if (role) {
       conn.setRole(role);
@@ -267,13 +273,15 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
   // Arriving from the narrative scenario menu: set up its story with you on the side you picked.
   const story = useMemo(() => (practice ? null : new URLSearchParams(location.search).get('story')), []);
   const storySide = useMemo(() => new URLSearchParams(location.search).get('side'), []);
+  const storyTurns = useMemo(() => Number(new URLSearchParams(location.search).get('turns')) || undefined, []);
   useEffect(() => {
     if (!story || seat !== 'p1' || !players.includes('p1') || status !== 'online' || (vsComputer && !state.bot)) return;
     const url = new URL(location.href);
     url.searchParams.delete('story');
     url.searchParams.delete('side');
+    url.searchParams.delete('turns');
     history.replaceState(null, '', url);
-    if (!state.narrative && !state.flow.started) dispatch({ type: 'setNarrative', id: story, good: storySide === 'evil' ? 'p2' : 'p1' });
+    if (!state.narrative && !state.flow.started) dispatch({ type: 'setNarrative', id: story, good: storySide === 'evil' ? 'p2' : 'p1', ...(storyTurns ? { turns: storyTurns } : {}) });
   }, [seat, players.includes('p1'), status, !!state.bot]);
   useEffect(() => {
     if (!vsComputer || seat !== 'p1' || !players.includes('p1') || status !== 'online') return;

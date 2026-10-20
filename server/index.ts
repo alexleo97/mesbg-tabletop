@@ -8,10 +8,10 @@ import type { Account, Action, ClientMessage, GameState, Model, Revert, Role, Ro
 import { DICE_REQUESTS, resolveRequest } from '../src/shared/resolve.ts';
 import { mayDeclare, phaseAllows } from '../src/shared/heroics.ts';
 import { brokenSideToTest, brokenTests, terrorAhead, terrorTest, willOfEvilDue, willOfEvilToll } from '../src/shared/courage.ts';
-import { mountName, mountProfile, riderTests, riderTestsDue } from '../src/shared/cavalry.ts';
-import { beastKind, beastTests, beastTestsDue } from '../src/shared/warBeasts.ts';
+import { riderTests, riderTestsDue } from '../src/shared/cavalry.ts';
+import { beastTests, beastTestsDue } from '../src/shared/warBeasts.ts';
 import { chargeAim, chargesDue, straightOn, trample } from '../src/shared/trample.ts';
-import { engineSize, sabotageActions } from '../src/shared/siege.ts';
+import { sabotageActions } from '../src/shared/siege.ts';
 import { settleSpell, spellReady } from '../src/shared/magic.ts';
 import { recoveryDue, recoveryRolls } from '../src/shared/powers.ts';
 import { arrivalsDue, rollArrivals } from '../src/shared/maelstrom.ts';
@@ -27,9 +27,10 @@ import { BOT_PACE, botStep, newMemo, type BotMemo } from '../src/shared/bot.ts';
 import { rulesFor, startingPoints, type Catalog } from '../src/shared/catalog.ts';
 import catalogJson from '../src/data/mesbg-data.json';
 import { tierOf } from '../src/shared/warbands.ts';
-import { terrainRules } from '../src/shared/wargear.ts';
-import { gearOf } from '../src/shared/gear.ts';
 import { arrivalAuto, rollArrival } from '../src/shared/narrative.ts';
+import { chargeSabotage, reliefArrives, reliefDue } from '../src/shared/helms.ts';
+import { shrugOff, towersAfter } from '../src/shared/towers.ts';
+import { markModel } from '../src/shared/marking.ts';
 import { dawnDue, reinforceDue, rollDawn, rollReinforcements as companyArrives } from '../src/shared/mutton.ts';
 import { isMonster } from '../src/shared/monsters.ts';
 import { chronicled, listenDue, listenFor, longbeardFor, trumpetDue } from '../src/shared/company.ts';
@@ -374,6 +375,7 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
       return mine(carrier) ? action : null;
     }
     case 'setPick':
+    case 'reliefPoint':
       return action.seat === client.role ? action : null;
     case 'pairOff':
       // Only the player with Priority pairs off the fights.
@@ -424,10 +426,12 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
       // Each player deploys only their own army (and the Palantír's, in a solo game); reinforcements arrive by the game.
       if (state.flow.started || !Array.isArray(action.models)) return null;
       return action.models.every(m => m?.owner === client.role || (!!state.bot && m?.owner === state.bot)) ? action : null;
-    case 'wound':
-      // Wounds go on your own model, or on an enemy your models struck.
-      if (!state.flow.started) return action;
-      return ours(action.id) || (Array.isArray(action.by) && action.by.some(ours)) ? action : null;
+    case 'wound': {
+      // Wounds go on your own model, or on an enemy your models struck. (Whether it shrugs any off is the game's to roll.)
+      const { checked: _checked, ...wound } = action;
+      if (!state.flow.started) return wound;
+      return ours(action.id) || (Array.isArray(action.by) && action.by.some(ours)) ? wound : null;
+    }
     case 'placed':
       // Only the player placing the model says it's done.
       return action.seat === client.role || action.seat === state.bot ? action : null;
@@ -521,20 +525,16 @@ function apply(room: Room, action: Action) {
   if ((action.type === 'addModels' || action.type === 'startNarrative') && Array.isArray(action.models))
     action = {
       ...action,
-      models: action.models.map((m: Model) => {
-        if (!m?.profileId || !CATALOG.units[m.profileId]) return m;
-        const ground = terrainRules(CATALOG, m);
-        const drum = gearOf(CATALOG, m as Model).some(g => /war ?drum/.test(g));
-        // A rider's mount, for lists deployed before mounts were recorded.
-        const mount = m.mount || m.dismounted ? undefined : mountName(CATALOG.units[m.profileId], m.options ?? []);
-        // War beasts and chariots, for lists deployed before they were recorded.
-        const beast = m.beast ?? beastKind(CATALOG, m as Model);
-        // Siege engines too.
-        const unit = CATALOG.units[m.profileId];
-        const siege = m.siege ?? (unit.type === 'Siege Engine' && m.name === unit.name ? engineSize(unit.name) : undefined);
-        return { ...m, ...(beast ? { beast } : {}), ...(siege ? { siege } : {}), ...(CATALOG.units[m.profileId].rules.some(r => /^Fly\b/.test(r)) ? { fly: true } : {}), ...(ground.length ? { ground } : {}), ...(drum ? { drum: true } : {}), ...(mount ? { mount, mountWounds: mountProfile(mount)?.w } : {}) };
-      }),
+      models: action.models.map((m: Model) => markModel(CATALOG, m)),
     };
+  // Wounds a Berserker or a Horse Lord's mount may shrug off are rolled for first (see towers.ts).
+  if (action.type === 'wound' && !action.checked) {
+    const instead = shrugOff(room.state, CATALOG, action, serverDice, serverId, Date.now());
+    if (instead) {
+      for (const a of instead) apply(room, a);
+      return;
+    }
+  }
   const before = room.state;
   room.state = reduce(room.state, action);
   broadcastAction(room, action);
@@ -544,6 +544,8 @@ function apply(room: Room, action: Action) {
     const deeds = chronicled(before, room.state, CATALOG, m => isMonster(CATALOG, m));
     if (deeds.length) apply(room, { type: 'chronicle', add: deeds });
   }
+  // Haldir's One Final Blow, and Might won back by the Royal Standard of Rohan.
+  for (const a of towersAfter(before, room.state, CATALOG, serverDice, serverId, Date.now())) apply(room, a);
   // The game declares its own winner as soon as it's over (and corrects it if the score changes before both confirm).
   if (action.type !== 'gameOver') {
     const winner = gameWinner(room.state);
@@ -656,7 +658,7 @@ function rollBeastTests(room: Room) {
 let sabotaging = false;
 function sabotageEngines(room: Room) {
   if (sabotaging) return;
-  const out = sabotageActions(room.state, serverId);
+  const out = [...sabotageActions(room.state, serverId), ...chargeSabotage(room.state, serverId)];
   if (!out.length) return;
   sabotaging = true;
   try {
@@ -696,12 +698,12 @@ function narrativeUpkeep(room: Room) {
     const s = room.state;
     const bearer = sauronDue(s);
     const sam = longshanksDue(s);
-    const out = mightyDue(s, CATALOG) ? mightyBonus(s, CATALOG, serverId) : sam ? longshanksMove(s, sam) : arrivalAuto(s) ? rollArrival(s, serverDice, serverId) : reinforceDue(s) ? companyArrives(s, serverDice, serverId) : listenDue(s, CATALOG) ? listenFor(s, CATALOG) : dawnDue(s) ? rollDawn(s, serverDice, serverId) : bearer ? sauronRoll(s, bearer, serverDice, serverId) : burnDue(s) ? burns(s, CATALOG, serverDice, serverId) : [];
+    const out = mightyDue(s, CATALOG) ? mightyBonus(s, CATALOG, serverId) : sam ? longshanksMove(s, sam) : arrivalAuto(s) ? rollArrival(s, serverDice, serverId) : reinforceDue(s) ? companyArrives(s, serverDice, serverId) : reliefDue(s) ? reliefArrives(s, serverId) : listenDue(s, CATALOG) ? listenFor(s, CATALOG) : dawnDue(s) ? rollDawn(s, serverDice, serverId) : bearer ? sauronRoll(s, bearer, serverDice, serverId) : burnDue(s) ? burns(s, CATALOG, serverDice, serverId) : [];
     for (const a of out) apply(room, a);
   } finally {
     upkeeping = false;
   }
-  if (mightyDue(room.state, CATALOG) || longshanksDue(room.state) || arrivalAuto(room.state) || reinforceDue(room.state) || listenDue(room.state, CATALOG) || dawnDue(room.state) || sauronDue(room.state) || burnDue(room.state)) narrativeUpkeep(room);
+  if (mightyDue(room.state, CATALOG) || longshanksDue(room.state) || arrivalAuto(room.state) || reinforceDue(room.state) || reliefDue(room.state) || listenDue(room.state, CATALOG) || dawnDue(room.state) || sauronDue(room.state) || burnDue(room.state)) narrativeUpkeep(room);
 }
 
 /** In the End phase, Paralysed models roll to recover. */

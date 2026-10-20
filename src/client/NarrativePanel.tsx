@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { other } from '../shared/flow.ts';
-import { narrativeById, NARRATIVES, type Side } from '../shared/narrative.ts';
+import { narrativeById, NARRATIVES, SAGAS, type Side } from '../shared/narrative.ts';
 import { MapPreview, randomRoom, SitePage } from './Home.tsx';
+import { HelmsTally } from './HelmsPanel.tsx';
+import { isHelms } from '../shared/helms.ts';
 import { BOT_NAME, type Action, type GameState, type Role, type Seat } from '../shared/types.ts';
 
 type Dispatch = (a: Action) => void;
@@ -49,8 +51,28 @@ export function NarrativePanel({ state, dispatch, role, id }: { state: GameState
       {asking && <p className="warn">This takes the armies and terrain off the table to set up {n.name}. Pick your side again to go ahead.</p>}
       {!fixed && <p className="fine">Pick the other card to swap sides before the battle starts.</p>}
 
+      {n.turns && (
+        <>
+          <h4>Length</h4>
+          {fixed ? (
+            <p>{state.narrative?.turns ?? n.turns.default} turns.</p>
+          ) : (
+            <div className="story-turns" role="radiogroup" aria-label="Game length">
+              {n.turns.choices.map(t => {
+                const on = (state.narrative?.turns ?? n.turns!.default) === t;
+                return (
+                  <button key={t} className={`small ${on ? 'primary' : ''}`} role="radio" aria-checked={on} onClick={() => set && dispatch({ type: 'setNarrative', id: n.id, good: state.narrative!.good, turns: t })}>
+                    {t} turns
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
       <h4>Objectives</h4>
       <p>{n.objectives}</p>
+      {set && isHelms(state) && <HelmsTally state={state} dispatch={dispatch} seat={seat} />}
       <h4>The table</h4>
       <p>
         {n.board.w}"×{n.board.h}". {n.layout}
@@ -100,36 +122,53 @@ export function NarrativeCast({ state }: { state: GameState }) {
   );
 }
 
+/** A table's size as the books give it: in feet once it's 4' or more across, otherwise in inches. */
+const tableSize = (b: { w: number; h: number }) => (b.w >= 48 && b.w % 12 === 0 && b.h % 12 === 0 ? `${b.w / 12}'×${b.h / 12}'` : `${b.w}"×${b.h}"`);
+
 /** The menu for a narrative scenario, apart from regular games: the scenario, your side and your opponent, then play. */
 export function NarrativePage() {
   const [id, setId] = useState(NARRATIVES[0]?.id ?? '');
   const [side, setSide] = useState<Side>('good');
   const [vs, setVs] = useState<'computer' | 'friend'>('computer');
+  const [turns, setTurns] = useState<number | undefined>();
   const n = narrativeById(id);
-  const start = () => n && (location.search = `?room=${randomRoom()}&story=${n.id}&side=${side}${vs === 'computer' ? '&vs=computer' : ''}`);
+  const length = n?.turns ? (turns && n.turns.choices.includes(turns) ? turns : n.turns.default) : undefined;
+  const start = () => n && (location.search = `?room=${randomRoom()}&story=${n.id}&side=${side}${vs === 'computer' ? '&vs=computer' : ''}${length ? `&turns=${length}` : ''}`);
   const count = (side: Side) => n?.cast.filter(c => c.side === side).length ?? 0;
   return (
     <SitePage page="play" wide>
       <section className="narrative-menu">
+        <a className="back-link" href="?">
+          ← Back
+        </a>
         <header>
           <h1>Narrative scenarios</h1>
           <p className="lead">Play the battles from the story. Each one sets its own table, its exact characters and its special rules, so there are no lists to build and no map to pick.</p>
         </header>
         <h2>1. Choose a scenario</h2>
-        <div className="story-grid">
-          {NARRATIVES.map(x => (
-            <button key={x.id} className={`story-card ${x.id === id ? 'on' : ''}`} aria-pressed={x.id === id} onClick={() => setId(x.id)}>
-              <MapPreview w={x.board.w} h={x.board.h} terrain={x.terrain} />
-              <span className="story-text">
-                <b>{x.name}</b>
-                <small className="muted">
-                  {x.from} · {x.board.w}"×{x.board.h}" table
-                </small>
-                <span>{x.blurb}</span>
-              </span>
-            </button>
-          ))}
-        </div>
+        {SAGAS.map(saga => {
+          const list = NARRATIVES.filter(x => x.saga === saga.id);
+          if (!list.length) return null;
+          return (
+            <section key={saga.id} className="story-saga">
+              <h3>{saga.name}</h3>
+              <div className="story-grid">
+                {list.map(x => (
+                  <button key={x.id} className={`story-card ${x.id === id ? 'on' : ''}`} aria-pressed={x.id === id} onClick={() => setId(x.id)}>
+                    <MapPreview w={x.board.w} h={x.board.h} terrain={x.terrain} />
+                    <span className="story-text">
+                      <b>{x.name}</b>
+                      <small className="muted">
+                        {x.from} · {tableSize(x.board)} table
+                      </small>
+                      <span>{x.blurb}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          );
+        })}
         {n && (
           <>
             <h2>2. Choose your side</h2>
@@ -155,6 +194,19 @@ export function NarrativePage() {
                 <span>Send them the game's link and they play {n.sides[side === 'good' ? 'evil' : 'good'].name}.</span>
               </button>
             </div>
+            {n.turns && (
+              <>
+                <h2>4. Choose how long the battle lasts</h2>
+                <div className="story-turns" role="radiogroup" aria-label="Game length">
+                  {n.turns.choices.map(t => (
+                    <button key={t} className={length === t ? 'primary' : ''} role="radio" aria-checked={length === t} onClick={() => setTurns(t)}>
+                      {t} turns{t === n.turns!.default ? ' (suggested)' : ''}
+                    </button>
+                  ))}
+                </div>
+                <p className="fine">The book leaves the length to the players. The Relief Force rides on in turn 10, so a shorter battle is a harder one for the defenders.</p>
+              </>
+            )}
             <details className="story-brief">
               <summary>Objectives and special rules</summary>
               <p>{n.objectives}</p>

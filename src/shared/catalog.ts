@@ -220,6 +220,17 @@ const plain = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').
 export function rulesFor(catalog: Catalog | null | undefined, m: { profileId?: string; options?: string[] }): string[] {
   const unit = m.profileId ? catalog?.units[m.profileId] : undefined;
   if (!unit) return [];
+  // (Asked for over and over by the computer player: a model, once made, never changes, so its answer is kept.)
+  const kept = rulesSeen.get(m);
+  if (kept && kept.catalog === catalog) return kept.rules;
+  const rules = workOutRules(unit, m);
+  rulesSeen.set(m, { catalog, rules });
+  return rules;
+}
+
+const rulesSeen = new WeakMap<object, { catalog: Catalog | null | undefined; rules: string[] }>();
+
+function workOutRules(unit: CatalogUnit, m: { options?: string[] }): string[] {
   const taken = new Set((m.options ?? []).map(plain));
   const untaken = new Set([...unit.options.filter(o => !o.included).map(o => plain(o.name)), ...OPTIONAL_GEAR].filter(n => !taken.has(n)));
   const kept = new Set(unit.wargear.map(plain));

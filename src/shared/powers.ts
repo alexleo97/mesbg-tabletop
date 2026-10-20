@@ -342,7 +342,15 @@ function throwRider(ctx: Ctx, m: Model, why: string) {
 function knockDown(ctx: Ctx, m: Model, why: string) {
   // A war beast is never knocked down: it would stop it moving its full Move.
   if (isWarBeast(ctx.catalog, m)) return;
-  if (isCavalry(ctx.catalog, m)) return throwRider(ctx, m, why);
+  if (isCavalry(ctx.catalog, m)) {
+    // Brego, a sure-footed steed, keeps Aragorn in the saddle on a 6.
+    if (/\bbrego\b/i.test(m.mount ?? '')) {
+      const d = ctx.d6();
+      ctx.out.push({ type: 'rolled', roll: { id: `r-${ctx.uid()}`, by: ctx.by, label: `Sure-footed Steed: ${m.name} stays on Brego on a 6`.slice(0, 80), dice: [d], target: 6, model: m.id, at: ctx.now, note: d === 6 ? 'Brego keeps his feet.' : 'He is thrown.' } });
+      if (d === 6) return;
+    }
+    return throwRider(ctx, m, why);
+  }
   if (!m.prone) patch(ctx, m, { prone: true });
 }
 

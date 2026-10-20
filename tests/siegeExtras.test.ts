@@ -126,6 +126,30 @@ describe('fighting at the top of a ladder', () => {
   });
 });
 
+describe('a rampart with a walkway', () => {
+  // A 3" wall 2.2" thick along y = 20, with a walkway on top: the defender stands up on it, by its south edge.
+  const RAMPART = piece('w', 'wall', 24, 20, 30, 2.2, { height: 3, sheer: true, walk: true });
+  const top = 21.1 - R - 0.02;
+  const foot = 21.1 + R + 0.02;
+  const ladder = piece('lad', 'objective', 10.9, 21.6, 1, 1, { object: 'ladder', side: 'p2', raised: 'w' });
+
+  it('one at the foot can only fight one up on it from a ladder', () => {
+    const s = begin([mk('d', 'p1', 10, top), mk('o', 'p2', 10, foot)], [RAMPART], 'fight');
+    expect(touching(s, s.models.d, s.models.o)).toBe(false);
+    const up = begin([mk('d', 'p1', 10, top), mk('o', 'p2', 10, foot)], [RAMPART, ladder], 'fight');
+    expect(touching(up, up.models.d, up.models.o)).toBe(true);
+    // The defender holds the top of the ladder: the high ground.
+    expect(defence(up, [['d'], ['o']])?.how).toBe('height');
+  });
+
+  it('a climber that loses at the top of the ladder falls off on a 1-3', () => {
+    const s = begin([mk('d', 'p1', 10, top), mk('o', 'p2', 10, foot)], [RAMPART, ladder], 'fight');
+    const lost = fight(s, ['d'], ['o'], [6, 1, 1, 2]);
+    expect(labels(lost.out)).toContain('o keeps its footing on the ladder (4+)');
+    expect(lost.s.models.o.prone).toBe(true);
+  });
+});
+
 describe('barricades', () => {
   const spiked = piece('b', 'wall', 10, 20, 6, 0.5, { height: 1, barricade: 'spiked' });
 

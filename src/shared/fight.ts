@@ -87,6 +87,12 @@ export interface Fighter {
   monster?: boolean;
   /** Wounds it has left, so a monster can tell when a strike slays it. */
   left?: number;
+  /** Théoden's Herugrim: a fight drawn on the dice and tied at his Fight value goes to his side. */
+  edge?: boolean;
+  /** Éomer's Gúthwinë: each natural 6 To Wound earns one more roll To Wound at the same foe (not another after that). */
+  sixesAgain?: boolean;
+  /** A Berserker blade swung two-handed: facing more foes than it has Attacks, one strike at each of them instead. */
+  sweep?: boolean;
 }
 
 /** A Brutal Power Attack a winning monster makes instead of its strikes (see monsters.ts). */
@@ -160,6 +166,12 @@ export interface ShotRequest {
   /** To wound, re-roll 1s (Poisoned Attacks) or every miss (Bane of Kings). */
   ones?: boolean;
   bane?: boolean;
+  /** Added to the rolls To Wound (Legolas behind in his count with Gimli). */
+  woundBonus?: number;
+  /** Aldor's Lucky Shot: the dice that miss to hit are rolled again. */
+  lucky?: boolean;
+  /** Legolas's Pinpoint Shot: his one Shooting Attack this phase (asked for by the player). */
+  pinpoint?: boolean;
 }
 
 export interface FightOutcome {
@@ -277,6 +289,7 @@ export function resolveDuel(req: FightRequest, d6: D6, by: Role, group: string, 
         side: i as 0 | 1,
         ...(f.support ? { support: true } : {}),
         ...(f.duelMod ? { mod: f.duelMod, ...(f.sixSafe ? { sixSafe: true } : {}) } : {}),
+        ...(f.edge && !f.support ? { edge: true } : {}),
       });
     }
   });
@@ -290,6 +303,9 @@ export function duelLeader(rolls: DiceRoll[]): { winner: 0 | 1; how: 'dice' | 'f
   const fight = [0, 1].map(s => Math.max(0, ...duel.filter(r => r.side === s).map(r => r.f!)));
   if (best[0] !== best[1]) return { winner: best[0] > best[1] ? 0 : 1, how: 'dice' };
   if (fight[0] !== fight[1]) return { winner: fight[0] > fight[1] ? 0 : 1, how: 'fight' };
+  // Herugrim: tied at Théoden's own Fight value, his side has the better of it.
+  const edge = [0, 1].filter(s => duel.some(r => r.side === s && r.edge && r.f === fight[s]));
+  if (edge.length === 1) return { winner: edge[0] as 0 | 1, how: 'fight' };
   return null;
 }
 
@@ -375,7 +391,16 @@ export function resolveStrikes(req: FightRequest, duel: DiceRoll[], d6: D6, by: 
     const what = [free && 'a free strike', trapped && 'trapped', plain2 && (f.reroll ? 're-rolling misses' : vs.ones && 're-rolling 1s'), bonus > 0 && `+${bonus} to wound`, bonus < 0 && `${bonus} to wound`, plain2 && f.mighty && '2 wounds each', sixes && '6s do 2 wounds'].filter(Boolean).join(', ');
     const label = opt.label ? `${opt.label} (${formatNeed(need)})` : `${f.name} strikes ${target.name}${what ? `, ${what},` : ''} (${formatNeed(need)})`;
     push(label, dice, { target: need.target, against: target.id, model: f.id, ...(need.then ? { then: need.then, follow } : {}), ...(plain2 && f.mighty ? { per: 2 } : {}), ...(sixes ? { sixes: true } : {}) });
-    return strikeWounds([rolls[rolls.length - 1]]);
+    let wounds = strikeWounds([rolls[rolls.length - 1]]);
+    // Gúthwinë: each natural 6 earns one more roll To Wound at the same foe (and a 6 on that earns nothing more).
+    const more = plain2 && f.sixesAgain ? dice.filter(d => d === 6).length : 0;
+    if (more) {
+      const extra = Array.from({ length: more }, d6).map(d => again(d, need.target));
+      const follow2 = need.then ? extra.filter(d => d >= need.target).map(d6).map(d => again(d, need.then!)) : undefined;
+      push(`Gúthwinë: ${f.name} strikes ${target.name} again for each 6 (${formatNeed(need)})`, extra, { target: need.target, against: target.id, model: f.id, ...(need.then ? { then: need.then, follow: follow2 } : {}) });
+      wounds += strikeWounds([rolls[rolls.length - 1]]);
+    }
+    return wounds;
   };
   // A Brutal Power Attack is made before anyone else in the fight strikes. It isn't a strike: Heroic Strength and the
   // like don't change it, and a trapped foe isn't hit twice; but Heroic Defence still means only 6s wound.
@@ -457,6 +482,12 @@ export function resolveStrikes(req: FightRequest, duel: DiceRoll[], d6: D6, by: 
       idle.push(`${f.name} (won't strike ${pool[0]?.name ?? 'it'})`);
       continue;
     }
+    // A Berserker's blade swung two-handed: up against more foes than it has Attacks, it cuts at each of them once.
+    const foes = open.filter(t => !t.id.endsWith('#mount'));
+    if (f.sweep && !f.support && foes.length > count) {
+      for (const t of foes) strike(f, t, 1, false, { label: `Berserker Blade: ${f.name} sweeps at ${t.name}` });
+      continue;
+    }
     const aimed = (req.aims?.[f.id] ?? []).map(id => open.find(l => l.id === id)).filter((t): t is Fighter => !!t);
     const first = open.includes(main) ? main : open[0];
     const at = Array.from({ length: count }, (_, i) => aimed[i] ?? first);
@@ -516,6 +547,7 @@ export function cleanShot(raw: unknown): ShotRequest | null {
     ...(o.atHowdah === true ? { atHowdah: true } : {}),
     ...(o.heads === true ? { heads: true } : {}),
     ...(o.keepMight === true ? { keepMight: true } : {}),
+    ...(o.pinpoint === true ? { pinpoint: true } : {}),
   };
 }
 
@@ -538,6 +570,8 @@ export function cleanPausedShot(raw: unknown): ShotRequest | null {
     ...(o.bane === true ? { bane: true } : {}),
     ...(o.deadeye === true ? { deadeye: true } : {}),
     ...(o.sharp === true ? { sharp: true } : {}),
+    ...(o.lucky === true ? { lucky: true } : {}),
+    ...(o.woundBonus ? { woundBonus: clamp(o.woundBonus, -3, 3, 0) } : {}),
     ...(o.target?.mount && typeof o.target.mount === 'object' ? { target: { ...base.target, mount: { name: str(o.target.mount.name, 40), d: clamp(o.target.mount.d, 1, 10, 4), ...(o.target.mount.monster === true ? { monster: true } : {}), ...(o.target.mount.chariot === true ? { chariot: true } : {}) } } } : {}),
   };
 }
@@ -582,9 +616,12 @@ export function resolveShot(req: ShotRequest, d6: D6, by: Role, group: string, n
     model: shooter.id,
     aim: target.id,
     ...(req.charge ? { charge: true } : {}),
+    ...(req.pinpoint ? { pinpoint: true } : {}),
   }).dice;
   // A natural 6 always hits.
   let flying = toHit.filter(d => d >= Math.min(6, shooter.shoot)).length;
+  // Aldor's Lucky Shot: the misses are rolled again.
+  if (req.lucky && flying < toHit.length) flying += take(`${shooter.name} shoots again: misses re-rolled (Lucky Shot)`, toHit.length - flying, { target: shooter.shoot, model: shooter.id, aim: target.id }).dice.filter(d => d >= Math.min(6, shooter.shoot)).length;
   // Ori's Deadeye: each natural 6 goes straight to its mark for a Wound, with no In the Way test or roll To Wound.
   const dead = req.deadeye && !req.brand ? toHit.filter(d => d === 6).length : 0;
   flying -= dead;
@@ -649,9 +686,10 @@ export function resolveShot(req: ShotRequest, d6: D6, by: Role, group: string, n
   }
   const hits: { id: string; wounds: number }[] = [];
   for (const v of struck) {
-    const need = woundNeed(shooter.s, v.d);
+    const plain = woundNeed(shooter.s, v.d);
+    const need = plain && (req.woundBonus ? shiftNeed(plain, req.woundBonus) : plain);
     if (!need) continue;
-    const r = take(`To wound ${v.name}: S${shooter.s} vs D${v.d} (${formatNeed(need)})`, v.count, { target: need.target, against: v.id, model: shooter.id }, need.then);
+    const r = take(`To wound ${v.name}: S${shooter.s} vs D${v.d}${req.woundBonus ? ` +${req.woundBonus} (Final Count)` : ''} (${formatNeed(need)})`, v.count, { target: need.target, against: v.id, model: shooter.id }, need.then);
     let wounds = strikeWounds([r]);
     // Poisoned shots re-roll their 1s, Bane of Kings every die that didn't wound (the first die of a 6/4+ need).
     const again = req.bane ? r.dice.filter(d => d < need.target).length : req.ones ? r.dice.filter(d => d === 1).length : 0;

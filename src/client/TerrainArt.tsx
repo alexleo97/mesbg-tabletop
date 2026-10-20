@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react';
-import { bandOutline } from '../shared/sight.ts';
+import type { Point } from '../shared/geometry.ts';
+import { bandOutline, heightOf, outline as boardOutline } from '../shared/sight.ts';
 import type { Mat, Terrain } from '../shared/types.ts';
 import { TREES, type Material } from './textures.ts';
 
@@ -211,7 +212,7 @@ function ruinWalls(t: Terrain): ReactElement[] {
 
 export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How far the table is turned, so a marker's letter stays upright. */ turn?: number }) {
   const d = outline(t);
-  const tex = `url(#tex-${MATERIAL[t.kind]})`;
+  const tex = `url(#tex-${t.look === 'stone' ? (t.kind === 'rock' ? 'cliff' : t.kind === 'building' ? 'wall' : 'stone') : MATERIAL[t.kind]})`;
 
   switch (t.kind) {
     case 'wood':
@@ -266,6 +267,14 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
         </>
       );
     case 'building':
+      if (t.look === 'stone') return <StoneTower t={t} tex={tex} />;
+      if (t.shape === 'circle')
+        return (
+          <>
+            <ellipse className="ground roof" rx={t.w / 2} ry={t.h / 2} fill={tex} filter="url(#hard-shadow)" />
+            <ellipse className="tint" rx={t.w / 2} ry={t.h / 2} fill="url(#g-dome)" />
+          </>
+        );
       return (
         <>
           <rect className="ground roof" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} fill="#3a2a1c" filter="url(#hard-shadow)" />
@@ -328,6 +337,16 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
       return (
         <>
           <rect className="ground wall-top" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} fill={tex} filter="url(#hard-shadow)" />
+          {/* A fortress wall: a walkway down the middle between two lines of battlements. */}
+          {t.sheer && <Battlements w={t.w} h={t.h} />}
+          {t.look === 'culvert' && (
+            <g className="culvert">
+              <rect className="culvert-mouth" x={-0.8} y={-t.h / 2} width={1.6} height={t.h} rx={0.2} />
+              {[-0.45, -0.15, 0.15, 0.45].map(k => (
+                <line key={k} className="culvert-bar" x1={k} x2={k} y1={-t.h / 2} y2={t.h / 2} />
+              ))}
+            </g>
+          )}
         </>
       );
     case 'tower': {
@@ -375,6 +394,38 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
             <path className="ground road-bed" d={d} fill={tex} />
             {/* Wheel ruts: two lines running along the track. */}
             <path className="road-rut" d={bandPath(t.path.map(([x, y, hw]) => [x, y, hw * 0.4]))} />
+          </>
+        );
+      if (t.look === 'stone' && t.shape === 'circle')
+        // Paved ground: a courtyard's flagstones.
+        return (
+          <>
+            <ellipse className="ground paving" rx={t.w / 2} ry={t.h / 2} fill={tex} />
+            <ellipse className="tint paving-tint" rx={t.w / 2} ry={t.h / 2} />
+          </>
+        );
+      if (t.stairs) {
+        // A flight of steps up to a wall's walkway: treads running along the wall, rising towards it (local -y).
+        const n = Math.max(4, Math.round(t.h / 0.3));
+        return (
+          <>
+            <rect className="ground paving" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} fill={tex} filter="url(#hard-shadow)" />
+            {Array.from({ length: n }, (_, i) => (
+              <rect key={i} className="tint step" x={-t.w / 2} y={-t.h / 2 + (i * t.h) / n} width={t.w} height={t.h / n} fillOpacity={0.05 + (0.3 * i) / n} />
+            ))}
+            <rect className="parapet" x={-t.w / 2} y={-t.h / 2} width={0.22} height={t.h} fill="url(#tex-wall)" />
+            <rect className="parapet" x={t.w / 2 - 0.22} y={-t.h / 2} width={0.22} height={t.h} fill="url(#tex-wall)" />
+          </>
+        );
+      }
+      if (t.look === 'stone')
+        // A stone causeway: paved, with a low parapet down each long side.
+        return (
+          <>
+            <rect className="ground paving" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} fill={tex} filter="url(#hard-shadow)" />
+            <rect className="tint paving-tint" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} />
+            <rect className="parapet" x={-t.w / 2} y={-t.h / 2} width={t.w} height={0.3} fill={`url(#tex-wall)`} />
+            <rect className="parapet" x={-t.w / 2} y={t.h / 2 - 0.3} width={t.w} height={0.3} fill={`url(#tex-wall)`} />
           </>
         );
       return <rect className="ground road-bed" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} fill={tex} />;
@@ -465,8 +516,41 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
   }
 }
 
+/** Merlons along both long faces of a fortress wall, with the walkway between them a shade darker. */
+function Battlements({ w, h }: { w: number; h: number }) {
+  const n = Math.max(2, Math.round(w / 0.6));
+  const m = Math.min(0.3, h * 0.26);
+  return (
+    <g className="battlements" pointerEvents="none">
+      <rect className="walkway" x={-w / 2} y={-h / 2 + m} width={w} height={h - 2 * m} />
+      {Array.from({ length: n }, (_, i) => {
+        const x = -w / 2 + (i * w) / n + w / n / 4;
+        return [-h / 2, h / 2 - m].map(y => <rect key={`${i}-${y}`} className="merlon" x={x} y={y} width={w / n / 2} height={m} />);
+      })}
+    </g>
+  );
+}
+
+/** A stone keep or tower from above: its roof stepped up in tiers, with battlements round the top. */
+function StoneTower({ t, tex }: { t: Terrain; tex: string }) {
+  const round = t.shape === 'circle';
+  const tier = (k: number, cls: string, fill: string, filter?: string) =>
+    round ? <ellipse key={`${cls}-${k}`} className={cls} rx={(t.w / 2) * k} ry={(t.h / 2) * k} fill={fill} filter={filter} /> : <rect key={`${cls}-${k}`} className={cls} x={(-t.w / 2) * k} y={(-t.h / 2) * k} width={t.w * k} height={t.h * k} fill={fill} filter={filter} />;
+  return (
+    <>
+      {tier(1, 'ground keep-wall', tex, 'url(#hard-shadow)')}
+      {tier(1, 'tint keep-edge', 'none')}
+      {tier(0.78, 'tint keep-roof', 'url(#tex-stone)', 'url(#hard-shadow)')}
+      {tier(0.78, 'tint keep-edge', 'none')}
+      {tier(0.45, 'tint keep-top', tex, 'url(#hard-shadow)')}
+      {tier(0.45, 'tint keep-edge', 'none')}
+      {tier(1, 'tint', 'url(#g-dome)')}
+    </>
+  );
+}
+
 /** A letter on each kind of scenario marker, so you can tell them apart at a glance. */
-const GLYPHS: Record<NonNullable<Terrain['object']>, string> = { artefact: 'A', relic: 'R', heirloom: 'H', decoy: '✕', supply: 'S', ally: '+', ladder: 'L', ram: 'B', rocks: '●', oil: '♨', rally: '⚑', campfire: '♨' };
+const GLYPHS: Record<NonNullable<Terrain['object']>, string> = { artefact: 'A', relic: 'R', heirloom: 'H', decoy: '✕', supply: 'S', ally: '+', ladder: 'L', ram: 'B', rocks: '●', oil: '♨', rally: '⚑', campfire: '♨', charge: '✸' };
 
 function star(r: number) {
   const pts: string[] = [];
@@ -476,6 +560,72 @@ function star(r: number) {
     pts.push(`${(Math.cos(a) * k).toFixed(3)} ${(Math.sin(a) * k).toFixed(3)}`);
   }
   return `M ${pts.join(' L ')} Z`;
+}
+
+// ——— Fortress faces ———
+// The table is seen from a little south-east of overhead, as you'd look across a real one: each tall fortress piece
+// shows its south and east faces below its top, the stone dropping away to the ground. Looks only; the top is where
+// the piece stands for play.
+
+/** How far down the screen a face reaches for each inch of height. */
+const LEAN = { x: 0.17, y: 0.34 };
+
+/** That lean on the table itself, turned `turn` degrees on screen, so the faces always drop towards the viewer. */
+function leanOn(turn: number): Point {
+  const a = (-turn * Math.PI) / 180;
+  return { x: LEAN.x * Math.cos(a) - LEAN.y * Math.sin(a), y: LEAN.x * Math.sin(a) + LEAN.y * Math.cos(a) };
+}
+
+function hull(pts: Point[]): Point[] {
+  const p = [...pts].sort((a, b) => a.x - b.x || a.y - b.y);
+  const cross = (o: Point, a: Point, b: Point) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const lower: Point[] = [];
+  for (const q of p) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], q) <= 0) lower.pop();
+    lower.push(q);
+  }
+  const upper: Point[] = [];
+  for (const q of [...p].reverse()) {
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], q) <= 0) upper.pop();
+    upper.push(q);
+  }
+  return [...lower.slice(0, -1), ...upper.slice(0, -1)];
+}
+
+/** Whether a piece is part of a fortress that stands tall: its walls, gates, keep, towers and the rock under them. */
+const tall = (t: Terrain) => !t.gone && (t.sheer || t.kind === 'gate' || (t.look === 'stone' && t.kind !== 'road'));
+
+/** The ground a piece's faces cover, from its top down to its foot; a causeway slopes from the gate to the ground. */
+function face(t: Terrain, lean: Point): Point[] {
+  const top = boardOutline(t, 28);
+  if (t.kind === 'road') {
+    // The causeway: its gate end (local -x) stands high, its far end on the ground.
+    const a = (t.rot * Math.PI) / 180;
+    const along = (p: Point) => ((p.x - t.x) * Math.cos(a) + (p.y - t.y) * Math.sin(a)) / t.w + 0.5;
+    return hull([...top, ...top.map(p => ({ x: p.x + lean.x * 2.2 * (1 - along(p)), y: p.y + lean.y * 2.2 * (1 - along(p)) }))]);
+  }
+  const h = heightOf(t);
+  return hull([...top, ...top.map(p => ({ x: p.x + lean.x * h, y: p.y + lean.y * h }))]);
+}
+
+/** The faces of every tall fortress piece, drawn on the ground before any of their tops. */
+export function TerrainFaces({ terrain, turn = 0 }: { terrain: Terrain[]; /** How far the table is turned. */ turn?: number }) {
+  const lean = leanOn(turn);
+  const pieces = terrain.filter(t => tall(t) || (t.kind === 'road' && t.look === 'stone' && t.shape === 'rect' && !t.stairs));
+  return (
+    <g className="fortress-faces" pointerEvents="none">
+      {pieces.map(t => {
+        const pts = face(t, lean).map(p => `${p.x.toFixed(3)},${p.y.toFixed(3)}`).join(' ');
+        return (
+          <g key={t.id}>
+            <polygon className="face-shadow" points={pts} transform="translate(0.35 0.45)" filter="url(#bank-blur)" />
+            <polygon className="face" points={pts} fill={t.kind === 'rock' ? 'url(#tex-cliff)' : 'url(#tex-wall)'} />
+            <polygon className="face-shade" points={pts} />
+          </g>
+        );
+      })}
+    </g>
+  );
 }
 
 /** Shared gradients and shadow filters the terrain refers to. */

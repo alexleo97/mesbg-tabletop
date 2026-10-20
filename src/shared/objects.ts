@@ -14,6 +14,7 @@ export const OBJECT_NAMES: Record<MarkerObject, string> = {
   decoy: 'Heirloom',
   supply: 'Supply',
   campfire: 'Campfire',
+  charge: 'Demolition Charge',
   ally: 'Wounded Ally',
   ladder: 'Siege Ladder',
   ram: 'Battering Ram',
@@ -155,7 +156,9 @@ export function canPickUp(state: GameState, m: Model, t: Terrain): boolean {
   if (HEAVY.has(t.object) && isCavalry(m)) return false;
   if (t.object === 'ladder' && t.raised) return false;
   if (t.object === 'ram' && !helpers(state, m, t).length) return false;
-  if (t.object === 'ladder' || t.object === 'ram') return !carriedBy(state, m).length;
+  // A Demolition Charge is only hauled about by its own side.
+  if (t.object === 'charge' && t.side && t.side !== m.owner) return false;
+  if (t.object === 'ladder' || t.object === 'ram' || t.object === 'charge') return !carriedBy(state, m).length;
   // You can only carry your own wounded; nobody carries both Relics, and your own only once the enemy has had it.
   if (t.object === 'ally') return t.side === m.owner;
   if (t.object === 'relic') {

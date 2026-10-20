@@ -59,10 +59,11 @@ export function isKind(catalog: Catalog | null | undefined, m: Model, kind: stri
 // ——— What a model carries ———
 
 const TWO_HANDED = /two-handed|two handed|great ?axe|mattock|halberd|war ?hammer|great ?sword|\bmaul\b|scythe/;
-const HAND_AND_A_HALF = /hand-and-a-half|hand and a half/;
+// (A Berserker blade is wielded in one hand or two, like a hand-and-a-half sword.)
+const HAND_AND_A_HALF = /hand-and-a-half|hand and a half|berserker blade|glamdring/;
 /** Melee weapons other than two-handed ones: anything that isn't missile, armour or equipment. */
 const MELEE = /weapon|sword|blade|axe|spear|pike|dagger|knife|club|mace|hammer|whip|lance|staff|claws?|fangs?|teeth|beak|tusks?|glaive|flail|cleaver|scimitar|sting|glamdring|orcrist|grasper|and[uú]ril|herugrim|guthwin[eë]|narsil|grond|hand weapons?/;
-const NOT_MELEE = /\bbow\b|bows\b|crossbow|throwing|sling|blowpipe|javelin|armour|amour|shield|cloak|war horn|banner|drum|ring\b|horse|warg\b|pony|goat|steed|camel|mount|chariot/;
+const NOT_MELEE = /\bbow\b|bows\b|crossbow|throwing|sling|blowpipe|javelin|armour|amour|shield|cloak|war horn|banner|drum|\bring\b|horse|warg\b|pony|goat|steed|camel|mount|chariot/;
 
 const melee = (catalog: Catalog | null | undefined, m: Model) => gearOf(catalog, m).filter(g => (MELEE.test(g) || TWO_HANDED.test(g) || HAND_AND_A_HALF.test(g)) && !NOT_MELEE.test(g.replace(/two-handed|hand weapons?/g, '')));
 
@@ -82,7 +83,9 @@ const heavyShield = (catalog: Catalog | null | undefined, m: Model) => gearOf(ca
 export const isUnarmed = (catalog: Catalog | null | undefined, m: Model) =>
   // (A Weapon Master never is.)
   !hasRule(catalog, m, 'Weapon Master') && (gearOf(catalog, m).some(g => g === 'unarmed') || (m.lostGear?.length ? !melee(catalog, m).length : false));
-export const carriesBanner = (catalog: Catalog | null | undefined, m: Model) => hasGear(catalog, m, /\bbanner\b/);
+export const carriesBanner = (catalog: Catalog | null | undefined, m: Model) => hasGear(catalog, m, /\bbanner\b|royal standard/);
+/** Gamling's Royal Standard of Rohan: a banner whose sway reaches 6", which he fights with no penalty. */
+const royalStandard = (catalog: Catalog | null | undefined, m: Model) => hasGear(catalog, m, /royal standard/);
 const missile = (catalog: Catalog | null | undefined, m: Model) => hasGear(catalog, m, /\bbows?\b|crossbow|sling|blowpipe/);
 
 /** Whether a model carries Andúril: as wargear (King Elessar), or as the option taken (Strider). */
@@ -185,7 +188,7 @@ export function fighterOf(state: GameState, catalog: Catalog | null | undefined,
     duel--;
     notes.push('Pike with a shield or bow: -1 duel');
   }
-  if (carriesBanner(catalog, m)) {
+  if (carriesBanner(catalog, m) && !royalStandard(catalog, m)) {
     duel--;
     notes.push('Banner: -1 duel');
   }
@@ -325,7 +328,8 @@ export function bannerFor(state: GameState, catalog: Catalog | null | undefined,
   const ours = rolls.filter(x => x.side === r.side && x.model).map(x => state.models[x.model!]).filter((m): m is Model => !!m && !m.dead);
   if (!ours.length || ours[0].owner !== seat) return undefined;
   if (duelLeader(rolls)?.winner === r.side) return undefined;
-  const flag = Object.values(state.models).find(b => b.owner === seat && !b.dead && !b.escaped && !b.waiting && !b.prone && carriesBanner(catalog, b) && ours.some(m => (m.id === b.id || distanceBetween(b, m) <= BANNER_RANGE) && (m.id === b.id || sightTo(state, m, b) !== 'hidden')));
+  const reach = (b: Model) => (royalStandard(catalog, b) ? 6 : BANNER_RANGE);
+  const flag = Object.values(state.models).find(b => b.owner === seat && !b.dead && !b.escaped && !b.waiting && !b.prone && carriesBanner(catalog, b) && ours.some(m => (m.id === b.id || distanceBetween(b, m) <= reach(b)) && (m.id === b.id || sightTo(state, m, b) !== 'hidden')));
   if (flag) return flag;
   // A Rallying Point is the defenders' banner.
   const rally = onTable(state).find(t => t.object === 'rally' && t.side === seat && ours.some(m => fromMarker(m, t) <= BANNER_RANGE));

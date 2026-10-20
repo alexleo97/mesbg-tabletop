@@ -124,6 +124,19 @@ h1, h3, h4, .topbar .room, .phases .turn, .roster-summary b, .name-input, .tabs 
 .terrain .ruin-wall { stroke-width: 0.4; stroke-linecap: square; }
 .terrain .rubble { fill: #7d7468; stroke: #3b362f; stroke-width: 0.03; }
 .terrain.wall .ground { stroke: #2b2722; stroke-width: 0.05; }
+.terrain .battlements .walkway { fill: #00000038; }
+.terrain .battlements .merlon { fill: #d8d2c4; fill-opacity: 0.55; stroke: #1d1b19; stroke-width: 0.04; }
+.terrain .culvert-mouth { fill: #15110d; stroke: #0008; stroke-width: 0.05; pointer-events: none; }
+.terrain .culvert-bar { stroke: #4b4a48; stroke-width: 0.07; pointer-events: none; }
+.terrain .paving { stroke: #0004; stroke-width: 0.08; }
+.terrain .step { fill: #000; stroke: #0007; stroke-width: 0.03; }
+.terrain .paving-tint { fill: #f0e6d014; }
+.terrain .parapet { stroke: #0006; stroke-width: 0.03; pointer-events: none; }
+.terrain .keep-edge { stroke: #1d1b19; stroke-width: 0.08; }
+.terrain .keep-top { stroke: #1d1b19; stroke-width: 0.06; }
+.fortress-faces .face { stroke: #1d1b19; stroke-width: 0.05; stroke-linejoin: round; }
+.fortress-faces .face-shade { fill: #00000073; }
+.fortress-faces .face-shadow { fill: #0000004d; }
 .terrain .wall-joint { stroke: #0004; stroke-width: 0.04; pointer-events: none; }
 .terrain.building .ground { stroke: #2b2722; stroke-width: 0.1; }
 .terrain .roof-tile { stroke: #0003; stroke-width: 0.04; pointer-events: none; }
@@ -798,6 +811,10 @@ details.finish summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
 .narrative-menu { display: flex; flex-direction: column; gap: 12px; }
 .narrative-menu header { display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; }
 .narrative-menu h2 { margin: 14px 0 0; font-size: 1.15rem; color: var(--gold); font-family: var(--font-head); }
+.narrative-menu .back-link { align-self: flex-start; color: var(--gold); text-decoration: none; font-size: 0.95rem; padding: 4px 10px 4px 0; }
+.narrative-menu .back-link:hover { text-decoration: underline; }
+.story-saga { display: flex; flex-direction: column; gap: 8px; }
+.story-saga h3 { margin: 6px 0 0; font-size: 1rem; color: var(--text); font-family: var(--font-head); letter-spacing: 0.04em; }
 .story-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
 .story-card { display: flex; gap: 12px; align-items: flex-start; text-align: left; padding: 12px; border-radius: 12px; background: var(--panel); border: 2px solid var(--line); color: var(--text); font: inherit; cursor: pointer; }
 .story-card:hover { border-color: var(--gold); }
@@ -811,6 +828,7 @@ details.finish summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
 .story-brief summary { cursor: pointer; color: var(--gold); }
 .story-brief p { margin: 6px 0 0; line-height: 1.4; }
 .story-start { align-self: flex-start; font-size: 1.1rem; padding: 12px 28px; margin-top: 8px; }
+.story-turns { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
 .narrative-setup { max-height: 70vh; overflow-y: auto; }
 @keyframes learn-glow { 50% { box-shadow: 0 0 22px 2px color-mix(in srgb, var(--accent) 45%, transparent); } }
 .site-main { width: 100%; max-width: 480px; margin: 0 auto; padding: 32px 16px 48px; display: flex; flex-direction: column; gap: 14px; text-align: center; }

@@ -21,6 +21,11 @@ const STANDABLE: ReadonlySet<TerrainKind> = new Set(['hill', 'rock', 'building',
 /** Rocks, buildings and cliffs are climbed, so going up or down them costs the height; hills are gentle slopes. */
 const CLIMBED: ReadonlySet<TerrainKind> = new Set(['rock', 'building', 'cliff']);
 
+/** A rampart with a walkway along its top (Terrain.walk): models stand on it at its height. */
+export const walkway = (t: Terrain) => !!t.walk && t.kind === 'wall' && !t.gone;
+/** Whether a piece is climbed onto and stood on: a rock, cliff or building without floors, or a rampart's walkway. */
+const raised = (t: Terrain) => (CLIMBED.has(t.kind) && !hasFloors(t)) || walkway(t);
+
 /** Buildings and ruins can have floors inside (see Terrain.floors); a piece with floors is walked into, not climbed. */
 export const FLOORED: ReadonlySet<TerrainKind> = new Set(['building', 'ruin']);
 export const hasFloors = (t: Terrain) => FLOORED.has(t.kind) && (t.floors ?? 0) > 0;
@@ -30,7 +35,7 @@ export const floorHeight = (t: Terrain, level: number) => (heightOf(t) * Math.ma
 /** How high the ground is at a point: the top of the tallest solid piece it stands on (inside a piece with floors, its ground floor). */
 export function groundAt(state: GameState, p: Point, kinds: ReadonlySet<TerrainKind> = STANDABLE): number {
   let h = 0;
-  for (const t of Object.values(state.terrain)) if (kinds.has(t.kind) && !t.gone && !hasFloors(t) && heightOf(t) > h && insidePolygon(outline(t), p)) h = heightOf(t);
+  for (const t of Object.values(state.terrain)) if ((kinds.has(t.kind) || walkway(t)) && !t.gone && !hasFloors(t) && heightOf(t) > h && insidePolygon(outline(t), p)) h = heightOf(t);
   return h;
 }
 /** The piece with floors a point is inside, if any. */
@@ -257,30 +262,31 @@ export function moveCost(state: GameState, a: Point, b: Point, seat?: Seat, r = 
   return { cost: d + ((times - 1) * d * inside) / steps + climb, difficult: inside > 0 };
 }
 
-/** The height of the rocks, cliffs and buildings (without floors) at a point: what a model there has climbed. */
+/** The height of the rocks, cliffs, buildings (without floors) and rampart walkways at a point: what a model there has climbed. */
 export function climbedLevel(state: GameState, p: Point): number {
   let h = 0;
-  for (const t of Object.values(state.terrain)) if (CLIMBED.has(t.kind) && !hasFloors(t) && heightOf(t) > h && insidePolygon(outline(t), p)) h = heightOf(t);
+  for (const t of Object.values(state.terrain)) if (raised(t) && heightOf(t) > h && insidePolygon(outline(t), p)) h = heightOf(t);
   return h;
 }
 
 function climbCost(state: GameState, a: Point, b: Point, tall: number): number {
   // A piece with floors is walked into at ground level; climbing inside it is done floor by floor.
-  const pieces = Object.values(state.terrain).filter(t => CLIMBED.has(t.kind) && !hasFloors(t) && heightOf(t) > 0);
+  const pieces = Object.values(state.terrain).filter(t => raised(t) && heightOf(t) > 0);
   const d = Math.hypot(b.x - a.x, b.y - a.y);
   if (!pieces.length || d === 0) return 0;
-  const polys = pieces.map(t => ({ poly: outline(t), top: heightOf(t) }));
+  // Steps and ladders up to a walkway are climbed at the height itself; anything else counts as difficult terrain.
+  const polys = pieces.map(t => ({ poly: outline(t), top: heightOf(t), rate: walkway(t) ? 1 : 2 }));
   if (polys.every(({ poly }) => !lineCrosses(poly, a, b))) return 0;
-  const level = (p: Point) => polys.reduce((h, { poly, top }) => (top > h && insidePolygon(poly, p) ? top : h), 0);
+  const level = (p: Point) => polys.reduce((h, c) => (c.top > h.top && insidePolygon(c.poly, p) ? c : h), { top: 0, rate: 2 });
   const steps = Math.max(8, Math.ceil(d * 4));
   let total = 0;
   let prev = level(a);
   for (let i = 1; i <= steps; i++) {
     const f = i / steps;
     const h = level({ x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f });
-    // Climbing counts as difficult terrain; a drop no more than the model's own height is free.
-    if (h > prev) total += (h - prev) * 2;
-    else if (prev - h > tall + 1e-6) total += (prev - h) * 2;
+    // A drop no more than the model's own height is free.
+    if (h.top > prev.top) total += (h.top - prev.top) * h.rate;
+    else if (prev.top - h.top > tall + 1e-6) total += (prev.top - h.top) * prev.rate;
     prev = h;
   }
   return total;

@@ -11,11 +11,15 @@ import { sightTo } from './sight.ts';
 import { armyStatus } from './status.ts';
 import { courageBonus } from './wargear.ts';
 import { isChariot } from './warBeasts.ts';
+import { mounted } from './cavalry.ts';
 import { cryPenalty } from './narrative.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
 /** How close a hero's friends must be to share its Stand Fast! or Heroic Resolve. */
 export const STAND_FAST_RANGE = 6;
+
+/** Théoden's "Forth, and Fear no Darkness!" carries his Stand Fast! twice as far. */
+export const standFastRange = (catalog: Catalog | null, h: Model) => (h.profileId && catalog?.units[h.profileId]?.rules.includes('Forth, and Fear no Darkness') ? 12 : STAND_FAST_RANGE);
 
 /** The 2D6 total a model needs to pass a Courage test, after powers such as Drain Courage and Aura of Dismay, war horns and Harbingers of Evil. */
 export const courageOf = (state: GameState, catalog: Catalog | null, m: Model) => Math.max(2, Math.min(13, (modelStats(catalog, m)?.C ?? 7) + courageWorse(state, m) + cryPenalty(state, m) - courageBonus(state, catalog, m)));
@@ -102,7 +106,7 @@ export function brokenTests(state: GameState, seat: Seat, catalog: Catalog | nul
   for (const m of models) {
     if (m.id in results) continue;
     // An Invisible hero can't give a Stand Fast!.
-    if (anchors.some(h => !h.ringOn && distanceBetween(h, m) <= STAND_FAST_RANGE && sightTo(state, m, h) !== 'hidden') || courageAuto(state, catalog, m)) {
+    if (anchors.some(h => !h.ringOn && distanceBetween(h, m) <= standFastRange(catalog, h) && sightTo(state, m, h) !== 'hidden') || courageAuto(state, catalog, m)) {
       results[m.id] = true;
       continue;
     }
@@ -159,6 +163,12 @@ export function terrorTest(m: Model, enemy: Model, catalog: Catalog | null, d6: 
     const d = roll(m, need, `Courage to charge ${enemy.name} (${why}): ${m.name}`, { d6, uid, now, by: m.owner });
     pass = passed(d);
     actions.push({ type: 'rolled', roll: d });
+    // Snowmane, a Faithful Servant, carries Théoden at a terrifying foe: he tests again if he fails.
+    if (!pass && why === 'Terror' && mounted(m) && /snowmane/i.test(m.mount ?? '')) {
+      const again = roll(m, need, `Courage to charge ${enemy.name} again (Snowmane): ${m.name}`, { d6, uid, now, by: m.owner });
+      pass = passed(again);
+      actions.push({ type: 'rolled', roll: again });
+    }
   }
   return { actions: [...actions, { type: 'courageTaken', results: { [m.id]: pass } }], pass };
 }

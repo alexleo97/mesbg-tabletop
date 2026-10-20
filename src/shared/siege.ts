@@ -116,7 +116,8 @@ export function assignCrew(models: Record<string, Model>, added: string[], board
 /** A Siege Target (a war beast, a large engine, and the like): easy for trained crew to hit, so the shot never scatters. */
 export const siegeTarget = (m: Model) => m.beast === 'war' || m.siege === 'large';
 
-const touches = (_state: GameState, a: Model, b: Model) => distanceBetween(a, b) <= CONTACT_SLACK;
+// (Nothing more than 6" off, centre to centre, can be touching: the largest engine's base is under 5" long.)
+const touches = (_state: GameState, a: Model, b: Model) => Math.abs(a.x - b.x) < 6 && Math.abs(a.y - b.y) < 6 && distanceBetween(a, b) <= CONTACT_SLACK;
 const busy = (state: GameState, m: Model) =>
   Object.values(state.models).some(e => e.owner !== m.owner && !e.dead && !e.siege && !e.aboard && Math.abs(e.x - m.x) < 5 && Math.abs(e.y - m.y) < 5 && touches(state, m, e));
 /** Enemies in base contact with an engine: while there are any it can't shoot or be moved. */

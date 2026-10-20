@@ -1,3 +1,4 @@
+import { chargeWounded } from './helms.ts';
 import { modelStats, type Catalog } from './catalog.ts';
 import { mounted } from './cavalry.ts';
 import { aboard, breakable, enemyOf, gateStanding, isGate, ramCrew, ramGate } from './fortress.ts';
@@ -66,7 +67,7 @@ export function breachBlocked(state: GameState, catalog: Catalog | null, how: Br
   if (state.phase !== 'shoot' || !canActivate(state, m.owner)) return 'Only in your Shoot phase';
   const w = weaponFor(catalog, m);
   if (!w) return 'Has nothing to shoot';
-  const why = shooterBlocked(state, m, w);
+  const why = shooterBlocked(state, m, w, false, catalog);
   if (why) return `It ${why}`;
   if (isGate(t) && w.s < 5) return 'Only Strength 5 or more can hurt a gate';
   const d = m.siege ? Math.hypot(t.x - m.x, t.y - m.y) : distanceToTerrain(m, t);
@@ -83,7 +84,7 @@ export function breachBlocked(state: GameState, catalog: Catalog | null, how: Br
 export function breachOptions(state: GameState, catalog: Catalog | null, m: Model): { how: BreachHow; target: string; label: string }[] {
   if (!active(m) || !state.flow.started) return [];
   const out: { how: BreachHow; target: string; label: string }[] = [];
-  const near = Object.values(state.terrain).filter(t => !t.gone && Math.abs(t.x - m.x) < 100 && (isGate(t) || t.kind === 'tower' || t.barricade || t.object === 'ladder' || t.object === 'ram'));
+  const near = Object.values(state.terrain).filter(t => !t.gone && Math.abs(t.x - m.x) < 100 && (isGate(t) || t.kind === 'tower' || t.barricade || t.object === 'ladder' || t.object === 'ram' || t.object === 'charge'));
   for (const t of near) {
     const b = breakable(t);
     const name = b?.name ?? (t.object === 'ram' ? 'Battering ram' : 'Siege Ladder');
@@ -198,7 +199,9 @@ export function resolveBreach(state: GameState, catalog: Catalog | null, seat: S
       if (hit >= need) wound(`To wound the ${b.name.toLowerCase()}`, w.s, 1, m);
     }
   }
-  if (left !== b.left) out.push({ type: 'updateTerrain', id: gate.id, patch: left > 0 ? { wounds: left } : { wounds: 0, gone: 'destroyed', by: seat } });
+  // A Demolition Charge may go off as it's hurt (see helms.ts); one that doesn't, and has no Wounds left, breaks.
+  const blown = gate.object === 'charge' && chargeWounded(state, catalog, gate, b.left - left, seat, d6, push, out, group);
+  if (left !== b.left && !blown) out.push({ type: 'updateTerrain', id: gate.id, patch: left > 0 ? { wounds: left } : { wounds: 0, gone: 'destroyed', by: seat } });
   // A siege tower brought down takes everyone aboard down with it.
   if (!left && gate.kind === 'tower') for (const r of aboard(state, gate)) out.push(...fallDamage(catalog, r, heightOf(gate), d6, push, group));
   return done();

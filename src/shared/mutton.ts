@@ -1,4 +1,5 @@
 import { castModel, radius, seatOf } from './narrative.ts';
+import { distanceBetween } from './geometry.ts';
 import { basesOverlap } from './movement.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
@@ -11,13 +12,49 @@ export const isMutton = (state: Pick<GameState, 'narrative'>) => state.narrative
 const TROLLS = ['bill', 'bert', 'tom'];
 export const isTroll = (m: Pick<Model, 'cast'>) => !!m.cast && TROLLS.includes(m.cast);
 
-/** Where a reinforcement steps onto the table: touching the middle of the west edge, or the nearest clear point along it. */
+/** The table edge reinforcements are coming on from, and which way they face as they step on. */
+export function entryEdge(state: GameState): { edge: 'north' | 'east' | 'south' | 'west'; facing: number } {
+  const from = state.flow.entering?.from ?? [0, state.board.h / 2];
+  if (from[1] >= state.board.h - 0.01) return { edge: 'south', facing: 0 };
+  if (from[1] <= 0.01 && from[0] > 0.01) return { edge: 'north', facing: 180 };
+  if (from[0] >= state.board.w - 0.01) return { edge: 'east', facing: 270 };
+  return { edge: 'west', facing: 90 };
+}
+
+/**
+ * Where a reinforcement steps onto the table: touching the edge at the point they come on from (the middle of the west
+ * edge in Roast Mutton), or the nearest clear point along it, within the stretch of edge they may use.
+ */
 export function entrySpot(state: GameState, m: Model): { x: number; y: number } | undefined {
-  const x = radius(m);
-  const mid = state.board.h / 2;
-  const clear = (y: number) => !Object.values(state.models).some(o => o.id !== m.id && !o.dead && !o.waiting && !o.escaped && basesOverlap({ ...m, x, y, waiting: undefined }, o));
-  for (let d = 0; d <= mid; d += 0.05) {
-    for (const y of d ? [mid - d, mid + d] : [mid]) if (y >= radius(m) && y <= state.board.h - radius(m) && clear(y)) return { x, y };
+  const { edge, facing } = entryEdge(state);
+  const from = state.flow.entering?.from ?? [0, state.board.h / 2];
+  const across = edge === 'north' || edge === 'south';
+  const r = radius(m);
+  const [lo, hi] = state.flow.entering?.span ?? [0, across ? state.board.w : state.board.h];
+  const fixed = edge === 'west' || edge === 'north' ? r : edge === 'east' ? state.board.w - r : state.board.h - r;
+  const mid = across ? from[0] : from[1];
+  const spot = (t: number) => (across ? { x: t, y: fixed } : { x: fixed, y: t });
+  // (Only those near that edge can be in the way.)
+  const near = Object.values(state.models).filter(o => o.id !== m.id && !o.dead && !o.waiting && !o.escaped && Math.abs((across ? o.y : o.x) - fixed) < 4);
+  const foes = near.filter(o => o.owner !== m.owner);
+  const len = across ? state.board.w : state.board.h;
+  // Clear of other bases and, where it can be, outside every enemy's control zone, so it chooses whether to charge.
+  const clear = (t: number, roomy: boolean) => {
+    const here = { ...m, ...spot(t), rot: facing, waiting: undefined };
+    return !near.some(o => basesOverlap(here, o)) && (!roomy || !foes.some(o => distanceBetween(here, o) < 1));
+  };
+  for (const roomy of [true, false]) {
+    for (let d = 0; d <= hi - lo; d += 0.05) {
+      for (const t of d ? [mid - d, mid + d] : [mid]) if (t >= lo + r && t <= hi - r && clear(t, roomy)) return spot(t);
+    }
+  }
+  // With no room left along its stretch of the edge, a reinforcement comes on at the nearest clear spot beyond it.
+  if (lo > 0 || hi < len) {
+    for (const roomy of [true, false]) {
+      for (let d = 0; d <= len; d += 0.05) {
+        for (const t of [lo - d, hi + d]) if (t >= r && t <= len - r && clear(t, roomy)) return spot(t);
+      }
+    }
   }
   return undefined;
 }
@@ -92,8 +129,10 @@ export function onEdge(state: GameState): Model | undefined {
 /** Whether reinforcements are still coming on this activation: one stands at the edge yet to move, or another can step on. */
 export const stillEntering = (state: GameState) => !!onEdge(state) || !!nextEntering(state);
 
-/** Models moving onto the table this turn as reinforcements: they may not charge. */
+/** Models moving onto the table this turn as reinforcements. */
 export const entering = (state: GameState, m: Model) => state.flow.entering?.turn === state.turn && state.flow.entering.ids.includes(m.id);
+/** Reinforcements may not charge as they come on, unless the scenario lets them (Helm's Deep's Relief Force). */
+export const enteringNoCharge = (state: GameState, m: Model) => entering(state, m) && !state.flow.entering?.charge;
 
 // ——— A Burrahobbit? ———
 

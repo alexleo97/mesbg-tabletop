@@ -14,6 +14,9 @@ import { listEntries } from '../src/shared/warbands.ts';
 import type { Action, GameState, Seat } from '../src/shared/types.ts';
 import { openDuel } from '../src/shared/bot.ts';
 import { arrivalAuto, rollArrival } from '../src/shared/narrative.ts';
+import { chargeSabotage, reliefArrives, reliefDue } from '../src/shared/helms.ts';
+import { shrugOff, towersAfter } from '../src/shared/towers.ts';
+import { markModel } from '../src/shared/marking.ts';
 import { dawnDue, reinforceDue, rollDawn, rollReinforcements } from '../src/shared/mutton.ts';
 import { chronicled, listenDue, listenFor } from '../src/shared/company.ts';
 import { isMonster } from '../src/shared/monsters.ts';
@@ -53,7 +56,7 @@ export function setup(armies: [string, string], points: number, scenario: string
 }
 
 /** Plays a whole game between two computer players. Returns the final state and how many steps it took. */
-export function play(state: GameState, rand: () => number, maxSteps = 20000) {
+export function play(state: GameState, rand: () => number, maxSteps = 20000, watch?: (s: GameState, steps: number) => boolean | void, onAction?: (s: GameState, seat: Seat, a: Action, ok: boolean) => void) {
   const memos: Record<Seat, BotMemo> = { p1: newMemo(), p2: newMemo() };
   const d6 = () => 1 + Math.floor(rand() * 6);
   let id = 0;
@@ -66,14 +69,24 @@ export function play(state: GameState, rand: () => number, maxSteps = 20000) {
       const out = resolveRequest(state, seat, a, d6, uid, now, catalog);
       if (!out) return false;
       const before = state;
-      for (const x of [...out.apply, ...(out.record ? [out.record] : [])]) state = reduce(state, x);
+      for (const x of [...out.apply, ...(out.record ? [out.record] : [])]) take(x);
       chronicle(before);
       return true;
     }
     const before = state;
-    state = reduce(state, a);
+    take(a);
     chronicle(before);
     return state !== before;
+  };
+  // As the server does: wounds a model may shrug off are rolled first, then One Final Blow and the Royal Standard.
+  const take = (a: Action): void => {
+    // (And marks the models that come on, as the server does: mounts, war drums and so on.)
+    if ((a.type === 'addModels' || a.type === 'startNarrative') && Array.isArray(a.models)) a = { ...a, models: a.models.map(m => markModel(catalog, m)) };
+    const instead = a.type === 'wound' ? shrugOff(state, catalog, a, d6, uid, now) : null;
+    if (instead) return instead.forEach(take);
+    const before = state;
+    state = reduce(state, a);
+    for (const x of towersAfter(before, state, catalog, d6, uid, now)) take(x);
   };
   // As the server does: Ori's Chronicler, as models fall.
   const chronicle = (before: GameState) => {
@@ -94,15 +107,19 @@ export function play(state: GameState, rand: () => number, maxSteps = 20000) {
     if (state.narrative) {
       for (let k = 0; k < 4; k++) {
         const bearer = sauronDue(state);
-        const out = arrivalAuto(state) ? rollArrival(state, d6, uid, now) : reinforceDue(state) ? rollReinforcements(state, d6, uid, now) : listenDue(state, catalog) ? listenFor(state, catalog) : dawnDue(state) ? rollDawn(state, d6, uid, now) : bearer ? sauronRoll(state, bearer, d6, uid, now) : burnDue(state) ? burns(state, catalog, d6, uid, now) : willOfEvilDue(state) ? willOfEvilToll(state, catalog, uid, now) : [];
+        const out = arrivalAuto(state) ? rollArrival(state, d6, uid, now) : reinforceDue(state) ? rollReinforcements(state, d6, uid, now) : reliefDue(state) ? reliefArrives(state, uid, now) : listenDue(state, catalog) ? listenFor(state, catalog) : dawnDue(state) ? rollDawn(state, d6, uid, now) : bearer ? sauronRoll(state, bearer, d6, uid, now) : burnDue(state) ? burns(state, catalog, d6, uid, now) : willOfEvilDue(state) ? willOfEvilToll(state, catalog, uid, now) : [];
         for (const a of out) state = reduce(state, a);
         if (!out.length) break;
       }
     }
     // And Paralysed models (or those in a Troll's sack) rolling to recover in the End phase.
     if (recoveryDue(state)) for (const a of recoveryRolls(state, d6, uid, now)) state = reduce(state, a);
+    // And Demolition Charges disabled by an enemy beside them as the turn ends.
+    for (const a of chargeSabotage(state, uid, now)) state = reduce(state, a);
     if (gameWinner(state) && !state.result) state = reduce(state, { type: 'gameOver', winner: gameWinner(state)! });
     if (state.result) break;
+    // (The caller may stop the game early.)
+    if (watch?.(state, steps)) break;
     let acted = false;
     for (const seat of ['p1', 'p2'] as const) {
       const t0 = performance.now();
@@ -111,7 +128,9 @@ export function play(state: GameState, rand: () => number, maxSteps = 20000) {
       const k = `${state.phase}`;
       longest[k] = Math.max(longest[k] ?? 0, ms);
       if (step?.action) {
+        const was = state;
         const ok = apply(seat, step.action);
+        onAction?.(was, seat, step.action, ok);
         const k2 = `${seat}:${step.action.type}${ok ? '' : ' (refused)'}`;
         counts[k2] = (counts[k2] ?? 0) + 1;
         if (step.action.type === 'updateModel') counts[`${seat}:fled`] = (counts[`${seat}:fled`] ?? 0) + 1;

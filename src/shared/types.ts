@@ -107,6 +107,8 @@ export interface Model {
   cast?: string;
   /** It carries a flaming brand (Weathertop): a Ringwraith it beats in a fight is driven off. */
   brand?: boolean;
+  /** It carries a lit torch, to set off a Demolition Charge (Helm's Deep). */
+  torch?: boolean;
   /** Set Ablaze: it takes a Strength 5 hit in each End phase until the fire is put out (see ablaze.ts). */
   ablaze?: boolean;
   /** It wears the One Ring, and is Invisible (see ring.ts). */
@@ -193,12 +195,18 @@ export interface Terrain {
   raised?: string;
   /** A wall that is a defender's Barricade (Defence 7, 2 Wounds), or a spiked one that hurts those crossing it. */
   barricade?: 'plain' | 'spiked';
+  /** A rampart with a walkway along its top: models stand on it at its height, reaching it by steps or a ladder. */
+  walk?: boolean;
+  /** A flight of steps up onto a rampart's walkway: models go up and down there without a test. */
+  stairs?: boolean;
+  /** Drawn in dressed stone (a fortress's courtyard, causeway, keep or tower), or a wall with a culvert through it. Looks only. */
+  look?: 'stone' | 'culvert';
 }
 
 export const DOOR_TYPES = ['castle', 'dwarven', 'heavyArmoured', 'armoured', 'heavy', 'external', 'internal'] as const;
 export type DoorType = (typeof DOOR_TYPES)[number];
 
-export const MARKER_OBJECTS = ['artefact', 'relic', 'heirloom', 'decoy', 'supply', 'ally', 'ladder', 'ram', 'rocks', 'oil', 'rally', 'campfire'] as const;
+export const MARKER_OBJECTS = ['artefact', 'relic', 'heirloom', 'decoy', 'supply', 'ally', 'ladder', 'ram', 'rocks', 'oil', 'rally', 'campfire', 'charge'] as const;
 export type MarkerObject = (typeof MARKER_OBJECTS)[number];
 
 /** Secret choices some scenarios ask each player to make, by model or terrain id. */
@@ -262,6 +270,10 @@ export interface DiceRoll {
   support?: boolean;
   /** A throwing weapon thrown in the Move phase as the model charges its target. */
   charge?: boolean;
+  /** For duel rolls: Herugrim, so a fight drawn at this Fight value goes to this side. */
+  edge?: boolean;
+  /** A Pinpoint Shot: the shooter's only Shooting Attack this phase. */
+  pinpoint?: boolean;
   at: number;
 }
 
@@ -312,6 +324,12 @@ export interface NarrativeState {
   dawn?: number;
   /** Bilbo has charged one of the Trolls, so they may strike him (Roast Mutton). */
   bilbo?: boolean;
+  /** How many turns the battle lasts, where the players choose (Helm's Deep). */
+  turns?: number;
+  /** Where on the south edge the Relief Force rides on, inches from the west edge (Helm's Deep). */
+  relief?: number;
+  /** The turn the culvert section of the Deeping Wall was blown apart (Helm's Deep). */
+  breach?: number;
 }
 
 export type BotSpeed = 'normal' | 'fast' | 'instant';
@@ -503,7 +521,7 @@ export interface Flow {
   /** Mighty Hero: the turn its bonus Might was last given, and each hero's own Might before it (see mighty.ts). */
   mighty?: { turn: number; base: Record<string, number> };
   /** A side's reinforcements moving onto the table now, from a point on the edge: they alone move, and can't charge. */
-  entering?: { seat: Seat; ids: string[]; from: [number, number]; turn: number; on?: string; at?: [number, number] };
+  entering?: { seat: Seat; ids: string[]; from: [number, number]; turn: number; on?: string; at?: [number, number]; span?: [number, number]; charge?: boolean };
   /** The side that has asked to end its Move activation with reinforcements still to roll for (see mutton.ts). */
   reinforce?: Seat;
   /** Once-a-turn abilities used this turn, as `${key}:${model}` (Healing Herbs, Raising Spirits, Combat Synergy). */
@@ -632,9 +650,9 @@ export type Action =
   /** A player's choice for how one of its models fights this phase. */
   | ({ type: 'fightChoice'; id: string; shielding?: boolean; twoHanded?: boolean } & { [K in (typeof FIGHT_TARGETS)[number]]?: string | null })
   /** Request from a client: set up a narrative scenario, with `good` the seat playing Good (the server builds the casts). */
-  | { type: 'setNarrative'; id: string; good: Seat }
+  | { type: 'setNarrative'; id: string; good: Seat; turns?: number }
   /** Server result of setNarrative: the scenario's table and both casts. */
-  | { type: 'startNarrative'; id: string; good: Seat; models: Model[] }
+  | { type: 'startNarrative'; id: string; good: Seat; models: Model[]; turns?: number }
   /** Request from a client: a Ringbearer puts the One Ring on, or tries to take it off (the server rolls the Courage test). */
   | { type: 'ring'; id: string; on: boolean }
   /** Request from a client: the Evil side gives the Cry of the Nazgûl as a Move phase begins (Weathertop). */
@@ -642,9 +660,17 @@ export type Action =
   /** Request: the Good player at Weathertop rolls for Aragorn this turn, or doesn't. */
   | { type: 'aragorn'; roll: boolean }
   /** Server only: bookkeeping for a narrative scenario's rules. */
-  | { type: 'narrativeNote'; rolled?: number; dawn?: number; bilbo?: boolean }
+  | { type: 'narrativeNote'; rolled?: number; dawn?: number; bilbo?: boolean; breach?: number }
+  /** Helm's Deep: the Good player picks where on the south edge the Relief Force will ride on. */
+  | { type: 'reliefPoint'; seat: Seat; x: number }
+  /** Helm's Deep: a Good hero by the gate mounts up (resolved with the profiles). */
+  | { type: 'rideOut'; model: string }
+  /** A model tries to set off a Demolition Charge it touches (resolved with dice). */
+  | { type: 'detonate'; model: string; charge: string }
+  /** An Assault Ballista's Raise the Ladders! shot at the battlements above one of its side's ladders. */
+  | { type: 'raiseLadder'; model: string; ladder: string }
   /** Server only: reinforcements have come on and move onto the table now, from `from` (see mutton.ts). */
-  | { type: 'entering'; seat: Seat; ids: string[]; from: [number, number] }
+  | { type: 'entering'; seat: Seat; ids: string[]; from: [number, number]; span?: [number, number]; charge?: boolean }
   /** Server only: a once-a-turn ability (Healing Herbs, Raising Spirits, Combat Synergy's re-roll) has been used. */
   | { type: 'usedTurn'; key: string; model: string }
   /** Server only: a free heroic action (Óin's Hearing Trumpet), or a free Heroic Move earned this turn (Bifur). */
@@ -705,7 +731,7 @@ export type Action =
   /** A hero spends a Might point to raise one of its own dice by 1. `follow` picks the follow-up dice of a 6/4+ roll. */
   | { type: 'useMight'; roll: string; die: number; follow?: boolean; will?: boolean }
   /** Wounds dealt to a model. A hero with Fate holds them as pending until its player decides. */
-  | { type: 'wound'; id: string; count: number; by?: string[]; how?: 'fight' | 'shoot' | 'other'; group?: string; mount?: boolean; howdah?: boolean; /** A Morgul Blade's: the first wound taken slays outright. */ slay?: boolean }
+  | { type: 'wound'; id: string; count: number; by?: string[]; how?: 'fight' | 'shoot' | 'other'; group?: string; mount?: boolean; howdah?: boolean; /** A Morgul Blade's: the first wound taken slays outright. */ slay?: boolean; /** The game has already rolled for the wounds the model may shrug off (see towers.shrugOff). */ checked?: boolean }
   /** A model picks up a marker it is touching, turns a face-down marker over, or drops what it carries. */
   | { type: 'pickUp'; model: string; marker: string }
   | { type: 'flip'; model: string; marker: string }
