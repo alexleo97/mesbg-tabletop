@@ -3,7 +3,7 @@
 // make way for it; a loser with nowhere to go is trapped, unless it can go over the edge of a drop.
 import { shutTo } from './fortress.ts';
 import { distanceBetween, halfExtents, type Point } from './geometry.ts';
-import { engaged } from './movement.ts';
+import { engaged, keptOffMarkers } from './movement.ts';
 import { cannotAct } from './powers.ts';
 import { climbedLevel, flooredAt, heightOf, heightOfModel, insidePolygon, outline } from './sight.ts';
 import type { GameState, Model } from './types.ts';
@@ -32,7 +32,7 @@ function crosses(poly: Point[], a: Point, b: Point): boolean {
 
 /**
  * Whether a model can step from where it is to `at` in a back away or a make way move, and how far it would fall if
- * that takes it over a drop. It can't end touching an enemy, on top of a friend or an objective marker, off the
+ * that takes it over a drop. It can't end touching an enemy, on top of a friend or (infantry and cavalry) an objective marker, off the
  * table, inside a building it isn't in, or get there by climbing or over a wall it would need a test for.
  */
 function step(state: GameState, models: Record<string, Model>, m: Model, at: Point): { ok: boolean; drop: number } {
@@ -46,7 +46,7 @@ function step(state: GameState, models: Record<string, Model>, m: Model, at: Poi
   for (const t of Object.values(state.terrain)) {
     if (Math.abs(t.x - at.x) > Math.max(t.w, t.h) / 2 + 3 || Math.abs(t.y - at.y) > Math.max(t.w, t.h) / 2 + 3) continue;
     if (t.kind === 'objective') {
-      if (!t.carrier && !t.gone && Math.hypot(t.x - at.x, t.y - at.y) < t.w / 2 + r - 0.05) return no;
+      if (keptOffMarkers(m) && !t.carrier && !t.gone && Math.hypot(t.x - at.x, t.y - at.y) < t.w / 2 + r - 0.05) return no;
     } else if (t.kind === 'building' && t !== inside && insidePolygon(outline(t), at)) return no;
     else if (t.kind === 'wall' && !t.gone && heightOf(t) > tall / 2 && crosses(outline(t), m, at)) return no;
     // Nor back through a gate shut to it.

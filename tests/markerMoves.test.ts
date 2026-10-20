@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { objectiveMarkers } from '../src/shared/boards.ts';
+import { blockMove } from '../src/shared/movement.ts';
 import { initialState, reduce } from '../src/shared/reducer.ts';
 import type { Action, GameState, Model, Terrain } from '../src/shared/types.ts';
 
@@ -37,5 +39,18 @@ describe('moving over objective markers', () => {
   it('keeps it on the near side when another model stands just past the marker', () => {
     const at = move(battle([mk('m', 10, 10), mk('f', 14, 10)]), 13);
     expect(at.x).toBeLessThanOrEqual(12 - clear + 0.01);
+  });
+
+  it('lets war beasts and chariots end on a marker, as only infantry and cavalry may not', () => {
+    for (const beast of ['war', 'chariot'] as const) {
+      const s = battle([{ ...mk('m', 10, 10), beast, base: { shape: 'oval', w: 105, h: 70 } }]);
+      expect(blockMove(s, s.models.m, { x: 10, y: 10 }, { x: 12, y: 10 }).x).toBeCloseTo(12, 3);
+    }
+    const s = battle([mk('m', 10, 10)]);
+    expect(blockMove(s, s.models.m, { x: 10, y: 10 }, { x: 12, y: 10 }).x).toBeLessThan(11);
+  });
+
+  it('makes objective markers 25mm across', () => {
+    for (const t of objectiveMarkers(48, 48, p => p)) expect(t.w * 25.4).toBeCloseTo(25, 5);
   });
 });

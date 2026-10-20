@@ -180,6 +180,13 @@ export function frontFirst<T extends { id: string; x: number; y: number }>(state
  *   A model up on a walkway or rooftop has no zone over one at its foot it couldn't fight, nor that one over it.
  * `skip` lists models moving alongside this one, which don't block it.
  */
+/**
+ * Whether a model may not end a move (nor back away or make way) overlapping an objective marker: only infantry and
+ * cavalry are kept off them, so war beasts, chariots and siege engines may stop on one. (A monster on foot counts
+ * as infantry, as in monsters.ts.)
+ */
+export const keptOffMarkers = (m: Model) => !m.beast && !m.siege;
+
 /** Whether two models may move through each other: one is Invisible to the other (see ring.ts). */
 export const passesThrough = (a: Model, b: Model) => invisibleTo(a, b) || invisibleTo(b, a);
 
@@ -210,7 +217,7 @@ export function blockMove(state: GameState, m: Model, from: Point, to: Point, sk
   const end = at(to);
   const target = charge && !marchBonus(state, m) ? enemies.filter(e => distanceBetween(end, e) < 1 && reaches(state, end, e)).sort((a, b) => distanceBetween(end, a) - distanceBetween(end, b))[0] : undefined;
   const sees = target && sightTo(state, start, target) !== 'hidden' ? target : undefined;
-  const markers = Object.values(state.terrain).filter(t => t.kind === 'objective' && !t.carrier && !t.gone);
+  const markers = keptOffMarkers(m) ? Object.values(state.terrain).filter(t => t.kind === 'objective' && !t.carrier && !t.gone) : [];
   const onMarker = (p: Point) => markers.some(t => Math.hypot(t.x - p.x, t.y - p.y) < t.w / 2 + mmToIn(m.base.w) / 2 - 0.05);
   // (A model already overlapping a gate, put there by hand, may step off it.)
   const gates = state.flow.started ? shutGates(state, m, from, to).filter(t => !overlapsPiece(m, t, from)) : [];
@@ -432,7 +439,7 @@ export function dropMove(state: GameState, from: Point, to: Point, move: number,
 /** The first spot past the objective markers a model would end on at `to`, going on the way it came from `from`; null if it's on none. */
 function pastMarker(state: GameState, m: Model, from: Point, to: Point): Point | null {
   const d = Math.hypot(to.x - from.x, to.y - from.y);
-  if (d < 1e-6) return null;
+  if (d < 1e-6 || !keptOffMarkers(m)) return null;
   const r = mmToIn(m.base.w) / 2;
   const markers = Object.values(state.terrain).filter(t => t.kind === 'objective' && !t.carrier && !t.gone);
   const onMarker = (p: Point) => markers.some(t => Math.hypot(t.x - p.x, t.y - p.y) < t.w / 2 + r - 0.05);
