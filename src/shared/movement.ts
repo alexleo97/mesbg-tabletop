@@ -43,6 +43,42 @@ export function engaged(state: GameState, m: Model, except?: string): boolean {
   return Object.values(state.models).some(e => e.owner !== m.owner && e.id !== except && !e.siege && !e.dead && !e.waiting && !e.escaped && Math.abs(e.x - m.x) < 5 && Math.abs(e.y - m.y) < 5 && touching(state, m, e));
 }
 
+/** Two enemies in base contact, and the spot between their bases where they meet. */
+export interface Engagement {
+  key: string;
+  a: Model;
+  b: Model;
+  at: Point;
+}
+
+/**
+ * Every pair of enemies Engaged in Combat, for drawing who is locked with whom. `models` are the models as they stand
+ * (a dragged model where it is being dragged); the rest of the state says what floors and walls they stand at.
+ */
+export function engagements(state: GameState, models: Model[] = Object.values(state.models)): Engagement[] {
+  const live = models.filter(m => !m.dead && !m.waiting && !m.escaped && !m.siege && !m.aboard);
+  const out: Engagement[] = [];
+  for (let i = 0; i < live.length; i++)
+    for (let j = i + 1; j < live.length; j++) {
+      const [a, b] = live[i].owner === 'p1' ? [live[i], live[j]] : [live[j], live[i]];
+      if (a.owner === b.owner || Math.abs(a.x - b.x) > 5 || Math.abs(a.y - b.y) > 5 || !touching(state, a, b)) continue;
+      // Halfway between the near edges of the two bases: where they touch, or the wall between them.
+      const d = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      const ux = (b.x - a.x) / d, uy = (b.y - a.y) / d;
+      const reach = (m: Model, sx: number, sy: number) => {
+        const { rx, ry } = halfExtents(m.base);
+        // How far the base reaches towards (sx, sy), for round and oval bases alike; near enough for square ones.
+        const r = Math.sin((m.rot * Math.PI) / 180), c = Math.cos((m.rot * Math.PI) / 180);
+        const lx = sx * c + sy * r, ly = -sx * r + sy * c;
+        return 1 / Math.hypot(lx / rx, ly / ry);
+      };
+      const ea = { x: a.x + ux * reach(a, ux, uy), y: a.y + uy * reach(a, ux, uy) };
+      const eb = { x: b.x - ux * reach(b, -ux, -uy), y: b.y - uy * reach(b, -ux, -uy) };
+      out.push({ key: `${a.id}|${b.id}`, a, b, at: { x: (ea.x + eb.x) / 2, y: (ea.y + eb.y) / 2 } });
+    }
+  return out;
+}
+
 /**
  * The extra Move from a Heroic March this phase: 3" (5" on a horse) for the hero who called it and for friends that
  * began the phase within 6" of it. Marching models can't charge.

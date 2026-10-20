@@ -11,7 +11,7 @@ import { scenarioById } from '../shared/scenarios.ts';
 import { MATERIALS, textures } from './textures.ts';
 import { TERRAIN_INFO, terrainRules } from '../shared/terrain.ts';
 import { holdInZones } from '../shared/deployment.ts';
-import { frontFirst, leashed, limitMove, moveAllowance, moveLeft, moveStart, movesLimited, RETRACE, retrace, settleMove, spent } from '../shared/movement.ts';
+import { engagements, frontFirst, leashed, limitMove, moveAllowance, moveLeft, moveStart, movesLimited, RETRACE, retrace, settleMove, spent } from '../shared/movement.ts';
 import { dropTarget } from '../shared/terrainTests.ts';
 import { inDifficult, standingAt, insidePolygon, inTheWay, isDifficult, moveCost, outline, shadowPath, sightTo, VINES_REACH } from '../shared/sight.ts';
 import { effectsOn } from '../shared/powers.ts';
@@ -645,6 +645,10 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
   }, [activeRuler, state.models, models]);
 
   const fontSize = Math.max(0.22, 11 / view.s);
+
+  // Who is Engaged in Combat, as the models stand now, so a drag shows the moment a model touches an enemy.
+  const contacts = useMemo(() => (state.flow.started ? engagements(state, models.map(m => (dragPos?.[m.id] ? { ...m, ...dragPos[m.id] } : m))) : []), [state, models, dragPos]);
+  const engagedIds = useMemo(() => new Set(contacts.flatMap(c => [c.a.id, c.b.id])), [contacts]);
   const gridLines = useMemo(() => {
     const lines: React.ReactElement[] = [];
     for (let x = 0; x <= state.board.w; x++)
@@ -823,6 +827,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
                     {initials(m.name)}
                   </text>
                 )}
+                {engagedIds.has(m.id) && <ZoneShape m={m} pad={0.035} className="engaged-ring" />}
                 {sight?.seen.has(m.id) && <ZoneShape m={m} pad={0.12} className="sight-ring" />}
                 {/* A power at work on it, and whether it lies Prone. */}
                 {state.flow.started && effectsOn(state, m).length > 0 && <ZoneShape m={m} pad={0.07} className="spell-ring" />}
@@ -854,6 +859,31 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
                   {t.floors ? ` · ${t.floors + 1} levels` : ''}
                 </text>
               ))}
+          {/* Crossed swords where enemies touch, kept clear of the wounds and names written under each base. */}
+          {contacts.length > 0 && (
+            <g className="engaged-marks" pointerEvents="none">
+              {contacts.map(c => {
+                const r = Math.min(0.32, Math.max(0.16, fontSize * 0.75));
+                const t = (turn * Math.PI) / 180;
+                const down = { x: Math.sin(t), y: Math.cos(t) };
+                const below = [c.a, c.b].some(m => {
+                  const d = Math.hypot(c.at.x - m.x, c.at.y - m.y) || 1;
+                  return ((c.at.x - m.x) * down.x + (c.at.y - m.y) * down.y) / d > 0.7;
+                });
+                const shift = below ? r * 1.6 : 0;
+                const x = c.at.x + shift * Math.cos(t);
+                const y = c.at.y - shift * Math.sin(t);
+                return (
+                  <g key={c.key} className="engaged-mark" transform={`translate(${x} ${y}) rotate(${-turn})`}>
+                    <circle r={r} />
+                    <text textAnchor="middle" dominantBaseline="central" style={{ fontSize: r * 1.25 }}>
+                      ⚔
+                    </text>
+                  </g>
+                );
+              })}
+            </g>
+          )}
           {animate && <Effects state={state} fontSize={fontSize} turn={turn} />}
           {/* Models standing up high show how far up they are. */}
           {models.map(m0 => {

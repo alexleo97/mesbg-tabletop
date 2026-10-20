@@ -1193,3 +1193,17 @@ select.ready-made {
   .controls-list dl > div { grid-template-columns: 1fr; gap: 0; }
   .help-dialog { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); }
 }
+
+/* Engaged in Combat: an ember ring round each model touching an enemy, and crossed swords where they meet. Ember is
+   the same in every theme, like hero gold, so it never matches either side's colour. */
+:root { --clash: #ff9a3c; }
+.engaged-ring { fill: none; stroke: var(--clash); stroke-width: 0.06; pointer-events: none; filter: drop-shadow(0 0 0.06px #000); }
+.engaged-mark circle { fill: #1c1a17e6; stroke: var(--clash); stroke-width: 0.045; }
+.engaged-mark text { fill: var(--clash); font-weight: 700; }
+.effects .fx-clash .fx-flare { fill: none; stroke: var(--clash); stroke-width: 0.12; opacity: 0; transform-box: fill-box; transform-origin: center; animation: flare 0.9s 0.3s ease-out both; }
+@keyframes flare { 0% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(1.35); } }
+.effects .fx-burst { fill: var(--clash); opacity: 0; transform-box: fill-box; transform-origin: center; animation: burst 0.7s 0.3s ease-out both; }
+@keyframes burst { 0% { opacity: 0.6; transform: scale(0.3); } 100% { opacity: 0; transform: scale(2.4); } }
+.effects .fx-swords { fill: #fff; paint-order: stroke; stroke: #000; stroke-width: 0.06; transform-box: fill-box; transform-origin: center; opacity: 0; animation: swords 0.8s 0.3s ease-out both; }
+@keyframes swords { 0% { opacity: 0; transform: scale(2); } 30% { opacity: 1; transform: scale(0.9); } 70% { opacity: 1; transform: scale(1); } 100% { opacity: 0; } }
+.effects .fx-engaged { fill: var(--clash); font-weight: 800; paint-order: stroke; stroke: #000; stroke-width: 0.08; opacity: 0; animation: float 1.2s 0.35s ease-out both; }
