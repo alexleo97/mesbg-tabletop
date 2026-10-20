@@ -2,6 +2,8 @@ import type { Base, Model } from './types.ts';
 
 export const MM_PER_INCH = 25.4;
 export const mmToIn = (mm: number) => mm / MM_PER_INCH;
+/** Objective markers are always 25mm across (Rules Manual). */
+export const OBJECTIVE_SIZE = mmToIn(25);
 
 export interface Point {
   x: number;

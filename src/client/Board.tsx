@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { placeSpot, placingNow } from '../shared/placing.ts';
 import { distanceBetween, distanceToBase, formatInches, halfExtents, type Point } from '../shared/geometry.ts';
-import type { Action, GameState, Mark, Model, Seat, Terrain } from '../shared/types.ts';
+import type { Action, GameState, Mark, Model, Seat } from '../shared/types.ts';
 import { markerName, markerNotes } from '../shared/objects.ts';
 import { Effects } from './Effects.tsx';
 import { useLessonLock } from './lessonLock.ts';
@@ -9,7 +9,7 @@ import { TerrainArt, TerrainDefs, TerrainFaces } from './TerrainArt.tsx';
 import { ScenarioZones } from './ScenarioZones.tsx';
 import { scenarioById } from '../shared/scenarios.ts';
 import { MATERIALS, textures } from './textures.ts';
-import { TERRAIN_INFO, terrainRules } from '../shared/terrain.ts';
+import { drawLayer, isMarker, TERRAIN_INFO, terrainRules } from '../shared/terrain.ts';
 import { holdInZones } from '../shared/deployment.ts';
 import { engagements, frontFirst, leashed, limitMove, moveAllowance, moveLeft, moveStart, movesLimited, RETRACE, retrace, settleMove, spent } from '../shared/movement.ts';
 import { dropTarget } from '../shared/terrainTests.ts';
@@ -211,18 +211,19 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
   // Models that left the table over an edge are off it.
   // (Those riding a war beast are drawn on top of it.)
   const models = useMemo(() => Object.values(state.models).filter(m => !m.dead && !m.escaped && !m.waiting).sort((a, b) => Number(!!a.aboard) - Number(!!b.aboard)), [state.models]);
-  // Roads and water lie on the ground, under everything else; bridges sit on top of the water.
-  const terrain = useMemo(() => {
-    const layer = (k: string) => (k === 'road' ? 0 : k === 'water' ? 1 : k === 'bridge' ? 3 : 2);
-    // A raised stone causeway stands above the ground, its slope drawn under it.
-    // Markers carried off, destroyed, rescued or turned over as decoys are gone (a broken gate stays, in pieces);
-    // carried ones are drawn last.
-    const layerOf = (t: Terrain) => (t.carrier ? 4 : t.kind === 'road' && t.look === 'stone' && t.shape === 'rect' ? 2 : layer(t.kind));
-    return Object.values(state.terrain)
-      .filter(t => !t.gone || t.kind === 'gate' || t.kind === 'tower' || !!t.barricade)
-      .sort((a, b) => layerOf(a) - layerOf(b));
-  }, [state.terrain]);
-  const firstStanding = terrain.findIndex(t => t.kind !== 'road' && t.kind !== 'water');
+  // Roads and water lie on the ground, under everything else; bridges sit on top of the water, and markers on top of all.
+  // Markers carried off, destroyed, rescued or turned over as decoys are gone (a broken gate stays, in pieces).
+  const terrain = useMemo(
+    () =>
+      Object.values(state.terrain)
+        .filter(t => !t.gone || t.kind === 'gate' || t.kind === 'tower' || !!t.barricade)
+        .sort((a, b) => drawLayer(a) - drawLayer(b)),
+    [state.terrain],
+  );
+  const ground = terrain.filter(t => !isMarker(t));
+  const markers = terrain.filter(isMarker);
+  const bridges = ground.filter(t => t.kind === 'bridge');
+  const firstStanding = ground.findIndex(t => t.kind !== 'road' && t.kind !== 'water');
   const viewer = sightFrom ? state.models[sightFrom] : undefined;
   const sight = useMemo(() => {
     if (!viewer || viewer.dead) return null;
@@ -696,6 +697,12 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
           <clipPath id="board-clip">
             <rect width={state.board.w} height={state.board.h} />
           </clipPath>
+          <mask id="off-bridges" maskUnits="userSpaceOnUse" x={0} y={0} width={state.board.w} height={state.board.h}>
+            <rect width={state.board.w} height={state.board.h} fill="white" />
+            {bridges.map(t => (
+              <polygon key={t.id} points={outline(t).map(p => `${p.x},${p.y}`).join(' ')} fill="black" />
+            ))}
+          </mask>
           {MATERIALS.map(m => (
             <pattern key={m} id={`tex-${m}`} patternUnits="userSpaceOnUse" width={tex[m].inches} height={tex[m].tall}>
               <image href={tex[m].href} width={tex[m].inches} height={tex[m].tall} preserveAspectRatio="none" />
@@ -711,30 +718,42 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
           <rect className="mat" width={state.board.w} height={state.board.h} fill={`url(#tex-${state.board.mat})`} />
           {showGrid && gridLines}
           <g clipPath="url(#board-clip)">
-          {terrain.map((t, i) => [
+          {ground.map((t, i) => [
             // The fortress's faces go down after the ground (roads and water) and before anything standing on it.
             i === firstStanding && <TerrainFaces key="faces" terrain={terrain} turn={turn} />,
-            t.vines ? (
-              // Writhing Vines: the marker, and the ground around it that is difficult for the other side.
-              <g key={t.id} transform={`translate(${t.x} ${t.y})`} className={`vines ${t.side}`} pointerEvents="none">
-                <circle className="vines-reach" r={VINES_REACH + t.w / 2} />
-                <circle className="vines-marker" r={t.w / 2} />
-              </g>
-            ) : (
-              <g
-                key={t.id}
-                transform={`translate(${towerAt?.id === t.id ? towerAt.x : t.x} ${towerAt?.id === t.id ? towerAt.y : t.y}) rotate(${t.rot})`}
-                className={`terrain ${t.kind} ${t.locked ? 'locked' : ''} ${selectedTerrain === t.id ? 'selected' : ''}`}
-              >
-                <TerrainArt t={t} mat={state.board.mat} turn={turn} />
-              </g>
-            ),
+            <g
+              key={t.id}
+              transform={`translate(${towerAt?.id === t.id ? towerAt.x : t.x} ${towerAt?.id === t.id ? towerAt.y : t.y}) rotate(${t.rot})`}
+              className={`terrain ${t.kind} ${t.locked ? 'locked' : ''} ${selectedTerrain === t.id ? 'selected' : ''}`}
+            >
+              <TerrainArt t={t} mat={state.board.mat} turn={turn} />
+            </g>,
           ])}
           </g>
-          <g clipPath="url(#board-clip)">
-            {terrain.filter(isDifficult).map(t => (
+          {/* Difficult ground is hatched, except where a bridge carries models over it at full speed. */}
+          <g clipPath="url(#board-clip)" mask={bridges.length ? 'url(#off-bridges)' : undefined}>
+            {terrain.filter(t => isDifficult(t) && !isMarker(t)).map(t => (
               <polygon key={`d-${t.id}`} className="difficult" points={outline(t).map(p => `${p.x},${p.y}`).join(' ')} pointerEvents="none" />
             ))}
+          </g>
+          <g clipPath="url(#board-clip)">
+            {markers.map(t =>
+              t.vines ? (
+                // Writhing Vines: the marker, and the ground around it that is difficult for the other side.
+                <g key={t.id} transform={`translate(${t.x} ${t.y})`} className={`vines ${t.side}`} pointerEvents="none">
+                  <circle className="vines-reach" r={VINES_REACH + t.w / 2} />
+                  <circle className="vines-marker" r={t.w / 2} />
+                </g>
+              ) : (
+                <g
+                  key={t.id}
+                  transform={`translate(${t.x} ${t.y}) rotate(${t.rot})`}
+                  className={`terrain ${t.kind} ${t.locked ? 'locked' : ''} ${selectedTerrain === t.id ? 'selected' : ''}`}
+                >
+                  <TerrainArt t={t} mat={state.board.mat} turn={turn} />
+                </g>
+              ),
+            )}
           </g>
           {sight && (
             <g clipPath="url(#board-clip)" pointerEvents="none">

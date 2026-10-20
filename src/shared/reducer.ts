@@ -6,7 +6,7 @@ import { holdInZones, nearEdge } from './deployment.ts';
 import { canActivate, heroicInfo, heroicNow, heroicQueue, mayActivate, shoutedFor } from './heroics.ts';
 import { pendingSpell } from './magic.ts';
 import { basePower, cannotAct, effectActive } from './powers.ts';
-import { basesOverlap, costOf, crowded, engaged as engagedNow, finishCharge, fightsAgain, frontFirst, leashed, limitMove, moveAllowance, movedAtAll, movedTooFar, moveLeft, moveStart, retrace, RETRACE, spent, testsTerrain } from './movement.ts';
+import { basesOverlap, costOf, crowded, engaged as engagedNow, finishCharge, fightsAgain, frontFirst, leashed, limitMove, dropMove, moveAllowance, movedAtAll, movedTooFar, moveLeft, moveStart, retrace, RETRACE, spent, testsTerrain } from './movement.ts';
 import { FLOORED, floorHeight, flooredAt, insidePolygon, isDifficult, outline } from './sight.ts';
 import { cleanPausedShot, woundsTaken } from './fight.ts';
 import { pairOff } from './flow.ts';
@@ -726,7 +726,7 @@ function step(state: GameState, action: Action): GameState {
           }
           // (Reinforcements coming on may not charge.)
           const arriving = state.phase === 'move' && enteringNoCharge(state, prev);
-          to = back ? from : undone ? undone.at : limitMove(now, here, to, Math.max(0, allowance - spent(state, prev)), prev.owner, prev, undefined, !arriving);
+          to = back ? from : undone ? undone.at : dropMove(now, here, to, Math.max(0, allowance - spent(state, prev)), prev.owner, prev, undefined, !arriving);
           // A model that stops inside an enemy's control zone is charging it: it must reach base contact, or stay out.
           if ((state.phase === 'move' || fightsAgain(state, prev)) && !arriving) to = finishCharge(now, prev, here, to);
           // A friend going with a hero (With Me, or At the Double) must end within 6" of it, and a siege crew within 6"

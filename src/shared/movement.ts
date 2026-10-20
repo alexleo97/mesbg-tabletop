@@ -216,6 +216,13 @@ export function frontFirst<T extends { id: string; x: number; y: number }>(state
  *   A model up on a walkway or rooftop has no zone over one at its foot it couldn't fight, nor that one over it.
  * `skip` lists models moving alongside this one, which don't block it.
  */
+/**
+ * Whether a model may not end a move (nor back away or make way) overlapping an objective marker: only infantry and
+ * cavalry are kept off them, so war beasts, chariots and siege engines may stop on one. (A monster on foot counts
+ * as infantry, as in monsters.ts.)
+ */
+export const keptOffMarkers = (m: Model) => !m.beast && !m.siege;
+
 /** Whether two models may move through each other: one is Invisible to the other (see ring.ts). */
 export const passesThrough = (a: Model, b: Model) => invisibleTo(a, b) || invisibleTo(b, a);
 
@@ -246,7 +253,7 @@ export function blockMove(state: GameState, m: Model, from: Point, to: Point, sk
   const end = at(to);
   const target = charge && !marchBonus(state, m) ? enemies.filter(e => distanceBetween(end, e) < 1 && reaches(state, end, e)).sort((a, b) => distanceBetween(end, a) - distanceBetween(end, b))[0] : undefined;
   const sees = target && sightTo(state, start, target) !== 'hidden' ? target : undefined;
-  const markers = Object.values(state.terrain).filter(t => t.kind === 'objective' && !t.carrier && !t.gone);
+  const markers = keptOffMarkers(m) ? Object.values(state.terrain).filter(t => t.kind === 'objective' && !t.carrier && !t.gone) : [];
   const onMarker = (p: Point) => markers.some(t => Math.hypot(t.x - p.x, t.y - p.y) < t.w / 2 + mmToIn(m.base.w) / 2 - 0.05);
   // (A model already overlapping a gate, put there by hand, may step off it.)
   const gates = state.flow.started ? shutGates(state, m, from, to).filter(t => !overlapsPiece(m, t, from)) : [];
@@ -445,6 +452,40 @@ export function limitMove(state: GameState, from: Point, to: Point, move: number
   if (ahead) to = ahead.stop;
   const reached = reachable(state, from, to, move, seat, m);
   return m ? blockMove(state, m, from, reached, skip, charge) : reached;
+}
+
+/**
+ * Where a model a player drags from `from` and drops at `to` ends up: as limitMove, except that models move freely
+ * over an objective marker but may not end on it, so one dropped on a marker goes on past it instead of back, when
+ * that's nearer and the model's Move gets it there clear of everything else.
+ */
+export function dropMove(state: GameState, from: Point, to: Point, move: number, seat: Seat, m: Model, skip?: ReadonlySet<string>, charge = true): Point {
+  const ahead = state.flow.started && testsTerrain(state, m) ? crossingAhead(state, m, from, to) : null;
+  if (ahead) to = ahead.stop;
+  const reached = reachable(state, from, to, move, seat, m);
+  const stop = blockMove(state, m, from, reached, skip, charge);
+  const past = pastMarker(state, m, from, reached);
+  if (!past || Math.hypot(past.x - reached.x, past.y - reached.y) >= Math.hypot(stop.x - reached.x, stop.y - reached.y)) return stop;
+  const there = reachable(state, from, past, move, seat, m);
+  if (Math.hypot(there.x - past.x, there.y - past.y) > 1e-3) return stop;
+  const end = blockMove(state, m, from, past, skip, charge);
+  return Math.hypot(end.x - past.x, end.y - past.y) < 1e-3 ? end : stop;
+}
+
+/** The first spot past the objective markers a model would end on at `to`, going on the way it came from `from`; null if it's on none. */
+function pastMarker(state: GameState, m: Model, from: Point, to: Point): Point | null {
+  const d = Math.hypot(to.x - from.x, to.y - from.y);
+  if (d < 1e-6 || !keptOffMarkers(m)) return null;
+  const r = mmToIn(m.base.w) / 2;
+  const markers = Object.values(state.terrain).filter(t => t.kind === 'objective' && !t.carrier && !t.gone);
+  const onMarker = (p: Point) => markers.some(t => Math.hypot(t.x - p.x, t.y - p.y) < t.w / 2 + r - 0.05);
+  if (!onMarker(to)) return null;
+  const [ux, uy] = [(to.x - from.x) / d, (to.y - from.y) / d];
+  for (let k = 0.05; k < 6; k += 0.05) {
+    const p = { x: to.x + ux * k, y: to.y + uy * k };
+    if (!onMarker(p)) return p;
+  }
+  return null;
 }
 
 function reachable(state: GameState, from: Point, to: Point, move: number, seat?: Seat, m?: Model): Point {
