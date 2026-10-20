@@ -56,12 +56,16 @@ interface Props {
   onMark?: (m: Pick<Mark, 'kind' | 'x' | 'y' | 'x2' | 'y2'>) => void;
   /** Glide moves and show wounds, deaths and shots as they happen. */
   animate?: boolean;
+  /** The seat whose moves are instant (the Palantír's, with Instant moves on): its models skip the glide and flash where they land. */
+  instantFor?: Seat;
   /** Models to zoom in on, such as the fight being rolled; the view glides there each time `key` changes. */
   focus?: { key: string; ids: string[] } | null;
 }
 
 /** How long the table takes to turn a quarter, and how far two fingers twist before the table turns with them. */
 const TURN_GLIDE = 250;
+/** How long a model that moved instantly flashes where it landed. */
+const MOVE_FLASH = 1600;
 const TWIST_START = 12;
 
 /** Room (px) left for the fight card when zooming to a fight, inches of table round it, the closest zoom, and how long the glide takes. */
@@ -168,7 +172,7 @@ const upright = (turn: number, x: number, y: number) => (turn ? `rotate(${-turn}
 
 const clipId = (m: Model) => `clip-${m.base.shape}-${m.base.w}-${m.base.h}`;
 
-export function Board({ state, tool, selected, setSelected, selectedTerrain, setSelectedTerrain, dispatch, showZones, showDeployment, showGrid, photoFor, onModelTap, links, fights, onFightTap, sightFrom, sightRange, showNames, showTerrainNames, marks, onMark, animate, role, focus }: Props) {
+export function Board({ state, tool, selected, setSelected, selectedTerrain, setSelectedTerrain, dispatch, showZones, showDeployment, showGrid, photoFor, onModelTap, links, fights, onFightTap, sightFrom, sightRange, showNames, showTerrainNames, marks, onMark, animate, instantFor, role, focus }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const tex = useMemo(() => textures(), []);
   const [view, setView] = useState<View>({ x: 0, y: 0, s: 10, r: 0 });
@@ -186,6 +190,20 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
     if (tool !== 'measure') setRuler(null);
   }, [tool]);
   const pointers = useRef(new Map<number, Point>());
+  // Models that just jumped to where they went with Instant moves, flashing a moment so you can see what moved.
+  const lastAt = useRef<Record<string, Point>>({});
+  const [flash, setFlash] = useState<Record<string, number>>({});
+  useEffect(() => {
+    const before = lastAt.current;
+    lastAt.current = Object.fromEntries(Object.values(state.models).map(m => [m.id, { x: m.x, y: m.y }]));
+    if (!instantFor) return;
+    const moved = Object.values(state.models).filter(m => m.owner === instantFor && !m.dead && before[m.id] && Math.hypot(m.x - before[m.id].x, m.y - before[m.id].y) > 0.05);
+    if (!moved.length) return;
+    const n = Date.now();
+    setFlash(f => ({ ...f, ...Object.fromEntries(moved.map(m => [m.id, n])) }));
+    // Not cleared when the next model moves: each flash fades on its own time.
+    setTimeout(() => setFlash(f => Object.fromEntries(Object.entries(f).filter(([, at]) => at !== n))), MOVE_FLASH);
+  }, [state.models, instantFor]);
   // A war beast or chariot being pointed where to charge, and the spot it's pointed at.
   const charging = useRef<{ id: string; toward: Point } | null>(null);
   const lastSend = useRef(0);
@@ -796,7 +814,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
                 data-model={m.id}
                 // A CSS transform, so models moved by the other player glide to where they went.
                 style={{ transform: `translate(${m.x}px, ${m.y}px) rotate(${m.rot}deg)` }}
-                className={`model ${animate && !dragPos?.[m.id] ? 'glide' : ''} ${m.owner} ${m.hero ? 'hero' : ''} ${selected.has(m.id) ? 'selected' : ''} ${sight?.seen.has(m.id) ? `seen-${sight.seen.get(m.id)}` : ''}`}
+                className={`model ${animate && !dragPos?.[m.id] && m.owner !== instantFor ? 'glide' : ''} ${m.owner} ${m.hero ? 'hero' : ''} ${selected.has(m.id) ? 'selected' : ''} ${sight?.seen.has(m.id) ? `seen-${sight.seen.get(m.id)}` : ''}`}
               >
                 <BaseShape m={m} />
                 {photo && (
@@ -829,6 +847,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
                 )}
                 {engagedIds.has(m.id) && <ZoneShape m={m} pad={0.035} className="engaged-ring" />}
                 {sight?.seen.has(m.id) && <ZoneShape m={m} pad={0.12} className="sight-ring" />}
+                {flash[m.id] && <ZoneShape key={flash[m.id]} m={m} pad={0.15} className="moved-flash" />}
                 {/* A power at work on it, and whether it lies Prone. */}
                 {state.flow.started && effectsOn(state, m).length > 0 && <ZoneShape m={m} pad={0.07} className="spell-ring" />}
                 {m.prone && (

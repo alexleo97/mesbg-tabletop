@@ -85,6 +85,15 @@ export interface BotStep {
 /** The Palantír speed setting shortens every pause between the computer's steps (and its waits for the player). */
 export const BOT_PACE = { normal: 1, fast: 0.35, instant: 0.05 };
 const MOVE_PAUSE = 450;
+
+/** The steps that only carry models across the table: with Instant moves on, the computer goes straight on to the next. */
+const MODEL_MOVES = new Set<Action['type']>(['moveModels', 'pushTower', 'climb']);
+
+/** How long to wait after a step: its pause at the Palantír's speed, or none after a plain move with Instant moves on. */
+export function botPause(state: GameState, step: BotStep): number {
+  if (state.botInstantMoves && step.action && MODEL_MOVES.has(step.action.type)) return 0;
+  return step.delay * BOT_PACE[state.botSpeed ?? 'normal'];
+}
 const DICE_PAUSE = 1100;
 const THINK_PAUSE = 700;
 const WAIT_PAUSE = 1500;

@@ -27,7 +27,7 @@ void loadCatalog().then(c => (catalog = c), () => {});
  */
 const NOT_IN_LESSONS = new Set<Action['type']>([
   'addModels', 'removeModels', 'updateModel', 'addTerrain', 'updateTerrain', 'removeTerrain', 'setScenery', 'setBoard', 'setScenario', 'setNarrative',
-  'startNarrative', 'setPick', 'setVP', 'setName', 'setBot', 'setBotSpeed', 'setListed', 'setPrivate', 'setAdvance', 'setPhase', 'setPriority', 'loadState',
+  'startNarrative', 'setPick', 'setVP', 'setName', 'setBot', 'setBotSpeed', 'setBotInstantMoves', 'setListed', 'setPrivate', 'setAdvance', 'setPhase', 'setPriority', 'loadState',
   'concede', 'proposeResult', 'answerResult', 'lieDown', 'dismount',
 ]);
 

@@ -253,6 +253,10 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
   const { profile, token } = useAuth();
   useEffect(() => conn.setToken?.(token), [conn, token]);
   const seat = role === 'p1' || role === 'p2' ? role : null;
+  // Instant moves is the player's own choice, so it follows them into every game against the Palantír.
+  useEffect(() => {
+    if (state.bot && seat && !practice && !!state.botInstantMoves !== settings.instantMoves) dispatch({ type: 'setBotInstantMoves', on: settings.instantMoves });
+  }, [state.bot, state.botInstantMoves, seat, practice, settings.instantMoves]);
   useEffect(() => {
     if (!practice && seat && profile && players.includes(seat) && !state.names[seat]) dispatch({ type: 'setName', seat, name: profile.username });
   }, [seat, profile?.username, players.includes(seat as Seat), !state.names[seat as Seat]]);
@@ -601,6 +605,16 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
             {{ normal: '▶ Normal', fast: '⏩ Fast', instant: '⏭ Instant' }[state.botSpeed ?? 'normal']}
           </button>
         )}
+        {state.bot && seat && !practice && (
+          <button
+            className={`bot-moves ${settings.instantMoves ? 'on' : ''}`}
+            onClick={() => updateSettings({ instantMoves: !settings.instantMoves })}
+            aria-pressed={settings.instantMoves}
+            title={`${settings.instantMoves ? 'On' : 'Off'}: ${BOT_NAME.replace(/^The /, 'the ')}'s models ${settings.instantMoves ? 'jump straight to where they go' : 'glide to where they go, one at a time'}. Its dice, fights and the rest keep their pace. Click to change.`}
+          >
+            ⚡ Instant moves
+          </button>
+        )}
         <BrokenTags state={state} />
         {scenarioById(state.scenario) && (
           <button className="vp-chip" onClick={() => setBattleTab('scenario')} title={scenarioById(state.scenario)!.name}>
@@ -649,6 +663,7 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
               showTerrainNames={settings.terrainNames}
               marks={marks}
               animate={settings.animations && !reducedMotion}
+              instantFor={state.bot && state.botInstantMoves ? state.bot : undefined}
               role={role}
               onMark={m => conn.mark(m)}
             />

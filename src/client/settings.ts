@@ -126,9 +126,11 @@ export interface Settings {
   terrainNames: boolean;
   /** Moves glide, dice tumble, and wounds, deaths and shots show on the table. */
   animations: boolean;
+  /** Against the Palantír, its models jump straight to where they go instead of gliding there one by one. */
+  instantMoves: boolean;
 }
 
-export const DEFAULTS: Settings = { theme: 'classic', headingFont: 'cinzel', bodyFont: 'system', photos: true, zones: true, deployment: true, grid: true, names: false, terrainNames: false, animations: true };
+export const DEFAULTS: Settings = { theme: 'classic', headingFont: 'cinzel', bodyFont: 'system', photos: true, zones: true, deployment: true, grid: true, names: false, terrainNames: false, animations: true, instantMoves: false };
 const KEY = 'mesbg-tabletop:settings';
 
 function load(): Settings {

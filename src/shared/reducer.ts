@@ -1435,6 +1435,10 @@ function step(state: GameState, action: Action): GameState {
     }
     case 'setBotSpeed':
       return BOT_SPEEDS.includes(action.speed) ? { ...state, botSpeed: action.speed === 'normal' ? undefined : action.speed } : state;
+    case 'setBotInstantMoves': {
+      const { botInstantMoves: _, ...rest } = state;
+      return action.on === true ? { ...rest, botInstantMoves: true } : rest;
+    }
     case 'setPriority':
       return { ...state, priority: isSeat(action.seat) ? action.seat : null };
     case 'setScenario': {
@@ -1610,6 +1614,7 @@ export function loadState(raw: unknown): GameState {
   if (o.private === true) out = { ...out, private: true, listed: false };
   if (isSeat(o.bot)) out = { ...out, bot: o.bot };
   if (o.botSpeed) out = reduce(out, { type: 'setBotSpeed', speed: o.botSpeed });
+  if (o.botInstantMoves === true) out = { ...out, botInstantMoves: true };
   if (o.advance === 'click') out = { ...out, advance: 'click' };
   const n = o.narrative;
   if (n && typeof n === 'object' && narrativeById(n.id) && isSeat(n.good))
