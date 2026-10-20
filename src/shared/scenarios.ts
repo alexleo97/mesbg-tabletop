@@ -1,4 +1,5 @@
 import data from '../data/scenarios.json';
+import { OBJECTIVE_SIZE } from './geometry.ts';
 import type { GameState, Seat, Terrain } from './types.ts';
 
 // Matched play scenarios as game facts (deployment, objectives, scoring) in our own words.
@@ -60,14 +61,16 @@ export function scenarioMarkers(s: Scenario, w: number, h: number, newId: (p: st
     if (spots.every(([x, y]) => Math.hypot(x - p[0], y - p[1]) >= 12)) spots.push(p);
   }
   const setup = markerSetup(s.id, s.objectives.markerKind, spots, h / 2, rand);
+  // Plain objective markers are 25mm; the things a scenario has players carry, dig up or rescue keep a larger marker.
+  const size = (i: number) => (setup[i]?.object ? 1.6 : OBJECTIVE_SIZE);
   return spots.map(([x, y], i) => ({
     id: newId('t'),
     kind: 'objective',
     shape: 'circle',
     x,
     y,
-    w: 1.6,
-    h: 1.6,
+    w: size(i),
+    h: size(i),
     rot: 0,
     // Players place and nudge markers themselves, so they can be dragged.
     locked: false,

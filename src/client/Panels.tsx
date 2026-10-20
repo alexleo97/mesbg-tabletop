@@ -2,6 +2,7 @@ import { scenarioById } from '../shared/scenarios.ts';
 import { armyStatus } from '../shared/status.ts';
 import { bannerFor } from '../shared/wargear.ts';
 import { rerollFor } from '../shared/company.ts';
+import { mightBlocked } from '../shared/mightUse.ts';
 import { ResultReport } from './ResultReport.tsx';
 import { MapsSection } from './Maps.tsx';
 import { DEFAULT_HEIGHT, FLOORED, heightOf, isDifficult } from '../shared/sight.ts';
@@ -121,14 +122,15 @@ export function RollRow({ r, state, role, dispatch, delay = 0 }: { r: DiceRoll; 
   const hits = r.target ? r.dice.filter(d => d >= r.target!).length : null;
   const wounds = r.then && r.follow ? r.follow.filter(d => d >= r.then!).length : null;
   const hero = r.model ? state.models[r.model] : undefined;
+  // Might only while the roll's result is still to be used: a shot waiting on it, a duel not yet struck and so on.
+  const live = !mightBlocked(state, r);
   const pause = state.flow.shotPause;
-  const shot = r.group?.startsWith('s-');
-  // A shot's dice can be raised only while the shot waits on them: the last roll of the shot that stopped.
+  // The shot waiting on this roll, for the button that carries it on.
   const paused = !!pause && pause.group === r.group && state.log.filter(x => x.group === r.group).at(-1)?.id === r.id;
   // On a Learn to play table, only a step that teaches them offers Might and re-rolls.
   const lock = useLessonLock();
   const can = (a: Action) => !lock || lock.can(a);
-  const mine = !!dispatch && !!hero && hero.hero && !hero.dead && hero.owner === role && (!shot || paused) && can({ type: 'useMight', roll: r.id, die: 0 });
+  const mine = !!dispatch && !!hero && hero.hero && !hero.dead && hero.owner === role && live && can({ type: 'useMight', roll: r.id, die: 0 });
   const might = mine && hero!.might > 0;
   // A friendly banner nearby lets a side re-roll one die of a duel it isn't winning.
   const { catalog } = useCatalog();

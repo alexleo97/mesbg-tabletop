@@ -1,5 +1,5 @@
 import { formatNeed, woundNeed } from './rules.ts';
-import type { DiceRoll, Role } from './types.ts';
+import type { DiceRoll, GameState, Role } from './types.ts';
 
 export interface Fighter {
   id: string;
@@ -237,6 +237,24 @@ const names = (side: Fighter[]) => {
 
 /** A roll that shows a duel has been settled: a strike, the winner's note, or the roll that broke a tie. */
 export const duelSettled = (r: DiceRoll) => !!r.against || !!r.note || r.label.startsWith('Roll-off') || r.label.startsWith('Drawn fight');
+
+/**
+ * The latest duel rolled for a fight between these models (a fight's key, or its ids), and its rolls. Only a duel
+ * fought by these models alone counts: a hero who fought someone else earlier this turn (and won a Heroic Combat, or
+ * barged) starts a fresh duel here, and a duel elsewhere is never struck with this fight's models. In a battle, only
+ * a duel from this turn counts, as the same models may fight again next turn.
+ */
+export function fightDuel(state: GameState, models: string | string[], since = 0): { group: string; rolls: DiceRoll[] } | null {
+  const ids = new Set(typeof models === 'string' ? models.split(/[,|]/).filter(Boolean) : models);
+  for (let i = state.log.length - 1; i >= 0; i--) {
+    const r = state.log[i];
+    if (!r.group?.startsWith('f-') || r.side === undefined || !r.model || !ids.has(r.model) || (state.flow.started && !state.flow.duels?.includes(r.group))) continue;
+    if (r.at < since) return null;
+    const rolls = state.log.filter(x => x.group === r.group);
+    if (rolls.every(x => x.side === undefined || x.support || !x.model || ids.has(x.model))) return { group: r.group, rolls };
+  }
+  return null;
+}
 
 /** Whose wounds from a fight or shot have been taken off already: the whole group (older games) or this model's share. */
 export const woundsTaken = (applied: string[] | undefined, group: string, victim?: string) => !!applied?.includes(group) || (!!victim && !!applied?.includes(`${group}>${victim}`));

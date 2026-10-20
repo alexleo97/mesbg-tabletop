@@ -4,14 +4,14 @@ import { entryPoints } from '../shared/catalog.ts';
 import { botRoster, playableArmies } from '../shared/botList.ts';
 import { newId, type ListEntry } from '../shared/importList.ts';
 import { PREMADE, premadeRoster } from '../shared/premade.ts';
-import { POOLS, SCENARIOS, scenarioById, scenarioFromDice, type Scenario } from '../shared/scenarios.ts';
+import { POOLS, SCENARIOS, scenarioById, scenarioFromDice } from '../shared/scenarios.ts';
 import { BOT_NAME, type Mat, type Terrain } from '../shared/types.ts';
 import { listEntries } from '../shared/warbands.ts';
 import { useAuth } from './auth.ts';
 import { cloudLists, getMap, listMaps, mergeLists, type SavedMap } from './cloud.ts';
 import { MapPreview, randomRoom, SitePage } from './Home.tsx';
 import { loadSaved, useCatalog, type Roster } from './ListBuilder.tsx';
-import { ZoneArt } from './ScenarioZones.tsx';
+import { DeployThumb } from './ScenarioZones.tsx';
 
 /** What the menu hands to the table it opens: laid out there as soon as you sit down. */
 export interface BattleSetup {
@@ -34,18 +34,6 @@ export function takeSetup(room: string): BattleSetup | null {
   } catch {
     return null;
   }
-}
-
-/** A mini table with the scenario's deployment zones on it. */
-function ZonePreview({ s }: { s: Scenario }) {
-  return (
-    <svg className="map-preview" viewBox="0 0 48 48" aria-hidden>
-      <rect width={48} height={48} className="mp-mat" />
-      {s.deployment.zones.map((z, i) => (
-        <ZoneArt key={i} z={z} sx={1} sy={1} w={48} h={48} />
-      ))}
-    </svg>
-  );
 }
 
 const DEPLOY: Record<string, string> = {
@@ -195,13 +183,28 @@ export function BattleMenu() {
             </button>
           )}
         </div>
+        <p className="deploy-legend">
+          <span>
+            <i className="p1" />
+            Player 1
+          </span>
+          <span>
+            <i className="p2" />
+            Player 2
+          </span>
+          <span>
+            <i className="obj" />
+            Objective
+          </span>
+          <span>Striped: the D6 1-3 zone · Bars and arrows: edges warbands arrive from</span>
+        </p>
         {POOLS.slice(1).map((pool, i) => (
           <div key={pool} className="pool">
             <h3>{pool}</h3>
             <div className="story-grid scenario-grid">
               {SCENARIOS.filter(s => s.pool === i + 1).map(s => (
                 <button key={s.id} className={`story-card ${shownScenario === s.id ? 'on' : ''}`} aria-pressed={shownScenario === s.id} onClick={() => setScenario(s.id)}>
-                  <ZonePreview s={s} />
+                  <DeployThumb s={s} />
                   <span className="story-text">
                     <b>{s.name}</b>
                     <small className="muted">{DEPLOY[s.deployment.type] ?? s.deployment.type}</small>

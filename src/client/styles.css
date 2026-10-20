@@ -491,7 +491,7 @@ table.vp .vp-cell button { width: 28px; height: 28px; padding: 0; }
 table.vp .vp-cell b { display: inline-block; min-width: 20px; text-align: center; }
 table.vp tr.total td { font-weight: 700; font-size: 1rem; text-align: center; }
 table.vp tr.total td:first-child { text-align: left; }
-.bot-speed { white-space: nowrap; }
+.bot-speed, .bot-moves { white-space: nowrap; }
 .vp-chip { white-space: nowrap; }
 .vp-chip .p1 { color: var(--p1); }
 .vp-chip .p2 { color: var(--p2); }
@@ -632,7 +632,21 @@ div.strike-at select { width: auto; flex: 1 1 40%; }
   position: absolute; left: 72px; bottom: 10px; z-index: 4; width: min(380px, calc(100% - 140px));
   background: #26231ff2; border: 1px solid var(--line); border-left: 4px solid var(--muted); border-radius: 12px;
   padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 8px 24px #0008;
+  max-height: calc(100% - 20px); overflow-y: auto; overscroll-behavior: contain;
 }
+.model-card > * { flex-shrink: 0; }
+/* The name, stat line and wounds stay in view while the rest of a long card scrolls under them. */
+.model-card .card-top {
+  position: sticky; top: 0; z-index: 2; display: flex; flex-direction: column; gap: 8px;
+  margin: -10px -12px 0; padding: 10px 12px 6px; background: #26231f; border-radius: 12px 12px 0 0;
+}
+.card-rules { display: flex; flex-direction: column; gap: 4px; }
+.rules-toggle {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; text-align: left;
+  background: transparent; border-color: var(--line); padding: 5px 8px;
+}
+.rules-toggle span { font-weight: 600; font-size: 0.85rem; color: var(--gold); }
+.rules-toggle small { color: var(--muted); font-size: 0.78rem; line-height: 1.3; }
 .model-card.p1 { border-left-color: var(--p1); }
 .model-card.p2 { border-left-color: var(--p2); }
 .model-card .close { position: absolute; top: 6px; right: 6px; width: 32px; min-height: 32px; padding: 0; }
@@ -711,6 +725,7 @@ div.strike-at select { width: auto; flex: 1 1 40%; }
   .tool-rail button { width: 44px; }
   .tool-rail small { display: none; }
   .model-card { left: 6px; right: 6px; width: auto; bottom: 6px; max-height: 48%; overflow-y: auto; padding: 8px 10px; gap: 6px; }
+  .model-card .card-top { margin: -8px -10px 0; padding: 8px 10px 4px; gap: 6px; }
   .model-card .card-head img, .model-card .card-head .avatar { width: 34px; height: 34px; font-size: 1rem; }
   .model-card button { min-height: 34px; padding: 4px 10px; }
   .model-card .rule-chip { min-height: 24px; padding: 0 7px; }
@@ -1097,6 +1112,8 @@ table.vp tr.auto .vp-cell b { color: var(--gold); }
 
 /* Animations: short, and only to show what just happened. Settings can turn them off. */
 .board g.model.glide { transition: transform 0.35s ease-out; }
+.moved-flash { fill: var(--gold); fill-opacity: 0.25; stroke: var(--gold); stroke-width: 0.12; pointer-events: none; animation: moved-flash 1.6s ease-out forwards; }
+@keyframes moved-flash { 0%, 50% { opacity: 1; } 100% { opacity: 0; } }
 .move-trail { fill: none; stroke-linejoin: round; stroke-width: 0.08; stroke-dasharray: 0.3 0.25; opacity: 0.55; }
 .move-trail.p1 { stroke: var(--p1); }
 .move-trail.p2 { stroke: var(--p2); }
@@ -1134,9 +1151,33 @@ select.ready-made {
 
 /* The new battle menu: the narrative menu's cards, with smaller scenario cards in a tighter grid. */
 .battle-menu .pool h3 { margin: 4px 0 6px; font-size: 0.95rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
-.battle-menu .scenario-grid { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
+.battle-menu .scenario-grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
 .battle-menu .scenario-grid .story-card { padding: 8px; }
-.battle-menu .scenario-grid .map-preview { width: 64px; height: 64px; }
+.battle-menu .deploy-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 6px; font-size: 0.82rem; color: var(--muted); }
+.battle-menu .deploy-legend i { display: inline-block; width: 12px; height: 12px; margin-right: 5px; vertical-align: -1px; border-radius: 3px; }
+.battle-menu .deploy-legend .p1 { background: var(--p1); }
+.battle-menu .deploy-legend .p2 { background: var(--p2); }
+.battle-menu .deploy-legend .obj { background: #f2c94c; border: 1.5px solid #1a1a1a; border-radius: 50%; }
+/* Scenario thumbnails: a dark table in every theme, so the two sides' colours and the gold markers always stand out. */
+.deploy-thumb { display: block; width: 96px; height: 96px; flex: none; border-radius: 6px; border: 1.5px solid #8b8576; background: #23251f; }
+.deploy-thumb .dt-table { fill: #2e3129; }
+.deploy-thumb .dt-centre { stroke: #fff; stroke-opacity: 0.25; stroke-width: 0.4; stroke-dasharray: 1.5 1.5; }
+.deploy-thumb .dt-quarter { stroke: #fff; stroke-opacity: 0.7; stroke-width: 0.8; stroke-dasharray: 2 1.5; }
+.deploy-thumb .dt-zone { stroke-width: 1; }
+.deploy-thumb .dt-zone.p1 { fill: var(--p1); fill-opacity: 0.75; stroke: var(--p1); }
+.deploy-thumb .dt-zone.p2 { fill: var(--p2); fill-opacity: 0.75; stroke: var(--p2); }
+.deploy-thumb .dt-zone.either { fill: #fff; fill-opacity: 0.85; stroke: #1a1a1a; stroke-width: 0.6; }
+.deploy-thumb .dt-edge line { stroke-width: 3; stroke-linecap: round; }
+.deploy-thumb .dt-edge.either line { stroke: #f2f0ea; }
+.deploy-thumb .dt-edge.either polygon { fill: #f2f0ea; }
+.deploy-thumb .dt-edge.p1 line { stroke: var(--p1); }
+.deploy-thumb .dt-edge.p1 polygon { fill: var(--p1); }
+.deploy-thumb .dt-edge.p2 line { stroke: var(--p2); }
+.deploy-thumb .dt-edge.p2 polygon { fill: var(--p2); }
+.deploy-thumb .dt-marker { fill: #f2c94c; stroke: #1a1a1a; stroke-width: 0.9; }
+.deploy-thumb .dt-marker.p1 { fill: var(--p1); stroke: #fff; }
+.deploy-thumb .dt-marker.p2 { fill: var(--p2); stroke: #fff; }
+@media (max-width: 600px) { .deploy-thumb { width: 84px; height: 84px; } }
 .battle-menu .scenario-grid .story-text b { font-size: 1rem; }
 .battle-menu .scenario-grid .story-text span, .battle-menu .scenario-grid .story-text small { font-size: 0.82rem; }
 .battle-menu .die-art { width: 64px; height: 64px; flex: none; display: grid; place-items: center; font-size: 2rem; border-radius: 6px; background: var(--panel-2); }
@@ -1172,3 +1213,17 @@ select.ready-made {
   .controls-list dl > div { grid-template-columns: 1fr; gap: 0; }
   .help-dialog { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); }
 }
+
+/* Engaged in Combat: an ember ring round each model touching an enemy, and crossed swords where they meet. Ember is
+   the same in every theme, like hero gold, so it never matches either side's colour. */
+:root { --clash: #ff9a3c; }
+.engaged-ring { fill: none; stroke: var(--clash); stroke-width: 0.06; pointer-events: none; filter: drop-shadow(0 0 0.06px #000); }
+.engaged-mark circle { fill: #1c1a17e6; stroke: var(--clash); stroke-width: 0.045; }
+.engaged-mark text { fill: var(--clash); font-weight: 700; }
+.effects .fx-clash .fx-flare { fill: none; stroke: var(--clash); stroke-width: 0.12; opacity: 0; transform-box: fill-box; transform-origin: center; animation: flare 0.9s 0.3s ease-out both; }
+@keyframes flare { 0% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(1.35); } }
+.effects .fx-burst { fill: var(--clash); opacity: 0; transform-box: fill-box; transform-origin: center; animation: burst 0.7s 0.3s ease-out both; }
+@keyframes burst { 0% { opacity: 0.6; transform: scale(0.3); } 100% { opacity: 0; transform: scale(2.4); } }
+.effects .fx-swords { fill: #fff; paint-order: stroke; stroke: #000; stroke-width: 0.06; transform-box: fill-box; transform-origin: center; opacity: 0; animation: swords 0.8s 0.3s ease-out both; }
+@keyframes swords { 0% { opacity: 0; transform: scale(2); } 30% { opacity: 1; transform: scale(0.9); } 70% { opacity: 1; transform: scale(1); } 100% { opacity: 0; } }
+.effects .fx-engaged { fill: var(--clash); font-weight: 800; paint-order: stroke; stroke: #000; stroke-width: 0.08; opacity: 0; animation: float 1.2s 0.35s ease-out both; }

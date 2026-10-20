@@ -75,7 +75,13 @@ export function rollCast(state: GameState, seat: Seat, a: Extract<Action, { type
   // A Self power or one that hits all in range is aimed at the caster; a Tremor's line runs towards the model picked.
   const t = self || isAreaPower(power) ? m : picked;
   if (t.id !== m.id && powerInfo(power) && !fitsTarget(state, catalog, m, power, t)) return null;
-  const cv = Math.max(1, Math.min(6, Math.round(Number(a.cv)) || 4));
+  // A power on the caster's profile is cast at its own casting value, and only at a target in its range that the
+  // caster can see (so no Will, and no Might after it, goes on a cast that can't reach).
+  const known = powersOf(catalog, m);
+  const listed = known.find(x => x.name === power);
+  if (known.length && !listed) return null;
+  if (state.flow.started && listed && !castTargets(state, m, listed.range, power, catalog).some(x => x.id === t.id)) return null;
+  const cv = listed?.cv ?? Math.max(1, Math.min(6, Math.round(Number(a.cv)) || 4));
   // A model kept alive by Will of Evil can't spend its last point.
   const spare = willOfEvil(catalog, m) ? m.will - 1 : m.will;
   if (spare < 1) return null;

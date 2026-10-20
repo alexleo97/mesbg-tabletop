@@ -10,7 +10,7 @@ import { CoachBar, type CoachView } from './CoachBar.tsx';
 import { BattleCard, SetupCard, type BattleTab, type SetupTab } from './BattleCard.tsx';
 import { ModelCard, weaponOf } from './ModelCard.tsx';
 import { SightHint } from './SightHint.tsx';
-import { combatFromKey, combats, other } from '../shared/flow.ts';
+import { combats, fightToOpen, other, shownFight } from '../shared/flow.ts';
 import { engaged, fightDone } from '../shared/movement.ts';
 import { canThrowBrand, isThrowing } from '../shared/shooting.ts';
 import { waitingOnMight } from '../shared/bot.ts';
@@ -254,6 +254,10 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
   const { profile, token } = useAuth();
   useEffect(() => conn.setToken?.(token), [conn, token]);
   const seat = role === 'p1' || role === 'p2' ? role : null;
+  // Instant moves is the player's own choice, so it follows them into every game against the Palantír.
+  useEffect(() => {
+    if (state.bot && seat && !practice && !!state.botInstantMoves !== settings.instantMoves) dispatch({ type: 'setBotInstantMoves', on: settings.instantMoves });
+  }, [state.bot, state.botInstantMoves, seat, practice, settings.instantMoves]);
   useEffect(() => {
     if (!practice && seat && profile && players.includes(seat) && !state.names[seat]) dispatch({ type: 'setName', seat, name: profile.username });
   }, [seat, profile?.username, players.includes(seat as Seat), !state.names[seat as Seat]]);
@@ -353,6 +357,19 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
   useEffect(() => {
     if (mightFight && seat && seat !== state.bot) setFightKey(mightFight);
   }, [mightFight]);
+  // When the Fight phase comes round, the first fight opens on the battle card. Once it's over (or a new turn starts),
+  // the fight that was open closes and the card goes back to the armies. (A lesson's player opens its fight themselves.)
+  const fightTurn = useRef({ turn: state.turn, phase: state.phase });
+  useEffect(() => {
+    const was = fightTurn.current;
+    fightTurn.current = { turn: state.turn, phase: state.phase };
+    if (!state.flow.started) return;
+    if (state.phase === 'fight' && (was.phase !== 'fight' || was.turn !== state.turn)) {
+      const first = seat && !practice ? fightToOpen(state, combats(state)) : undefined;
+      if (first) setFightKey(first.key);
+      else if (fightKey) setFightKey(null);
+    } else if (state.phase !== 'fight' && fightKey) setFightKey(null);
+  }, [state.flow.started, state.phase, state.turn]);
   const leave = () => {
     location.search = '';
   };
@@ -450,8 +467,8 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
           return [{ from: shooter.id, to: target.id, label: `${formatInches(d)} / ${w.range}"`, ok: d <= w.range }];
         })()
       : undefined;
-  // The fight stays open after its losers back away, so its wounds can still be applied.
-  const fight = fightKey ? (fights.find(c => c.key === fightKey) ?? combatFromKey(state, fightKey)) : undefined;
+  // The fight stays open after its losers back away, so its wounds can still be applied, but not past the Fight phase.
+  const fight = shownFight(state, fightKey, fights);
   const photoFor = (m: Model) => {
     const unit = settings.photos && m.profileId ? catalog?.units[m.profileId] : undefined;
     return unit && pictureUrl(unit);
@@ -589,6 +606,16 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
             {{ normal: '▶ Normal', fast: '⏩ Fast', instant: '⏭ Instant' }[state.botSpeed ?? 'normal']}
           </button>
         )}
+        {state.bot && seat && !practice && (
+          <button
+            className={`bot-moves ${settings.instantMoves ? 'on' : ''}`}
+            onClick={() => updateSettings({ instantMoves: !settings.instantMoves })}
+            aria-pressed={settings.instantMoves}
+            title={`${settings.instantMoves ? 'On' : 'Off'}: ${BOT_NAME.replace(/^The /, 'the ')}'s models ${settings.instantMoves ? 'jump straight to where they go' : 'glide to where they go, one at a time'}. Its dice, fights and the rest keep their pace. Click to change.`}
+          >
+            ⚡ Instant moves
+          </button>
+        )}
         <BrokenTags state={state} />
         {scenarioById(state.scenario) && (
           <button className="vp-chip" onClick={() => setBattleTab('scenario')} title={scenarioById(state.scenario)!.name}>
@@ -637,6 +664,7 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
               showTerrainNames={settings.terrainNames}
               marks={marks}
               animate={settings.animations && !reducedMotion}
+              instantFor={state.bot && state.botInstantMoves ? state.bot : undefined}
               role={role}
               onMark={m => conn.mark(m)}
             />

@@ -5,15 +5,14 @@ import { phaseFinished } from '../shared/autoPhase.ts';
 import { breachesLeft } from '../shared/breach.ts';
 import { fightDone } from '../shared/movement.ts';
 import { canDeclare, GOES_FIRST, heroicInfo, heroicNow, heroicsSettled, heroicTurn, HEROICS, mayDeclare, orderRollLabel, orderRollNeeded, phaseHeroics, shoutedFor } from '../shared/heroics.ts';
-import { distanceBetween } from '../shared/geometry.ts';
 import { rulesFor, startingPoints } from '../shared/catalog.ts';
 import { longbeardFor, mayAxeTest, spentPoints, swapPair, trumpetDue } from '../shared/company.ts';
 import { onEdge, reinforceDue } from '../shared/mutton.ts';
-import { tierOf } from '../shared/warbands.ts';
 import { RollRow } from './Panels.tsx';
 import { useDraggable } from './useDraggable.tsx';
 import { useLocked } from './lessonLock.ts';
 import { pendingSpell } from '../shared/magic.ts';
+import { challengeRivals, heroicBlocked } from '../shared/mightUse.ts';
 import { freeResistDice, isAreaPower, isLinePower } from '../shared/powers.ts';
 import { formatInches } from '../shared/geometry.ts';
 import { useCatalog } from './ListBuilder.tsx';
@@ -265,11 +264,12 @@ function HeroicStep({ state, dispatch, role, name }: { state: GameState; dispatc
   const unitOf = (m: Model) => (m.profileId ? catalog?.units[m.profileId] : undefined);
   // Only the heroic actions this hero can call: the universal ones, and the rest if they're on its profile.
   const actions = HEROICS.filter(h => h.phase === state.phase && (!pickedHero || mayDeclare(state, pickedHero, h.name, unitOf(pickedHero)?.heroics, rulesFor(catalog, pickedHero))));
-  const pickedAction = actions.find(a => a.name === action) ?? actions[0];
+  // Those it can't use now (out of range of anything, say) stay on the list, greyed out, with the reason.
+  const blocked = (name: string) => (pickedHero ? heroicBlocked(state, catalog, pickedHero, name) : null);
+  const pickedAction = actions.find(a => a.name === action) ?? actions.find(a => !blocked(a.name)) ?? actions[0];
+  const why = pickedAction ? blocked(pickedAction.name) : null;
   // A Heroic Challenge names an enemy hero within 6", of the same tier or higher.
-  const rivals = pickedHero
-    ? Object.values(state.models).filter(e => e.hero && !e.dead && !e.escaped && !e.waiting && e.owner !== pickedHero.owner && distanceBetween(e, pickedHero) <= 6 && (!unitOf(e) || !unitOf(pickedHero) || tierOf(unitOf(e)) >= tierOf(unitOf(pickedHero))))
-    : [];
+  const rivals = pickedHero ? challengeRivals(state, catalog, pickedHero) : [];
   const pickedRival = rivals.find(e => e.id === target) ?? rivals[0];
   const challenge = pickedAction?.name === 'Heroic Challenge';
   const asked = (state.flow.challenges ?? []).filter(c => c.accepted === undefined && state.models[c.target]?.owner === role);
@@ -321,9 +321,10 @@ function HeroicStep({ state, dispatch, role, name }: { state: GameState; dispatc
                 </select>
                 <select value={pickedAction?.name ?? ''} onChange={e => setAction(e.target.value)} aria-label="Heroic action">
                   {actions.map(a => (
-                    <option key={a.name} value={a.name}>
+                    <option key={a.name} value={a.name} disabled={!!blocked(a.name)}>
                       {a.name}
                       {a.name === 'Heroic Combat' && longshanksFree(state, pickedHero) ? ' (free: to Frodo!)' : ''}
+                      {blocked(a.name) ? ' (can’t use now)' : ''}
                     </option>
                   ))}
                 </select>
@@ -339,6 +340,7 @@ function HeroicStep({ state, dispatch, role, name }: { state: GameState; dispatc
                 )}
               </div>
               {pickedAction && <p className="muted small">{pickedAction.tip}</p>}
+              {why && <p className="warn small">{why} Declaring it would waste the Might.</p>}
               {pickedAction?.name === 'Heroic Combat' && longshanksFree(state, pickedHero) && (
                 <p className="muted small">"Let him go or I'll have you, Longshanks!": no Might needed, but if it wins through {pickedHero.name} must go straight into Frodo's fight.</p>
               )}
@@ -346,7 +348,7 @@ function HeroicStep({ state, dispatch, role, name }: { state: GameState; dispatc
                 <button
                   className="go"
                   {...locked({ type: 'declareHeroic', model: pickedHero.id, action: pickedAction?.name ?? '' })}
-                  disabled={!pickedAction || (challenge && !pickedRival)}
+                  disabled={!pickedAction || !!why || (challenge && !pickedRival)}
                   onClick={() =>
                     pickedAction &&
                     dispatch({ type: 'declareHeroic', model: pickedHero.id, action: pickedAction.name, ...(challenge && pickedRival ? { target: pickedRival.id, cap: startingPoints(catalog, pickedHero)?.might ?? pickedHero.might } : {}) })

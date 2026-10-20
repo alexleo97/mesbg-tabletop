@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { placeSpot, placingNow } from '../shared/placing.ts';
 import { distanceBetween, distanceToBase, formatInches, halfExtents, type Point } from '../shared/geometry.ts';
-import type { Action, GameState, Mark, Model, Seat, Terrain } from '../shared/types.ts';
+import type { Action, GameState, Mark, Model, Seat } from '../shared/types.ts';
 import { markerName, markerNotes } from '../shared/objects.ts';
 import { Effects } from './Effects.tsx';
 import { useLessonLock } from './lessonLock.ts';
@@ -10,9 +10,9 @@ import { ScenarioZones, ZoneArt } from './ScenarioZones.tsx';
 import { zonesNow } from '../shared/deploy.ts';
 import { scenarioById } from '../shared/scenarios.ts';
 import { MATERIALS, textures } from './textures.ts';
-import { TERRAIN_INFO, terrainRules } from '../shared/terrain.ts';
+import { drawLayer, isMarker, TERRAIN_INFO, terrainRules } from '../shared/terrain.ts';
 import { holdInZones } from '../shared/deployment.ts';
-import { frontFirst, leashed, limitMove, moveAllowance, moveLeft, moveStart, movesLimited, RETRACE, retrace, settleMove, spent } from '../shared/movement.ts';
+import { engagements, frontFirst, leashed, limitMove, moveAllowance, moveLeft, moveStart, movesLimited, RETRACE, retrace, settleMove, spent } from '../shared/movement.ts';
 import { dropTarget } from '../shared/terrainTests.ts';
 import { inDifficult, standingAt, insidePolygon, inTheWay, isDifficult, moveCost, outline, shadowPath, sightTo, VINES_REACH } from '../shared/sight.ts';
 import { effectsOn } from '../shared/powers.ts';
@@ -57,12 +57,16 @@ interface Props {
   onMark?: (m: Pick<Mark, 'kind' | 'x' | 'y' | 'x2' | 'y2'>) => void;
   /** Glide moves and show wounds, deaths and shots as they happen. */
   animate?: boolean;
+  /** The seat whose moves are instant (the Palantír's, with Instant moves on): its models skip the glide and flash where they land. */
+  instantFor?: Seat;
   /** Models to zoom in on, such as the fight being rolled; the view glides there each time `key` changes. */
   focus?: { key: string; ids: string[] } | null;
 }
 
 /** How long the table takes to turn a quarter, and how far two fingers twist before the table turns with them. */
 const TURN_GLIDE = 250;
+/** How long a model that moved instantly flashes where it landed. */
+const MOVE_FLASH = 1600;
 const TWIST_START = 12;
 
 /** Room (px) left for the fight card when zooming to a fight, inches of table round it, the closest zoom, and how long the glide takes. */
@@ -169,7 +173,7 @@ const upright = (turn: number, x: number, y: number) => (turn ? `rotate(${-turn}
 
 const clipId = (m: Model) => `clip-${m.base.shape}-${m.base.w}-${m.base.h}`;
 
-export function Board({ state, tool, selected, setSelected, selectedTerrain, setSelectedTerrain, dispatch, showZones, showDeployment, showGrid, photoFor, onModelTap, links, fights, onFightTap, sightFrom, sightRange, showNames, showTerrainNames, marks, onMark, animate, role, focus }: Props) {
+export function Board({ state, tool, selected, setSelected, selectedTerrain, setSelectedTerrain, dispatch, showZones, showDeployment, showGrid, photoFor, onModelTap, links, fights, onFightTap, sightFrom, sightRange, showNames, showTerrainNames, marks, onMark, animate, instantFor, role, focus }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const tex = useMemo(() => textures(), []);
   const [view, setView] = useState<View>({ x: 0, y: 0, s: 10, r: 0 });
@@ -187,6 +191,20 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
     if (tool !== 'measure') setRuler(null);
   }, [tool]);
   const pointers = useRef(new Map<number, Point>());
+  // Models that just jumped to where they went with Instant moves, flashing a moment so you can see what moved.
+  const lastAt = useRef<Record<string, Point>>({});
+  const [flash, setFlash] = useState<Record<string, number>>({});
+  useEffect(() => {
+    const before = lastAt.current;
+    lastAt.current = Object.fromEntries(Object.values(state.models).map(m => [m.id, { x: m.x, y: m.y }]));
+    if (!instantFor) return;
+    const moved = Object.values(state.models).filter(m => m.owner === instantFor && !m.dead && before[m.id] && Math.hypot(m.x - before[m.id].x, m.y - before[m.id].y) > 0.05);
+    if (!moved.length) return;
+    const n = Date.now();
+    setFlash(f => ({ ...f, ...Object.fromEntries(moved.map(m => [m.id, n])) }));
+    // Not cleared when the next model moves: each flash fades on its own time.
+    setTimeout(() => setFlash(f => Object.fromEntries(Object.entries(f).filter(([, at]) => at !== n))), MOVE_FLASH);
+  }, [state.models, instantFor]);
   // A war beast or chariot being pointed where to charge, and the spot it's pointed at.
   const charging = useRef<{ id: string; toward: Point } | null>(null);
   const lastSend = useRef(0);
@@ -194,18 +212,19 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
   // Models that left the table over an edge are off it.
   // (Those riding a war beast are drawn on top of it.)
   const models = useMemo(() => Object.values(state.models).filter(m => !m.dead && !m.escaped && !m.waiting).sort((a, b) => Number(!!a.aboard) - Number(!!b.aboard)), [state.models]);
-  // Roads and water lie on the ground, under everything else; bridges sit on top of the water.
-  const terrain = useMemo(() => {
-    const layer = (k: string) => (k === 'road' ? 0 : k === 'water' ? 1 : k === 'bridge' ? 3 : 2);
-    // A raised stone causeway stands above the ground, its slope drawn under it.
-    // Markers carried off, destroyed, rescued or turned over as decoys are gone (a broken gate stays, in pieces);
-    // carried ones are drawn last.
-    const layerOf = (t: Terrain) => (t.carrier ? 4 : t.kind === 'road' && t.look === 'stone' && t.shape === 'rect' ? 2 : layer(t.kind));
-    return Object.values(state.terrain)
-      .filter(t => !t.gone || t.kind === 'gate' || t.kind === 'tower' || !!t.barricade)
-      .sort((a, b) => layerOf(a) - layerOf(b));
-  }, [state.terrain]);
-  const firstStanding = terrain.findIndex(t => t.kind !== 'road' && t.kind !== 'water');
+  // Roads and water lie on the ground, under everything else; bridges sit on top of the water, and markers on top of all.
+  // Markers carried off, destroyed, rescued or turned over as decoys are gone (a broken gate stays, in pieces).
+  const terrain = useMemo(
+    () =>
+      Object.values(state.terrain)
+        .filter(t => !t.gone || t.kind === 'gate' || t.kind === 'tower' || !!t.barricade)
+        .sort((a, b) => drawLayer(a) - drawLayer(b)),
+    [state.terrain],
+  );
+  const ground = terrain.filter(t => !isMarker(t));
+  const markers = terrain.filter(isMarker);
+  const bridges = ground.filter(t => t.kind === 'bridge');
+  const firstStanding = ground.findIndex(t => t.kind !== 'road' && t.kind !== 'water');
   const viewer = sightFrom ? state.models[sightFrom] : undefined;
   const sight = useMemo(() => {
     if (!viewer || viewer.dead) return null;
@@ -646,6 +665,10 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
   }, [activeRuler, state.models, models]);
 
   const fontSize = Math.max(0.22, 11 / view.s);
+
+  // Who is Engaged in Combat, as the models stand now, so a drag shows the moment a model touches an enemy.
+  const contacts = useMemo(() => (state.flow.started ? engagements(state, models.map(m => (dragPos?.[m.id] ? { ...m, ...dragPos[m.id] } : m))) : []), [state, models, dragPos]);
+  const engagedIds = useMemo(() => new Set(contacts.flatMap(c => [c.a.id, c.b.id])), [contacts]);
   const gridLines = useMemo(() => {
     const lines: React.ReactElement[] = [];
     for (let x = 0; x <= state.board.w; x++)
@@ -675,6 +698,12 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
           <clipPath id="board-clip">
             <rect width={state.board.w} height={state.board.h} />
           </clipPath>
+          <mask id="off-bridges" maskUnits="userSpaceOnUse" x={0} y={0} width={state.board.w} height={state.board.h}>
+            <rect width={state.board.w} height={state.board.h} fill="white" />
+            {bridges.map(t => (
+              <polygon key={t.id} points={outline(t).map(p => `${p.x},${p.y}`).join(' ')} fill="black" />
+            ))}
+          </mask>
           {MATERIALS.map(m => (
             <pattern key={m} id={`tex-${m}`} patternUnits="userSpaceOnUse" width={tex[m].inches} height={tex[m].tall}>
               <image href={tex[m].href} width={tex[m].inches} height={tex[m].tall} preserveAspectRatio="none" />
@@ -690,30 +719,42 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
           <rect className="mat" width={state.board.w} height={state.board.h} fill={`url(#tex-${state.board.mat})`} />
           {showGrid && gridLines}
           <g clipPath="url(#board-clip)">
-          {terrain.map((t, i) => [
+          {ground.map((t, i) => [
             // The fortress's faces go down after the ground (roads and water) and before anything standing on it.
             i === firstStanding && <TerrainFaces key="faces" terrain={terrain} turn={turn} />,
-            t.vines ? (
-              // Writhing Vines: the marker, and the ground around it that is difficult for the other side.
-              <g key={t.id} transform={`translate(${t.x} ${t.y})`} className={`vines ${t.side}`} pointerEvents="none">
-                <circle className="vines-reach" r={VINES_REACH + t.w / 2} />
-                <circle className="vines-marker" r={t.w / 2} />
-              </g>
-            ) : (
-              <g
-                key={t.id}
-                transform={`translate(${towerAt?.id === t.id ? towerAt.x : t.x} ${towerAt?.id === t.id ? towerAt.y : t.y}) rotate(${t.rot})`}
-                className={`terrain ${t.kind} ${t.locked ? 'locked' : ''} ${selectedTerrain === t.id ? 'selected' : ''}`}
-              >
-                <TerrainArt t={t} mat={state.board.mat} turn={turn} />
-              </g>
-            ),
+            <g
+              key={t.id}
+              transform={`translate(${towerAt?.id === t.id ? towerAt.x : t.x} ${towerAt?.id === t.id ? towerAt.y : t.y}) rotate(${t.rot})`}
+              className={`terrain ${t.kind} ${t.locked ? 'locked' : ''} ${selectedTerrain === t.id ? 'selected' : ''}`}
+            >
+              <TerrainArt t={t} mat={state.board.mat} turn={turn} />
+            </g>,
           ])}
           </g>
-          <g clipPath="url(#board-clip)">
-            {terrain.filter(isDifficult).map(t => (
+          {/* Difficult ground is hatched, except where a bridge carries models over it at full speed. */}
+          <g clipPath="url(#board-clip)" mask={bridges.length ? 'url(#off-bridges)' : undefined}>
+            {terrain.filter(t => isDifficult(t) && !isMarker(t)).map(t => (
               <polygon key={`d-${t.id}`} className="difficult" points={outline(t).map(p => `${p.x},${p.y}`).join(' ')} pointerEvents="none" />
             ))}
+          </g>
+          <g clipPath="url(#board-clip)">
+            {markers.map(t =>
+              t.vines ? (
+                // Writhing Vines: the marker, and the ground around it that is difficult for the other side.
+                <g key={t.id} transform={`translate(${t.x} ${t.y})`} className={`vines ${t.side}`} pointerEvents="none">
+                  <circle className="vines-reach" r={VINES_REACH + t.w / 2} />
+                  <circle className="vines-marker" r={t.w / 2} />
+                </g>
+              ) : (
+                <g
+                  key={t.id}
+                  transform={`translate(${t.x} ${t.y}) rotate(${t.rot})`}
+                  className={`terrain ${t.kind} ${t.locked ? 'locked' : ''} ${selectedTerrain === t.id ? 'selected' : ''}`}
+                >
+                  <TerrainArt t={t} mat={state.board.mat} turn={turn} />
+                </g>
+              ),
+            )}
           </g>
           {sight && (
             <g clipPath="url(#board-clip)" pointerEvents="none">
@@ -801,7 +842,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
                 data-model={m.id}
                 // A CSS transform, so models moved by the other player glide to where they went.
                 style={{ transform: `translate(${m.x}px, ${m.y}px) rotate(${m.rot}deg)` }}
-                className={`model ${animate && !dragPos?.[m.id] ? 'glide' : ''} ${m.owner} ${m.hero ? 'hero' : ''} ${selected.has(m.id) ? 'selected' : ''} ${sight?.seen.has(m.id) ? `seen-${sight.seen.get(m.id)}` : ''}`}
+                className={`model ${animate && !dragPos?.[m.id] && m.owner !== instantFor ? 'glide' : ''} ${m.owner} ${m.hero ? 'hero' : ''} ${selected.has(m.id) ? 'selected' : ''} ${sight?.seen.has(m.id) ? `seen-${sight.seen.get(m.id)}` : ''}`}
               >
                 <BaseShape m={m} />
                 {photo && (
@@ -832,7 +873,9 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
                     {initials(m.name)}
                   </text>
                 )}
+                {engagedIds.has(m.id) && <ZoneShape m={m} pad={0.035} className="engaged-ring" />}
                 {sight?.seen.has(m.id) && <ZoneShape m={m} pad={0.12} className="sight-ring" />}
+                {flash[m.id] && <ZoneShape key={flash[m.id]} m={m} pad={0.15} className="moved-flash" />}
                 {/* A power at work on it, and whether it lies Prone. */}
                 {state.flow.started && effectsOn(state, m).length > 0 && <ZoneShape m={m} pad={0.07} className="spell-ring" />}
                 {m.prone && (
@@ -863,6 +906,31 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
                   {t.floors ? ` · ${t.floors + 1} levels` : ''}
                 </text>
               ))}
+          {/* Crossed swords where enemies touch, kept clear of the wounds and names written under each base. */}
+          {contacts.length > 0 && (
+            <g className="engaged-marks" pointerEvents="none">
+              {contacts.map(c => {
+                const r = Math.min(0.32, Math.max(0.16, fontSize * 0.75));
+                const t = (turn * Math.PI) / 180;
+                const down = { x: Math.sin(t), y: Math.cos(t) };
+                const below = [c.a, c.b].some(m => {
+                  const d = Math.hypot(c.at.x - m.x, c.at.y - m.y) || 1;
+                  return ((c.at.x - m.x) * down.x + (c.at.y - m.y) * down.y) / d > 0.7;
+                });
+                const shift = below ? r * 1.6 : 0;
+                const x = c.at.x + shift * Math.cos(t);
+                const y = c.at.y - shift * Math.sin(t);
+                return (
+                  <g key={c.key} className="engaged-mark" transform={`translate(${x} ${y}) rotate(${-turn})`}>
+                    <circle r={r} />
+                    <text textAnchor="middle" dominantBaseline="central" style={{ fontSize: r * 1.25 }}>
+                      ⚔
+                    </text>
+                  </g>
+                );
+              })}
+            </g>
+          )}
           {animate && <Effects state={state} fontSize={fontSize} turn={turn} />}
           {/* Models standing up high show how far up they are. */}
           {models.map(m0 => {

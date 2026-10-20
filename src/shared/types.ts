@@ -306,6 +306,8 @@ export interface GameState {
   bot?: Seat;
   /** How quickly the computer plays its turn: Normal unless set. */
   botSpeed?: BotSpeed;
+  /** The computer's models jump straight to where they go, without a pause after each one; everything else keeps its pace. */
+  botInstantMoves?: boolean;
   /** 'click' when the players move on to the next phase themselves; otherwise a finished phase moves on by itself. */
   advance?: 'click';
   /** The narrative scenario being played, if any (see narrative.ts). */
@@ -796,6 +798,7 @@ export type Action =
   /** The computer takes this seat, or (null) leaves the game to two people again. */
   | { type: 'setBot'; seat: Seat | null }
   | { type: 'setBotSpeed'; speed: BotSpeed }
+  | { type: 'setBotInstantMoves'; on: boolean }
   | { type: 'setAdvance'; click: boolean }
   /** Request from a client: the server rolls a Fate point for a hero's pending wound. */
   | { type: 'rollFate'; id: string }
