@@ -7,7 +7,7 @@ import { gateStanding, HEAVY, ladderable, nearestEdge, overThe, TOWER, towerMove
 import { hurlOptions } from './defenders.ts';
 import { modelStats, rulesFor, type Catalog } from './catalog.ts';
 import { fighterOf } from './wargear.ts';
-import { duelLeader, duelSettled, strikeWounds, woundsTaken, type BrutalAttack, type Fighter, type FightRequest } from './fight.ts';
+import { duelLeader, duelSettled, fightDuel, strikeWounds, woundsTaken, type BrutalAttack, type Fighter, type FightRequest } from './fight.ts';
 import { supporters } from './support.ts';
 import { activeSeat, combats, CONTACT_SLACK, other, type Combat } from './flow.ts';
 import { distanceBetween, halfExtents, mmToIn, type Point } from './geometry.ts';
@@ -1270,16 +1270,8 @@ function woundsFor(ctx: Ctx, group: string): BotStep | null {
 
 /** A fight's duel that has been rolled but not its strikes yet. */
 export function openDuel(state: GameState, c: Combat, since = 0): { group: string; rolls: DiceRoll[] } | null {
-  const ids = new Set([...c.p1, ...c.p2]);
-  for (let i = state.log.length - 1; i >= 0 && i >= state.log.length - 40; i--) {
-    const r = state.log[i];
-    if (!r.group?.startsWith('f-') || r.side === undefined || !r.model || !ids.has(r.model)) continue;
-    if (r.at < since) return null;
-    const rolls = state.log.filter(x => x.group === r.group);
-    const struck = rolls.some(duelSettled);
-    return struck ? null : { group: r.group, rolls };
-  }
-  return null;
+  const duel = fightDuel(state, c.key, since);
+  return duel && !duel.rolls.some(duelSettled) ? duel : null;
 }
 
 /**
