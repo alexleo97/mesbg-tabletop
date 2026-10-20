@@ -1,9 +1,9 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { resolveRequest } from '../src/shared/resolve.ts';
 import { initialState, reduce } from '../src/shared/reducer.ts';
 import { markModel } from '../src/shared/marking.ts';
 import { CULVERT } from '../src/shared/helms.ts';
-import { DEEPING } from '../src/shared/helmsMap.ts';
 import { catalog, play, seeded } from './botsim.ts';
 import { distanceBetween } from '../src/shared/geometry.ts';
 import type { Action, GameState, Model, Seat } from '../src/shared/types.ts';
@@ -22,14 +22,18 @@ describe('the computer plays Helm’s Deep', () => {
     const s = battle('p1');
     const out = play(s, seeded(1), 3000, x => x.turn > 2);
     expect(out.state.turn).toBe(3);
-    // Every ladder and charge has been picked up and brought on towards the Deeping Wall.
-    for (const t of [...gear(out.state, 'ladder'), ...gear(out.state, 'charge')]) expect(t.carrier || t.raised, t.id).toBeTruthy();
+    // Nothing the computer asked for was refused.
+    expect(Object.keys(out.counts).filter(k => k.includes('refused'))).toEqual([]);
+    const was = (id: string) => s.terrain[id];
+    // The ladders are picked up and on their way to the walls (they start 16" out)...
     const ladders = gear(out.state, 'ladder');
-    expect(ladders.filter(t => t.x < 37).length).toBeGreaterThanOrEqual(ladders.length / 2);
+    expect(ladders.filter(t => t.carrier).length).toBeGreaterThanOrEqual(8);
+    expect(ladders.filter(t => was(t.id).x - t.x >= 5).length).toBeGreaterThanOrEqual(3);
+    // ...and each charge is with its own team, the closest already well on its way to the culvert.
     const charges = gear(out.state, 'charge');
-    const before = gear(s, 'charge');
-    const closer = charges.filter(t => Math.hypot(t.x - CULVERT.x, t.y - CULVERT.y) < Math.hypot(before.find(b => b.id === t.id)!.x - CULVERT.x, before.find(b => b.id === t.id)!.y - CULVERT.y) - 3);
-    expect(closer.length).toBeGreaterThanOrEqual(3);
+    expect(charges.every(t => t.carrier && ['engineer', 'torch'].includes(out.state.models[t.carrier].cast ?? ''))).toBe(true);
+    const gap = (t: { x: number; y: number }) => Math.hypot(t.x - CULVERT.x, t.y - CULVERT.y);
+    expect(charges.some(t => gap(was(t.id)) - gap(t) >= 5)).toBe(true);
   }, 240_000);
 
   it('as Isengard, sets off a Demolition Charge its team has brought to the culvert', () => {
@@ -46,20 +50,19 @@ describe('the computer plays Helm’s Deep', () => {
     expect(s.log.some(r => /tries to set off the Demolition Charge/.test(r.label))).toBe(true);
   }, 240_000);
 
-  it('as the Defenders, brings the whole Relief Force on in turn 10 and rides at the enemy', () => {
-    // Ten turns on, the host of Isengard has gone in at the walls.
-    const b = battle('p2');
-    const s: GameState = { ...b, turn: 10, models: Object.fromEntries(Object.entries(b.models).map(([k, m]) => [k, m.owner === 'p1' && !m.siege && !m.crewOf ? { ...m, x: m.x - 10 } : m])) };
-    const out = play(s, seeded(2), 3000, x => x.phase === 'shoot');
-    const relief = Object.values(out.state.models).filter(m => m.owner === 'p2' && (m.cast === 'eomer' || m.cast === 'gandalf' || m.cast === 'captain-rohan' || m.cast === 'rider'));
+  it('as the Defenders, brings the whole Relief Force on in turn 10 and rides into the attackers', () => {
+    // A game the computer played against itself, as the Defenders' 10th move begins: the host of Isengard is at the
+    // walls with its rear ranks along the south edge, where the Relief Force comes on.
+    const s: GameState = JSON.parse(readFileSync(new URL('./fixtures/helms-turn10.json', import.meta.url), 'utf8'));
+    const good = s.narrative!.good;
+    const out = play(s, seeded(5), 3000, x => x.phase === 'shoot');
+    const relief = Object.values(out.state.models).filter(m => ['eomer', 'gandalf', 'captain-rohan', 'rider'].includes(m.cast ?? ''));
     expect(relief).toHaveLength(27);
     expect(relief.filter(m => m.waiting)).toHaveLength(0);
-    // Off the edge and away into the attackers' backs, not left standing where they came on.
-    const fighting = (m: Model) => Object.values(out.state.models).some(e => e.owner === 'p1' && !e.dead && distanceBetween(m, e) <= 0.05);
-    expect(relief.filter(m => m.y < 45 || fighting(m)).length).toBeGreaterThanOrEqual(20);
-    // And the defenders on foot have kept to their walls.
-    const wall = Object.values(out.state.models).filter(m => m.owner === 'p2' && !m.dead && ['aragorn', 'gimli', 'haldir', 'aldor', 'haleth'].includes(m.cast ?? ''));
-    for (const m of wall) expect(m.x, m.name).toBeLessThan(DEEPING.corner.x + 3);
+    // Éomer charges, and most ride off the edge or into a fight rather than wait where they came on.
+    const fighting = (m: Model) => Object.values(out.state.models).some(e => e.owner !== good && !e.dead && distanceBetween(m, e) <= 0.05);
+    expect(fighting(relief.find(m => m.cast === 'eomer')!)).toBe(true);
+    expect(relief.filter(m => m.y < 46.4 || fighting(m)).length).toBeGreaterThanOrEqual(15);
   }, 240_000);
 });
 

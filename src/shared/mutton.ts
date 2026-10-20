@@ -39,18 +39,20 @@ export function entrySpot(state: GameState, m: Model): { x: number; y: number } 
   const foes = near.filter(o => o.owner !== m.owner);
   const len = across ? state.board.w : state.board.h;
   // Clear of other bases and, where it can be, outside every enemy's control zone, so it chooses whether to charge.
+  const clear = (t: number, roomy: boolean) => {
+    const here = { ...m, ...spot(t), rot: facing, waiting: undefined };
+    return !near.some(o => basesOverlap(here, o)) && (!roomy || !foes.some(o => distanceBetween(here, o) < 1));
+  };
   for (const roomy of [true, false]) {
-    const clear = (t: number) => {
-      const here = { ...m, ...spot(t), rot: facing, waiting: undefined };
-      return !near.some(o => basesOverlap(here, o)) && (!roomy || !foes.some(o => distanceBetween(here, o) < 1));
-    };
     for (let d = 0; d <= hi - lo; d += 0.05) {
-      for (const t of d ? [mid - d, mid + d] : [mid]) if (t >= lo + r && t <= hi - r && clear(t)) return spot(t);
+      for (const t of d ? [mid - d, mid + d] : [mid]) if (t >= lo + r && t <= hi - r && clear(t, roomy)) return spot(t);
     }
-    // With no room left along its stretch of the edge, a reinforcement comes on at the nearest clear spot beyond it.
-    if (lo > 0 || hi < len) {
+  }
+  // With no room left along its stretch of the edge, a reinforcement comes on at the nearest clear spot beyond it.
+  if (lo > 0 || hi < len) {
+    for (const roomy of [true, false]) {
       for (let d = 0; d <= len; d += 0.05) {
-        for (const t of [lo - d, hi + d]) if (t >= r && t <= len - r && clear(t)) return spot(t);
+        for (const t of [lo - d, hi + d]) if (t >= r && t <= len - r && clear(t, roomy)) return spot(t);
       }
     }
   }

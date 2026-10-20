@@ -497,6 +497,8 @@ function markerStep(ctx: Ctx, m: Model): BotStep | null {
     // Only its own side's ladders and rams are worth hauling about.
     const object = a.marker ? state.terrain[a.marker] : undefined;
     if (a.kind === 'pickUp' && (object?.object === 'ladder' || object?.object === 'ram') && object.side !== m.owner) continue;
+    // A Demolition Team keeps to its own charge.
+    if (a.kind === 'pickUp' && (object?.object === 'ladder' || object?.object === 'ram') && (m.torch || m.cast === 'engineer')) continue;
     // Rocks and oil are thrown from where they stand.
     if (a.kind === 'pickUp' && (object?.object === 'rocks' || object?.object === 'oil')) continue;
     if (a.kind === 'escape') {
@@ -677,11 +679,18 @@ function assignGoals(ctx: Ctx): Map<string, Goal> {
   if (isHelms(state)) {
     const foes = side(state, other(seat));
     const good = seat === state.narrative?.good;
+    const taken = new Map<string, number>();
     for (const m of ours) {
       if (out.has(m.id)) continue;
       if (good && cavalry(m)) {
-        const foe = [...foes].sort((a, b) => centre(m, a) - (carriedBy(state, a).length ? 20 : 0) - (centre(m, b) - (carriedBy(state, b).length ? 20 : 0)))[0];
-        if (foe) out.set(m.id, { at: { x: foe.x, y: foe.y }, pull: 1.5, bold: true });
+        // Each its own target, so they spread along the enemy's back rather than queue behind the first: the nearest,
+        // the gear carriers first, less any that others are already riding at.
+        const cost = (e: Model) => centre(m, e) - (carriedBy(state, e).length ? 20 : 0) + 4 * (taken.get(e.id) ?? 0);
+        const foe = [...foes].sort((a, b) => cost(a) - cost(b))[0];
+        if (foe) {
+          taken.set(foe.id, (taken.get(foe.id) ?? 0) + 1);
+          out.set(m.id, { at: { x: foe.x, y: foe.y }, pull: 1.5, bold: true });
+        }
       } else if (!good && !m.siege && !m.crewOf && !m.torch && !cavalry(m)) {
         // (Short of the walls until a ladder is up, and clear of the culvert, where the charges are going.)
         const gap = deepingDown(state) ? { x: CULVERT.x - 4, y: CULVERT.y } : undefined;
@@ -759,6 +768,12 @@ function planMove(ctx: Ctx, m: Model, goal: Goal | undefined): Plan | null {
     const sc = scoreFor(ctx, m, s.at, goal, vpBefore);
     if (sc.score > best.score + 0.05) best = { at: s.at, score: sc.score, charge: s.charge };
   }
+  // Riding to the rescue, it doesn't sit where it came on: with nothing better, it rides on as far as it can.
+  if (goal?.bold && centre(best.at, from) < 0.05) {
+    const far = spots.filter(s => centre(s.at, from) >= mv / 2 && fits(ctx, m, s.at, s.charge)).map(s => ({ ...s, score: scoreFor(ctx, m, s.at, goal, vpBefore).score }));
+    const pick = far.sort((a, b) => b.score - a.score)[0];
+    if (pick) best = pick;
+  }
   if (centre(best.at, from) < 0.05) return null;
   const look = best.charge ?? [...enemies].sort((a, b) => centre(best.at, a) - centre(best.at, b))[0];
   return { at: best.at, rot: look ? facing(best.at, look) : m.rot };
@@ -769,13 +784,15 @@ function fits(ctx: Ctx, m: Model, at: Point, charge?: Model): boolean {
   const { state } = ctx;
   const { rx, ry } = halfExtents(m.base);
   if (at.x - rx < 0 || at.y - ry < 0 || at.x + rx > state.board.w || at.y + ry > state.board.h) return false;
-  const here = { ...m, ...at };
+  // (A charger turns to face its target, as the move it is given does: a long base meets it end on.)
+  const here = { ...m, ...at, ...(charge ? { rot: facing(at, charge) } : {}) };
   const r = radius(m);
   for (const o of Object.values(state.models)) {
     if (o.id === m.id || !isUp(o) || Math.abs(o.x - at.x) > 6 || Math.abs(o.y - at.y) > 6) continue;
     // Bases mustn't overlap: round ones by their centres, others by their outlines pulled in a little so touching is fine.
     if (here.base.shape === 'round' && o.base.shape === 'round' ? centre(at, o) < (r + radius(o)) * 0.95 : distanceBetween(shrink(here), shrink(o)) === 0) return false;
-    if (o.owner !== m.owner && o !== charge) {
+    // (Charging one enemy, it may end beside others: it's in the fight, so their control zones no longer hold it.)
+    if (o.owner !== m.owner && !charge) {
       const d = distanceBetween(here, o);
       if (d > CONTACT_SLACK && d < 1) return false;
     }
