@@ -69,6 +69,30 @@ function Points({ label, value, max }: { label: string; value: number; max: numb
 
 const SUMMARIES = RULES as Record<string, string>;
 
+const RULES_KEY = 'mesbg-tabletop:card-rules';
+/** Short lists show by default; once a player opens or hides the rules, the card keeps that choice in this browser. */
+const SHORT_RULES = 2;
+
+function useRulesOpen(count: number): [boolean, (open: boolean) => void] {
+  const [chosen, setChosen] = useState<boolean | null>(() => {
+    try {
+      const v = localStorage.getItem(RULES_KEY);
+      return v === null ? null : v === 'open';
+    } catch {
+      return null;
+    }
+  });
+  const set = (open: boolean) => {
+    setChosen(open);
+    try {
+      localStorage.setItem(RULES_KEY, open ? 'open' : 'closed');
+    } catch {
+      // Storage blocked: the choice lasts until the page reloads.
+    }
+  };
+  return [chosen ?? count <= SHORT_RULES, set];
+}
+
 /** Our summary of a special rule, looked up by its name without the bracketed part ("Hatred (Rohan)" is Hatred). */
 export function ruleSummary(name: string): string | undefined {
   return SUMMARIES[name] ?? SUMMARIES[name.replace(/\s*\(.*$/, '').replace(/\.$/, '').trim()];
@@ -234,6 +258,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
   // This model's own latest roll, while it's still recent, so a hero can spend Might on it here.
   const recent = state.log.slice(-6).reverse().find(r => r.model === m.id);
   const rules = rulesOf(m, catalog);
+  const [rulesOpen, setRulesOpen] = useRulesOpen(rules.length);
   const effects = state.flow.started ? effectNotes(state, catalog, m) : [];
   const held = state.flow.started && state.phase === 'move' ? heldBy(state, m) : null;
 
@@ -362,41 +387,46 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
     );
   }
 
+  // Dragged up the screen, a long card still stops above the bottom edge and scrolls.
+  const dragged = drag.style && { ...drag.style, maxHeight: `max(240px, calc(100% - ${drag.style.top}px - 10px))` };
+
   return (
-    <div ref={drag.ref as Ref<HTMLDivElement>} style={drag.style} className={`model-card ${m.owner}`}>
-      <button className="close" onClick={close} aria-label="Deselect">✕</button>
-      {drag.controls && <span className="model-card-grip">{drag.controls}</span>}
-      <div className={`card-head ${drag.draggable ? 'grab' : ''}`} onPointerDown={drag.onPointerDown}>
-        {photo && !photoFailed ? <img src={photo} alt="" onError={() => setPhotoFailed(true)} /> : <span className="avatar">{m.name.slice(0, 1)}</span>}
-        <div>
-          <b>{m.name}</b>
-          {printed && (
-            <div className="stat-line">
-              {STAT_NAMES.map((k, i) => (
-                <span key={k} title={STAT_TITLES[k]}>
-                  <small>{k}</small>
-                  {printed[i]}
-                </span>
-              ))}
-            </div>
+    <div ref={drag.ref as Ref<HTMLDivElement>} style={dragged} className={`model-card ${m.owner}`}>
+      <div className="card-top">
+        <button className="close" onClick={close} aria-label="Deselect">✕</button>
+        {drag.controls && <span className="model-card-grip">{drag.controls}</span>}
+        <div className={`card-head ${drag.draggable ? 'grab' : ''}`} onPointerDown={drag.onPointerDown}>
+          {photo && !photoFailed ? <img src={photo} alt="" onError={() => setPhotoFailed(true)} /> : <span className="avatar">{m.name.slice(0, 1)}</span>}
+          <div>
+            <b>{m.name}</b>
+            {printed && (
+              <div className="stat-line">
+                {STAT_NAMES.map((k, i) => (
+                  <span key={k} title={STAT_TITLES[k]}>
+                    <small>{k}</small>
+                    {printed[i]}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="row wrap counters">
+          <span className="wound-pips" aria-label={`${m.wounds} of ${m.maxWounds} wounds`}>
+            {Array.from({ length: m.maxWounds }, (_, i) => (
+              <span key={i} className={i < m.wounds ? 'on' : ''}>
+                ♥
+              </span>
+            ))}
+          </span>
+          {m.hero && (
+            <>
+              <Points label="Might" value={m.might} max={start?.might ?? m.might} />
+              <Points label="Will" value={m.will} max={start?.will ?? m.will} />
+              <Points label="Fate" value={m.fate} max={start?.fate ?? m.fate} />
+            </>
           )}
         </div>
-      </div>
-      <div className="row wrap counters">
-        <span className="wound-pips" aria-label={`${m.wounds} of ${m.maxWounds} wounds`}>
-          {Array.from({ length: m.maxWounds }, (_, i) => (
-            <span key={i} className={i < m.wounds ? 'on' : ''}>
-              ♥
-            </span>
-          ))}
-        </span>
-        {m.hero && (
-          <>
-            <Points label="Might" value={m.might} max={start?.might ?? m.might} />
-            <Points label="Will" value={m.will} max={start?.will ?? m.will} />
-            <Points label="Fate" value={m.fate} max={start?.fate ?? m.fate} />
-          </>
-        )}
       </div>
       {building && (
         <div className="floors">
@@ -471,16 +501,6 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
             Make {m.name} put on the Ring
           </button>
         </div>
-      )}
-      {rules.length > 0 && (
-        <dl className="rule-list">
-          {rules.map(r => (
-            <div key={r}>
-              <dt>{r}</dt>
-              <dd>{explain(r) ?? (Object.keys(rulesText).length ? 'No explanation for this rule yet.' : 'Loading…')}</dd>
-            </div>
-          ))}
-        </dl>
       )}
       {m.panned === state.turn && state.flow.started && <p className="warn">{m.name} was stunned by Sam's Frying Pan, so it can't move this turn.</p>}
       {held ? (
@@ -576,6 +596,24 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
         <ol className="log card-roll">
           <RollRow r={recent} state={state} role={role} dispatch={dispatch} />
         </ol>
+      )}
+      {rules.length > 0 && (
+        <div className="card-rules">
+          <button className="rules-toggle" aria-expanded={rulesOpen} onClick={() => setRulesOpen(!rulesOpen)} title={rulesOpen ? 'Hide the special rules' : 'Show what each special rule does'}>
+            <span>{rulesOpen ? '▾' : '▸'} Special rules ({rules.length})</span>
+            {!rulesOpen && <small>{rules.join(', ')}</small>}
+          </button>
+          {rulesOpen && (
+            <dl className="rule-list">
+              {rules.map(r => (
+                <div key={r}>
+                  <dt>{r}</dt>
+                  <dd>{explain(r) ?? (Object.keys(rulesText).length ? 'No explanation for this rule yet.' : 'Loading…')}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+        </div>
       )}
     </div>
   );

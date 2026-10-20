@@ -629,7 +629,21 @@ div.strike-at select { width: auto; flex: 1 1 40%; }
   position: absolute; left: 72px; bottom: 10px; z-index: 4; width: min(380px, calc(100% - 140px));
   background: #26231ff2; border: 1px solid var(--line); border-left: 4px solid var(--muted); border-radius: 12px;
   padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 8px 24px #0008;
+  max-height: calc(100% - 20px); overflow-y: auto; overscroll-behavior: contain;
 }
+.model-card > * { flex-shrink: 0; }
+/* The name, stat line and wounds stay in view while the rest of a long card scrolls under them. */
+.model-card .card-top {
+  position: sticky; top: 0; z-index: 2; display: flex; flex-direction: column; gap: 8px;
+  margin: -10px -12px 0; padding: 10px 12px 6px; background: #26231f; border-radius: 12px 12px 0 0;
+}
+.card-rules { display: flex; flex-direction: column; gap: 4px; }
+.rules-toggle {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; text-align: left;
+  background: transparent; border-color: var(--line); padding: 5px 8px;
+}
+.rules-toggle span { font-weight: 600; font-size: 0.85rem; color: var(--gold); }
+.rules-toggle small { color: var(--muted); font-size: 0.78rem; line-height: 1.3; }
 .model-card.p1 { border-left-color: var(--p1); }
 .model-card.p2 { border-left-color: var(--p2); }
 .model-card .close { position: absolute; top: 6px; right: 6px; width: 32px; min-height: 32px; padding: 0; }
@@ -708,6 +722,7 @@ div.strike-at select { width: auto; flex: 1 1 40%; }
   .tool-rail button { width: 44px; }
   .tool-rail small { display: none; }
   .model-card { left: 6px; right: 6px; width: auto; bottom: 6px; max-height: 48%; overflow-y: auto; padding: 8px 10px; gap: 6px; }
+  .model-card .card-top { margin: -8px -10px 0; padding: 8px 10px 4px; gap: 6px; }
   .model-card .card-head img, .model-card .card-head .avatar { width: 34px; height: 34px; font-size: 1rem; }
   .model-card button { min-height: 34px; padding: 4px 10px; }
   .model-card .rule-chip { min-height: 24px; padding: 0 7px; }
