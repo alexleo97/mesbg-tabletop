@@ -1131,9 +1131,33 @@ select.ready-made {
 
 /* The new battle menu: the narrative menu's cards, with smaller scenario cards in a tighter grid. */
 .battle-menu .pool h3 { margin: 4px 0 6px; font-size: 0.95rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
-.battle-menu .scenario-grid { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
+.battle-menu .scenario-grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
 .battle-menu .scenario-grid .story-card { padding: 8px; }
-.battle-menu .scenario-grid .map-preview { width: 64px; height: 64px; }
+.battle-menu .deploy-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 6px; font-size: 0.82rem; color: var(--muted); }
+.battle-menu .deploy-legend i { display: inline-block; width: 12px; height: 12px; margin-right: 5px; vertical-align: -1px; border-radius: 3px; }
+.battle-menu .deploy-legend .p1 { background: var(--p1); }
+.battle-menu .deploy-legend .p2 { background: var(--p2); }
+.battle-menu .deploy-legend .obj { background: #f2c94c; border: 1.5px solid #1a1a1a; border-radius: 50%; }
+/* Scenario thumbnails: a dark table in every theme, so the two sides' colours and the gold markers always stand out. */
+.deploy-thumb { display: block; width: 96px; height: 96px; flex: none; border-radius: 6px; border: 1.5px solid #8b8576; background: #23251f; }
+.deploy-thumb .dt-table { fill: #2e3129; }
+.deploy-thumb .dt-centre { stroke: #fff; stroke-opacity: 0.25; stroke-width: 0.4; stroke-dasharray: 1.5 1.5; }
+.deploy-thumb .dt-quarter { stroke: #fff; stroke-opacity: 0.7; stroke-width: 0.8; stroke-dasharray: 2 1.5; }
+.deploy-thumb .dt-zone { stroke-width: 1; }
+.deploy-thumb .dt-zone.p1 { fill: var(--p1); fill-opacity: 0.75; stroke: var(--p1); }
+.deploy-thumb .dt-zone.p2 { fill: var(--p2); fill-opacity: 0.75; stroke: var(--p2); }
+.deploy-thumb .dt-zone.either { fill: #fff; fill-opacity: 0.85; stroke: #1a1a1a; stroke-width: 0.6; }
+.deploy-thumb .dt-edge line { stroke-width: 3; stroke-linecap: round; }
+.deploy-thumb .dt-edge.either line { stroke: #f2f0ea; }
+.deploy-thumb .dt-edge.either polygon { fill: #f2f0ea; }
+.deploy-thumb .dt-edge.p1 line { stroke: var(--p1); }
+.deploy-thumb .dt-edge.p1 polygon { fill: var(--p1); }
+.deploy-thumb .dt-edge.p2 line { stroke: var(--p2); }
+.deploy-thumb .dt-edge.p2 polygon { fill: var(--p2); }
+.deploy-thumb .dt-marker { fill: #f2c94c; stroke: #1a1a1a; stroke-width: 0.9; }
+.deploy-thumb .dt-marker.p1 { fill: var(--p1); stroke: #fff; }
+.deploy-thumb .dt-marker.p2 { fill: var(--p2); stroke: #fff; }
+@media (max-width: 600px) { .deploy-thumb { width: 84px; height: 84px; } }
 .battle-menu .scenario-grid .story-text b { font-size: 1rem; }
 .battle-menu .scenario-grid .story-text span, .battle-menu .scenario-grid .story-text small { font-size: 0.82rem; }
 .battle-menu .die-art { width: 64px; height: 64px; flex: none; display: grid; place-items: center; font-size: 2rem; border-radius: 6px; background: var(--panel-2); }
