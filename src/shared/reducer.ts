@@ -3,10 +3,10 @@ import { mounted, mountProfile } from './cavalry.ts';
 import { boardCommanders, carried, howdahFor, howdahSpot } from './warBeasts.ts';
 import { assignCrew, pushers } from './siege.ts';
 import { holdInZones, nearEdge } from './deployment.ts';
-import { canActivate, heroicInfo, heroicNow, heroicQueue, mayActivate, shoutedFor, SHOUT_RANGE } from './heroics.ts';
+import { canActivate, heroicInfo, heroicNow, heroicQueue, mayActivate, shoutedFor } from './heroics.ts';
 import { pendingSpell } from './magic.ts';
 import { basePower, cannotAct, effectActive } from './powers.ts';
-import { basesOverlap, costOf, crowded, engaged as engagedNow, finishCharge, fightsAgain, frontFirst, limitMove, marchedBy, marchRange, moveAllowance, movedAtAll, movedTooFar, moveLeft, moveStart, retrace, RETRACE, spent, testsTerrain } from './movement.ts';
+import { basesOverlap, costOf, crowded, engaged as engagedNow, finishCharge, fightsAgain, frontFirst, leashed, limitMove, moveAllowance, movedAtAll, movedTooFar, moveLeft, moveStart, retrace, RETRACE, spent, testsTerrain } from './movement.ts';
 import { FLOORED, floorHeight, flooredAt, insidePolygon, isDifficult, outline } from './sight.ts';
 import { cleanPausedShot, woundsTaken } from './fight.ts';
 import { pairOff } from './flow.ts';
@@ -521,18 +521,6 @@ function cleanPause(p: { group?: unknown; shot?: unknown }): Flow['shotPause'] {
 }
 
 /**
- * The hero a model must stay within 6" of as it moves: the one whose With Me it is going with, or whose At the
- * Double it is marching to.
- */
-function followed(state: GameState, m: Model, heroic: string | undefined): Model | undefined {
-  const hero = heroic ? state.models[heroic] : undefined;
-  if (hero && hero.id !== m.id && hero.owner === m.owner && shoutedFor(state, hero).some(f => f.id === m.id)) return hero;
-  const march = marchedBy(state, m);
-  return march && march.id !== m.id ? march : undefined;
-}
-
-/** Where a move from `from` towards `to` has to stop to end within 6" of `leader`: `to`, or the last point along the way that is. */
-/**
  * Pushes (or turns) a siege engine in the Move phase, with the friends beside it: up to the Move of the slowest of
  * them, and never into difficult ground or over a barrier. Those pushing it go along with it.
  */
@@ -572,16 +560,9 @@ function pushEngine(state: GameState, engine: Model, mv: { x?: unknown; y?: unkn
   return { models, starts, turned };
 }
 
-function keepNear(m: Model, from: { x: number; y: number }, to: { x: number; y: number }, leader: Model): { x: number; y: number } {
-  const near = (p: { x: number; y: number }) => distanceBetween({ ...m, ...p }, leader) <= Math.max(SHOUT_RANGE, marchRange(leader)) + 1e-6;
-  if (near(to)) return to;
-  for (let i = 1; i <= 50; i++) {
-    const f = 1 - i / 50;
-    const p = { x: from.x + (to.x - from.x) * f, y: from.y + (to.y - from.y) * f };
-    if (near(p)) return p;
-  }
-  return { x: m.x, y: m.y };
-}
+/** The most turns a model's trail this phase keeps: its first point (where it began), then the latest ones. */
+const TRAIL_POINTS = 200;
+const capTrail = (t: [number, number][]) => (t.length > TRAIL_POINTS ? [t[0], ...t.slice(1 - TRAIL_POINTS)] : t);
 
 /** Takes wounds off a model, removing it as a casualty when none are left. */
 function takeWounds(m: Model, n: number): Model {
@@ -747,22 +728,20 @@ function step(state: GameState, action: Action): GameState {
           to = back ? from : undone ? undone.at : limitMove(now, here, to, Math.max(0, allowance - spent(state, prev)), prev.owner, prev, undefined, !arriving);
           // A model that stops inside an enemy's control zone is charging it: it must reach base contact, or stay out.
           if ((state.phase === 'move' || fightsAgain(state, prev)) && !arriving) to = finishCharge(now, prev, here, to);
-          // A friend going with a hero (With Me, or At the Double) must end within 6" of it.
-          const leader = state.phase === 'move' ? followed(state, prev, heroicStarted) : undefined;
-          if (leader && !together.has(leader.id)) to = keepNear(prev, from, to, leader);
-          // A siege crew never goes more than 6" from its engine while it stands.
-          const home = prev.crewOf ? models[prev.crewOf] : undefined;
-          if (home && !home.dead) to = keepNear(prev, from, to, home);
+          // A friend going with a hero (With Me, or At the Double) must end within 6" of it, and a siege crew within 6"
+          // of its engine while it stands. (Going back the way it came, or back where it began, always is allowed: the
+          // hero may have gone on since.)
+          if (!back && !undone) to = leashed(state, prev, here, to, together, heroicStarted, models);
           // A model that threw a weapon as it charged goes on into contact with its target, unless the throw slew it.
           const must = state.flow.mustCharge?.model === prev.id ? state.models[state.flow.mustCharge.target] : undefined;
           if (must && !must.dead && !inContact(state, { ...prev, ...to }, must)) to = { x: prev.x, y: prev.y };
           if (!starts?.[prev.id]) starts = { ...starts, [prev.id]: [from.x, from.y] };
           walked = { ...walked, [prev.id]: back ? 0 : undone ? undone.trail.slice(1).reduce((n, p, i) => n + costOf(state, prev, { x: undone.trail[i][0], y: undone.trail[i][1] }, { x: p[0], y: p[1] }), 0) : spent(state, prev) + costOf(state, prev, here, to) };
-          // Its trail keeps a point where it turned (a straight run just stretches the last leg), up to 40 of them.
+          // Its trail keeps a point where it turned (a straight run just stretches the last leg), and always where it began.
           const trail: [number, number][] = back ? [] : undone ? undone.trail.slice(0, -1) : (paths?.[prev.id] ?? [[from.x, from.y]]);
           const [a, b] = [trail.at(-2), trail.at(-1)];
           const straight = a && b && Math.abs((b[0] - a[0]) * (to.y - b[1]) - (b[1] - a[1]) * (to.x - b[0])) < 0.05 * Math.hypot(b[0] - a[0], b[1] - a[1]);
-          paths = { ...paths, [prev.id]: back ? [] : [...(straight ? trail.slice(0, -1) : trail), [to.x, to.y] as [number, number]].slice(-40) };
+          paths = { ...paths, [prev.id]: back ? [] : capTrail([...(straight ? trail.slice(0, -1) : trail), [to.x, to.y] as [number, number]]) };
           // Stopped at terrain that needs a test: remember it, so the model's card can offer the test.
           if (testsTerrain(state, prev)) {
             // (Looking from where this drag set off, not where the phase began: a move is often made in several drags.)
@@ -1658,7 +1637,7 @@ export function loadState(raw: unknown): GameState {
         lastHeroic: isSeat(f.lastHeroic) ? f.lastHeroic : null,
         ...(Number.isFinite(f.startedAt) ? { startedAt: Number(f.startedAt) } : {}),
         ...(f.starts ? { starts: cleanStarts(f.starts) } : {}),
-        ...(f.paths && typeof f.paths === 'object' ? { paths: Object.fromEntries(Object.entries(f.paths).slice(0, 400).filter(([, v]) => Array.isArray(v)).map(([k, v]) => [k.slice(0, 80), (v as unknown[]).slice(-40).filter(Array.isArray).map(q => [num((q as unknown[])[0], -24, 200, 0), num((q as unknown[])[1], -24, 200, 0)] as [number, number])])) } : {}),
+        ...(f.paths && typeof f.paths === 'object' ? { paths: Object.fromEntries(Object.entries(f.paths).slice(0, 400).filter(([, v]) => Array.isArray(v)).map(([k, v]) => [k.slice(0, 80), capTrail((v as unknown[]).filter(Array.isArray).map(q => [num((q as unknown[])[0], -24, 200, 0), num((q as unknown[])[1], -24, 200, 0)] as [number, number]))])) } : {}),
         ...(f.walked && typeof f.walked === 'object' ? { walked: Object.fromEntries(Object.entries(f.walked).slice(0, 400).map(([k, v]) => [k.slice(0, 80), num(v, 0, 100, 0)])) } : {}),
         ...(f.courage && typeof f.courage === 'object' ? { courage: Object.fromEntries(Object.entries(f.courage).slice(0, 400).map(([k, v]) => [k.slice(0, 80), v === true])) } : {}),
         ...(f.braved ? { braved: seats(f.braved) } : {}),

@@ -3,7 +3,7 @@ import { distanceBetween, halfExtents, MM_PER_INCH, mmToIn, type Point } from '.
 import { flooredAt, heightOfModel, moveCost, sightTo } from './sight.ts';
 import { overWallSpot, reaches, secondAttacker, touching, wallBetween } from './barriers.ts';
 import { combatFromKey, CONTACT_SLACK, type Combat } from './flow.ts';
-import { canActivate, phaseHeroics } from './heroics.ts';
+import { canActivate, phaseHeroics, shoutedFor, SHOUT_RANGE } from './heroics.ts';
 import { cannotAct } from './powers.ts';
 import { laden, overlapsPiece, shutGates } from './fortress.ts';
 import { crossingAhead } from './terrainTests.ts';
@@ -74,6 +74,45 @@ export function marchedBy(state: GameState, m: Model): Model | undefined {
     if (hero.id === m.id || Math.hypot(moveStart(state, hero).x - start.x, moveStart(state, hero).y - start.y) <= marchRange(hero) + (mmToIn(hero.base.w) + mmToIn(m.base.w)) / 2) return hero;
   }
   return undefined;
+}
+
+/**
+ * The hero a model must stay within 6" of as it moves: the one whose With Me it is going with (`heroic`, the hero
+ * whose heroic move is under way), or whose At the Double it is marching to.
+ */
+export function followed(state: GameState, m: Model, heroic = state.flow.heroicNow): Model | undefined {
+  const hero = heroic ? state.models[heroic] : undefined;
+  if (hero && hero.id !== m.id && hero.owner === m.owner && shoutedFor(state, hero).some(f => f.id === m.id)) return hero;
+  const march = marchedBy(state, m);
+  return march && march.id !== m.id ? march : undefined;
+}
+
+/**
+ * Where a move from `here` (where the model is now) towards `to` has to stop to end within 6" of `leader`: `to`, or
+ * the last point along that way that is. A model already further off (its hero went on ahead) may still close in.
+ */
+export function keepNear(m: Model, here: Point, to: Point, leader: Model): Point {
+  const gap = (p: Point) => distanceBetween({ ...m, ...p }, leader);
+  const near = (p: Point) => gap(p) <= Math.max(SHOUT_RANGE, marchRange(leader)) + 1e-6;
+  if (near(to) || gap(to) <= gap(here) + 1e-6) return to;
+  for (let i = 1; i <= 50; i++) {
+    const f = 1 - i / 50;
+    const p = { x: here.x + (to.x - here.x) * f, y: here.y + (to.y - here.y) * f };
+    if (near(p)) return p;
+  }
+  return here;
+}
+
+/**
+ * Where a move on from `here` to `to` ends once the model keeps within 6" of the hero it goes with (unless that hero
+ * is being moved with it), and a siege crew within 6" of its engine (where `models` has it now).
+ */
+export function leashed(state: GameState, m: Model, here: Point, to: Point, together: ReadonlySet<string>, heroic = state.flow.heroicNow, models = state.models): Point {
+  const leader = state.phase === 'move' ? followed(state, m, heroic) : undefined;
+  if (leader && !together.has(leader.id)) to = keepNear(m, here, to, leader);
+  const home = m.crewOf ? models[m.crewOf] : undefined;
+  if (home && !home.dead) to = keepNear(m, here, to, home);
+  return to;
 }
 
 /** How far (in inches) two bases may run into each other and still count as touching rather than overlapping. */
@@ -337,14 +376,18 @@ export const RETRACE = 0.4;
  */
 export function retrace(trail: [number, number][] | undefined, to: Point): { at: Point; trail: [number, number][] } | null {
   if (!trail || trail.length < 2) return null;
+  // How far back along the trail each of its points is from where the model is now.
+  const behind: number[] = trail.map(() => 0);
+  for (let i = trail.length - 2; i >= 0; i--) behind[i] = behind[i + 1] + Math.hypot(trail[i + 1][0] - trail[i][0], trail[i + 1][1] - trail[i][1]);
   for (let i = 0; i < trail.length - 1; i++) {
     const [ax, ay] = trail[i];
     const [bx, by] = trail[i + 1];
     const len2 = (bx - ax) ** 2 + (by - ay) ** 2;
     const t = len2 ? Math.max(0, Math.min(1, ((to.x - ax) * (bx - ax) + (to.y - ay) * (by - ay)) / len2)) : 0;
     const at = { x: ax + t * (bx - ax), y: ay + t * (by - ay) };
-    // (Near the far end of the last leg is near where the model is now: a nudge from there, not a step back.)
-    if (i === trail.length - 2 && Math.hypot(at.x - bx, at.y - by) < RETRACE) continue;
+    // (The last bit of the way, even round a bend made of many short legs, is near where the model is now: a drag on
+    // from there is a nudge, not a step back.)
+    if (behind[i + 1] + Math.hypot(at.x - bx, at.y - by) < RETRACE) continue;
     if (Math.hypot(to.x - at.x, to.y - at.y) <= RETRACE) return { at, trail: [...trail.slice(0, i + 1), [at.x, at.y]] };
   }
   return null;
