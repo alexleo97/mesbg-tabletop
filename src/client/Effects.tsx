@@ -26,7 +26,7 @@ function shotResult(state: GameState, group: string): { result: string; hit: boo
 }
 
 /** The effects layer, drawn over the models. */
-export function Effects({ state, fontSize }: { state: GameState; fontSize: number }) {
+export function Effects({ state, fontSize, turn = 0 }: { state: GameState; fontSize: number; /** How far the table is turned, so the writing stays upright. */ turn?: number }) {
   const [effects, setEffects] = useState<Effect[]>([]);
   const prev = useRef<Record<string, Model> | null>(null);
   const seenLog = useRef<Set<string> | null>(null);
@@ -85,9 +85,12 @@ export function Effects({ state, fontSize }: { state: GameState; fontSize: numbe
           return (
             <g key={e.id} className={`fx-hit ${e.owner}`} transform={`translate(${e.x} ${e.y})`}>
               <circle className="fx-flash" r={0.6} />
-              <text className="fx-float" textAnchor="middle" style={{ fontSize: fontSize * 1.4 }}>
-                −{e.n}
-              </text>
+              {/* The writing floats up the screen, so it sits in a group turned upright. */}
+              <g transform={`rotate(${-turn})`}>
+                <text className="fx-float" textAnchor="middle" style={{ fontSize: fontSize * 1.4 }}>
+                  −{e.n}
+                </text>
+              </g>
             </g>
           );
         if (e.kind === 'slain') {
@@ -97,9 +100,11 @@ export function Effects({ state, fontSize }: { state: GameState; fontSize: numbe
               <g className="fx-fall">
                 <ellipse rx={rx} ry={ry} />
               </g>
-              <text className="fx-float" textAnchor="middle" y={-ry} style={{ fontSize: fontSize * 1.2 }}>
-                ✝ Slain
-              </text>
+              <g transform={`rotate(${-turn})`}>
+                <text className="fx-float" textAnchor="middle" y={-Math.max(rx, ry)} style={{ fontSize: fontSize * 1.2 }}>
+                  ✝ Slain
+                </text>
+              </g>
             </g>
           );
         }
@@ -107,9 +112,11 @@ export function Effects({ state, fontSize }: { state: GameState; fontSize: numbe
         return (
           <g key={e.id} className={`fx-shot ${e.hit ? 'hit' : 'miss'}`}>
             <line x1={e.from.x} y1={e.from.y} x2={e.to.x} y2={e.to.y} style={{ strokeDasharray: `1.2 ${len + 2}`, ['--len' as string]: `${-(len + 1.2)}` }} />
-            <text className="fx-result" x={e.to.x} y={e.to.y - 0.8} textAnchor="middle" style={{ fontSize: fontSize * 1.2 }}>
-              {e.result}
-            </text>
+            <g transform={turn ? `rotate(${-turn} ${e.to.x} ${e.to.y})` : undefined}>
+              <text className="fx-result" x={e.to.x} y={e.to.y - 0.8} textAnchor="middle" style={{ fontSize: fontSize * 1.2 }}>
+                {e.result}
+              </text>
+            </g>
           </g>
         );
       })}

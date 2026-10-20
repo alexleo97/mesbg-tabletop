@@ -209,7 +209,7 @@ function ruinWalls(t: Terrain): ReactElement[] {
   return out;
 }
 
-export function TerrainArt({ t, mat }: { t: Terrain; mat: Mat }) {
+export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How far the table is turned, so a marker's letter stays upright. */ turn?: number }) {
   const d = outline(t);
   const tex = `url(#tex-${MATERIAL[t.kind]})`;
 
@@ -454,7 +454,7 @@ export function TerrainArt({ t, mat }: { t: Terrain; mat: Mat }) {
           <circle className="ground objective" r={t.w / 2} filter="url(#hard-shadow)" />
           <circle className="objective-ring" r={t.w / 2 - 0.08} />
           {t.object ? (
-            <text className={`objective-glyph ${t.side ?? ''}`} fontSize={t.w * 0.62} textAnchor="middle" dominantBaseline="central">
+            <text className={`objective-glyph ${t.side ?? ''}`} fontSize={t.w * 0.62} textAnchor="middle" dominantBaseline="central" transform={turn ? `rotate(${-turn})` : undefined}>
               {t.hidden ? '?' : GLYPHS[t.object]}
             </text>
           ) : (

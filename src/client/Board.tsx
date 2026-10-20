@@ -16,6 +16,7 @@ import { inDifficult, standingAt, insidePolygon, inTheWay, isDifficult, moveCost
 import { effectsOn } from '../shared/powers.ts';
 import { carried, drive, riders } from '../shared/warBeasts.ts';
 import { mounted, mountProfile } from '../shared/cavalry.ts';
+import { fitView, homeTurn, snapTurn, toScreen, toTable, viewAt, wrapTurn, type View } from './view.ts';
 
 export type Tool = 'move' | 'select' | 'measure' | 'mark';
 
@@ -58,17 +59,15 @@ interface Props {
   focus?: { key: string; ids: string[] } | null;
 }
 
+/** How long the table takes to turn a quarter, and how far two fingers twist before the table turns with them. */
+const TURN_GLIDE = 250;
+const TWIST_START = 12;
+
 /** Room (px) left for the fight card when zooming to a fight, inches of table round it, the closest zoom, and how long the glide takes. */
 const FOCUS_INSET = 480;
 const FOCUS_PAD = 5;
 const FOCUS_MAX_ZOOM = 45;
 const FOCUS_GLIDE = 600;
-
-interface View {
-  x: number;
-  y: number;
-  s: number; // pixels per inch
-}
 
 type Gesture =
   | { kind: 'pan'; start: Point; view: View; moved: boolean }
@@ -77,7 +76,7 @@ type Gesture =
   | { kind: 'box'; start: Point; end: Point; additive: boolean }
   | { kind: 'measure'; start: Point; end: Point; from?: string }
   | { kind: 'mark'; start: Point; end: Point }
-  | { kind: 'pinch'; dist: number; mid: Point; view: View };
+  | { kind: 'pinch'; dist: number; mid: Point; angle: number; twisting: boolean; view: View };
 
 const SEND_EVERY_MS = 60;
 const TAP_SLOP_PX = 6;
@@ -146,7 +145,7 @@ function BaseShape({ m, className = 'base', grow = 0 }: { m: Model; className?: 
 }
 
 /** A planning arrow in its player's colour, with how far it reaches. */
-function Arrow({ by, from, to, fontSize }: { by: string; from: Point; to: Point; fontSize: number }) {
+function Arrow({ by, from, to, fontSize, turn }: { by: string; from: Point; to: Point; fontSize: number; turn: number }) {
   const len = Math.hypot(to.x - from.x, to.y - from.y);
   const head = Math.min(len * 0.4, Math.max(1, fontSize * 1.8));
   const a = Math.atan2(to.y - from.y, to.x - from.x);
@@ -156,19 +155,23 @@ function Arrow({ by, from, to, fontSize }: { by: string; from: Point; to: Point;
     <g className={`arrow ${by}`}>
       <line x1={from.x} y1={from.y} x2={neck.x} y2={neck.y} />
       <polygon points={`${to.x},${to.y} ${wing(1)} ${wing(-1)}`} />
-      <text x={(from.x + to.x) / 2} y={(from.y + to.y) / 2 - fontSize * 0.6} textAnchor="middle">
+      <text x={(from.x + to.x) / 2} y={(from.y + to.y) / 2 - fontSize * 0.6} textAnchor="middle" transform={upright(turn, (from.x + to.x) / 2, (from.y + to.y) / 2)}>
         {formatInches(len)}
       </text>
     </g>
   );
 }
 
+/** Turns writing back upright about a point on the table, so it reads the right way up however the table is turned. */
+const upright = (turn: number, x: number, y: number) => (turn ? `rotate(${-turn} ${x} ${y})` : undefined);
+
 const clipId = (m: Model) => `clip-${m.base.shape}-${m.base.w}-${m.base.h}`;
 
 export function Board({ state, tool, selected, setSelected, selectedTerrain, setSelectedTerrain, dispatch, showZones, showDeployment, showGrid, photoFor, onModelTap, links, fights, onFightTap, sightFrom, sightRange, showNames, showTerrainNames, marks, onMark, animate, role, focus }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const tex = useMemo(() => textures(), []);
-  const [view, setView] = useState<View>({ x: 0, y: 0, s: 10 });
+  const [view, setView] = useState<View>({ x: 0, y: 0, s: 10, r: 0 });
+  const turn = view.r;
   const [gesture, setGesture] = useState<Gesture | null>(null);
   const [dragPos, setDragPos] = useState<Record<string, Point> | null>(null);
   // A siege tower being pushed: shown where it is dragged, and only sent (as a push) when let go.
@@ -208,52 +211,85 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
   }, [viewer, state]);
   const heroicIds = useMemo(() => new Set(state.flow.heroics.map(h => h.model)), [state.flow.heroics]);
 
-  const fit = useCallback(() => {
-    const el = svgRef.current;
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    const pad = 16;
-    const s = Math.min((r.width - pad * 2) / state.board.w, (r.height - pad * 2) / state.board.h);
-    setView({ s, x: (r.width - state.board.w * s) / 2, y: (r.height - state.board.h * s) / 2 });
-  }, [state.board.w, state.board.h]);
-
-  // Fit the table to the screen at first, and again whenever its size changes (a narrative scenario sets its own).
-  useLayoutEffect(() => {
-    fit();
-  }, [fit]);
-
-  // Glide to the models in focus, leaving room on the left for the card that shows their fight.
   const viewRef = useRef(view);
   viewRef.current = view;
+  // Any glide under way (to a fight, or a quarter turn), stopped when another starts or you take hold of the table.
+  const glide = useRef(0);
+  const stopGlide = () => cancelAnimationFrame(glide.current);
+
+  /** Fit the whole table on screen, turned as it is now (or to `r`). */
+  const fit = useCallback(
+    (r: number = viewRef.current.r) => {
+      const el = svgRef.current;
+      if (!el) return;
+      stopGlide();
+      const b = el.getBoundingClientRect();
+      setView(fitView(state.board, b.width, b.height, r));
+    },
+    [state.board.w, state.board.h],
+  );
+
+  // You look at the table from your own side, your army at the bottom of the screen as if standing at a real table
+  // (spectators from the first player's). Set again, with the table fitted, when the table, the scenario or your seat
+  // changes, or once your army first appears where the scenario has no zones to go by.
+  const seat: Seat = role === 'p2' ? 'p2' : 'p1';
+  const hasArmy = models.some(m => m.owner === seat);
+  useLayoutEffect(() => {
+    fit(homeTurn(state, seat));
+  }, [fit, seat, state.scenario, hasArmy]);
+
+  /** Glide the view to `to` (from where it is now, turning the shorter way round). */
+  const glideTo = (to: (k: number, from: View) => View, ms: number) => {
+    stopGlide();
+    const from = viewRef.current;
+    const start = performance.now();
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / ms);
+      setView(to(t * t * (3 - 2 * t), from));
+      if (t < 1) glide.current = requestAnimationFrame(tick);
+    };
+    glide.current = requestAnimationFrame(tick);
+  };
+
+  /** Turn the table by `d` degrees about the middle of the screen. */
+  const turnBy = (d: number) => {
+    const el = svgRef.current;
+    if (!el) return;
+    const b = el.getBoundingClientRect();
+    const mid = { x: b.width / 2, y: b.height / 2 };
+    const from = viewRef.current;
+    const at = toTable(from, mid);
+    // Turning a quarter lands square, even after a free twist.
+    const target = Math.abs(d) === 90 ? Math.round((from.r + d) / 90) * 90 : from.r + d;
+    glideTo((k, v) => viewAt(at, mid, v.s, v.r + (target - v.r) * k), TURN_GLIDE);
+  };
+
+  // Glide to the models in focus, leaving room on the left for the card that shows their fight.
   useEffect(() => {
     const el = svgRef.current;
     const ms = (focus?.ids ?? []).map(id => state.models[id]).filter(m => m && !m.dead);
     if (!el || !focus || !ms.length) return;
     const r = el.getBoundingClientRect();
     const left = r.width > 900 ? FOCUS_INSET : 0;
-    const x0 = Math.min(...ms.map(m => m.x)) - FOCUS_PAD;
-    const x1 = Math.max(...ms.map(m => m.x)) + FOCUS_PAD;
-    const y0 = Math.min(...ms.map(m => m.y)) - FOCUS_PAD;
-    const y1 = Math.max(...ms.map(m => m.y)) + FOCUS_PAD;
+    // Measured across and down the screen, however the table is turned.
+    const cur = viewRef.current;
+    const flat = ms.map(m => toScreen({ x: 0, y: 0, s: 1, r: cur.r }, m));
+    const x0 = Math.min(...flat.map(p => p.x)) - FOCUS_PAD;
+    const x1 = Math.max(...flat.map(p => p.x)) + FOCUS_PAD;
+    const y0 = Math.min(...flat.map(p => p.y)) - FOCUS_PAD;
+    const y1 = Math.max(...flat.map(p => p.y)) + FOCUS_PAD;
     const s = Math.min(FOCUS_MAX_ZOOM, (r.width - left) / (x1 - x0), r.height / (y1 - y0));
-    const to = { s, x: left + (r.width - left) / 2 - ((x0 + x1) / 2) * s, y: r.height / 2 - ((y0 + y1) / 2) * s };
-    const from = viewRef.current;
-    const start = performance.now();
-    let frame = 0;
-    const tick = (now: number) => {
-      const t = Math.min(1, (now - start) / FOCUS_GLIDE);
-      const k = t * t * (3 - 2 * t);
-      setView({ s: from.s + (to.s - from.s) * k, x: from.x + (to.x - from.x) * k, y: from.y + (to.y - from.y) * k });
-      if (t < 1) frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
+    const centre = toTable({ x: 0, y: 0, s: 1, r: cur.r }, { x: (x0 + x1) / 2, y: (y0 + y1) / 2 });
+    const to = viewAt(centre, { x: left + (r.width - left) / 2, y: r.height / 2 }, s, cur.r);
+    glideTo((k, from) => ({ s: from.s + (to.s - from.s) * k, x: from.x + (to.x - from.x) * k, y: from.y + (to.y - from.y) * k, r: from.r }), FOCUS_GLIDE);
+    return stopGlide;
   }, [focus?.key]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
       if (e.key === 'f') fit();
+      if (e.key === 'r' || e.key === 'R') turnBy(e.key === 'R' ? -90 : 90);
       if ((e.key === 'q' || e.key === 'e') && selected.size) {
         const d = e.key === 'q' ? -45 : 45;
         dispatch({ type: 'moveModels', moves: [...selected].flatMap(id => {
@@ -273,7 +309,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
   const toBoard = useCallback(
     (clientX: number, clientY: number, v: View = view): Point => {
       const r = svgRef.current!.getBoundingClientRect();
-      return { x: (clientX - r.left - v.x) / v.s, y: (clientY - r.top - v.y) / v.s };
+      return toTable(v, { x: clientX - r.left, y: clientY - r.top });
     },
     [view],
   );
@@ -281,7 +317,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
   const zoomAt = useCallback((factor: number, sx: number, sy: number, base: View) => {
     const s = Math.min(200, Math.max(3, base.s * factor));
     const k = s / base.s;
-    setView({ s, x: sx - (sx - base.x) * k, y: sy - (sy - base.y) * k });
+    setView({ ...base, s, x: sx - (sx - base.x) * k, y: sy - (sy - base.y) * k });
   }, []);
 
   useEffect(() => {
@@ -289,13 +325,19 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
+      cancelAnimationFrame(glide.current);
       const r = el.getBoundingClientRect();
+      const q = { x: e.clientX - r.left, y: e.clientY - r.top };
+      // Shift and the wheel turns the table freely about the pointer (some browsers send it sideways).
+      if (e.shiftKey)
+        return setView(v => {
+          const r2 = v.r + (e.deltaY || e.deltaX) * 0.15;
+          return viewAt(toTable(v, q), q, v.s, r2);
+        });
       setView(v => {
         const s = Math.min(200, Math.max(3, v.s * Math.exp(-e.deltaY * 0.0015)));
         const k = s / v.s;
-        const sx = e.clientX - r.left;
-        const sy = e.clientY - r.top;
-        return { s, x: sx - (sx - v.x) * k, y: sy - (sy - v.y) * k };
+        return { ...v, s, x: q.x - (q.x - v.x) * k, y: q.y - (q.y - v.y) * k };
       });
     };
     el.addEventListener('wheel', onWheel, { passive: false });
@@ -336,13 +378,14 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
     setHover(null);
     const r = svgRef.current!.getBoundingClientRect();
     pointers.current.set(e.pointerId, { x: e.clientX - r.left, y: e.clientY - r.top });
+    stopGlide();
 
     if (pointers.current.size === 2) {
       // Second finger: switch to pinch-zoom and drop whatever the first finger started.
       if (gesture?.kind === 'drag' && dragPos) sendMoves(dragPos, true);
       setDragPos(null);
       const [a, b] = [...pointers.current.values()];
-      setGesture({ kind: 'pinch', dist: Math.hypot(a.x - b.x, a.y - b.y), mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, view });
+      setGesture({ kind: 'pinch', dist: Math.hypot(a.x - b.x, a.y - b.y), mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, angle: Math.atan2(b.y - a.y, b.x - a.x), twisting: false, view });
       return;
     }
     if (pointers.current.size > 2) return;
@@ -420,8 +463,11 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
       const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
       const v = gesture.view;
       const s = Math.min(200, Math.max(3, v.s * (dist / gesture.dist)));
-      const k = s / v.s;
-      setView({ s, x: mid.x - (gesture.mid.x - v.x) * k, y: mid.y - (gesture.mid.y - v.y) * k });
+      // Twisting two fingers turns the table with them, once they have twisted far enough to mean it.
+      const twist = wrapTurn(((Math.atan2(b.y - a.y, b.x - a.x) - gesture.angle) * 180) / Math.PI);
+      const twisting = gesture.twisting || Math.abs(twist) > TWIST_START;
+      if (twisting && !gesture.twisting) setGesture({ ...gesture, twisting });
+      setView(viewAt(toTable(v, gesture.mid), mid, s, v.r + (twisting ? twist : 0)));
       return;
     }
     if (gesture.kind === 'pan') {
@@ -496,7 +542,17 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
     pointers.current.delete(e.pointerId);
     if (!gesture) return;
     if (gesture.kind === 'pinch') {
-      if (pointers.current.size === 0) setGesture(null);
+      if (pointers.current.size === 0) {
+        setGesture(null);
+        // A twist that ends nearly square settles square, about the middle of the screen.
+        const v = viewRef.current;
+        const r = snapTurn(v.r);
+        if (gesture.twisting && r !== v.r) {
+          const b = svgRef.current!.getBoundingClientRect();
+          const mid = { x: b.width / 2, y: b.height / 2 };
+          setView(viewAt(toTable(v, mid), mid, v.s, r));
+        }
+      }
       return;
     }
     const p = toBoard(e.clientX, e.clientY);
@@ -611,7 +667,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
             </clipPath>
           ))}
         </defs>
-        <g transform={`translate(${view.x} ${view.y}) scale(${view.s})`} style={{ fontSize }}>
+        <g transform={`translate(${view.x} ${view.y}) scale(${view.s}) rotate(${turn})`} style={{ fontSize }}>
           <rect className="mat" width={state.board.w} height={state.board.h} fill={`url(#tex-${state.board.mat})`} />
           {showGrid && gridLines}
           <g clipPath="url(#board-clip)">
@@ -628,7 +684,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
                 transform={`translate(${towerAt?.id === t.id ? towerAt.x : t.x} ${towerAt?.id === t.id ? towerAt.y : t.y}) rotate(${t.rot})`}
                 className={`terrain ${t.kind} ${t.locked ? 'locked' : ''} ${selectedTerrain === t.id ? 'selected' : ''}`}
               >
-                <TerrainArt t={t} mat={state.board.mat} />
+                <TerrainArt t={t} mat={state.board.mat} turn={turn} />
               </g>
             ),
           )}
@@ -690,7 +746,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
                   </g>
                   <polyline className={`trail ${over ? 'over' : ''}`} fill="none" points={[...way, [o.x, o.y], [now.x, now.y]].map(q => q.join(',')).join(' ')} />
                   {id === gesture.tapId && (
-                    <text className={`trail-label ${over ? 'over' : ''}`} x={now.x} y={now.y - halfExtents(m.base).ry - 0.3} textAnchor="middle">
+                    <text className={`trail-label ${over ? 'over' : ''}`} x={now.x} y={now.y - halfExtents(m.base).ry - 0.3} textAnchor="middle" transform={upright(turn, now.x, now.y)}>
                       {difficult ? `${formatInches(d)} (${formatInches(cost)} in difficult terrain)` : cost > d + 0.05 ? `${formatInches(d)} (${formatInches(cost)} with climbing)` : formatInches(d)} / {allowance}"
                     </text>
                   )}
@@ -720,7 +776,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
                 <BaseShape m={m} />
                 {photo && (
                   <>
-                    <text className="label" textAnchor="middle" dominantBaseline="central" transform={`rotate(${-m.rot})`} style={{ fontSize: Math.min(ry * 0.8, 0.32) }}>
+                    <text className="label" textAnchor="middle" dominantBaseline="central" transform={`rotate(${-m.rot - turn})`} style={{ fontSize: Math.min(ry * 0.8, 0.32) }}>
                       {initials(m.name)}
                     </text>
                     {/* The clip follows the base; the photo inside stays upright. */}
@@ -732,7 +788,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
                         width={2 * Math.max(rx, ry)}
                         height={2 * Math.max(rx, ry)}
                         preserveAspectRatio="xMidYMid slice"
-                        transform={`rotate(${-m.rot})`}
+                        transform={`rotate(${-m.rot - turn})`}
                       />
                     </g>
                     {/* A hero keeps its side's ring just inside a gold one at the edge. */}
@@ -742,7 +798,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
                 )}
                 <path className="facing" d={`M ${-0.12} ${-ry + 0.04} L 0 ${-ry - 0.1} L ${0.12} ${-ry + 0.04} Z`} />
                 {!photo && (
-                  <text className="label" textAnchor="middle" dominantBaseline="central" transform={`rotate(${-m.rot})`} style={{ fontSize: Math.min(ry * 0.8, 0.32) }}>
+                  <text className="label" textAnchor="middle" dominantBaseline="central" transform={`rotate(${-m.rot - turn})`} style={{ fontSize: Math.min(ry * 0.8, 0.32) }}>
                     {initials(m.name)}
                   </text>
                 )}
@@ -750,17 +806,17 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
                 {/* A power at work on it, and whether it lies Prone. */}
                 {state.flow.started && effectsOn(state, m).length > 0 && <ZoneShape m={m} pad={0.07} className="spell-ring" />}
                 {m.prone && (
-                  <text className="prone-mark" textAnchor="middle" transform={`rotate(${-m.rot}) translate(${-rx * 0.8} ${-ry * 0.7})`} style={{ fontSize: 0.28 }}>
+                  <text className="prone-mark" textAnchor="middle" transform={`rotate(${-m.rot - turn}) translate(${-rx * 0.8} ${-ry * 0.7})`} style={{ fontSize: 0.28 }}>
                     P
                   </text>
                 )}
                 {heroicIds.has(m.id) && (
-                  <text className="heroic-mark" textAnchor="middle" transform={`rotate(${-m.rot}) translate(${rx * 0.8} ${-ry * 0.7})`} style={{ fontSize: 0.32 }}>
+                  <text className="heroic-mark" textAnchor="middle" transform={`rotate(${-m.rot - turn}) translate(${rx * 0.8} ${-ry * 0.7})`} style={{ fontSize: 0.32 }}>
                     ⚡
                   </text>
                 )}
                 {m.maxWounds > 1 && (
-                  <text className="wounds" textAnchor="middle" transform={`rotate(${-m.rot}) translate(0 ${ry + 0.25})`} style={{ fontSize: 0.25 }}>
+                  <text className="wounds" textAnchor="middle" transform={`rotate(${-m.rot - turn}) translate(0 ${ry + 0.25})`} style={{ fontSize: 0.25 }}>
                     {m.wounds}/{m.maxWounds}W
                   </text>
                 )}
@@ -772,12 +828,12 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
             terrain
               .filter(t => t.kind !== 'objective' && !t.vines)
               .map(t => (
-                <text key={`tn-${t.id}`} className="terrain-name" x={t.x} y={t.y} textAnchor="middle" dominantBaseline="middle" pointerEvents="none">
+                <text key={`tn-${t.id}`} className="terrain-name" x={t.x} y={t.y} textAnchor="middle" dominantBaseline="middle" pointerEvents="none" transform={upright(turn, t.x, t.y)}>
                   {TERRAIN_INFO[t.kind].name}
                   {t.floors ? ` · ${t.floors + 1} levels` : ''}
                 </text>
               ))}
-          {animate && <Effects state={state} fontSize={fontSize} />}
+          {animate && <Effects state={state} fontSize={fontSize} turn={turn} />}
           {/* Models standing up high show how far up they are. */}
           {models.map(m0 => {
             const m = shown(m0);
@@ -785,7 +841,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
             if (!up) return null;
             const { rx, ry } = halfExtents(m.base);
             return (
-              <text key={`h-${m.id}`} className="model-height" x={m.x + rx + 0.1} y={m.y - ry * 0.6} textAnchor="start" pointerEvents="none">
+              <text key={`h-${m.id}`} className="model-height" x={m.x + rx + 0.1} y={m.y - ry * 0.6} textAnchor="start" pointerEvents="none" transform={upright(turn, m.x, m.y)}>
                 ▲{up}
               </text>
             );
@@ -795,7 +851,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
               const m = shown(m0);
               const { ry } = halfExtents(m.base);
               return (
-                <text key={`n-${m.id}`} className={`model-name ${m.owner}`} x={m.x} y={m.y + ry + (m.maxWounds > 1 ? 0.45 : 0.1) + fontSize * 0.8} textAnchor="middle" pointerEvents="none">
+                <text key={`n-${m.id}`} className={`model-name ${m.owner}`} x={m.x} y={m.y + ry + (m.maxWounds > 1 ? 0.45 : 0.1) + fontSize * 0.8} textAnchor="middle" pointerEvents="none" transform={upright(turn, m.x, m.y)}>
                   {m.name}
                 </text>
               );
@@ -804,7 +860,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
           {sight?.lines
             .filter(l => l.seen !== 'hidden')
             .map(l => (
-              <text key={`st-${l.m.id}`} className={`sight-label ${l.seen}`} x={l.m.x} y={l.m.y - halfExtents(l.m.base).ry - fontSize * 0.5} textAnchor="middle" pointerEvents="none">
+              <text key={`st-${l.m.id}`} className={`sight-label ${l.seen}`} x={l.m.x} y={l.m.y - halfExtents(l.m.base).ry - fontSize * 0.5} textAnchor="middle" pointerEvents="none" transform={upright(turn, l.m.x, l.m.y)}>
                 {formatInches(l.dist)}
                 {l.between > 0 ? ` · ${l.between} in the way` : ''}
               </text>
@@ -817,7 +873,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
             return (
               <g key={`l-${l.from}-${l.to}`} className={`aim ${l.ok ? 'ok' : 'bad'}`} pointerEvents="none">
                 <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
-                <text x={(a.x + b.x) / 2} y={(a.y + b.y) / 2 - fontSize * 0.6} textAnchor="middle">
+                <text x={(a.x + b.x) / 2} y={(a.y + b.y) / 2 - fontSize * 0.6} textAnchor="middle" transform={upright(turn, (a.x + b.x) / 2, (a.y + b.y) / 2)}>
                   {l.label}
                 </text>
               </g>
@@ -828,13 +884,16 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
             const ms = f.ids.map(id => state.models[id]).filter(Boolean);
             if (!ms.length) return null;
             const x = ms.reduce((n, m) => n + m.x, 0) / ms.length;
-            const y = Math.min(...ms.map(m => m.y - halfExtents(m.base).ry)) - fontSize * 1.2;
+            const y = ms.reduce((n, m) => n + m.y, 0) / ms.length;
+            // Just above the fight on screen, however the table is turned.
+            const flat = ms.map(m => toScreen({ x: 0, y: 0, s: 1, r: turn }, m));
+            const above = flat.reduce((n, p) => n + p.y, 0) / flat.length - Math.min(...flat.map((p, i) => p.y - Math.max(halfExtents(ms[i].base).rx, halfExtents(ms[i].base).ry))) + fontSize * 1.2;
             const r = fontSize * 0.9;
             return (
               <g
                 key={f.key}
                 className={`fight-mark ${f.done ? 'done' : ''}`}
-                transform={`translate(${x} ${y})`}
+                transform={`translate(${x} ${y}) rotate(${-turn}) translate(0 ${-above})`}
                 onPointerDown={e => {
                   e.stopPropagation();
                   onFightTap?.(f.key);
@@ -867,11 +926,11 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
                   <circle className="ping-ring late" r={1} />
                 </g>
               ) : (
-                <Arrow key={m.id} by={m.by} from={{ x: m.x, y: m.y }} to={{ x: m.x2!, y: m.y2! }} fontSize={fontSize} />
+                <Arrow key={m.id} by={m.by} from={{ x: m.x, y: m.y }} to={{ x: m.x2!, y: m.y2! }} fontSize={fontSize} turn={turn} />
               ),
             )}
             {gesture?.kind === 'mark' && Math.hypot(gesture.end.x - gesture.start.x, gesture.end.y - gesture.start.y) * view.s >= TAP_SLOP_PX && (
-              <Arrow by="mine" from={gesture.start} to={gesture.end} fontSize={fontSize} />
+              <Arrow by="mine" from={gesture.start} to={gesture.end} fontSize={fontSize} turn={turn} />
             )}
           </g>
           {rulerInfo && (
@@ -879,7 +938,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
               <line x1={rulerInfo.start.x} y1={rulerInfo.start.y} x2={rulerInfo.end.x} y2={rulerInfo.end.y} />
               <circle cx={rulerInfo.start.x} cy={rulerInfo.start.y} r={fontSize * 0.25} />
               <circle cx={rulerInfo.end.x} cy={rulerInfo.end.y} r={fontSize * 0.25} />
-              <text x={rulerInfo.end.x} y={rulerInfo.end.y - fontSize} textAnchor="middle">
+              <text x={rulerInfo.end.x} y={rulerInfo.end.y - fontSize} textAnchor="middle" transform={upright(turn, rulerInfo.end.x, rulerInfo.end.y)}>
                 {formatInches(rulerInfo.d)}
                 {rulerInfo.baseToBase ? ' base-to-base' : ''}
               </text>
@@ -911,7 +970,9 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
       <div className="zoom-controls">
         <button aria-label="Zoom in" onClick={() => { const r = svgRef.current!.getBoundingClientRect(); zoomAt(1.25, r.width / 2, r.height / 2, view); }}>+</button>
         <button aria-label="Zoom out" onClick={() => { const r = svgRef.current!.getBoundingClientRect(); zoomAt(0.8, r.width / 2, r.height / 2, view); }}>−</button>
-        <button aria-label="Fit board" onClick={fit}>⤢</button>
+        <button aria-label="Fit board" onClick={() => fit()}>⤢</button>
+        <button aria-label="Turn the table left" title="Turn the table left (Shift+R)" onClick={() => turnBy(-90)}>⟲</button>
+        <button aria-label="Turn the table right" title="Turn the table right (R)" onClick={() => turnBy(90)}>⟳</button>
       </div>
     </div>
   );
