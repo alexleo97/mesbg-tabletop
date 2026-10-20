@@ -60,10 +60,10 @@ export function isKind(catalog: Catalog | null | undefined, m: Model, kind: stri
 
 const TWO_HANDED = /two-handed|two handed|great ?axe|mattock|halberd|war ?hammer|great ?sword|\bmaul\b|scythe/;
 // (A Berserker blade is wielded in one hand or two, like a hand-and-a-half sword.)
-const HAND_AND_A_HALF = /hand-and-a-half|hand and a half|berserker blade/;
+const HAND_AND_A_HALF = /hand-and-a-half|hand and a half|berserker blade|glamdring/;
 /** Melee weapons other than two-handed ones: anything that isn't missile, armour or equipment. */
 const MELEE = /weapon|sword|blade|axe|spear|pike|dagger|knife|club|mace|hammer|whip|lance|staff|claws?|fangs?|teeth|beak|tusks?|glaive|flail|cleaver|scimitar|sting|glamdring|orcrist|grasper|and[uú]ril|herugrim|guthwin[eë]|narsil|grond|hand weapons?/;
-const NOT_MELEE = /\bbow\b|bows\b|crossbow|throwing|sling|blowpipe|javelin|armour|amour|shield|cloak|war horn|banner|drum|ring\b|horse|warg\b|pony|goat|steed|camel|mount|chariot/;
+const NOT_MELEE = /\bbow\b|bows\b|crossbow|throwing|sling|blowpipe|javelin|armour|amour|shield|cloak|war horn|banner|drum|\bring\b|horse|warg\b|pony|goat|steed|camel|mount|chariot/;
 
 const melee = (catalog: Catalog | null | undefined, m: Model) => gearOf(catalog, m).filter(g => (MELEE.test(g) || TWO_HANDED.test(g) || HAND_AND_A_HALF.test(g)) && !NOT_MELEE.test(g.replace(/two-handed|hand weapons?/g, '')));
 

@@ -6,7 +6,8 @@ import { planShot } from '../src/shared/shooting.ts';
 import { canSupport } from '../src/shared/support.ts';
 import { brokenTests, standFastRange, terrorTest } from '../src/shared/courage.ts';
 import { finalBlows, shrugOff, standardRefunds, towersFight } from '../src/shared/towers.ts';
-import { bannerFor, fighterOf } from '../src/shared/wargear.ts';
+import { bannerFor, fighterOf, twoHandedChoice } from '../src/shared/wargear.ts';
+import { hasElvenWeapon } from '../src/shared/gear.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from '../src/shared/types.ts';
 import { catalog } from './botsim.ts';
 
@@ -123,6 +124,9 @@ describe("Helm's Deep heroes in a fight", () => {
   it('Glamdring gives Gandalf +1 Strength', () => {
     const s = battle([hero('g', 10, 10, `${E} gandalf-the-white`), mk('u', 'p2', 10 + STEP, 10, `${U} uruk-hai-warrior`)]);
     expect(fights(s, 'g').s).toBe(fighterOf(s, catalog, s.models.g).s + 1);
+    // An Elven hand-and-a-half weapon: the Elven blade in a drawn fight, and two-handed if he chooses.
+    expect(hasElvenWeapon(catalog, s.models.g)).toBe(true);
+    expect(twoHandedChoice(catalog, s.models.g)).toBe('may');
   });
 
   it('Berserker Blade: two-handed against more foes than Attacks, one strike at each', () => {

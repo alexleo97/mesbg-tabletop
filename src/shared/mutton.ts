@@ -1,4 +1,5 @@
 import { castModel, radius, seatOf } from './narrative.ts';
+import { distanceBetween } from './geometry.ts';
 import { basesOverlap } from './movement.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
@@ -33,9 +34,25 @@ export function entrySpot(state: GameState, m: Model): { x: number; y: number } 
   const fixed = edge === 'west' || edge === 'north' ? r : edge === 'east' ? state.board.w - r : state.board.h - r;
   const mid = across ? from[0] : from[1];
   const spot = (t: number) => (across ? { x: t, y: fixed } : { x: fixed, y: t });
-  const clear = (t: number) => !Object.values(state.models).some(o => o.id !== m.id && !o.dead && !o.waiting && !o.escaped && basesOverlap({ ...m, ...spot(t), rot: facing, waiting: undefined }, o));
-  for (let d = 0; d <= hi - lo; d += 0.05) {
-    for (const t of d ? [mid - d, mid + d] : [mid]) if (t >= lo + r && t <= hi - r && clear(t)) return spot(t);
+  // (Only those near that edge can be in the way.)
+  const near = Object.values(state.models).filter(o => o.id !== m.id && !o.dead && !o.waiting && !o.escaped && Math.abs((across ? o.y : o.x) - fixed) < 4);
+  const foes = near.filter(o => o.owner !== m.owner);
+  const len = across ? state.board.w : state.board.h;
+  // Clear of other bases and, where it can be, outside every enemy's control zone, so it chooses whether to charge.
+  for (const roomy of [true, false]) {
+    const clear = (t: number) => {
+      const here = { ...m, ...spot(t), rot: facing, waiting: undefined };
+      return !near.some(o => basesOverlap(here, o)) && (!roomy || !foes.some(o => distanceBetween(here, o) < 1));
+    };
+    for (let d = 0; d <= hi - lo; d += 0.05) {
+      for (const t of d ? [mid - d, mid + d] : [mid]) if (t >= lo + r && t <= hi - r && clear(t)) return spot(t);
+    }
+    // With no room left along its stretch of the edge, a reinforcement comes on at the nearest clear spot beyond it.
+    if (lo > 0 || hi < len) {
+      for (let d = 0; d <= len; d += 0.05) {
+        for (const t of [lo - d, hi + d]) if (t >= r && t <= len - r && clear(t)) return spot(t);
+      }
+    }
   }
   return undefined;
 }

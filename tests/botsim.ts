@@ -56,7 +56,7 @@ export function setup(armies: [string, string], points: number, scenario: string
 }
 
 /** Plays a whole game between two computer players. Returns the final state and how many steps it took. */
-export function play(state: GameState, rand: () => number, maxSteps = 20000, watch?: (s: GameState, steps: number) => void) {
+export function play(state: GameState, rand: () => number, maxSteps = 20000, watch?: (s: GameState, steps: number) => boolean | void, onAction?: (s: GameState, seat: Seat, a: Action, ok: boolean) => void) {
   const memos: Record<Seat, BotMemo> = { p1: newMemo(), p2: newMemo() };
   const d6 = () => 1 + Math.floor(rand() * 6);
   let id = 0;
@@ -118,7 +118,8 @@ export function play(state: GameState, rand: () => number, maxSteps = 20000, wat
     for (const a of chargeSabotage(state, uid, now)) state = reduce(state, a);
     if (gameWinner(state) && !state.result) state = reduce(state, { type: 'gameOver', winner: gameWinner(state)! });
     if (state.result) break;
-    watch?.(state, steps);
+    // (The caller may stop the game early.)
+    if (watch?.(state, steps)) break;
     let acted = false;
     for (const seat of ['p1', 'p2'] as const) {
       const t0 = performance.now();
@@ -127,7 +128,9 @@ export function play(state: GameState, rand: () => number, maxSteps = 20000, wat
       const k = `${state.phase}`;
       longest[k] = Math.max(longest[k] ?? 0, ms);
       if (step?.action) {
+        const was = state;
         const ok = apply(seat, step.action);
+        onAction?.(was, seat, step.action, ok);
         const k2 = `${seat}:${step.action.type}${ok ? '' : ' (refused)'}`;
         counts[k2] = (counts[k2] ?? 0) + 1;
         if (step.action.type === 'updateModel') counts[`${seat}:fled`] = (counts[`${seat}:fled`] ?? 0) + 1;
