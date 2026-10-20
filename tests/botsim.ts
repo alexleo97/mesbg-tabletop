@@ -15,6 +15,8 @@ import type { Action, GameState, Seat } from '../src/shared/types.ts';
 import { openDuel } from '../src/shared/bot.ts';
 import { arrivalAuto, rollArrival } from '../src/shared/narrative.ts';
 import { chargeSabotage, reliefArrives, reliefDue } from '../src/shared/helms.ts';
+import { shrugOff, towersAfter } from '../src/shared/towers.ts';
+import { markModel } from '../src/shared/marking.ts';
 import { dawnDue, reinforceDue, rollDawn, rollReinforcements } from '../src/shared/mutton.ts';
 import { chronicled, listenDue, listenFor } from '../src/shared/company.ts';
 import { isMonster } from '../src/shared/monsters.ts';
@@ -67,14 +69,24 @@ export function play(state: GameState, rand: () => number, maxSteps = 20000) {
       const out = resolveRequest(state, seat, a, d6, uid, now, catalog);
       if (!out) return false;
       const before = state;
-      for (const x of [...out.apply, ...(out.record ? [out.record] : [])]) state = reduce(state, x);
+      for (const x of [...out.apply, ...(out.record ? [out.record] : [])]) take(x);
       chronicle(before);
       return true;
     }
     const before = state;
-    state = reduce(state, a);
+    take(a);
     chronicle(before);
     return state !== before;
+  };
+  // As the server does: wounds a model may shrug off are rolled first, then One Final Blow and the Royal Standard.
+  const take = (a: Action): void => {
+    // (And marks the models that come on, as the server does: mounts, war drums and so on.)
+    if ((a.type === 'addModels' || a.type === 'startNarrative') && Array.isArray(a.models)) a = { ...a, models: a.models.map(m => markModel(catalog, m)) };
+    const instead = a.type === 'wound' ? shrugOff(state, catalog, a, d6, uid, now) : null;
+    if (instead) return instead.forEach(take);
+    const before = state;
+    state = reduce(state, a);
+    for (const x of towersAfter(before, state, catalog, d6, uid, now)) take(x);
   };
   // As the server does: Ori's Chronicler, as models fall.
   const chronicle = (before: GameState) => {

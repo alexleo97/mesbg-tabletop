@@ -164,6 +164,8 @@ export function mayDeclare(state: GameState, m: Model, action: string, heroics: 
   if (!info || info.phase !== state.phase) return false;
   // Bombur is too Lumbering for a Heroic Move; Bifur, his axe out, may have one for free.
   if (action === 'Heroic Move' && rules.includes('Lumbering')) return false;
+  // Aldor's nerves won't let him lead a Heroic Shoot.
+  if (action === 'Heroic Shoot' && rules.includes('Unsteady nerves')) return false;
   if (m.hero && action === 'Heroic Move' && state.flow.freeMove?.includes(m.id)) return true;
   // Sam calls a Heroic Combat for free to get to Frodo.
   if (m.hero && action === 'Heroic Combat' && longshanksFree(state, m)) return true;

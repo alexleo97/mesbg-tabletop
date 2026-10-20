@@ -210,6 +210,17 @@ function crossOne(state: GameState, seat: Seat, id: string, d6: () => number, ui
   if (shared) push(`${m.name}: ${c.test} test, ${terrainName(t)}: the same roll as ${shared.with}, who carries the load with it`, [], { model: m.id });
   else {
     push(`${m.name}: ${c.test} test, ${terrainName(t)} (1 fails, 6 carries on)${sure ? `: ${sure}` : ''}`, sure ? [] : [roll], { model: m.id });
+    // Shadowfax, Lord of the Mearas, rolls two dice and takes the better.
+    if (isCavalryBase(m) && /shadowfax/i.test(m.mount ?? '') && (c.test === 'Jump' || c.test === 'Leap') && roll < 6) {
+      const best = Math.max(roll, d6());
+      push(`${m.name}: ${c.test} test, the better of two dice (Lord of the Mearas)`, [best], { model: m.id });
+      roll = best;
+    }
+    // An Expert Rider tries a jump again if it would fall.
+    if (roll === 1 && isCavalryBase(m) && (c.test === 'Jump' || c.test === 'Leap') && catalog && m.profileId && catalog.units[m.profileId]?.rules.includes('Expert Rider')) {
+      roll = d6();
+      push(`${m.name}: ${c.test} test re-rolled (Expert Rider)`, [roll], { model: m.id });
+    }
     if (roll === 1 && ground.includes('rock')) {
       roll = d6();
       push(`${m.name}: ${c.test} test re-rolled (Mountain Dweller)`, [roll], { model: m.id });

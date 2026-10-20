@@ -487,6 +487,8 @@ function cleanRoll(r: unknown): DiceRoll | null {
     ...(o.might ? { might: int(o.might, 0, 60, 0) } : {}),
     ...(o.support === true ? { support: true } : {}),
     ...(o.charge === true ? { charge: true } : {}),
+    ...(o.edge === true ? { edge: true } : {}),
+    ...(o.pinpoint === true ? { pinpoint: true } : {}),
     ...(o.mod ? { mod: int(o.mod, -3, 3, 0) } : {}),
     ...(o.sixSafe === true ? { sixSafe: true } : {}),
     ...(o.per && o.per > 1 ? { per: int(o.per, 1, 3, 1) } : {}),
@@ -1333,9 +1335,14 @@ function step(state: GameState, action: Action): GameState {
     case 'wound': {
       const m = state.models[action.id];
       const n = int(action.count, 0, 30, 0);
-      if (!m || m.dead || !n) return state;
       // Each fight or shot's wounds are taken once, whoever presses the button first.
       const group = action.group === undefined ? '' : str(action.group, 80);
+      // (Wounds the model shrugged off all of are still ticked off, so they aren't taken again.)
+      if (m && !m.dead && !n && action.checked === true && group) {
+        const key = `${group}>${m.id}${action.mount === true ? '#mount' : ''}`;
+        return state.flow.applied?.includes(key) ? state : { ...state, flow: { ...state.flow, applied: [...(state.flow.applied ?? []), key].slice(-80) } };
+      }
+      if (!m || m.dead || !n) return state;
       // A rider's mount takes its own wounds; when it falls, the rider is thrown (the game rolls the test).
       if (action.mount === true) {
         if (!mounted(m) || !m.mount || (group && woundsTaken(state.flow.applied, group, `${m.id}#mount`))) return state;
@@ -1483,7 +1490,8 @@ function step(state: GameState, action: Action): GameState {
       const log = [...state.log, r];
       // A shot's first roll marks its shooter as having shot this turn.
       const shooter = r.group?.startsWith('s-') && r.id === `${r.group}-0` ? r.model : undefined;
-      let flow = shooter && !state.flow.shot?.includes(shooter) ? { ...state.flow, shot: [...(state.flow.shot ?? []), shooter].slice(-400) } : state.flow;
+      // (Once for each Shooting Attack, for models that make more than one: a Pinpoint Shot counts as all three.)
+      let flow = shooter ? { ...state.flow, shot: [...(state.flow.shot ?? []), ...Array(r.pinpoint ? 3 : 1).fill(shooter)].slice(-400) } : state.flow;
       // A weapon thrown as a model charges commits it to charging that target.
       if (shooter && r.charge && r.aim) flow = { ...flow, mustCharge: { model: shooter, target: r.aim } };
       if (r.id.startsWith('w-') && r.model && !flow.cast?.includes(r.model)) flow = { ...flow, cast: [...(flow.cast ?? []), r.model].slice(-200) };

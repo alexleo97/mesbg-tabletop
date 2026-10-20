@@ -67,7 +67,7 @@ export function breachBlocked(state: GameState, catalog: Catalog | null, how: Br
   if (state.phase !== 'shoot' || !canActivate(state, m.owner)) return 'Only in your Shoot phase';
   const w = weaponFor(catalog, m);
   if (!w) return 'Has nothing to shoot';
-  const why = shooterBlocked(state, m, w);
+  const why = shooterBlocked(state, m, w, false, catalog);
   if (why) return `It ${why}`;
   if (isGate(t) && w.s < 5) return 'Only Strength 5 or more can hurt a gate';
   const d = m.siege ? Math.hypot(t.x - m.x, t.y - m.y) : distanceToTerrain(m, t);

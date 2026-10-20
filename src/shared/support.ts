@@ -1,7 +1,8 @@
 // Spears and pikes in a fight: friends behind the front rank lending a die and a strike.
 import type { Catalog } from './catalog.ts';
 import { CONTACT_SLACK, type Combat } from './flow.ts';
-import { hasPike, hasSpear } from './gear.ts';
+import { hasGear, hasPike, hasSpear as plainSpear } from './gear.ts';
+import { hasRule } from './wargear.ts';
 import { distanceBetween } from './geometry.ts';
 import { onLadder } from './defenders.ts';
 import { engaged } from './movement.ts';
@@ -10,6 +11,11 @@ import { invisibleTo } from './ring.ts';
 import type { GameState, Model, Seat } from './types.ts';
 
 const area = (m: Model) => m.base.w * m.base.h;
+/**
+ * A spear to support with. Spear Mastery (the Rohirrim) makes throwing spears one in the Fight phase, unless they were
+ * thrown this turn: a model that shot can't support anyway.
+ */
+const hasSpear = (catalog: Catalog | null | undefined, m: Model) => plainSpear(catalog, m) || (hasRule(catalog, m, 'Spear Mastery') && hasGear(catalog, m, /throwing spears?/));
 const touching = (a: Model, b: Model) => Math.abs(a.x - b.x) < 5 && Math.abs(a.y - b.y) < 5 && distanceBetween(a, b) <= CONTACT_SLACK;
 
 /**

@@ -1,3 +1,4 @@
+import { towersFight, unsteady } from './towers.ts';
 import { beside, mounted, mountLabel, mountOf, onFoot, separatedMount } from './cavalry.ts';
 import { resolveBreach } from './breach.ts';
 import { onLadder, resolveHurl } from './defenders.ts';
@@ -9,7 +10,7 @@ import { distanceBetween } from './geometry.ts';
 import { backAway, pushBack, separate, type Retreat } from './backAway.ts';
 import { defence, touchingEnemies, wallBetween } from './barriers.ts';
 import { bannerFor, cantShield, fighterOf, hasRule, strikeAgainst } from './wargear.ts';
-import { canActivate, mayActivate, orderRoll, orderRollLabel, orderRollNeeded } from './heroics.ts';
+import { canActivate, heroicNow, mayActivate, orderRoll, orderRollLabel, orderRollNeeded } from './heroics.ts';
 import { modelStats, type Catalog } from './catalog.ts';
 import { missileWeapon, woundNeed } from './rules.ts';
 import { planShot, throwingPoint } from './shooting.ts';
@@ -198,6 +199,8 @@ export function adjustFight(state: GameState, req: FightRequest, catalog: Catalo
     // Fighting an Invisible model that has no friends in the fight halves its Fight (rounding up); not the Nine's.
     const others = req.sides[1 - i].filter(x => !x.support).map(x => state.models[x.id]).filter(Boolean);
     if (!f.support && others.length === 1 && invisibleTo(others[0], m)) out.f = Math.ceil(out.f / 2);
+    // The rules of the heroes and warriors at Helm's Deep (see towers.ts).
+    if (catalog && modelStats(catalog, m)) towersFight(state, catalog, m, out);
     // What its strikes need against each enemy it could strike (Hatred, Ancient Enemies, Blades of the Dead).
     if (catalog) out.vs = Object.fromEntries(req.sides[1 - i].filter(t => !t.support).map(t => [t.id, strikeAgainst(catalog, state, out, t)]));
     return out;
@@ -363,6 +366,7 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       };
       // A charger that wins knocks foes to the ground before they're struck (so they're trapped).
       let knocked: { prone: string[]; flying: string[] } | undefined;
+      const footing: DiceRoll[] = [];
       const knocksFor = (winner: 0 | 1) => {
         if (knocked) return knocked;
         knocked = { prone: [], flying: [] };
@@ -371,6 +375,12 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
           if (!f.charged) continue;
           const k = knockedDown(catalog, f.charged, f.s, losing);
           knocked = { prone: [...new Set([...knocked.prone, ...k.prone])], flying: [...new Set([...knocked.flying, ...k.flying])] };
+        }
+        // Brego, a sure-footed steed, keeps Aragorn in the saddle on a 6.
+        for (const id of knocked.flying.filter(id => /\bbrego\b/i.test(state.models[id]?.mount ?? ''))) {
+          const d = d6();
+          footing.push({ id: `${group}-brego${footing.length}`, by: seat, label: `Sure-footed Steed: ${state.models[id].name} stays on Brego on a 6`.slice(0, 80), dice: [d], target: 6, model: id, at: now, group, note: d === 6 ? 'Brego keeps his feet.' : 'He is thrown.' });
+          if (d === 6) knocked.flying = knocked.flying.filter(x => x !== id);
         }
         return knocked;
       };
@@ -422,7 +432,7 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
             now,
           );
       // A loser pushed over the edge of a drop falls once the strikes are done, if it lived.
-      const extra: DiceRoll[] = [];
+      const extra: DiceRoll[] = [...footing];
       if (standoff) extra.push(standoff);
       const push = (label: string, dice: number[], more: Partial<DiceRoll> = {}) => extra.push({ id: `${group}-fall${extra.length}`, by: seat, label: label.slice(0, 80), dice, at: now, group, ...more });
       const falls = back.falls.filter(f => !slain(f.id)).flatMap(f => {
@@ -548,10 +558,11 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       const req = cleanShot(action.shot);
       const shooter = req && state.models[req.shooter.id];
       const target = req && state.models[req.target.id];
-      if (!req || !shooter || !target || shooter.owner !== seat || !mayActivate(state, shooter)) return null;
+      // (Aldor, with his Unsteady Nerves, shoots first: even while one of his side's heroes makes a Heroic Shoot.)
+      if (!req || !shooter || !target || shooter.owner !== seat || !(mayActivate(state, shooter) || (unsteady(catalog, shooter) && heroicNow(state)?.seat === seat))) return null;
       // The game works the shot out from the table: whether it can be taken, what it needs and what's in the way.
       const fallback = { weapon: missileWeapon([req.shooter.weapon]), shoot: req.shooter.shoot };
-      const plan = planShot(state, catalog, shooter, target, { charge: req.charge, brand: req.brand, fallback });
+      const plan = planShot(state, catalog, shooter, target, { charge: req.charge, brand: req.brand, pinpoint: req.pinpoint, fallback });
       if (plan.why || !plan.weapon) return null;
       // A siege engine's shot is worked out its own way (see siege.ts); the Avenger Bolt Thrower looses a D6 bolts
       // like a bow.
@@ -573,6 +584,9 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       req.target = { id: target.id, name: target.name, d: plan.d ?? stats?.D ?? req.target.d };
       if (plan.ones) req.ones = true;
       if (plan.bane) req.bane = true;
+      if (plan.woundBonus) req.woundBonus = plan.woundBonus;
+      if (plan.lucky) req.lucky = true;
+      if (!plan.pinpoint) delete req.pinpoint;
       // A rider can be hit, or its mount; a Sharpshooter picks which.
       const steed = mountOf(target);
       if (steed && steed.left > 0) {
@@ -680,7 +694,10 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
     case 'rollFate': {
       const m = state.models[String(action.id)];
       if (!m || m.owner !== seat || !m.pending || m.fate < 1) return null;
-      const roll = { id: `r-${uid()}`, by: seat, label: `Fate roll: ${m.name} (4+ saves a wound)`, dice: [d6()], target: 4, model: m.id, at: now };
+      // Narya: Gandalf rolls a failed Fate roll again.
+      const first = d6();
+      const narya = first < 4 && hasRule(catalog, m, 'Narya');
+      const roll = { id: `r-${uid()}`, by: seat, label: `Fate roll: ${m.name} (4+ saves a wound)${narya ? ', re-rolled (Narya)' : ''}`, dice: [narya ? d6() : first], target: 4, model: m.id, at: now, ...(narya ? { note: `Narya: the first roll was a ${first}.` } : {}) };
       return { apply: [{ type: 'fateRolled', id: m.id, roll }] };
     }
     case 'uncover': {

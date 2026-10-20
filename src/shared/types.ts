@@ -264,6 +264,10 @@ export interface DiceRoll {
   support?: boolean;
   /** A throwing weapon thrown in the Move phase as the model charges its target. */
   charge?: boolean;
+  /** For duel rolls: Herugrim, so a fight drawn at this Fight value goes to this side. */
+  edge?: boolean;
+  /** A Pinpoint Shot: the shooter's only Shooting Attack this phase. */
+  pinpoint?: boolean;
   at: number;
 }
 
@@ -721,7 +725,7 @@ export type Action =
   /** A hero spends a Might point to raise one of its own dice by 1. `follow` picks the follow-up dice of a 6/4+ roll. */
   | { type: 'useMight'; roll: string; die: number; follow?: boolean; will?: boolean }
   /** Wounds dealt to a model. A hero with Fate holds them as pending until its player decides. */
-  | { type: 'wound'; id: string; count: number; by?: string[]; how?: 'fight' | 'shoot' | 'other'; group?: string; mount?: boolean; howdah?: boolean; /** A Morgul Blade's: the first wound taken slays outright. */ slay?: boolean }
+  | { type: 'wound'; id: string; count: number; by?: string[]; how?: 'fight' | 'shoot' | 'other'; group?: string; mount?: boolean; howdah?: boolean; /** A Morgul Blade's: the first wound taken slays outright. */ slay?: boolean; /** The game has already rolled for the wounds the model may shrug off (see towers.shrugOff). */ checked?: boolean }
   /** A model picks up a marker it is touching, turns a face-down marker over, or drops what it carries. */
   | { type: 'pickUp'; model: string; marker: string }
   | { type: 'flip'; model: string; marker: string }

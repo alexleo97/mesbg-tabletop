@@ -15,6 +15,7 @@ import { howdahFor } from './warBeasts.ts';
 import { acrossCable, engineBlocked, engineCantHit, firingCrew, siegeWeapon } from './siege.ts';
 import { cloaked, hasRule, poisonedShot, shotDefence, stalks, stones } from './wargear.ts';
 import { invisibleTo } from './ring.ts';
+import { deadlyShot, finalCount, luckyShot, shotsPerPhase, shotsTaken, steadyOnTheMove, unsteady } from './towers.ts';
 import type { GameState, Model } from './types.ts';
 
 export type Weapon = (typeof MISSILE_WEAPONS)[number];
@@ -30,6 +31,7 @@ export const FLAMING_BRAND: Weapon = { name: 'Flaming Brand', range: 6, s: 3 };
 export const canThrowBrand = (m: Model) => !!m.brand && m.cast === 'aragorn';
 const isCrossbow = (w: Weapon) => /crossbow/i.test(w.name);
 const isSling = (w: Weapon) => /^sling/i.test(w.name);
+const isBow = (w: Weapon) => /bow/i.test(w.name) && !isCrossbow(w);
 
 /** Cover a shooter can lean on: walls, hedges and crops, and any other low piece it is touching. */
 const LOW_COVER = new Set(['wall', 'field']);
@@ -57,6 +59,12 @@ export interface ShotPlan {
   /** Re-rolls 1s to wound (Poisoned Attacks on this weapon), or every miss (Bane of Kings). */
   ones?: boolean;
   bane?: boolean;
+  /** Added to its rolls To Wound (Legolas behind in his count with Gimli). */
+  woundBonus?: number;
+  /** Aldor's Lucky Shot: misses to hit are re-rolled (and to wound, as `bane`). */
+  lucky?: boolean;
+  /** Legolas's Pinpoint Shot: one shot that may pick out an enemy in a fight with a friend and hits it with nothing in the way. */
+  pinpoint?: boolean;
 }
 
 /**
@@ -90,13 +98,15 @@ function planEngineShot(state: GameState, catalog: Catalog | null | undefined, e
 }
 
 /** Why a model can't shoot (or throw as it charges) this turn, whatever it aims at; unset if it can. */
-export function shooterBlocked(state: GameState, m: Model, weapon: Weapon, charge?: boolean): string | undefined {
+export function shooterBlocked(state: GameState, m: Model, weapon: Weapon, charge?: boolean, catalog?: Catalog | null): string | undefined {
   if (!state.flow.started) return undefined;
   const moved = !!state.flow.moved?.includes(m.id);
-  if (state.flow.shot?.includes(m.id)) return 'has shot this turn';
+  // (Legolas and Haldir make more than one Shooting Attack, in the Shoot phase.)
+  if (shotsTaken(state, m) >= (charge || m.siege ? 1 : shotsPerPhase(catalog, m))) return 'has shot this turn';
   if (m.prone) return 'is Prone';
   if (cannotAct(state, m)) return 'is held and can’t act';
-  if (engaged(state, m)) return 'is in a fight';
+  // Legolas shoots even in a fight (Deadly Shot), on foot or mounted.
+  if (engaged(state, m) && !(deadlyShot(catalog, m) && !charge && isBow(weapon))) return 'is in a fight';
   // A siege engine shoots only if it stayed put, with enough crew beside it and no enemy.
   if (m.siege) return charge ? 'can only shoot in the Shoot phase' : engineBlocked(state, null, m);
   // A war beast's Commander is busy steering it.
@@ -119,13 +129,14 @@ export function planShot(
   catalog: Catalog | null | undefined,
   shooter: Model,
   target: Model,
-  opts: { charge?: boolean; brand?: boolean; fallback?: { weapon?: Weapon; shoot?: number } } = {},
+  opts: { charge?: boolean; brand?: boolean; pinpoint?: boolean; fallback?: { weapon?: Weapon; shoot?: number } } = {},
 ): ShotPlan {
   const started = !!state.flow.started;
   if (shooter.siege) return planEngineShot(state, catalog, shooter, target);
   // (A chariot shoots on the move without penalty.)
   const archers = howdahArchers(shooter);
-  const moved = started && !opts.charge && !!state.flow.moved?.includes(shooter.id) && shooter.beast !== 'chariot' && !archers && !(mounted(shooter) && mountOf(shooter)?.chariot);
+  // (Nor does Legolas on foot: Deadly Shot.)
+  const moved = started && !opts.charge && !!state.flow.moved?.includes(shooter.id) && shooter.beast !== 'chariot' && !archers && !(mounted(shooter) && mountOf(shooter)?.chariot) && !steadyOnTheMove(catalog, shooter);
   // Thrown stones, for a model that has nothing better and didn't move.
   const rocks = !opts.charge ? stones(catalog, shooter) : undefined;
   const weapon = opts.brand ? (canThrowBrand(shooter) ? FLAMING_BRAND : undefined) : (weaponFor(catalog, shooter) ?? (rocks && !moved ? rocks : undefined) ?? opts.fallback?.weapon);
@@ -137,8 +148,13 @@ export function planShot(
   if (target.owner === shooter.owner) return no('only shoots at enemies');
   if (target.dead || target.escaped || target.waiting) return no('has nothing there to shoot at');
   if (invisibleTo(target, shooter)) return no('can’t see a model wearing the One Ring');
-  const blocked = shooterBlocked(state, shooter, weapon, opts.charge);
+  const blocked = shooterBlocked(state, shooter, weapon, opts.charge, catalog);
   if (blocked) return no(blocked);
+  // Aldor's Unsteady Nerves: his side's other models wait until he has shot (or can't).
+  if (started && state.phase === 'shoot' && !opts.charge && aldorFirst(state, catalog, shooter)) return no(`waits for ${aldorFirst(state, catalog, shooter)!.name} to shoot first (Unsteady Nerves)`);
+  const pinpoint = !!opts.pinpoint && hasRule(catalog, shooter, 'Pinpoint Shot');
+  if (opts.pinpoint && !pinpoint) return no('can’t make a Pinpoint Shot');
+  if (pinpoint && shotsTaken(state, shooter) > 0) return no('has already shot this phase, so can’t make a Pinpoint Shot');
   plan.shots = archers ? shooter.howdahWounds! : isSling(weapon) && started && !moved && !opts.charge ? 2 : 1;
   // An Elven cloak makes a model on foot 1 harder to hit.
   plan.need = Math.min(6, shotNeed(state, shooter, target, printed + (moved ? 1 : 0) + (cloaked(catalog, target) ? 1 : 0)));
@@ -152,6 +168,8 @@ export function planShot(
   plan.d = shotDefence(catalog, target, modelStats(catalog, target)?.D ?? 4);
   if (poisonedShot(catalog, shooter, weapon.name)) plan.ones = true;
   if (hasRule(catalog, shooter, 'Bane of Kings')) plan.bane = true;
+  if (finalCount(state, catalog, shooter)) plan.woundBonus = 1;
+  if (luckyShot(catalog, shooter)) plan.lucky = plan.bane = true;
 
   // Shooting over a low wall it touches, or over the shoulder of a friend no bigger than itself (and that friend's wall).
   const others = Object.values(state.models).filter(m => !m.dead && !m.escaped && !m.waiting);
@@ -168,6 +186,16 @@ export function planShot(
   if (hasRule(catalog, target, 'Large Target')) inWay = inWay.filter(o => !o.model || isMonster(catalog, state.models[o.model]) || state.models[o.model].beast === 'war' || !!state.models[o.model].siege);
 
   const fight = engaged(state, target) ? combats(state).find(c => c.p1.includes(target.id) || c.p2.includes(target.id)) : undefined;
+  // Legolas shooting a foe he is fighting himself, or making a Pinpoint Shot at one fighting a friend: nothing is in
+  // the way, and no stray shot can hit his friends.
+  const own = !!fight && deadlyShot(catalog, shooter) && fight[shooter.owner].includes(shooter.id);
+  if (pinpoint && !fight) return no('only makes a Pinpoint Shot at an enemy in a fight with a friend');
+  if (pinpoint || own) {
+    plan.inWay = [];
+    if (pinpoint) Object.assign(plan, { pinpoint: true, shots: 1 });
+    plan.rerolls = false;
+    return plan;
+  }
   const side = sideOf(catalog, shooter);
   if (side === 'Good') {
     // Good models never risk hitting their own: not past a friend, an enemy fighting a friend, nor into a fight.
@@ -191,6 +219,24 @@ export function planShot(
     return h.action === 'Heroic Accuracy' && hero && !hero.dead && hero.owner === shooter.owner && (hero.id === shooter.id || (!hero.ringOn && distanceBetween(hero, shooter) <= 6));
   });
   return plan;
+}
+
+/** Plans worked out for Aldor's Unsteady Nerves, per game state, so asking again for every shot costs nothing. */
+const aldorCache = new WeakMap<GameState, Map<string, Model | null>>();
+
+/**
+ * Aldor's Unsteady Nerves: the friend who must shoot before `shooter` may, if one must. That is an Aldor on its side
+ * that hasn't shot this phase and could shoot at some enemy now.
+ */
+export function aldorFirst(state: GameState, catalog: Catalog | null | undefined, shooter: Model): Model | null {
+  if (!catalog || unsteady(catalog, shooter)) return null;
+  let seen = aldorCache.get(state);
+  if (!seen) aldorCache.set(state, (seen = new Map()));
+  if (seen.has(shooter.owner)) return seen.get(shooter.owner)!;
+  const aldor = Object.values(state.models).find(m => m.owner === shooter.owner && !m.dead && !m.escaped && !m.waiting && unsteady(catalog, m) && !shotsTaken(state, m));
+  const ready = aldor && Object.values(state.models).some(e => e.owner !== aldor.owner && !e.dead && !e.escaped && !e.waiting && !planShot(state, catalog, aldor, e).why) ? aldor : null;
+  seen.set(shooter.owner, ready);
+  return ready;
 }
 
 /**
