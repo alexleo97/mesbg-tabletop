@@ -21,6 +21,22 @@ export const TERRAIN_INFO: Record<TerrainKind, { name: string; type: string; not
   bridge: { name: 'Bridge', type: 'Crossing', note: 'Carries models over water at full speed. Narrow, so it makes a natural choke point.' },
 };
 
+/** Markers lie on top of the terrain: scenario objectives and the Writhing Vines' marker. */
+export const isMarker = (t: Terrain) => t.kind === 'objective' || !!t.vines;
+
+/**
+ * Where a piece is drawn, bottom first: roads, then water, then whatever stands on the ground (a raised stone causeway
+ * among it), then bridges over the water, then markers, then markers being carried. The difficult-ground hatching goes
+ * on between bridges and markers, so it never covers a marker.
+ */
+export function drawLayer(t: Terrain): number {
+  if (t.carrier) return 5;
+  if (isMarker(t)) return 4;
+  if (t.kind === 'bridge') return 3;
+  if (t.kind === 'road') return t.look === 'stone' && t.shape === 'rect' ? 2 : 0;
+  return t.kind === 'water' ? 1 : 2;
+}
+
 /** The groups used to sort terrain in the Table panel, in the order shown. */
 export const TERRAIN_GROUPS = ['Area terrain', 'Obstacle', 'Barrier', 'Impassable', 'Water', 'Crossing', 'Siege engine', 'Elevation', 'Open ground', 'Marker'] as const;
 
