@@ -124,8 +124,8 @@ h1, h3, h4, .topbar .room, .phases .turn, .roster-summary b, .name-input, .tabs 
 .terrain .ruin-wall { stroke-width: 0.4; stroke-linecap: square; }
 .terrain .rubble { fill: #7d7468; stroke: #3b362f; stroke-width: 0.03; }
 .terrain.wall .ground { stroke: #2b2722; stroke-width: 0.05; }
-.terrain .battlements .walkway { fill: #0000002e; }
-.terrain .battlements .merlon { fill: #ffffff22; stroke: #0006; stroke-width: 0.03; }
+.terrain .battlements .walkway { fill: #00000038; }
+.terrain .battlements .merlon { fill: #d8d2c4; fill-opacity: 0.55; stroke: #1d1b19; stroke-width: 0.04; }
 .terrain .culvert-mouth { fill: #15110d; stroke: #0008; stroke-width: 0.05; pointer-events: none; }
 .terrain .culvert-bar { stroke: #4b4a48; stroke-width: 0.07; pointer-events: none; }
 .terrain .paving { stroke: #0004; stroke-width: 0.08; }
@@ -133,6 +133,9 @@ h1, h3, h4, .topbar .room, .phases .turn, .roster-summary b, .name-input, .tabs 
 .terrain .parapet { stroke: #0006; stroke-width: 0.03; pointer-events: none; }
 .terrain .keep-edge { stroke: #1d1b19; stroke-width: 0.08; }
 .terrain .keep-top { stroke: #1d1b19; stroke-width: 0.06; }
+.fortress-faces .face { stroke: #1d1b19; stroke-width: 0.05; stroke-linejoin: round; }
+.fortress-faces .face-shade { fill: #00000073; }
+.fortress-faces .face-shadow { fill: #0000004d; }
 .terrain .wall-joint { stroke: #0004; stroke-width: 0.04; pointer-events: none; }
 .terrain.building .ground { stroke: #2b2722; stroke-width: 0.1; }
 .terrain .roof-tile { stroke: #0003; stroke-width: 0.04; pointer-events: none; }

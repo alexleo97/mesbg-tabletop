@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react';
-import { bandOutline } from '../shared/sight.ts';
+import type { Point } from '../shared/geometry.ts';
+import { bandOutline, heightOf, outline as boardOutline } from '../shared/sight.ts';
 import type { Mat, Terrain } from '../shared/types.ts';
 import { TREES, type Material } from './textures.ts';
 
@@ -504,7 +505,7 @@ export function TerrainArt({ t, mat }: { t: Terrain; mat: Mat }) {
 /** Merlons along both long faces of a fortress wall, with the walkway between them a shade darker. */
 function Battlements({ w, h }: { w: number; h: number }) {
   const n = Math.max(2, Math.round(w / 0.6));
-  const m = Math.min(0.24, h * 0.22);
+  const m = Math.min(0.3, h * 0.26);
   return (
     <g className="battlements" pointerEvents="none">
       <rect className="walkway" x={-w / 2} y={-h / 2 + m} width={w} height={h - 2 * m} />
@@ -545,6 +546,65 @@ function star(r: number) {
     pts.push(`${(Math.cos(a) * k).toFixed(3)} ${(Math.sin(a) * k).toFixed(3)}`);
   }
   return `M ${pts.join(' L ')} Z`;
+}
+
+// ——— Fortress faces ———
+// The table is seen from a little south-east of overhead, as you'd look across a real one: each tall fortress piece
+// shows its south and east faces below its top, the stone dropping away to the ground. Looks only; the top is where
+// the piece stands for play.
+
+/** How far down the table a face reaches for each inch of height. */
+const LEAN = { x: 0.17, y: 0.34 };
+
+function hull(pts: Point[]): Point[] {
+  const p = [...pts].sort((a, b) => a.x - b.x || a.y - b.y);
+  const cross = (o: Point, a: Point, b: Point) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const lower: Point[] = [];
+  for (const q of p) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], q) <= 0) lower.pop();
+    lower.push(q);
+  }
+  const upper: Point[] = [];
+  for (const q of [...p].reverse()) {
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], q) <= 0) upper.pop();
+    upper.push(q);
+  }
+  return [...lower.slice(0, -1), ...upper.slice(0, -1)];
+}
+
+/** Whether a piece is part of a fortress that stands tall: its walls, gates, keep, towers and the rock under them. */
+const tall = (t: Terrain) => !t.gone && (t.sheer || t.kind === 'gate' || (t.look === 'stone' && t.kind !== 'road'));
+
+/** The ground a piece's faces cover, from its top down to its foot; a causeway slopes from the gate to the ground. */
+function face(t: Terrain): Point[] {
+  const top = boardOutline(t, 28);
+  if (t.kind === 'road') {
+    // The causeway: its gate end (local -x) stands high, its far end on the ground.
+    const a = (t.rot * Math.PI) / 180;
+    const along = (p: Point) => ((p.x - t.x) * Math.cos(a) + (p.y - t.y) * Math.sin(a)) / t.w + 0.5;
+    return hull([...top, ...top.map(p => ({ x: p.x + LEAN.x * 2.2 * (1 - along(p)), y: p.y + LEAN.y * 2.2 * (1 - along(p)) }))]);
+  }
+  const h = heightOf(t);
+  return hull([...top, ...top.map(p => ({ x: p.x + LEAN.x * h, y: p.y + LEAN.y * h }))]);
+}
+
+/** The faces of every tall fortress piece, drawn on the ground before any of their tops. */
+export function TerrainFaces({ terrain }: { terrain: Terrain[] }) {
+  const pieces = terrain.filter(t => tall(t) || (t.kind === 'road' && t.look === 'stone' && t.shape === 'rect'));
+  return (
+    <g className="fortress-faces" pointerEvents="none">
+      {pieces.map(t => {
+        const pts = face(t).map(p => `${p.x.toFixed(3)},${p.y.toFixed(3)}`).join(' ');
+        return (
+          <g key={t.id}>
+            <polygon className="face-shadow" points={pts} transform="translate(0.35 0.45)" filter="url(#bank-blur)" />
+            <polygon className="face" points={pts} fill={t.kind === 'rock' ? 'url(#tex-cliff)' : 'url(#tex-wall)'} />
+            <polygon className="face-shade" points={pts} />
+          </g>
+        );
+      })}
+    </g>
+  );
 }
 
 /** Shared gradients and shadow filters the terrain refers to. */
