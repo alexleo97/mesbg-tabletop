@@ -1,5 +1,5 @@
 import { nearestSpot, placeNear, solidOutlines, type Move } from './deployment.ts';
-import { distanceBetween, halfExtents, type Point } from './geometry.ts';
+import { distanceBetween, halfExtents, OBJECTIVE_SIZE, type Point } from './geometry.ts';
 import { inZone, scaleZone, whollyIn, zonesOf } from './objects.ts';
 import { narrativeOf } from './narrative.ts';
 import { objectivesMissing, scenarioById, type Zone } from './scenarios.ts';
@@ -68,7 +68,7 @@ export const CAPTAIN_RANGE = 6;
 /** The Champion goes within this far of the centre of the table. */
 const CHAMPION_RANGE = 3;
 /** How big the markers the players place are across (as scenarioMarkers makes them). */
-const MARKER = 1.6;
+const MARKER = OBJECTIVE_SIZE;
 
 const other = (s: Seat): Seat => (s === 'p1' ? 'p2' : 'p1');
 const reach = (m: Pick<Model, 'base'>) => Math.max(halfExtents(m.base).rx, halfExtents(m.base).ry);

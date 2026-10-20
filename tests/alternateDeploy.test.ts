@@ -153,10 +153,11 @@ describe('setting up in turn', () => {
     // Asked for a spot too near the centre marker, it goes to the nearest one that's legal.
     s = reduce(s, { type: 'placeMarker', seat: 'p2', x: 24, y: 20 });
     const first = s.terrain[s.flow.deploy!.marker!];
-    expect(Math.hypot(first.x - 24, first.y - 24) - 1.6).toBeGreaterThanOrEqual(12 - 1e-6);
+    const centreMark = Object.values(s.terrain).find(t => t.kind === 'objective' && t.id !== first.id)!;
+    expect(Math.hypot(first.x - 24, first.y - 24) - (first.w + centreMark.w) / 2).toBeGreaterThanOrEqual(12 - 1e-6);
     // Dragged to the edge, it keeps 6" off it.
     s = reduce(s, { type: 'updateTerrain', id: first.id, patch: { x: 2, y: 8 } });
-    expect(s.terrain[first.id].x - 0.8).toBeGreaterThanOrEqual(6 - 1e-6);
+    expect(s.terrain[first.id].x - first.w / 2).toBeGreaterThanOrEqual(6 - 1e-6);
     // The centre marker can't be moved meanwhile.
     const centre = Object.values(s.terrain).find(t => t.kind === 'objective' && t.id !== first.id)!;
     expect(reduce(s, { type: 'updateTerrain', id: centre.id, patch: { x: 20 } }).terrain[centre.id].x).toBe(centre.x);
@@ -168,7 +169,7 @@ describe('setting up in turn', () => {
     }
     expect(objectivesMissing(s)).toBe(0);
     const marks = Object.values(s.terrain).filter(t => t.kind === 'objective');
-    for (const a of marks) for (const b of marks) if (a !== b) expect(Math.hypot(a.x - b.x, a.y - b.y) - 1.6).toBeGreaterThanOrEqual(12 - 1e-6);
+    for (const a of marks) for (const b of marks) if (a !== b) expect(Math.hypot(a.x - b.x, a.y - b.y) - (a.w + b.w) / 2).toBeGreaterThanOrEqual(12 - 1e-6);
     // Then the roll-off for deployment.
     expect(s.flow.deploy?.step).toBe('roll');
     expect(rollDue(s)).toBe('side');
