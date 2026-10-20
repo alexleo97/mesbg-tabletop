@@ -21,6 +21,7 @@ import { entering, enteringNoCharge, entryEdge, isMutton, isTroll, nextEntering,
 import { isHelms, mayChooseRelief, reliefPending, RELIEF_SPAN } from './helms.ts';
 import { putOut } from './fire.ts';
 import { ringAfterMight } from './ring.ts';
+import { mightBlocked } from './mightUse.ts';
 import { placeSpot, placingNow } from './placing.ts';
 import { longshanksFree } from './sam.ts';
 import { BOT_NAME, BOT_SPEEDS, DOOR_TYPES, FIGHT_TARGETS, MARKER_OBJECTS, MATS, PHASES, PICK_KEYS, TERRAIN_KINDS, type Action, type FightPicks, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type ModelEffect, type Phase, type Picks, type Placing, type Seat, type SpellPending, type Terrain } from './types.ts';
@@ -1297,10 +1298,8 @@ function step(state: GameState, action: Action): GameState {
       // Will can only help with a Courage test.
       const courage = r.sum !== undefined && /^Courage/.test(r.label);
       if (will && !courage) return state;
-      // A paused shot takes Might only on the roll it paused on.
-      if (r.group?.startsWith('s-') && (state.flow.shotPause?.group !== r.group || state.log.filter(x => x.group === r.group).at(-1)?.id !== r.id)) return state;
-      // Against Heroic Defence only a natural 6 wounds, so Might can't make one.
-      if (r.against && r.group?.startsWith('f-') && state.flow.heroics.some(h => h.model === r.against && h.action === 'Heroic Defence')) return state;
+      // Only while the roll's result is still to be used (see mightUse.ts).
+      if (mightBlocked(state, r)) return state;
       const k = int(action.die, 0, MAX_DICE, -1);
       // Raising a first die of a 6/4+ roll would need a new follow-up die, so only the follow-ups can be raised there.
       const follow = r.then !== undefined && r.follow !== undefined;

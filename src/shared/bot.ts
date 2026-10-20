@@ -11,6 +11,7 @@ import { duelLeader, duelSettled, strikeWounds, woundsTaken, type BrutalAttack, 
 import { supporters } from './support.ts';
 import { activeSeat, combats, CONTACT_SLACK, other, type Combat } from './flow.ts';
 import { distanceBetween, halfExtents, mmToIn, type Point } from './geometry.ts';
+import { heroicBlocked, mightBlocked } from './mightUse.ts';
 import { canActivate, canDeclare, declared, heroicInfo, heroicTurn, heroicsSettled, mayActivate, orderRollLabel, orderRollNeeded, phaseHeroics } from './heroics.ts';
 import { canCast, castTargets, pendingSpell, powersOf, untargeted, type KnownPower } from './magic.ts';
 import { brutalOptions } from './monsters.ts';
@@ -343,7 +344,8 @@ function heroicStep(ctx: Ctx): BotStep {
     const fight = fights.find(c => c[seat].includes(h.id));
     if (!fight) continue;
     const p = profile(ctx, h);
-    const has = (name: string) => heroicInfo(name)?.universal || p.heroics.includes(name);
+    // (Held to what the player is: only an action it can use now.)
+    const has = (name: string) => (heroicInfo(name)?.universal || p.heroics.includes(name)) && !heroicBlocked(state, ctx.catalog, h, name);
     const ids = (s: Seat) => fight[s].map(id => state.models[id]).filter(Boolean);
     const odds = fightOdds(fighterSide(ctx, ids(seat)), fighterSide(ctx, ids(other(seat))));
     const declare = (action: string): BotStep => ({ action: { type: 'declareHeroic', model: h.id, action }, delay: DICE_PAUSE });
@@ -1608,7 +1610,7 @@ function mightInDuel(ctx: Ctx, rolls: DiceRoll[]): BotStep | null {
   const stake = duel.filter(r => r.side !== us).length + (duel.some(r => r.side === us && r.model && state.models[r.model]?.hero) ? 2 : 0);
   for (const r of duel.filter(x => x.side === us && x.model)) {
     const hero = state.models[r.model!];
-    if (!hero?.hero || hero.might < 1) continue;
+    if (!hero?.hero || hero.might < 1 || mightBlocked(state, r)) continue;
     const top = Math.max(...r.dice);
     const cost = goal - top;
     if (cost < 1 || cost > hero.might || cost > (stake >= 3 ? 3 : 2)) continue;
@@ -1631,7 +1633,7 @@ function mightOnStrikes(ctx: Ctx, group: string): BotStep | null {
   if (wounds >= victim.wounds || wounds + 1 < victim.wounds) return null;
   for (const r of strikes) {
     const hero = state.models[r.model!];
-    if (!hero?.hero || hero.might < (victim.hero ? 1 : 2)) continue;
+    if (!hero?.hero || hero.might < (victim.hero ? 1 : 2) || mightBlocked(state, r)) continue;
     const k = r.dice.findIndex(d => d === r.target! - 1);
     if (k >= 0) return { action: { type: 'useMight', roll: r.id, die: k }, delay: DICE_PAUSE };
   }

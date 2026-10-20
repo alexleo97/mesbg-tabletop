@@ -7,6 +7,7 @@ import { initialState, loadState, reduce } from '../src/shared/reducer.ts';
 import type { Account, Action, ClientMessage, GameState, Model, Revert, Role, RoomSummary, Seat, ServerMessage } from '../src/shared/types.ts';
 import { DICE_REQUESTS, resolveRequest } from '../src/shared/resolve.ts';
 import { mayDeclare, phaseAllows } from '../src/shared/heroics.ts';
+import { challengeRivals, heroicBlocked } from '../src/shared/mightUse.ts';
 import { brokenSideToTest, brokenTests, terrorAhead, terrorTest, willOfEvilDue, willOfEvilToll } from '../src/shared/courage.ts';
 import { riderTests, riderTestsDue } from '../src/shared/cavalry.ts';
 import { beastTests, beastTestsDue } from '../src/shared/warBeasts.ts';
@@ -26,7 +27,6 @@ import { diffForUndo, mergeReverts, UNDOABLE } from '../src/shared/undo.ts';
 import { BOT_PACE, botStep, newMemo, type BotMemo } from '../src/shared/bot.ts';
 import { rulesFor, startingPoints, type Catalog } from '../src/shared/catalog.ts';
 import catalogJson from '../src/data/mesbg-data.json';
-import { tierOf } from '../src/shared/warbands.ts';
 import { arrivalAuto, rollArrival } from '../src/shared/narrative.ts';
 import { chargeSabotage, reliefArrives, reliefDue } from '../src/shared/helms.ts';
 import { shrugOff, towersAfter } from '../src/shared/towers.ts';
@@ -333,10 +333,11 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
       if (!m || !mine(m.id)) return null;
       const unit = m.profileId ? CATALOG.units[m.profileId] : undefined;
       if (state.flow.started && !mayDeclare(state, m, String(action.action), unit?.heroics, rulesFor(CATALOG, m))) return null;
+      // Nor one it can't use now: out of range of anything, or out of the fight it is about.
+      if (heroicBlocked(state, CATALOG, m, String(action.action))) return null;
       if (action.action !== 'Heroic Challenge') return { type: 'declareHeroic', model: m.id, action: action.action };
       const t = state.models[String(action.target)];
-      const theirs = t?.profileId ? CATALOG.units[t.profileId] : undefined;
-      if (!t || (unit && theirs && tierOf(theirs) < tierOf(unit))) return null;
+      if (!t || !challengeRivals(state, CATALOG, m).some(e => e.id === t.id)) return null;
       return { type: 'declareHeroic', model: m.id, action: action.action, target: t.id, cap: startingPoints(CATALOG, m)?.might ?? m.might };
     }
     case 'answerChallenge':
