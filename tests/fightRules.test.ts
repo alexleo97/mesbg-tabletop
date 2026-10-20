@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { resolveStrikes, type FightRequest } from '../src/shared/fight.ts';
+import { fightDuel, resolveStrikes, type FightRequest } from '../src/shared/fight.ts';
+import { openDuel } from '../src/shared/bot.ts';
+import { fightDone } from '../src/shared/movement.ts';
 import { combats, pairOff } from '../src/shared/flow.ts';
 import { initialState, reduce } from '../src/shared/reducer.ts';
 import { resolveRequest } from '../src/shared/resolve.ts';
@@ -122,5 +124,46 @@ describe('heroics in fights', () => {
     s = run(s, { type: 'declareHeroic', model: 'b', action: 'Heroic Defence' } as Action);
     s = run(s, { type: 'rolled', roll: { id: 'f-1-3', by: 'p1', label: 'hero strikes b', dice: [5], target: 6, against: 'b', at: 0, group: 'f-1', model: 'hero' } });
     expect(run(s, { type: 'useMight', roll: 'f-1-3', die: 0 }).models.hero.might).toBe(3);
+  });
+});
+
+describe('a hero fighting a second time in a turn', () => {
+  it("starts a fresh duel instead of showing the last fight's dice", () => {
+    let s = toFight(at([mk('h', 'p1', 10, 10, { hero: true }), mk('o', 'p2', 10 + STEP, 10), mk('w', 'p2', 10, 15)]));
+    s = { ...s, flow: { ...s.flow, heroics: [{ model: 'h', action: 'Heroic Combat', phase: 'fight', turn: s.turn }] as never } };
+    const fighter = (id: string) => ({ id, name: id, f: 5, a: 2, s: 4, d: 6 });
+    const first: FightRequest = { sides: [[fighter('h')], [fighter('o')]], targets: ['o', 'h'], trapped: false, combat: 'h,|,o' };
+    s = ask(s, 'p1', { type: 'fight', fight: first }, [6, 6, 1, 1])!;
+    const group = fightDuel(s, 'h,|,o')!.group;
+    s = ask(s, 'p1', { type: 'strikes', fight: first, group }, [6, 6, 6, 6])!;
+    if (!s.models.o.dead) s = run(s, { type: 'wound', id: 'o', count: 1 });
+    expect(s.flow.resolved).toContain('h,|,o');
+    // Free to move again, the hero charges a fresh enemy: a new fight, not yet rolled.
+    s = run(s, { type: 'moveModels', moves: [{ id: 'h', x: 10, y: 15 - STEP }] });
+    const next = combats(s).find(c => c.key === 'h,|,w')!;
+    expect(next).toBeDefined();
+    expect(fightDone(s, next)).toBe(false);
+    // The fight panel and the computer see no duel rolled for it yet, so it can be rolled.
+    expect(fightDuel(s, next.key)).toBeNull();
+    expect(openDuel(s, next)).toBeNull();
+    const second: FightRequest = { sides: [[fighter('h')], [fighter('w')]], targets: ['w', 'h'], trapped: false, combat: next.key };
+    s = ask(s, 'p1', { type: 'fight', fight: second }, [6, 6, 1, 1])!;
+    expect(fightDuel(s, next.key)!.group).not.toBe(group);
+    // The first fight still shows its own dice.
+    expect(fightDuel(s, 'h,|,o')!.group).toBe(group);
+  });
+
+  it("never matches a duel in another fight to this one's models", () => {
+    // a fights b; c and d are in their own fight, and the duel between a and b is open.
+    let s = toFight(at([mk('a', 'p1', 10, 10), mk('b', 'p2', 10 + STEP, 10), mk('c', 'p1', 30, 10), mk('d', 'p2', 30 + STEP, 10)]));
+    const fighter = (id: string) => ({ id, name: id, f: 3, a: 1, s: 3, d: 4 });
+    s = ask(s, 'p1', { type: 'fight', fight: { sides: [[fighter('a')], [fighter('b')]], targets: ['b', 'a'], trapped: false, combat: 'a,|,b' } }, [6, 1])!;
+    expect(fightDuel(s, 'a,|,b')).not.toBeNull();
+    // A fight that shares a model with the open duel but not the rest isn't that duel.
+    expect(fightDuel(s, 'a,|,d')).toBeNull();
+    expect(fightDuel(s, 'c,|,d')).toBeNull();
+    // A fight's slain models still count as in it, so its dice stay with it.
+    s = run(s, { type: 'wound', id: 'b', count: 1 });
+    expect(fightDuel(s, 'a,|,b')).not.toBeNull();
   });
 });

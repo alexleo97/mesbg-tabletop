@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useLocked } from './lessonLock.ts';
 import { modelStats } from '../shared/catalog.ts';
-import { duelLeader, duelSettled, strikeWounds, woundsTaken, type BrutalKind, type Fighter } from '../shared/fight.ts';
+import { duelLeader, duelSettled, fightDuel, strikeWounds, woundsTaken, type BrutalKind, type Fighter } from '../shared/fight.ts';
 import { CONTACT_SLACK, combats, enemiesTouching, type Combat } from '../shared/flow.ts';
 import { distanceBetween } from '../shared/geometry.ts';
 import { fitsSack, keepsForLater, lingeringCold } from '../shared/trolls.ts';
@@ -96,13 +96,11 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
       return [{ id: m.id, label: tag(m) }, ...(p && p.left > 0 ? [{ id: `${m.id}#mount`, label: `${tag(m)}'s ${mountLabel(p.name).toLowerCase()}` }] : [])];
     });
 
-  // The latest fight rolled between these models, if any.
+  // The latest fight rolled between these models, if any (only one fought by them alone: see fightDuel).
   const idSet = new Set(ids);
-  // (In a battle, only a fight from this turn counts: the same models may fight again next turn.)
-  const lastGroup = [...state.log]
-    .reverse()
-    .find(r => r.group?.startsWith('f-') && r.side !== undefined && r.model && idSet.has(r.model) && (!state.flow.started || !!state.flow.duels?.includes(r.group)))?.group;
-  const lastRolls = lastGroup ? state.log.filter(r => r.group === lastGroup) : [];
+  const rolled = fightDuel(state, combat ?? ids);
+  const lastGroup = rolled?.group;
+  const lastRolls = rolled?.rolls ?? [];
   const struck = lastRolls.some(duelSettled);
   const leader = lastGroup && !struck ? duelLeader(lastRolls) : null;
   // Each model struck, and the wounds it takes.
