@@ -806,6 +806,7 @@ details.finish summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
 .story-brief summary { cursor: pointer; color: var(--gold); }
 .story-brief p { margin: 6px 0 0; line-height: 1.4; }
 .story-start { align-self: flex-start; font-size: 1.1rem; padding: 12px 28px; margin-top: 8px; }
+.story-turns { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
 .narrative-setup { max-height: 70vh; overflow-y: auto; }
 @keyframes learn-glow { 50% { box-shadow: 0 0 22px 2px color-mix(in srgb, var(--accent) 45%, transparent); } }
 .site-main { width: 100%; max-width: 480px; margin: 0 auto; padding: 32px 16px 48px; display: flex; flex-direction: column; gap: 14px; text-align: center; }

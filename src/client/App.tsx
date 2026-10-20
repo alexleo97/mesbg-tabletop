@@ -256,13 +256,15 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
   // Arriving from the narrative scenario menu: set up its story with you on the side you picked.
   const story = useMemo(() => (practice ? null : new URLSearchParams(location.search).get('story')), []);
   const storySide = useMemo(() => new URLSearchParams(location.search).get('side'), []);
+  const storyTurns = useMemo(() => Number(new URLSearchParams(location.search).get('turns')) || undefined, []);
   useEffect(() => {
     if (!story || seat !== 'p1' || !players.includes('p1') || status !== 'online' || (vsComputer && !state.bot)) return;
     const url = new URL(location.href);
     url.searchParams.delete('story');
     url.searchParams.delete('side');
+    url.searchParams.delete('turns');
     history.replaceState(null, '', url);
-    if (!state.narrative && !state.flow.started) dispatch({ type: 'setNarrative', id: story, good: storySide === 'evil' ? 'p2' : 'p1' });
+    if (!state.narrative && !state.flow.started) dispatch({ type: 'setNarrative', id: story, good: storySide === 'evil' ? 'p2' : 'p1', ...(storyTurns ? { turns: storyTurns } : {}) });
   }, [seat, players.includes('p1'), status, !!state.bot]);
   useEffect(() => {
     if (!vsComputer || seat !== 'p1' || !players.includes('p1') || status !== 'online') return;

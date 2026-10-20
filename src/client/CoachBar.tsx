@@ -433,7 +433,7 @@ function Reinforcements({ state, name }: { state: GameState; name: (s: Seat) => 
         <p key={s} className="muted small">
           {state.narrative ? (
             <>
-              <b className={s}>{name(s)}</b> off the table: {bands.flat().map(m => m.name).join(', ')}, until the scenario brings them on (see its special rules).
+              <b className={s}>{name(s)}</b> off the table: {countNames(bands.flat().map(m => m.name))}, until the scenario brings them on (see its special rules).
             </>
           ) : (
             <>
@@ -788,4 +788,11 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openTab, 
       )}
     </section>
   );
+}
+
+/** Names in order, repeats counted: "Éomer, Gandalf the White, 24 × Rider of Rohan". */
+function countNames(names: string[]): string {
+  const n = new Map<string, number>();
+  for (const x of names) n.set(x, (n.get(x) ?? 0) + 1);
+  return [...n].map(([x, k]) => (k > 1 ? `${k} × ${x}` : x)).join(', ');
 }

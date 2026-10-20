@@ -19,6 +19,7 @@ import { mounted, mountLabel, mountOf } from '../shared/cavalry.ts';
 import { commanderStats, howdahFor, immovable } from '../shared/warBeasts.ts';
 import { BeastPanel } from './BeastPanel.tsx';
 import { SiegePanel } from './SiegePanel.tsx';
+import { HelmsPanel } from './HelmsPanel.tsx';
 import { crewAt, rapidFire, siegeTarget } from '../shared/siege.ts';
 import { flooredAt, floorHeight, floorName, sightTo, standingAt } from '../shared/sight.ts';
 import RULES from '../data/special-rules.json';
@@ -497,6 +498,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
       )}
       <BeastPanel state={state} catalog={catalog} dispatch={dispatch} role={role} m={m} />
       <SiegePanel state={state} catalog={catalog} dispatch={dispatch} role={role} m={m} />
+      <HelmsPanel state={state} catalog={catalog} dispatch={dispatch} role={role} m={m} />
       {mine && (state.phase === 'move' || atCrossing(state, m)) && state.flow.started && !held && <TerrainMoves state={state} dispatch={dispatch} m={m} />}
       {mine && state.phase === 'move' && state.flow.started && !held && <PutBack state={state} dispatch={dispatch} m={m} />}
       {mine && !held && <Tend state={state} dispatch={dispatch} m={m} catalog={catalog} />}

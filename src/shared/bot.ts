@@ -33,6 +33,11 @@ import { hasMorgulBlade } from './morgul.ts';
 import { AXE_FREED, canHeadbutt, hasMattock, longbeardFor, mayAxeTest, mayTend, rerollFor, spentPoints, swapPair, trumpetDue } from './company.ts';
 import { fitsSack, keepsForLater, lingeringCold } from './trolls.ts';
 import { canThrowBrand, FLAMING_BRAND } from './shooting.ts';
+import { byCulvert, charges, culvertWall, deepingDown, detonateOptions, helmsGate, isHelms, mayChooseRelief, raiseLadderTargets, RELIEF_SPAN, RELIEF_TURN, rideOutBlocked } from './helms.ts';
+import { inHornburg, onDeepingWall } from './helmsMap.ts';
+import { deadlyShot, shotsPerPhase, shotsTaken, unsteady } from './towers.ts';
+import { distanceToTerrain } from './sight.ts';
+import { hasRule } from './wargear.ts';
 import type { Action, DiceRoll, GameState, Model, Seat, Terrain } from './types.ts';
 
 // The computer player. Each call looks at the game and picks the one thing it would do next, so the server can play
@@ -197,6 +202,8 @@ export function botStep(state: GameState, seat: Seat, catalog: Catalog | null, m
 
 function phaseStep(ctx: Ctx): BotStep | null {
   const { state, seat } = ctx;
+  const relief = reliefStep(ctx);
+  if (relief) return relief;
   switch (state.phase) {
     case 'priority':
       return priorityStep(ctx);
@@ -391,6 +398,8 @@ function moveStep(ctx: Ctx): BotStep {
 
   const cast = castStep(ctx);
   if (cast) return cast;
+  const ride = rideOutStep(ctx);
+  if (ride) return ride;
 
   const broken = armyStatus(state, seat).broken;
   const enemies = side(state, other(seat));
@@ -552,13 +561,14 @@ function assignGoals(ctx: Ctx): Map<string, Goal> {
   const gates = Object.values(state.terrain).filter(t => gateStanding(t) && t.side && t.side !== seat);
   const walls = Object.values(state.terrain).filter(t => ladderable(t) && (t.sheer || heightOf(t) > 2));
   const heavyGoal = (m: Model, t: Terrain): Goal | undefined => {
+    if (t.object === 'charge') return chargeGoal(state, m, seat);
     const to = (t.object === 'ram' ? gates : walls).map(x => nearestEdge(x, m)).sort((a, b) => centre(m, a) - centre(m, b))[0];
     return to && { at: to, pull: 1.2 };
   };
   for (const m of ours) {
     const carried = carriedBy(state, m);
     if (!carried.length) continue;
-    const gear = carried.find(t => t.object === 'ladder' || t.object === 'ram');
+    const gear = carried.find(t => t.object === 'ladder' || t.object === 'ram' || t.object === 'charge');
     const goal = gear && heavyGoal(m, gear);
     if (goal) {
       out.set(m.id, goal);
@@ -588,6 +598,14 @@ function assignGoals(ctx: Ctx): Map<string, Goal> {
     wants.push({ at: back, need: TOWER.crew + 1, pull: 1.1, infantry: true });
   }
   for (const t of onTable(state)) {
+    if (t.object === 'charge') {
+      // A Demolition Charge: its team carries it to the culvert (or, that blown, an enemy gate), its torch beside it.
+      if (t.side !== seat || !chargeGoal(state, t, seat)) continue;
+      const c = t.carrier ? state.models[t.carrier] : undefined;
+      if (c) wants.push({ at: c, need: 1, pull: 1.1, infantry: true });
+      else wants.push({ at: t, need: 2, pull: 1, infantry: true });
+      continue;
+    }
     if (t.object === 'ladder' || t.object === 'ram') {
       // Our own siege gear: hands to carry it (and a ram's second pair to share the load), then climbers up a raised
       // ladder, over the top.
@@ -613,6 +631,11 @@ function assignGoals(ctx: Ctx): Map<string, Goal> {
       // Go for the enemy's; keep a guard by our own.
       wants.push(t.side === seat ? { at: t, need: 1, pull: 0.4, near: 1.5 } : { at: t, need: 1, pull: 0.8 });
     } else if (t.object === 'ally' && t.side === seat) wants.push({ at: t, need: 1, pull: 0.8 });
+  }
+  // A torch goes with the nearest of our charges, to set it off.
+  for (const m of ours.filter(x => x.torch && !out.has(x.id))) {
+    const charge = charges(state).filter(t => t.side === seat).sort((a, b) => centre(m, a) - centre(m, b))[0];
+    if (charge) out.set(m.id, { at: { x: charge.x, y: charge.y }, pull: 1.1, near: 0.6 });
   }
   const free = ours.filter(m => !out.has(m.id));
   for (const want of wants) {
@@ -693,6 +716,8 @@ function planMove(ctx: Ctx, m: Model, goal: Goal | undefined): Plan | null {
     }
   }
 
+  // Éomer, in his grief for Théoden, charges whenever he can.
+  if (grieving(ctx, m) && spots.some(s => s.charge)) spots.splice(0, spots.length, ...spots.filter(s => s.charge));
   const before = scoreFor(ctx, m, from);
   let best: { at: Point; score: number; charge?: Model } = { at: from, score: before.score };
   const vpBefore = before.vp;
@@ -781,6 +806,12 @@ function scoreFor(ctx: Ctx, m: Model, at: Point, goal?: Goal, vpBefore?: number)
   if (goal) {
     const dist = (q: Point) => Math.max(goal.near ?? 0, centre(q, goal.at));
     score += (dist(moved) - dist(at)) * goal.pull;
+  }
+  // Helm's Deep: the defenders on foot hold the walls they started on.
+  if (isHelms(state) && !mounted(m) && seat === state.narrative?.good) {
+    const r = radius(m);
+    const held = inHornburg(moved, r) ? inHornburg : onDeepingWall(moved, r) ? onDeepingWall : undefined;
+    if (held && !held(at, r)) score -= 8;
   }
 
   // What the scenario's scoring would say if the game ended with the model here.
@@ -1017,10 +1048,15 @@ function shootStep(ctx: Ctx): BotStep {
     const apply = woundsFor(ctx, group);
     if (apply) return apply;
   }
-  for (const m of side(state, seat)) {
+  // The Assault Ballista's grapnel puts up a ladder near a wall first.
+  const raise = raiseStep(ctx);
+  if (raise) return raise;
+  // Aldor's nerves make him shoot before the rest of his side.
+  for (const m of side(state, seat).sort((a, b) => Number(unsteady(ctx.catalog, b)) - Number(unsteady(ctx.catalog, a)))) {
     // Not now: waiting for a hero's heroic activation to finish (or gone with one already).
-    if (memo.acted.includes(m.id) || !mayActivate(state, m)) continue;
-    memo.acted.push(m.id);
+    if (memo.acted.includes(m.id) || !(mayActivate(state, m) || unsteady(ctx.catalog, m))) continue;
+    // (Legolas and Haldir come back for their next Shooting Attack.)
+    if (shotsTaken(state, m) + 1 >= shotsPerPhase(ctx.catalog, m)) memo.acted.push(m.id);
     const p = profile(ctx, m);
     // A defender by a pile of rocks or a vat of oil drops it on the nearest attacker below.
     const hurl = !cannotAct(state, m) && hurlOptions(state, m).sort((a, b) => Number(b.how === 'oil') - Number(a.how === 'oil'))[0];
@@ -1037,10 +1073,21 @@ function shootStep(ctx: Ctx): BotStep {
         return { action: { type: 'shoot', shot: { shooter: { id: m.id, name: m.name, weapon: FLAMING_BRAND.name, shoot: p.shoot, s: FLAMING_BRAND.s, shots: 1 }, target: { id: prey.e.id, name: prey.e.name, d: profile(ctx, prey.e).d }, obstacles: Math.min(5, prey.plan.inWay.length), brand: true } }, delay: DICE_PAUSE };
       }
     }
-    if (!p.weapon || engagedWith(state, m).length || m.prone || cannotAct(state, m)) continue;
+    if (!p.weapon || (engagedWith(state, m).length && !deadlyShot(ctx.catalog, m)) || m.prone || cannotAct(state, m)) {
+      memo.acted.push(m.id);
+      continue;
+    }
     if (memo.courage[m.id] === false && armyStatus(state, seat).broken) continue;
     const shot = bestShot(ctx, m);
+    // Legolas picks a foe out of a fight with a friend when he has nothing better.
+    const pin = (!shot || shot.value < 0.02) && !shotsTaken(state, m) && hasRule(ctx.catalog, m, 'Pinpoint Shot') ? pinpointShot(ctx, m) : undefined;
+    if (pin) {
+      memo.acted.push(m.id);
+      memo.pending = { kind: 'shot', model: m.id };
+      return { action: { type: 'shoot', shot: { shooter: { id: m.id, name: m.name, weapon: p.weapon.name, shoot: p.shoot, s: p.weapon.s, shots: 1 }, target: { id: pin.id, name: pin.name, d: profile(ctx, pin).d }, obstacles: 0, pinpoint: true } }, delay: DICE_PAUSE };
+    }
     if (!shot || shot.value < 0.02) {
+      memo.acted.push(m.id);
       // With nothing better to shoot, a strong enough bow or an engine shoots at an enemy gate.
       const gate = breachOptions(state, ctx.catalog, m).find(b => b.how === 'shoot' && state.terrain[b.target]?.kind === 'gate');
       if (gate) return { action: { type: 'breach', how: 'shoot', model: m.id, target: gate.target }, delay: DICE_PAUSE };
@@ -1335,7 +1382,7 @@ function companyStep(ctx: Ctx): BotStep | null {
   if (twins && state.phase === 'fight' && twins.every(m => engagedWith(state, m).length)) return { action: { type: 'swap', a: twins[0].id, b: twins[1].id }, delay: THINK_PAUSE };
   if (state.phase === 'move' && canActivate(state, seat))
     for (const m of side(state, seat)) {
-      if (!mayActivate(state, m)) continue;
+      if (!mayActivate(state, m) || !rulesFor(ctx.catalog, m).some(r => /^(Healing Herbs|Raising Spirits)$/.test(r))) continue;
       for (const how of ['herbs', 'spirits'] as const) {
         const t = side(state, seat).filter(f => !mayTend(state, ctx.catalog, how, m, f)).sort((a, b) => b.maxWounds - b.wounds - (a.maxWounds - a.wounds))[0];
         if (t) return { action: { type: 'tend', how, model: m.id, target: t.id }, delay: DICE_PAUSE };
@@ -1363,6 +1410,9 @@ function fightStep(ctx: Ctx): BotStep | null {
   // Tom's cold goes on as fights start, whoever starts them.
   const cold = coldPick(ctx);
   if (cold) return cold;
+  // A Demolition Charge set off where it would do the most good.
+  const boom = detonateStep(ctx);
+  if (boom) return boom;
   // A battering ram up against a gate swings before the other fights.
   for (const m of side(state, seat)) {
     const ram = breachOptions(state, ctx.catalog, m).find(b => b.how === 'ram');
@@ -1471,3 +1521,96 @@ function mightOnStrikes(ctx: Ctx, group: string): BotStep | null {
   return null;
 }
 
+
+// ——— Helm's Deep ———
+
+/** Where a Demolition Charge should go: the culvert while that stretch of the Deeping Wall stands, else an enemy gate. */
+function chargeGoal(state: GameState, from: Point, seat: Seat): Goal | undefined {
+  if (!isHelms(state)) return undefined;
+  const wall = culvertWall(state);
+  if (wall && !deepingDown(state)) return { at: nearestEdge(wall, { x: wall.x + 6, y: wall.y }), pull: 1.2 };
+  const gate = Object.values(state.terrain).filter(t => gateStanding(t) && t.side && t.side !== seat).sort((a, b) => centre(from, a) - centre(from, b))[0];
+  return gate ? { at: nearestEdge(gate, from), pull: 1.2 } : undefined;
+}
+
+/** Good chooses where on the south edge the Relief Force rides on: where most of the enemy's back ranks are. */
+function reliefStep(ctx: Ctx): BotStep | null {
+  const { state, seat } = ctx;
+  if (!isHelms(state) || state.turn < RELIEF_TURN - 1 || state.narrative?.relief !== undefined || !mayChooseRelief(state, seat)) return null;
+  const foes = side(state, other(seat));
+  let best = { x: 36, n: -1 };
+  for (let x = RELIEF_SPAN[0] + 2; x <= RELIEF_SPAN[1] - 2; x += 2) {
+    const n = foes.filter(e => centre(e, { x, y: state.board.h }) <= 18).reduce((k, e) => k + (e.siege ? 4 : profile(ctx, e).weapon ? 1.5 : 1), 0);
+    if (n > best.n) best = { x, n };
+  }
+  return { action: { type: 'reliefPoint', seat, x: best.x }, delay: THINK_PAUSE };
+}
+
+/** A hero by the Hornburg's gate mounts up and rides out once the enemy is at the gate. */
+function rideOutStep(ctx: Ctx): BotStep | null {
+  const { state, seat } = ctx;
+  const gate = isHelms(state) ? helmsGate(state) : undefined;
+  if (!gate || !side(state, other(seat)).some(e => distanceToTerrain(e, gate) <= 12)) return null;
+  const m = side(state, seat).find(x => !rideOutBlocked(state, x) && mayActivate(state, x));
+  return m ? { action: { type: 'rideOut', model: m.id }, delay: DICE_PAUSE } : null;
+}
+
+/** Éomer once Théoden has fallen: The Price of Grief has him charge whenever he can. */
+function grieving(ctx: Ctx, m: Model): boolean {
+  if (!hasRule(ctx.catalog, m, 'The Price of Grief')) return false;
+  return Object.values(ctx.state.models).some(o => o.owner === m.owner && o.dead && hasRule(ctx.catalog, o, 'Herugrim'));
+}
+
+/** A charge one of ours could set off now that is worth it: more enemies than friends in the blast, or the culvert. */
+function detonateStep(ctx: Ctx): BotStep | null {
+  const { state, seat, memo } = ctx;
+  if (!isHelms(state)) return null;
+  const ours = side(state, seat).sort((a, b) => Number(!!b.torch) - Number(!!a.torch));
+  for (const m of ours) {
+    for (const t of detonateOptions(state, m)) {
+      const key = `boom:${m.id}:${t.id}`;
+      if ((memo.tested ??= []).includes(key)) continue;
+      const hit = Object.values(state.models).filter(o => isUp(o) && distanceBetween(o, { ...m, x: t.x, y: t.y, base: { shape: 'round', w: 25, h: 25 } }) <= 2);
+      const foes = hit.filter(o => o.owner !== seat).length;
+      if (!byCulvert(state, t) && foes <= hit.length - foes) continue;
+      memo.tested.push(key);
+      return { action: { type: 'detonate', model: m.id, charge: t.id }, delay: DICE_PAUSE };
+    }
+  }
+  return null;
+}
+
+/**
+ * The Assault Ballista's Raise the Ladders!: a ladder lying near a wall goes up. A ladder still carried that close is
+ * put down first, so the grapnel can take it.
+ */
+function raiseStep(ctx: Ctx): BotStep | null {
+  const { state, seat, memo } = ctx;
+  if (!isHelms(state)) return null;
+  const tested = (memo.tested ??= []);
+  for (const engine of side(state, seat).filter(m => m.siege && !tested.includes(`raise:${m.id}`))) {
+    const ready = raiseLadderTargets(state, ctx.catalog, engine)[0];
+    if (ready) {
+      tested.push(`raise:${engine.id}`);
+      return { action: { type: 'raiseLadder', model: engine.id, ladder: ready.ladder.id }, delay: DICE_PAUSE };
+    }
+    for (const t of onTable(state).filter(x => x.object === 'ladder' && x.side === seat && x.carrier && !x.raised)) {
+      const key = `drop:${t.id}`;
+      if (tested.includes(key)) continue;
+      const { carrier: _c, ...down } = t;
+      const dropped: GameState = { ...state, terrain: { ...state.terrain, [t.id]: down } };
+      if (!raiseLadderTargets(dropped, ctx.catalog, engine).some(x => x.ladder.id === t.id)) continue;
+      tested.push(key);
+      return { action: { type: 'drop', marker: t.id }, delay: MOVE_PAUSE };
+    }
+  }
+  return null;
+}
+
+/** An enemy fighting one of our models that a Pinpoint Shot could pick out, the most worth it first. */
+function pinpointShot(ctx: Ctx, m: Model): Model | undefined {
+  const { state } = ctx;
+  return side(state, other(m.owner))
+    .filter(e => !planShot(state, ctx.catalog, m, e, { pinpoint: true }).why)
+    .sort((a, b) => profile(ctx, b).value - profile(ctx, a).value)[0];
+}
