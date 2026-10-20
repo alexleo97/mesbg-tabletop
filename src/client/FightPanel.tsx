@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useLocked } from './lessonLock.ts';
 import { modelStats } from '../shared/catalog.ts';
 import { duelLeader, duelSettled, strikeWounds, woundsTaken, type BrutalKind, type Fighter } from '../shared/fight.ts';
 import { CONTACT_SLACK, combats, enemiesTouching, type Combat } from '../shared/flow.ts';
@@ -45,6 +46,7 @@ const STATS: [Stat, string][] = [['f', 'F'], ['a', 'A'], ['s', 'S'], ['d', 'D']]
  */
 export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight', photoFor }: { state: GameState; dispatch: Dispatch; role: Role; ids: string[]; combat?: string; title?: string; photoFor?: (m: Model) => string | undefined }) {
   const { catalog } = useCatalog();
+  const locked = useLocked();
   const [edits, setEdits] = useState<Record<string, Partial<Record<Stat, number>>>>({});
   /** Where each model puts each of its strikes, when it beats more than one enemy. */
   const [aims, setAims] = useState<Record<string, string[]>>({});
@@ -261,7 +263,7 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
                       ),
                     )}
                     {choosingFor(m.owner) && twoHandedChoice(catalog, m) === 'may' && !shieldingSide(seat) && (
-                      <button className={`toggle small ${choices[m.id]?.twoHanded ? 'on' : ''}`} aria-pressed={!!choices[m.id]?.twoHanded} title="Strike with both hands: -1 to the duel roll, +1 To Wound" onClick={() => choose(m, { twoHanded: !choices[m.id]?.twoHanded })}>
+                      <button {...locked({ type: 'fightChoice', id: m.id })} className={`toggle small ${choices[m.id]?.twoHanded ? 'on' : ''}`} aria-pressed={!!choices[m.id]?.twoHanded} title="Strike with both hands: -1 to the duel roll, +1 To Wound" onClick={() => choose(m, { twoHanded: !choices[m.id]?.twoHanded })}>
                         Two-handed
                       </button>
                     )}
@@ -315,7 +317,7 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
                 );
               })}
               {choosingFor(seat) && canShieldSide(seat) && (
-                <button className={`toggle small ${shieldingSide(seat) ? 'on' : ''}`} aria-pressed={shieldingSide(seat)} title="Double Attacks in the duel, but no strikes and no support" onClick={() => { const on = !shieldingSide(seat); sides[seat].forEach(m => choose(m, { shielding: on })); }}>
+                <button {...locked({ type: 'fightChoice', id: sides[seat][0].id })} className={`toggle small ${shieldingSide(seat) ? 'on' : ''}`} aria-pressed={shieldingSide(seat)} title="Double Attacks in the duel, but no strikes and no support" onClick={() => { const on = !shieldingSide(seat); sides[seat].forEach(m => choose(m, { shielding: on })); }}>
                   🛡 Shielding
                 </button>
               )}
@@ -425,7 +427,7 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
       {ready && priorityOnly && (!lastGroup || struck) && <p className="hint">{seatName(state.priority!)} has Priority, so they choose the order the fights are rolled in.</p>}
       {ready && !lastGroup && (
         <div className="row wrap">
-          <button className="primary" onClick={duel} disabled={!fightNow || priorityOnly} title={fightNow ? undefined : 'Fights are rolled in the Fight phase.'}>
+          <button className="primary" onClick={duel} disabled={!fightNow || priorityOnly} title={fightNow ? undefined : 'Fights are rolled in the Fight phase.'} {...locked({ type: 'fight', fight: request() })}>
             Roll the duel
           </button>
         </div>
@@ -454,7 +456,7 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
               )}
               {ready && (
                 <div className="row wrap">
-                  <button className="primary" onClick={strikes} disabled={!fightNow} title={fightNow ? undefined : 'Fights are rolled in the Fight phase.'}>
+                  <button className="primary" onClick={strikes} disabled={!fightNow} title={fightNow ? undefined : 'Fights are rolled in the Fight phase.'} {...locked({ type: 'strikes', fight: request(), group: lastGroup })}>
                     Roll strikes
                   </button>
                 </div>
@@ -466,7 +468,7 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
             victims
               .filter(({ id, m, wounds }) => wounds > 0 && !m.dead && !woundsTaken(state.flow.applied, lastGroup!, id))
               .map(({ id, m, mount, wounds }) => (
-                <button key={id} onClick={() => applyWounds(m, wounds, mount)}>
+                <button key={id} {...locked({ type: 'wound', id: m.id, count: wounds })} onClick={() => applyWounds(m, wounds, mount)}>
                   Wound {mount ? `${m.name}'s mount` : m.name} {wounds} time{wounds === 1 ? '' : 's'}
                   {mount ? '' : m.hero && m.fate > 0 ? ' (Fate can be rolled)' : m.wounds - wounds <= 0 ? ' (slain)' : ''}
                 </button>

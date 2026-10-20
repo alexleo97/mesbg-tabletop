@@ -136,6 +136,10 @@ export interface Connection {
   mark(mark: Pick<Mark, 'kind' | 'x' | 'y' | 'x2' | 'y2'>): void;
   clearMarks(): void;
   close(): void;
+  /** On a Learn to play table: whether its step lets you do this, and saying what to do instead when it doesn't. */
+  allows?(action: Action): boolean;
+  uses?(id: string): boolean;
+  refuse?(): void;
 }
 
 /** Keeps this browser's copy of a room in step with the server, reconnecting when the link drops. */

@@ -19,6 +19,7 @@ import { botRoster, playableArmies } from '../shared/botList.ts';
 import { parseAdmiral } from '../shared/admiral.ts';
 import { BOT_NAME, DOOR_TYPES, MATS, TERRAIN_KINDS, type Action, type DiceRoll, type DoorType, type GameState, type Mat, type Model, type Role, type Seat, type Terrain, type TerrainKind } from '../shared/types.ts';
 import { BODY_FONTS, HEADING_FONTS, THEMES, type Settings } from './settings.ts';
+import { useLessonLock } from './lessonLock.ts';
 
 type Dispatch = (a: Action) => void;
 
@@ -123,16 +124,20 @@ export function RollRow({ r, state, role, dispatch, delay = 0 }: { r: DiceRoll; 
   const shot = r.group?.startsWith('s-');
   // A shot's dice can be raised only while the shot waits on them: the last roll of the shot that stopped.
   const paused = !!pause && pause.group === r.group && state.log.filter(x => x.group === r.group).at(-1)?.id === r.id;
-  const mine = !!dispatch && !!hero && hero.hero && !hero.dead && hero.owner === role && (!shot || paused);
+  // On a Learn to play table, only a step that teaches them offers Might and re-rolls.
+  const lock = useLessonLock();
+  const can = (a: Action) => !lock || lock.can(a);
+  const mine = !!dispatch && !!hero && hero.hero && !hero.dead && hero.owner === role && (!shot || paused) && can({ type: 'useMight', roll: r.id, die: 0 });
   const might = mine && hero!.might > 0;
   // A friendly banner nearby lets a side re-roll one die of a duel it isn't winning.
   const { catalog } = useCatalog();
-  const flag = !!dispatch && role !== undefined && role !== 'spectator' ? bannerFor(state, catalog, r, role) : undefined;
+  const flag = !!dispatch && role !== undefined && role !== 'spectator' && can({ type: 'banner', roll: r.id, die: 0 }) ? bannerFor(state, catalog, r, role) : undefined;
   // Kíli and Fíli, once they've swapped this turn, re-roll a die of their own duel rolls; Óin can pay a Will point
   // for a friend of the Company to re-roll one.
   const own = r.model ? state.models[r.model] : undefined;
-  const synergy = !!dispatch && !!own && own.owner === role && !!rerollFor(state, catalog, r, 'synergy');
-  const oin = dispatch && role !== 'spectator' && role !== undefined ? Object.values(state.models).find(o => o.owner === role && !!rerollFor(state, catalog, r, 'portents', o)) : undefined;
+  const rerolls = can({ type: 'reroll', roll: r.id, die: 0, why: 'synergy', model: '' });
+  const synergy = !!dispatch && rerolls && !!own && own.owner === role && !!rerollFor(state, catalog, r, 'synergy');
+  const oin = dispatch && rerolls && role !== 'spectator' && role !== undefined ? Object.values(state.models).find(o => o.owner === role && !!rerollFor(state, catalog, r, 'portents', o)) : undefined;
   // A Courage test can be raised with Will as well as Might.
   const will = mine && hero!.will > 0 && r.sum !== undefined && /^Courage/.test(r.label);
   // Dice from a roll made in the last moment tumble before they land.

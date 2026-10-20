@@ -686,7 +686,8 @@ export function UnitCard({ unit, optionIds = [], showOptions }: { unit: CatalogU
   );
 }
 
-const STAT_TITLES: Record<string, string> = {
+/** What each characteristic on a profile means, shown when it is hovered or pressed. */
+export const STAT_TITLES: Record<string, string> = {
   Mv: 'Move: how far it moves, in inches',
   Fv: 'Fight value: higher wins drawn fights',
   Sv: 'Shoot value: the roll needed to hit when shooting',

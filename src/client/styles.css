@@ -360,6 +360,11 @@ small.muted, p.small { font-size: 0.8rem; }
 .lesson-body p { margin: 6px 0; line-height: 1.4; }
 .lesson-task { margin: 6px 0; padding: 6px 10px; border-radius: 8px; background: var(--panel-2); border-left: 3px solid var(--gold); font-weight: 600; }
 .lesson-task.done { border-color: var(--ok); color: var(--ok); }
+.lesson-refused { margin: 6px 0; padding: 6px 10px; border-radius: 8px; background: var(--panel-2); border-left: 3px solid var(--p2); animation: lesson-nudge 0.35s ease-out; }
+@keyframes lesson-nudge { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+@media (prefers-reduced-motion: reduce) { .lesson-refused { animation: none; } }
+/* A control a Learn to play step doesn't teach: still there, but plainly not the thing to press. */
+[data-locked] { opacity: 0.45; filter: grayscale(1); cursor: not-allowed; }
 .lesson-nav { justify-content: flex-end; margin-top: 6px; }
 .lesson.small { padding: 6px 10px; }
 .lesson-more { min-height: 0; padding: 0; font-size: 0.85rem; background: none; border: none; color: var(--muted); text-decoration: underline; }
