@@ -11,7 +11,7 @@ import { scenarioById } from '../shared/scenarios.ts';
 import { MATERIALS, textures } from './textures.ts';
 import { TERRAIN_INFO, terrainRules } from '../shared/terrain.ts';
 import { holdInZones } from '../shared/deployment.ts';
-import { frontFirst, limitMove, moveAllowance, moveLeft, moveStart, movesLimited, settleMove, spent } from '../shared/movement.ts';
+import { frontFirst, leashed, limitMove, moveAllowance, moveLeft, moveStart, movesLimited, RETRACE, retrace, settleMove, spent } from '../shared/movement.ts';
 import { dropTarget } from '../shared/terrainTests.ts';
 import { inDifficult, standingAt, insidePolygon, inTheWay, isDifficult, moveCost, outline, shadowPath, sightTo, VINES_REACH } from '../shared/sight.ts';
 import { effectsOn } from '../shared/powers.ts';
@@ -507,14 +507,23 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
       // Models dragged together go front first, each keeping clear of where the others have got to, as on the server.
       const asked = frontFirst(state, Object.entries(gesture.origin).map(([id, o]) => ({ id, x: o.x + dx, y: o.y + dy })));
       let now = state;
+      const together = new Set(Object.keys(gesture.origin));
       for (const to of asked) {
         const m = state.models[to.id];
         // Once the battle is under way a model stops at the edge of its allowance, as the server would hold it there anyway.
-        // A move goes on from where the model is now, with what's left of its Move; putting it back where it began
-        // the phase is always allowed.
+        // A move goes on from where the model is now, with what's left of its Move, and keeps near a hero it goes
+        // with; putting it back where it began the phase, or back along the way it came, is always allowed.
         const left = m && moveLeft(state, m);
         const start = m && moveStart(state, m);
-        const at = m && left != null ? (Math.hypot(to.x - start!.x, to.y - start!.y) < 0.3 ? start! : limitMove(now, { x: m.x, y: m.y }, to, left, m.owner, m)) : { x: to.x, y: to.y };
+        const undone = m && left != null ? retrace(state.flow.paths?.[m.id], to) : null;
+        const at =
+          m && left != null
+            ? Math.hypot(to.x - start!.x, to.y - start!.y) < RETRACE / 2
+              ? start!
+              : undone
+                ? undone.at
+                : leashed(state, m, { x: m.x, y: m.y }, limitMove(now, { x: m.x, y: m.y }, to, left, m.owner, m), together, state.flow.heroicNow, now.models)
+            : { x: to.x, y: to.y };
         pos[to.id] = at;
         if (m && state.flow.started) now = { ...now, models: { ...now.models, [m.id]: { ...m, ...at } } };
       }

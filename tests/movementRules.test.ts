@@ -75,4 +75,31 @@ describe('movement rules', () => {
     s = move(s, 'cap', 10, 22);
     expect(distanceBetween(s.models.cap, s.models.e)).toBeGreaterThan(0.98);
   });
+
+  it("keeps a friend marching with a hero within 6\" of it from where the friend is now, and lets it go back", () => {
+    let s = run(
+      initialState(),
+      { type: 'addModels', models: [mk('cap', 'p1', 10, 30, { hero: true, might: 1 }), mk('w', 'p1', 14, 30), mk('e', 'p2', 60, 60)] },
+      { type: 'startGame' },
+      { type: 'setPhase', phase: 'move' },
+      { type: 'choosePriority', seat: 'p1' },
+      { type: 'declareHeroic', model: 'cap', action: 'Heroic March' },
+      { type: 'passHeroic', seat: 'p1' },
+      { type: 'passHeroic', seat: 'p2' },
+    );
+    s = move(s, 'cap', 10, 22);
+    // Up, then round to the right: it stops where it would get more than 6" from the hero, on its own way there,
+    // not on a straight line from where it began.
+    s = move(s, 'w', 14, 26);
+    s = move(s, 'w', 18, 26);
+    expect(s.models.w.y).toBeCloseTo(26, 3);
+    expect(s.models.w.x).toBeGreaterThan(15);
+    expect(distanceBetween(s.models.w, s.models.cap)).toBeLessThanOrEqual(6 + 1e-3);
+    // Put back where it began, though the hero has gone on more than 6" from there.
+    s = move(s, 'w', 14, 30);
+    expect(s.models.w).toMatchObject({ x: 14, y: 30 });
+    // From there it may still close in on the hero.
+    s = move(s, 'w', 13, 28);
+    expect(s.models.w).toMatchObject({ x: 13, y: 28 });
+  });
 });

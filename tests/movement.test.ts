@@ -51,6 +51,31 @@ describe('move limits', () => {
     expect(s.flow.walked?.o).toBeCloseTo(3.3, 2);
   });
 
+  it('follows a curving drag sent as many small moves, without snapping back onto the way it came', () => {
+    // A quarter circle of radius 3.5", sent about 0.15" at a time as a slow drag does.
+    let s = inMove();
+    const n = 36;
+    for (let i = 1; i <= n; i++) {
+      const a = Math.PI - (i / n) * (Math.PI / 2);
+      const p = { x: 13.5 + 3.5 * Math.cos(a), y: 40 - 3.5 * Math.sin(a) };
+      s = move(s, p.x, p.y);
+      if (i > 1) expect(Math.hypot(s.models.o.x - p.x, s.models.o.y - p.y)).toBeLessThan(0.01);
+    }
+    expect(s.flow.walked?.o).toBeCloseTo(1.75 * Math.PI, 1);
+  });
+
+  it('keeps where a long, winding move began on its trail', () => {
+    let s = reduce(inMove(), { type: 'updateModel', id: 'o', patch: { move: 60 } });
+    // A zig-zag of many turns.
+    for (let i = 1; i <= 120; i++) s = move(s, 10 + (i % 2) * 0.6, 40 - i * 0.3);
+    const trail = s.flow.paths?.o ?? [];
+    expect(trail[0]).toEqual([10, 40]);
+    // Stepping back onto its very first leg gives back nearly all it walked.
+    s = move(s, 10.25, 39.6);
+    expect(s.flow.paths?.o).toHaveLength(2);
+    expect(s.flow.walked?.o).toBeLessThan(0.7);
+  });
+
   it('goes round a corner, as long as the whole way is within its Move', () => {
     // A short, tall wall 1" wide straight ahead: going straight at it stops there.
     const wall = { id: 'w', kind: 'wall' as const, shape: 'rect' as const, x: 10, y: 37, w: 1, h: 0.5, rot: 0, locked: false, height: 3, sheer: true };
