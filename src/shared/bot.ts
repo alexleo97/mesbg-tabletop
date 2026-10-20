@@ -3,7 +3,7 @@ import { placingNow } from './placing.ts';
 import { woundNeed } from './rules.ts';
 import { hasFryingPan, longshanksFree, pannable } from './sam.ts';
 import { breachOptions } from './breach.ts';
-import { gateStanding, ladderable, nearestEdge, overThe, TOWER, towerMove } from './fortress.ts';
+import { gateStanding, HEAVY, ladderable, nearestEdge, overThe, TOWER, towerMove } from './fortress.ts';
 import { hurlOptions } from './defenders.ts';
 import { modelStats, rulesFor, type Catalog } from './catalog.ts';
 import { fighterOf } from './wargear.ts';
@@ -17,11 +17,12 @@ import { brutalOptions } from './monsters.ts';
 import { fightDone, limitMove, moveAllowance, moveLeft } from './movement.ts';
 import { affected, basePower, cannotAct, effectsOn, isCavalry, isLinePower, under } from './powers.ts';
 import { carriedBy, exitEdges, markerActions, onTable, sanctuary, touching as touchingMarker } from './objects.ts';
+import { reaches as reachesFoe, touching as touchingFoe } from './barriers.ts';
 import { chance, fightOdds, woundChance, type Side } from './odds.ts';
 import { PICKS, pickOptions } from './picks.ts';
 import { scoreLines } from './scoring.ts';
 import { seekTargets } from './ring.ts';
-import { flooredAt, floorHeight, heightOf } from './sight.ts';
+import { climbedLevel, flooredAt, floorHeight, heightOf } from './sight.ts';
 import { planShot, weaponFor } from './shooting.ts';
 import { atCrossing, crossBlocked, fallingHits } from './terrainTests.ts';
 import { armyStatus } from './status.ts';
@@ -501,6 +502,11 @@ function markerStep(ctx: Ctx, m: Model): BotStep | null {
     const team = (x: Model) => !!x.torch || x.cast === 'engineer';
     if (a.kind === 'pickUp' && (object?.object === 'ladder' || object?.object === 'ram') && team(m)) continue;
     if (a.kind === 'pickUp' && object?.object === 'charge' && !team(m) && side(state, m.owner).some(x => team(x) && centre(x, object) <= 3)) continue;
+    // A charge already where it is going stays put, to be lit.
+    if (a.kind === 'pickUp' && object?.object === 'charge') {
+      const goal = chargeGoal(state, object, m.owner);
+      if (goal && centre(object, goal.at) <= 1) continue;
+    }
     // Rocks and oil are thrown from where they stand.
     if (a.kind === 'pickUp' && (object?.object === 'rocks' || object?.object === 'oil')) continue;
     if (a.kind === 'escape') {
@@ -532,8 +538,12 @@ interface Goal {
   near?: number;
   /** A rider sent where only those on foot can do the job, so it gets down when it's close. */
   foot?: boolean;
-  /** Going in whatever the danger (Helm's Deep's Relief Force, riding to the rescue). */
+  /** Going in whatever the danger (Helm's Deep's Relief Force, riding to the rescue, and the Demolition Teams). */
   bold?: boolean;
+  /** Never sitting still: with nothing better, it moves on as far as it can (the Relief Force). */
+  ride?: boolean;
+  /** Keeps this far back from the foot of these walls (where the ladders and charges need room to get in). */
+  holdOff?: { from: Terrain[]; by: number; lanes: [Point, Point][] };
 }
 
 /**
@@ -553,6 +563,19 @@ function engineTurn(ctx: Ctx, m: Model): number | undefined {
   return best?.rot;
 }
 
+/**
+ * Where a friend helping carry a ladder or ram stands: beside the carrier on the load's side, square to the way it's
+ * going, so it shares the weight without standing in the carrier's path.
+ */
+function besideLoad(carrier: Model, load: Terrain, to: Point | undefined): Point {
+  if (!to) return carrier;
+  const d = Math.hypot(to.x - carrier.x, to.y - carrier.y) || 1;
+  const dir = { x: (to.x - carrier.x) / d, y: (to.y - carrier.y) / d };
+  const side = (load.x - carrier.x) * -dir.y + (load.y - carrier.y) * dir.x >= 0 ? 1 : -1;
+  const k = radius(carrier) * 2 + 0.05;
+  return { x: carrier.x - dir.y * side * k, y: carrier.y + dir.x * side * k };
+}
+
 /** Where a siege tower should be pushed: the nearest point on the nearest tall wall. */
 function towerAim(state: GameState, t: Terrain): Point | undefined {
   const walls = Object.values(state.terrain).filter(w => ladderable(w) && (w.sheer || heightOf(w) > 2));
@@ -570,11 +593,23 @@ function assignGoals(ctx: Ctx): Map<string, Goal> {
   // A Siege Ladder goes to the nearest wall before the enemy, a ram to the enemy's gate.
   const gates = Object.values(state.terrain).filter(t => gateStanding(t) && t.side && t.side !== seat);
   const walls = Object.values(state.terrain).filter(t => ladderable(t) && (t.sheer || heightOf(t) > 2));
+  // (A ladder goes where the foot of the wall is clear: along it from the nearest point, past friends already there.)
+  const freeEdge = (m: Model, x: Terrain): Point => {
+    const a = (x.rot * Math.PI) / 180;
+    const along = x.w >= x.h ? { x: Math.cos(a), y: Math.sin(a) } : { x: -Math.sin(a), y: Math.cos(a) };
+    const crowd = side(state, seat).filter(f => f.id !== m.id && centre(f, m) < 10);
+    for (const k of [0, 1, -1, 2, -2, 3, -3, 4, -4]) {
+      const q = nearestEdge(x, { x: m.x + along.x * k * 1.2, y: m.y + along.y * k * 1.2 });
+      if (!crowd.some(f => centre(f, q) < radius(f) + radius(m))) return q;
+    }
+    return nearestEdge(x, m);
+  };
   const heavyGoal = (m: Model, t: Terrain): Goal | undefined => {
     if (t.object === 'charge') return chargeGoal(state, m, seat);
-    const to = (t.object === 'ram' ? gates : walls).map(x => nearestEdge(x, m)).sort((a, b) => centre(m, a) - centre(m, b))[0];
+    const to = (t.object === 'ram' ? gates.map(x => nearestEdge(x, m)) : walls.map(x => freeEdge(m, x))).sort((a, b) => centre(m, a) - centre(m, b))[0];
     return to && { at: to, pull: 1.2 };
   };
+  const lanes: [Point, Point][] = [];
   for (const m of ours) {
     const carried = carriedBy(state, m);
     if (!carried.length) continue;
@@ -582,6 +617,7 @@ function assignGoals(ctx: Ctx): Map<string, Goal> {
     const goal = gear && heavyGoal(m, gear);
     if (goal) {
       out.set(m.id, goal);
+      if (gear.object !== 'ram') lanes.push([{ x: m.x, y: m.y }, goal.at]);
       continue;
     }
     const edges = exitEdges(state, m);
@@ -612,7 +648,7 @@ function assignGoals(ctx: Ctx): Map<string, Goal> {
       // A Demolition Charge: its team carries it to the culvert (or, that blown, an enemy gate), its torch beside it.
       if (t.side !== seat || !chargeGoal(state, t, seat)) continue;
       const c = t.carrier ? state.models[t.carrier] : undefined;
-      if (c) wants.push({ at: c, need: 1, pull: 1.1, infantry: true, team: true });
+      if (c) wants.push({ at: besideLoad(c, t, chargeGoal(state, c, seat)?.at), need: 1, pull: 1.1, infantry: true, team: true });
       else wants.push({ at: t, need: 2, pull: 1, infantry: true, team: true });
       continue;
     }
@@ -623,7 +659,7 @@ function assignGoals(ctx: Ctx): Map<string, Goal> {
       const c = t.carrier ? state.models[t.carrier] : undefined;
       const wall = t.raised ? state.terrain[t.raised] : undefined;
       if (wall) wants.push({ at: overThe(wall, t), need: 4, pull: 1, infantry: true });
-      else if (c) wants.push({ at: c, need: t.object === 'ram' ? 2 : 1, pull: 1.1, infantry: true });
+      else if (c) wants.push({ at: besideLoad(c, t, (t.object === 'ram' ? gates : walls).map(x => nearestEdge(x, c)).sort((a, b) => centre(c, a) - centre(c, b))[0]), need: t.object === 'ram' ? 2 : 1, pull: 1.1, infantry: true });
       else if (t.object === 'ram' ? gates.length : walls.length) wants.push({ at: t, need: t.object === 'ram' ? 3 : 2, pull: 0.9, infantry: true });
       continue;
     }
@@ -645,13 +681,16 @@ function assignGoals(ctx: Ctx): Map<string, Goal> {
   const free = ours.filter(m => !out.has(m.id));
   const teamRank = (m: Model) => (m.torch ? 2 : m.cast === 'engineer' ? 1 : 0);
   for (const want of wants) {
+    // (Its own team: those beside the charge, not another team's torch from down the line.)
+    const rankBy = (m: Model) => (centre(m, want.at) <= 4 ? teamRank(m) : 0);
     const takers = free
       .filter(m => !out.has(m.id) && (!want.infantry || !cavalry(m)))
       // (A Demolition Team carries its own charge: the torch-bearer, so it is touching it when it's time to light it,
       // and its engineers.)
-      .sort((a, b) => (want.team ? teamRank(b) - teamRank(a) : 0) || centre(a, want.at) - centre(b, want.at))
+      .sort((a, b) => (want.team ? rankBy(b) - rankBy(a) : 0) || centre(a, want.at) - centre(b, want.at))
       .slice(0, want.need);
-    for (const m of takers) out.set(m.id, { at: { x: want.at.x, y: want.at.y }, pull: want.pull, near: want.near });
+    // (A Demolition Team keeps to its charge under the defenders' arrows.)
+    for (const m of takers) out.set(m.id, { at: { x: want.at.x, y: want.at.y }, pull: want.pull, near: want.near, ...(want.team ? { bold: true } : {}) });
     // With nobody on foot to spare, a rider goes and dismounts to do it.
     if (want.infantry && takers.length < want.need) {
       const riders = free.filter(m => !out.has(m.id) && cavalry(m)).sort((a, b) => centre(a, want.at) - centre(b, want.at));
@@ -691,13 +730,13 @@ function assignGoals(ctx: Ctx): Map<string, Goal> {
         const foe = [...foes].sort((a, b) => cost(a) - cost(b))[0];
         if (foe) {
           taken.set(foe.id, (taken.get(foe.id) ?? 0) + 1);
-          out.set(m.id, { at: { x: foe.x, y: foe.y }, pull: 1.5, bold: true });
+          out.set(m.id, { at: { x: foe.x, y: foe.y }, pull: 1.5, bold: true, ride: true });
         }
       } else if (!good && !m.siege && !m.crewOf && !m.torch && !cavalry(m)) {
         // (Short of the walls until a ladder is up, and clear of the culvert, where the charges are going.)
         const gap = deepingDown(state) ? { x: CULVERT.x - 4, y: CULVERT.y } : undefined;
         const to = gap ?? walls.filter(x => x.id !== culvertWall(state)?.id).map(x => nearestEdge(x, m)).sort((a, b) => centre(m, a) - centre(m, b))[0];
-        if (to && (gap || Math.hypot(to.x - CULVERT.x, to.y - CULVERT.y) > 5)) out.set(m.id, { at: to, pull: 0.5, near: gap ? 0 : 3 });
+        if (to && (gap || Math.hypot(to.x - CULVERT.x, to.y - CULVERT.y) > 5)) out.set(m.id, { at: to, pull: 0.5, near: gap ? 0 : 3, ...(gap ? {} : { holdOff: { from: walls, by: 2.5, lanes } }) });
       }
     }
   }
@@ -756,7 +795,8 @@ function planMove(ctx: Ctx, m: Model, goal: Goal | undefined): Plan | null {
     for (const off of [0, 0.45, -0.45, 0.9, -0.9, 1.4, -1.4, 2, -2, Math.PI]) {
       const at = { x: e.x + Math.sin(base + off) * r, y: e.y - Math.cos(base + off) * r };
       const got = reach(at);
-      if (centre(got, at) < 1e-3) spots.push({ at, charge: e });
+      // (Only where it can actually fight it: not at the foot of a wall with the enemy up on top, say.)
+      if (centre(got, at) < 1e-3 && touchingFoe(state, { ...m, ...at }, e)) spots.push({ at, charge: e });
     }
   }
 
@@ -771,7 +811,7 @@ function planMove(ctx: Ctx, m: Model, goal: Goal | undefined): Plan | null {
     if (sc.score > best.score + 0.05) best = { at: s.at, score: sc.score, charge: s.charge };
   }
   // Riding to the rescue, it doesn't sit where it came on: with nothing better, it rides on as far as it can.
-  if (goal?.bold && centre(best.at, from) < 0.05) {
+  if (goal?.ride && centre(best.at, from) < 0.05) {
     const far = spots.filter(s => centre(s.at, from) >= mv / 2 && fits(ctx, m, s.at, s.charge)).map(s => ({ ...s, score: scoreFor(ctx, m, s.at, goal, vpBefore).score }));
     const pick = far.sort((a, b) => b.score - a.score)[0];
     if (pick) best = pick;
@@ -779,6 +819,14 @@ function planMove(ctx: Ctx, m: Model, goal: Goal | undefined): Plan | null {
   if (centre(best.at, from) < 0.05) return null;
   const look = best.charge ?? [...enemies].sort((a, b) => centre(best.at, a) - centre(best.at, b))[0];
   return { at: best.at, rot: look ? facing(best.at, look) : m.rot };
+}
+
+/** How far a point is from the line between two others. */
+function lineGap(p: Point, a: Point, b: Point): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy || 1)));
+  return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
 }
 
 /** Whether a model can stand at `at`: on the table, clear of other bases, and out of enemy control zones unless fighting. */
@@ -796,7 +844,7 @@ function fits(ctx: Ctx, m: Model, at: Point, charge?: Model): boolean {
     // (Charging one enemy, it may end beside others: it's in the fight, so their control zones no longer hold it.)
     if (o.owner !== m.owner && !charge) {
       const d = distanceBetween(here, o);
-      if (d > CONTACT_SLACK && d < 1) return false;
+      if (d > CONTACT_SLACK && d < 1 && reachesFoe(state, here, o)) return false;
     }
   }
   return !charge || distanceBetween(here, charge) <= CONTACT_SLACK;
@@ -829,6 +877,8 @@ function scoreFor(ctx: Ctx, m: Model, at: Point, goal?: Goal, vpBefore?: number)
       const ep = profile(ctx, e);
       if (Math.abs(e.x - at.x) > ep.mv + 4 || Math.abs(e.y - at.y) > ep.mv + 4) continue;
       if (distanceBetween(e, here) > ep.mv + 1) continue;
+      // (One up on a wall's walkway won't come down to it, nor one below get up to it, without steps or a ladder.)
+      if (Math.abs(climbedLevel(state, e) - climbedLevel(state, at)) > 2) continue;
       const o = fightOdds(fighterSide(ctx, [here]), fighterSide(ctx, [e]));
       danger += Math.min(0, o.score) * (engagedWith(after, e).length ? 0.3 : 1);
     }
@@ -836,14 +886,16 @@ function scoreFor(ctx: Ctx, m: Model, at: Point, goal?: Goal, vpBefore?: number)
     score += danger * (support >= 2 ? 0.4 : support ? 0.7 : 1) * (p.weapon ? 1.5 : 1) * (standoff(ctx) ? 0.15 : 1) * (goal?.bold ? 0.2 : 1);
 
     // Archers want a target in range from a spot they can still shoot from; with none, they come closer.
-    const shot = p.weapon && centre(moved, at) <= p.mv / 2 + 0.05 ? (bestShot(ctx, here, after)?.value ?? 0) : 0;
+    // (Not while hauling siege gear to the walls: that's its job this turn.)
+    const hauling = carriedBy(state, m).some(t => HEAVY.has(t.object ?? ''));
+    const shot = p.weapon && !hauling && centre(moved, at) <= p.mv / 2 + 0.05 ? (bestShot(ctx, here, after)?.value ?? 0) : 0;
     score += shot;
 
     // Closing in when the army is the stronger one; holding together otherwise.
     const near = (q: Point) => Math.min(...enemies.map(e => centre(q, e)), 60);
     // Neither side giving ground for turns on end: the stronger one goes in (and in a long one, both do).
     if (!p.weapon) score += (near(moved) - near(at)) * (standoff(ctx) ? 0.4 : aggressive(ctx) ? 0.22 : 0.06);
-    else if (!shot && !bestShot(ctx, moved)) score += (near(moved) - near(at)) * 0.12;
+    else if (!shot && (hauling || !bestShot(ctx, moved))) score += (near(moved) - near(at)) * 0.12;
     // Fast models and heroes don't run far ahead of the battle line on their own.
     if (!goal && !standoff(ctx)) {
       const ahead = front(ctx, m) - 3 - near(at);
@@ -858,6 +910,15 @@ function scoreFor(ctx: Ctx, m: Model, at: Point, goal?: Goal, vpBefore?: number)
   if (goal) {
     const dist = (q: Point) => Math.max(goal.near ?? 0, centre(q, goal.at));
     score += (dist(moved) - dist(at)) * goal.pull;
+  }
+  if (goal?.holdOff) {
+    const d = Math.min(...goal.holdOff.from.filter(t => Math.abs(t.x - at.x) < 30 && Math.abs(t.y - at.y) < 30).map(t => distanceToTerrain(here, t)), 99);
+    if (d < goal.holdOff.by) score -= (goal.holdOff.by - d) * 1.5;
+    // (And out of the way of the gear being carried up to them.)
+    for (const [a, b] of goal.holdOff.lanes) {
+      const gap = lineGap(at, a, b);
+      if (gap < 1.8) score -= (1.8 - gap) * 2;
+    }
   }
   // Helm's Deep: the defenders on foot hold the walls they started on.
   if (isHelms(state) && !mounted(m) && seat === state.narrative?.good) {
@@ -1581,7 +1642,8 @@ function chargeGoal(state: GameState, from: Point, seat: Seat): Goal | undefined
   if (!isHelms(state)) return undefined;
   const wall = culvertWall(state);
   // (Set down a little short of the wall, out of reach of its defenders, so they can't stop the team lighting it.)
-  if (wall && !deepingDown(state)) return { at: { x: CULVERT.x + 2.6, y: CULVERT.y }, pull: 1.2 };
+  // (Bold: the defenders up on the wall shoot at it, and it goes on regardless.)
+  if (wall && !deepingDown(state)) return { at: { x: CULVERT.x + 2.6, y: CULVERT.y }, pull: 1.2, bold: true };
   const gate = Object.values(state.terrain).filter(t => gateStanding(t) && t.side && t.side !== seat).sort((a, b) => centre(from, a) - centre(from, b))[0];
   return gate ? { at: nearestEdge(gate, from), pull: 1.2 } : undefined;
 }

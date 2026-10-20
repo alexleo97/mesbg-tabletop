@@ -195,6 +195,10 @@ export interface Terrain {
   raised?: string;
   /** A wall that is a defender's Barricade (Defence 7, 2 Wounds), or a spiked one that hurts those crossing it. */
   barricade?: 'plain' | 'spiked';
+  /** A rampart with a walkway along its top: models stand on it at its height, reaching it by steps or a ladder. */
+  walk?: boolean;
+  /** A flight of steps up onto a rampart's walkway: models go up and down there without a test. */
+  stairs?: boolean;
   /** Drawn in dressed stone (a fortress's courtyard, causeway, keep or tower), or a wall with a culvert through it. Looks only. */
   look?: 'stone' | 'culvert';
 }

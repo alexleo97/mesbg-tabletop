@@ -6,12 +6,15 @@ import type { Base, Terrain } from './types.ts';
 // Inches from the north-west corner of a 4' by 4' table. The Hornburg fills that corner, its outer wall an arc round
 // it, and the Deeping Wall runs from that wall down to the middle of the south edge, the Deep behind it.
 
-/** The Hornburg's outer wall: an arc round the north-west corner, its middle this far out, and how thick it is. */
-export const OUTER = { r: 23.6, t: 1.2 };
+/**
+ * The Hornburg's outer wall: an arc round the north-west corner, its middle this far out, and how thick it is. Its
+ * walls, like the Deeping Wall, are ramparts the defenders stand on, two ranks deep, reached by flights of steps.
+ */
+export const OUTER = { r: 23.6, t: 2.2 };
 /** Its inner wall, closer in. */
-export const INNER = { r: 15, t: 1 };
+export const INNER = { r: 15, t: 1.8 };
 /** The Deeping Wall: a diagonal run from the Hornburg, then straight down to the south edge, with the culvert in it. */
-export const DEEPING = { from: { x: 16.3, y: 17.2 }, corner: { x: 23.6, y: 24.3 }, t: 1.2, culvert: 36.2, reach: 6 };
+export const DEEPING = { from: { x: 16.3, y: 17.2 }, corner: { x: 23.6, y: 24.3 }, t: 2.2, culvert: 36.2, reach: 6 };
 /** Where the Hornburg's great gate stands on the outer wall (degrees round from the north edge towards the west). */
 export const GATE_ANGLE = 19;
 /** The door between the Hornburg and the Deep, and the door through the inner wall. */
@@ -32,7 +35,7 @@ const piece = (t: Partial<Terrain> & Pick<Terrain, 'id' | 'kind' | 'x' | 'y' | '
 /** A wall straight from a to b, a little longer than the gap so neighbouring runs meet. */
 function run(id: string, a: Point, b: Point, t: number, extra: Partial<Terrain> = {}): Terrain {
   const len = Math.hypot(b.x - a.x, b.y - a.y);
-  return piece({ id, kind: 'wall', x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, w: len + 0.3, h: t, rot: (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI, height: WALL_HEIGHT, sheer: true, ...extra });
+  return piece({ id, kind: 'wall', x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, w: len + 0.3, h: t, rot: (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI, height: WALL_HEIGHT, sheer: true, walk: true, ...extra });
 }
 
 /** An arc of wall in short straight runs from `from` to `to` degrees, leaving gaps for the doors in it. */
@@ -92,6 +95,12 @@ export function helmsTerrain(): NarrativeTerrain[] {
     run('deeping-2', D.corner, { x: D.corner.x, y: culvertTop }, D.t),
     run(CULVERT_ID, { x: D.corner.x, y: culvertTop }, { x: D.corner.x, y: culvertBottom }, D.t, { w: culvertBottom - culvertTop, look: 'culvert' }),
     run('deeping-3', { x: D.corner.x, y: culvertBottom }, { x: D.corner.x, y: BOARD + 0.15 }, D.t),
+    // Flights of steps up onto the walls: the outer wall's from the Hornburg's courtyard, the inner wall's from both
+    // sides, and the Deeping Wall's from the Deep.
+    ...[7, 33, 55].map((deg, i) => steps(`steps-outer-${i + 1}`, OUTER.r - OUTER.t / 2 - STEP.d / 2, deg)),
+    steps('steps-inner-1', INNER.r - INNER.t / 2 - STEP.d / 2, 55),
+    steps('steps-inner-2', INNER.r + INNER.t / 2 + STEP.d / 2, 75, true),
+    ...deepingSteps(),
     // The Deeping Stream, out through the culvert.
     piece({ id: 'stream', kind: 'water', x: 13, y: 36, w: 26, h: 1.4, path: [[-13, -0.3, 0.55], [-6, 0.1, 0.6], [2, -0.2, 0.6], [10.6, 0.2, 0.6], [13, 0.2, 0.55]] }),
     // The Host of Isengard's ten Siege Ladders, and the five Demolition Teams' charges.
@@ -106,6 +115,30 @@ const LADDERS = [2, 3.9, 10.5, 12.4, 19.5, 28.5, 30.4, 37.5, 39.4, 46];
 /** A Demolition Charge stands on a 25mm base. */
 export const CHARGE_SIZE = 25 / 25.4;
 
+/** A flight of steps: this wide along the wall, and reaching this far out from it. */
+const STEP = { w: 1.6, d: 2 };
+
+/** Steps against an arc of wall, `r` from the corner at `deg`, running out from it (the wall at the steps' local top). */
+function steps(id: string, r: number, deg: number, outside = false): Terrain {
+  const p = onArc(r, deg);
+  return piece({ id, kind: 'road', x: p.x, y: p.y, w: STEP.w, h: STEP.d, rot: deg + (outside ? -90 : 90), stairs: true, look: 'stone' });
+}
+
+/** Steps up the Deeping Wall from the Deep: one halfway along the diagonal run, and one either side of the culvert. */
+function deepingSteps(): Terrain[] {
+  const a = D.from;
+  const b = D.corner;
+  const len = Math.hypot(b.x - a.x, b.y - a.y);
+  const u = { x: (b.x - a.x) / len, y: (b.y - a.y) / len };
+  const off = D.t / 2 + STEP.d / 2;
+  const mid = { x: (a.x + b.x) / 2 - u.y * off, y: (a.y + b.y) / 2 + u.x * off };
+  const rot = (Math.atan2(u.y, u.x) * 180) / Math.PI;
+  return [
+    piece({ id: 'steps-deeping-1', kind: 'road', ...mid, w: STEP.w, h: STEP.d, rot, stairs: true, look: 'stone' }),
+    ...[28, 45].map((y, i) => piece({ id: `steps-deeping-${i + 2}`, kind: 'road', x: b.x - off, y, w: STEP.w, h: STEP.d, rot: 90, stairs: true, look: 'stone' })),
+  ];
+}
+
 function along(r: number): Point {
   return onArc(r, GATE_ANGLE);
 }
@@ -114,8 +147,8 @@ function along(r: number): Point {
 
 export type HelmsZone = 'hornburg' | 'deeping' | 'evil';
 
-/** Whether a base of radius r at p is wholly within the Hornburg: inside the outer wall. */
-export const inHornburg = (p: Point, r: number) => Math.hypot(p.x, p.y) + r <= OUTER.r - OUTER.t / 2 + 0.05;
+/** Whether a base of radius r at p is wholly within the Hornburg: inside its outer wall, or up on it. */
+export const inHornburg = (p: Point, r: number) => Math.hypot(p.x, p.y) + r <= OUTER.r + OUTER.t / 2 + 0.05;
 
 /** How far a point is from the Deeping Wall's middle line, and whether it is on the Deep's side of it. */
 export function fromDeepingWall(p: Point): { d: number; inside: boolean } {
@@ -132,13 +165,9 @@ export function fromDeepingWall(p: Point): { d: number; inside: boolean } {
   return { d: Math.min(diag, straight), inside };
 }
 
-/**
- * "On the Deeping Wall": on the Deep's side of it, within two ranks of its inner face, and outside the Hornburg. (Our
- * walls are thin, so the defenders stand along the inner face, as they do on the Hornburg's walls.)
- */
+/** "On the Deeping Wall": up on its walkway, outside the Hornburg. */
 export function onDeepingWall(p: Point, r: number): boolean {
-  const w = fromDeepingWall(p);
-  return w.inside && w.d - D.t / 2 - r <= 2.2 && Math.hypot(p.x, p.y) - r >= OUTER.r + OUTER.t / 2 - 0.05 && p.y + r <= BOARD && p.x - r >= 0;
+  return fromDeepingWall(p).d <= D.t / 2 - 0.05 && Math.hypot(p.x, p.y) - r >= OUTER.r + OUTER.t / 2 - 0.05 && p.y + r <= BOARD;
 }
 
 export const inEvilZone = (p: Point, r: number) => p.x - r >= BOARD - EVIL_ZONE - 0.01 && p.x + r <= BOARD + 0.01 && p.y - r >= -0.01 && p.y + r <= BOARD + 0.01;
@@ -159,10 +188,10 @@ function spread(candidates: Point[]): Point[] {
   return out;
 }
 
-/** Where the defenders of the Deeping Wall stand: a rank touching its inner face, and a second rank behind. */
+/** Where the defenders of the Deeping Wall stand: two ranks along its walkway, the one nearer the enemy first. */
 export function deepingSlots(): Point[] {
   const ranks = [0, 1].map(k => {
-    const off = D.t / 2 + R25 + 0.03 + k * GAP;
+    const off = (k ? 1 : -1) * (GAP / 2);
     const a = D.from;
     const b = D.corner;
     const len = Math.hypot(b.x - a.x, b.y - a.y);
@@ -177,14 +206,15 @@ export function deepingSlots(): Point[] {
   return spread([...ranks[0], ...ranks[1]]);
 }
 
-/** Where the defenders of the Hornburg stand: along the outer wall facing the enemy, the gate at their middle. */
+/** Where the defenders of the Hornburg stand: two ranks along the outer wall's walkway either side of the gate. */
 export function hornburgSlots(): Point[] {
-  const ranks = [0, 1, 2].map(k => {
-    const r = OUTER.r - OUTER.t / 2 - R25 - 0.2 - k * GAP;
+  const gate = halfAngle(GATE_W, OUTER.r) + 2.6;
+  const ranks = [0, 1].map(k => {
+    const r = OUTER.r + (k ? -1 : 1) * (GAP / 2);
     const step = (GAP / r) * (180 / Math.PI);
     const out: Point[] = [];
-    for (let deg = 2.6; deg <= 44; deg += step) out.push(onArc(r, deg));
-    return out.filter(p => inHornburg(p, R25));
+    for (let deg = 1.6; deg <= 50; deg += step) if (Math.abs(deg - GATE_ANGLE) > gate) out.push(onArc(r, deg));
+    return out;
   });
   return spread(ranks.flat());
 }

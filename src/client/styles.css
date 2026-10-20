@@ -129,6 +129,7 @@ h1, h3, h4, .topbar .room, .phases .turn, .roster-summary b, .name-input, .tabs 
 .terrain .culvert-mouth { fill: #15110d; stroke: #0008; stroke-width: 0.05; pointer-events: none; }
 .terrain .culvert-bar { stroke: #4b4a48; stroke-width: 0.07; pointer-events: none; }
 .terrain .paving { stroke: #0004; stroke-width: 0.08; }
+.terrain .step { fill: #000; stroke: #0007; stroke-width: 0.03; }
 .terrain .paving-tint { fill: #f0e6d014; }
 .terrain .parapet { stroke: #0006; stroke-width: 0.03; pointer-events: none; }
 .terrain .keep-edge { stroke: #1d1b19; stroke-width: 0.08; }

@@ -117,6 +117,9 @@ export const laddersOn = (state: GameState, pieceId: string) => onTable(state).f
 export const ladderAt = (state: GameState, pieceId: string, p: Point, r = 0) =>
   laddersOn(state, pieceId).some(l => Math.hypot(l.x - p.x, l.y - p.y) <= 1 + r + l.w / 2) || towersOn(state, pieceId).some(t => fromPiece(t, p) <= 1 + r);
 
+/** Whether a flight of steps up onto a rampart's walkway is within `r` of a point, so a model there goes up or down freely. */
+export const stairsAt = (state: GameState, p: Point, r = 0) => Object.values(state.terrain).some(t => t.stairs && fromPiece(t, p) <= r + 0.05);
+
 /** Siege towers whose ramp is down on a piece of terrain: those aboard cross onto it freely. */
 export const towersOn = (state: GameState, pieceId: string) => Object.values(state.terrain).filter(t => t.kind === 'tower' && !t.gone && t.raised === pieceId);
 
@@ -212,6 +215,8 @@ export function raiseLadders(state: GameState): GameState {
  */
 export function overThe(t: Terrain, p: Point, by = 1): Point {
   if (t.kind !== 'wall' && t.kind !== 'ruin') return { x: t.x, y: t.y };
+  // A rampart: up onto its walkway, at its middle.
+  if (t.walk) return onTop(t, p);
   const a = (t.rot * Math.PI) / 180;
   const c = Math.cos(a);
   const s = Math.sin(a);
@@ -223,6 +228,17 @@ export function overThe(t: Terrain, p: Point, by = 1): Point {
   if (t.h <= t.w) ly = -Math.sign(ly || 1) * (t.h / 2 + by);
   else lx = -Math.sign(lx || 1) * (t.w / 2 + by);
   return { x: t.x + lx * c - ly * s, y: t.y + lx * s + ly * c };
+}
+
+/** The point on a wall's middle line, along its length, nearest `p`: where a model climbing onto its top stands. */
+export function onTop(t: Terrain, p: Point): Point {
+  const a = (t.rot * Math.PI) / 180;
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  const long = t.w >= t.h;
+  const half = (long ? t.w : t.h) / 2 - 0.5;
+  const k = Math.max(-half, Math.min(half, long ? (p.x - t.x) * c + (p.y - t.y) * s : -(p.x - t.x) * s + (p.y - t.y) * c));
+  return long ? { x: t.x + k * c, y: t.y + k * s } : { x: t.x - k * s, y: t.y + k * c };
 }
 
 /** Friends of the carrier also touching the Heavy Object it carries, who share the load. */

@@ -3,8 +3,8 @@
 // Way roll, and the defender never backs away. If the defender falls, the attacker takes its place.
 import { distanceBetween, halfExtents, type Point } from './geometry.ts';
 import { CONTACT_SLACK } from './flow.ts';
-import { ladderAt } from './fortress.ts';
-import { climbedLevel, distanceToTerrain, heightOf, heightOfModel, insidePolygon, outline, standingAt } from './sight.ts';
+import { ladderAt, onTop } from './fortress.ts';
+import { climbedLevel, distanceToTerrain, heightOf, heightOfModel, insidePolygon, outline, standingAt, walkway } from './sight.ts';
 import type { GameState, Model, Terrain } from './types.ts';
 
 const radius = (m: Model) => Math.max(halfExtents(m.base).rx, halfExtents(m.base).ry);
@@ -27,7 +27,8 @@ export function wallBetween(state: GameState, a: Model, b: Model): Terrain | und
   const d = distanceBetween(a, b);
   if (d <= CONTACT_SLACK || d > REACH) return undefined;
   for (const t of Object.values(state.terrain)) {
-    if (t.kind !== 'wall' || t.gone || !near(t, a, Math.max(t.w, t.h) / 2 + 3)) continue;
+    // (Those on a rampart's walkway fight from up on it, base to base.)
+    if (t.kind !== 'wall' || t.gone || walkway(t) || !near(t, a, Math.max(t.w, t.h) / 2 + 3)) continue;
     if (distanceToTerrain(a, t) > CONTACT_SLACK || distanceToTerrain(b, t) > CONTACT_SLACK) continue;
     // Nobody reaches the top of a sheer wall from its foot without a Siege Ladder or a siege tower's ramp.
     if (t.sheer && !ladderAt(state, t.id, a) && !ladderAt(state, t.id, b)) continue;
@@ -45,16 +46,32 @@ export function touching(state: GameState, a: Model, b: Model): boolean {
   if (a.aboard || b.aboard || !near(a, b, 5)) return false;
   if (distanceBetween(a, b) <= CONTACT_SLACK) {
     if (!a.floor && !b.floor && !hasHeight(state)) return true;
-    const lift = levelOf(state, a) - levelOf(state, b);
-    if ((a.floor || b.floor) && Math.abs(lift) >= 0.5) return false;
-    // A model can't reach one standing higher above it than its own height.
-    return Math.abs(lift) <= heightOfModel(lift > 0 ? b : a) + 1e-6;
+    return reaches(state, a, b);
   }
   return !!wallBetween(state, a, b);
 }
 
+/**
+ * Whether two models side by side are near enough in height to fight: on the same floor, and neither stood higher
+ * above the other than its own height, unless it's climbing a ladder up to it.
+ */
+export function reaches(state: GameState, a: Model, b: Model): boolean {
+  if (!a.floor && !b.floor && !hasHeight(state)) return true;
+  const lift = levelOf(state, a) - levelOf(state, b);
+  if ((a.floor || b.floor) && Math.abs(lift) >= 0.5) return false;
+  return Math.abs(lift) <= heightOfModel(lift > 0 ? b : a) + 1e-6 || !!upLadder(state, lift > 0 ? b : a, lift > 0 ? a : b);
+}
+
 /** Whether any terrain on the table raises a model off the ground (so heights need checking at all). */
-const hasHeight = (state: GameState) => Object.values(state.terrain).some(t => t.kind === 'rock' || t.kind === 'cliff' || t.kind === 'building');
+const hasHeight = (state: GameState) => Object.values(state.terrain).some(t => t.kind === 'rock' || t.kind === 'cliff' || t.kind === 'building' || walkway(t));
+
+/**
+ * The rampart `low` is climbing up to `high` by: `high` stands on its walkway and `low` at the foot of a raised Siege
+ * Ladder against it (or a siege tower's ramp), so they fight at the top of the ladder.
+ */
+export function upLadder(state: GameState, low: Model, high: Model): Terrain | undefined {
+  return Object.values(state.terrain).find(t => walkway(t) && near(t, high, Math.max(t.w, t.h) / 2 + 1) && insidePolygon(outline(t), high) && ladderAt(state, t.id, low) && Math.hypot(onTop(t, low).x - high.x, onTop(t, low).y - high.y) <= 1.6);
+}
 
 /** The living enemies a model is fighting: in base contact, or across a wall. */
 /** Enemies in base contact with a model, that it is fighting (a siege engine fights no one). */

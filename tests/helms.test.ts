@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { resolveRequest } from '../src/shared/resolve.ts';
 import { castModel, radius } from '../src/shared/narrative.ts';
 import { initialState, reduce } from '../src/shared/reducer.ts';
-import { distanceToTerrain } from '../src/shared/sight.ts';
-import { inEvilZone, inHornburg, onDeepingWall } from '../src/shared/helmsMap.ts';
+import { climbedLevel, distanceToTerrain } from '../src/shared/sight.ts';
+import { touching, touchingEnemies } from '../src/shared/barriers.ts';
+import { inEvilZone, inHornburg, onArc, onDeepingWall } from '../src/shared/helmsMap.ts';
+import { crossBlocked, crossingAhead } from '../src/shared/terrainTests.ts';
+import { limitMove } from '../src/shared/movement.ts';
 import type { Action, GameState, Seat } from '../src/shared/types.ts';
 import { catalog } from './botsim.ts';
 import { chargeSabotage, deepingDown, detonateBlocked, helmsObjectives, helmsTally, raiseLadderTargets, reliefArrives, reliefDue } from '../src/shared/helms.ts';
@@ -42,7 +45,7 @@ describe("Helm's Deep: setting up", () => {
       expect(inEvilZone(m, radius(m))).toBe(true);
     }
     // Nobody stands in a wall or on another model.
-    const walls = Object.values(s.terrain).filter(t => t.kind === 'wall' || t.kind === 'gate' || t.kind === 'building');
+    const walls = Object.values(s.terrain).filter(t => (t.kind === 'wall' && !t.walk) || t.kind === 'gate' || t.kind === 'building');
     for (const m of ms.filter(m => !m.waiting)) for (const t of walls) if (distanceToTerrain(m, t) < 0.01) console.log('in wall', m.name, m.x.toFixed(2), m.y.toFixed(2), t.id);
     const placed = ms.filter(m => !m.waiting);
     for (let i = 0; i < placed.length; i++) for (let j = i + 1; j < placed.length; j++) {
@@ -245,6 +248,57 @@ describe("Helm's Deep: who wins", () => {
   });
 });
 
+describe("The walls' walkways", () => {
+  it('the defenders start up on the walls, all but Théoden and Gamling behind the gate', () => {
+    const s = setUp();
+    const good = Object.values(s.models).filter(m => m.owner === 'p1' && !m.waiting);
+    for (const m of good) expect([m.cast, climbedLevel(s, m)]).toEqual([m.cast, m.cast === 'theoden' || m.cast === 'gamling' ? 0 : 3]);
+  });
+
+  it('steps lead up onto a wall; anywhere else it is too sheer to climb', () => {
+    const s = battle(2);
+    const m = who(s, 'theoden');
+    expect(crossingAhead(s, m, onArc(20.3, 33), onArc(23.6, 33))).toBeNull();
+    const c = crossingAhead(s, m, onArc(20.3, 40), onArc(23.6, 40));
+    expect(c?.test).toBe('Climb');
+    expect(crossBlocked(s, m, c!)).toMatch(/Siege Ladder/);
+  });
+
+  it('an attacker at the foot reaches a defender up on the wall only by a ladder', () => {
+    let s = battle(2);
+    const def = Object.values(s.models).find(m => m.owner === 'p1' && m.x > 23.7 && Math.abs(m.y - 27) < 0.6)!;
+    const uruk = Object.values(s.models).find(m => m.cast === 'uruk')!;
+    s = put(s, uruk.id, def.x + radius(def) + radius(uruk) + 0.05, def.y);
+    expect(touching(s, s.models[uruk.id], def)).toBe(false);
+    const ladder = s.terrain['n-ladder-1'];
+    s = { ...s, terrain: { ...s.terrain, [ladder.id]: { ...ladder, x: 24.7, y: def.y + 0.6, raised: 'n-deeping-2', side: 'p2' } } };
+    expect(touching(s, s.models[uruk.id], def)).toBe(true);
+  });
+
+  it('the defenders up on the wall hold back nobody at its foot, so a ladder can be brought right up', () => {
+    let s = battle(2);
+    s = { ...s, phase: 'move' };
+    const def = Object.values(s.models).find(m => m.owner === 'p1' && m.x > 23.7 && Math.abs(m.y - 27) < 0.6)!;
+    const uruk = Object.values(s.models).find(m => m.cast === 'uruk')!;
+    s = put(s, uruk.id, 30, def.y);
+    const foot = { x: 24.7 + 0.05 + radius(uruk), y: def.y };
+    const got = limitMove(s, { x: 30, y: def.y }, foot, 6, 'p2', s.models[uruk.id]);
+    expect(got.x).toBeCloseTo(foot.x, 1);
+  });
+
+  it('a climber goes up a raised ladder onto the walkway without a test', () => {
+    let s = battle(2);
+    const top = { x: 23.6, y: 27 };
+    for (const m of Object.values(s.models)) if (m.owner === 'p1' && Math.hypot(m.x - top.x, m.y - top.y) < 2.2) s = put(s, m.id, 10, 40 + m.y / 10);
+    const ladder = s.terrain['n-ladder-1'];
+    s = { ...s, terrain: { ...s.terrain, [ladder.id]: { ...ladder, x: 24.95, y: 27, raised: 'n-deeping-2', side: 'p2' } } };
+    const uruk = Object.values(s.models).find(m => m.cast === 'uruk')!;
+    s = put(s, uruk.id, 25.75, 27);
+    expect(crossingAhead(s, s.models[uruk.id], { x: 25.75, y: 27 }, top)).toBeNull();
+    expect(climbedLevel(s, top)).toBe(3);
+  });
+});
+
 describe('Raise the Ladders!', () => {
   it('the ballista grapples the battlements above a ladder, and its bearer goes up with it', () => {
     let s = battle(2);
@@ -261,10 +315,10 @@ describe('Raise the Ladders!', () => {
     expect(ask(s, 'p2', { type: 'raiseLadder', model: engine.id, ladder: ladder.id }, [3]).terrain[ladder.id].raised).toBeUndefined();
     const after = ask(s, 'p2', { type: 'raiseLadder', model: engine.id, ladder: ladder.id }, [5]);
     expect(after.terrain[ladder.id].raised).toBe('n-deeping-culvert');
-    // The Uruk is now at the top, in contact with the defender there.
+    // The Uruk is now at the top of the ladder, fighting the defender on the walkway there.
     const up = after.models[uruk.id];
-    expect(up.x).toBeLessThan(23.6);
-    expect(Object.values(after.models).some(m => m.owner === 'p1' && !m.dead && Math.hypot(m.x - up.x, m.y - up.y) <= radius(m) + radius(up) + 0.05)).toBe(true);
+    expect(up.x).toBeLessThan(26);
+    expect(touchingEnemies(after, up).some(e => e.owner === 'p1' && climbedLevel(after, e) === 3)).toBe(true);
     // It counts as the ballista's shot this turn.
     expect(raiseLadderTargets(after, catalog, after.models[engine.id])).toEqual([]);
   });

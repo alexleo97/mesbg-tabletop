@@ -8,7 +8,7 @@ import { biggerHolds, commanderOf, howdahFor, immovable } from './warBeasts.ts';
 import { acrossCable, boltCount, fireEngine, rapidFire } from './siege.ts';
 import { distanceBetween } from './geometry.ts';
 import { backAway, pushBack, separate, type Retreat } from './backAway.ts';
-import { defence, touchingEnemies, wallBetween } from './barriers.ts';
+import { defence, touchingEnemies, upLadder, wallBetween } from './barriers.ts';
 import { bannerFor, cantShield, fighterOf, hasRule, strikeAgainst } from './wargear.ts';
 import { canActivate, heroicNow, mayActivate, orderRoll, orderRollLabel, orderRollNeeded } from './heroics.ts';
 import { modelStats, type Catalog } from './catalog.ts';
@@ -443,7 +443,7 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       // A loser fighting from a Siege Ladder doesn't back away: it falls off on a 1-3, and so may each friend below it.
       const offLadder: Action[] = [];
       if (!bargeOn) {
-        const climbers = ids(loser).map(id => state.models[id]).filter(l => !slain(l.id) && !l.prone && winners.some(w => { const wall = wallBetween(state, state.models[w], l); return !!wall && onLadder(state, l)?.raised === wall.id; }));
+        const climbers = ids(loser).map(id => state.models[id]).filter(l => !slain(l.id) && !l.prone && winners.some(w => { const wall = wallBetween(state, state.models[w], l) ?? upLadder(state, l, state.models[w]); return !!wall && onLadder(state, l)?.raised === wall.id; }));
         const ladders = new Set(climbers.map(l => onLadder(state, l)!.id));
         const below = Object.values(state.models).filter(f => f.owner === state.models[ids(loser)[0]]?.owner && !f.dead && !climbers.includes(f) && !ids(loser).includes(f.id) && ladders.has(onLadder(state, f)?.id ?? ''));
         for (const l of [...climbers, ...below]) {

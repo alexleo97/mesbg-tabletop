@@ -1,7 +1,7 @@
 import { difficultTimes, mounted } from './cavalry.ts';
 import { distanceBetween, halfExtents, MM_PER_INCH, mmToIn, type Point } from './geometry.ts';
 import { flooredAt, heightOfModel, moveCost, sightTo } from './sight.ts';
-import { overWallSpot, secondAttacker, touching, wallBetween } from './barriers.ts';
+import { overWallSpot, reaches, secondAttacker, touching, wallBetween } from './barriers.ts';
 import { combatFromKey, CONTACT_SLACK, type Combat } from './flow.ts';
 import { canActivate, phaseHeroics } from './heroics.ts';
 import { cannotAct } from './powers.ts';
@@ -138,6 +138,7 @@ export function frontFirst<T extends { id: string; x: number; y: number }>(state
  * - outside every enemy's control zone (1"), unless charging. A model charges the enemy it ends up next to, which it
  *   must have been able to see when it set off; once inside that enemy's zone it ignores the others. An enemy in a
  *   fight or lying Prone has no zone, and a model that starts inside a zone may move off without getting closer.
+ *   A model up on a walkway or rooftop has no zone over one at its foot it couldn't fight, nor that one over it.
  * `skip` lists models moving alongside this one, which don't block it.
  */
 /** Whether two models may move through each other: one is Invisible to the other (see ring.ts). */
@@ -168,7 +169,7 @@ export function blockMove(state: GameState, m: Model, from: Point, to: Point, sk
   const startD = new Map(zoned.map(e => [e.id, distanceBetween(start, e)]));
   // The enemy being charged: the nearest one the move ends within 1" of, if this model may charge and could see it.
   const end = at(to);
-  const target = charge && !marchBonus(state, m) ? enemies.filter(e => distanceBetween(end, e) < 1).sort((a, b) => distanceBetween(end, a) - distanceBetween(end, b))[0] : undefined;
+  const target = charge && !marchBonus(state, m) ? enemies.filter(e => distanceBetween(end, e) < 1 && reaches(state, end, e)).sort((a, b) => distanceBetween(end, a) - distanceBetween(end, b))[0] : undefined;
   const sees = target && sightTo(state, start, target) !== 'hidden' ? target : undefined;
   const markers = Object.values(state.terrain).filter(t => t.kind === 'objective' && !t.carrier && !t.gone);
   const onMarker = (p: Point) => markers.some(t => Math.hypot(t.x - p.x, t.y - p.y) < t.w / 2 + mmToIn(m.base.w) / 2 - 0.05);
@@ -186,9 +187,10 @@ export function blockMove(state: GameState, m: Model, from: Point, to: Point, sk
     if (bumps(p) || gates.some(t => overlapsPiece(m, t, p))) return true;
     const here = at(p);
     if (sees && distanceBetween(here, sees) < 1) return false;
+    // (One up on a wall's walkway holds nobody at its foot, nor they it: neither could fight the other there.)
     return zoned.some(e => {
       const de = distanceBetween(here, e);
-      return de < 1 - 1e-3 && de < startD.get(e.id)! - 1e-3;
+      return de < 1 - 1e-3 && de < startD.get(e.id)! - 1e-3 && reaches(state, here, e);
     });
   };
   // It stops in base contact with a model it walks into, not on it (one it touches already holds it back only once

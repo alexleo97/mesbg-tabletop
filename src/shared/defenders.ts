@@ -5,7 +5,7 @@ import { ladderable } from './fortress.ts';
 import { engaged } from './movement.ts';
 import { onTable, touching as touchingMarker } from './objects.ts';
 import { formatNeed, woundNeed } from './rules.ts';
-import { distanceToTerrain, heightOf } from './sight.ts';
+import { distanceToTerrain, heightOf, insidePolygon, outline, walkway } from './sight.ts';
 import { fallDamage } from './terrainTests.ts';
 import type { Action, DiceRoll, GameState, Model, Seat, Terrain } from './types.ts';
 
@@ -22,7 +22,8 @@ const alive = (m: Model) => !m.dead && !m.waiting && !m.escaped;
 export const onLadder = (state: GameState, m: Model) => onTable(state).find(t => t.object === 'ladder' && t.raised && touchingMarker(m, t));
 
 /** Whether a model stands on the battlements: touching a wall or anything else with height to defend from. */
-const onWalls = (state: GameState, m: Model) => Object.values(state.terrain).some(t => ladderable(t) && distanceToTerrain(m, t) <= 0.25);
+// (On a rampart with a walkway, that means up on the walkway.)
+const onWalls = (state: GameState, m: Model) => Object.values(state.terrain).some(t => ladderable(t) && (walkway(t) ? insidePolygon(outline(t), m) : distanceToTerrain(m, t) <= 0.25));
 
 /** Whether an enemy can be reached from the walls: within 1" of them, or climbing a ladder. */
 const belowWalls = (state: GameState, e: Model) => !!onLadder(state, e) || Object.values(state.terrain).some(t => ladderable(t) && distanceToTerrain(e, t) <= 1);

@@ -404,6 +404,20 @@ export function TerrainArt({ t, mat }: { t: Terrain; mat: Mat }) {
             <ellipse className="tint paving-tint" rx={t.w / 2} ry={t.h / 2} />
           </>
         );
+      if (t.stairs) {
+        // A flight of steps up to a wall's walkway: treads running along the wall, rising towards it (local -y).
+        const n = Math.max(4, Math.round(t.h / 0.3));
+        return (
+          <>
+            <rect className="ground paving" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} fill={tex} filter="url(#hard-shadow)" />
+            {Array.from({ length: n }, (_, i) => (
+              <rect key={i} className="tint step" x={-t.w / 2} y={-t.h / 2 + (i * t.h) / n} width={t.w} height={t.h / n} fillOpacity={0.05 + (0.3 * i) / n} />
+            ))}
+            <rect className="parapet" x={-t.w / 2} y={-t.h / 2} width={0.22} height={t.h} fill="url(#tex-wall)" />
+            <rect className="parapet" x={t.w / 2 - 0.22} y={-t.h / 2} width={0.22} height={t.h} fill="url(#tex-wall)" />
+          </>
+        );
+      }
       if (t.look === 'stone')
         // A stone causeway: paved, with a low parapet down each long side.
         return (
@@ -590,7 +604,7 @@ function face(t: Terrain): Point[] {
 
 /** The faces of every tall fortress piece, drawn on the ground before any of their tops. */
 export function TerrainFaces({ terrain }: { terrain: Terrain[] }) {
-  const pieces = terrain.filter(t => tall(t) || (t.kind === 'road' && t.look === 'stone' && t.shape === 'rect'));
+  const pieces = terrain.filter(t => tall(t) || (t.kind === 'road' && t.look === 'stone' && t.shape === 'rect' && !t.stairs));
   return (
     <g className="fortress-faces" pointerEvents="none">
       {pieces.map(t => {
