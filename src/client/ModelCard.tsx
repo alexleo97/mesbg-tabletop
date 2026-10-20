@@ -238,10 +238,11 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
   const held = state.flow.started && state.phase === 'move' ? heldBy(state, m) : null;
 
   let action: React.ReactNode = null;
-  // Aragorn's flaming brand (Weathertop) is thrown in place of a shot.
-  const brandOn = useBrand && canThrowBrand(m) && state.phase === 'shoot';
+  // Aragorn's flaming brand (Weathertop) is a throwing weapon: thrown in place of a shot, or as he charges.
+  // In the Move phase it is the only thing he can throw, so tapping an enemy aims it; in the Shoot phase his player picks it over the bow.
+  const brandOn = canThrowBrand(m) && (state.phase === 'move' || (useBrand && state.phase === 'shoot'));
   const shotWeapon = brandOn ? FLAMING_BRAND : weapon;
-  const throwing = state.phase === 'move' && !!weapon && isThrowing(weapon);
+  const throwing = state.phase === 'move' && !!shotWeapon && isThrowing(shotWeapon);
   const mustCharge = state.flow.mustCharge?.model === m.id ? state.models[state.flow.mustCharge.target] : undefined;
   if (state.phase === 'move' && mine && mustCharge && !mustCharge.dead && distanceBetween(m, mustCharge) > CONTACT_SLACK) {
     action = <p className="hint">{m.name} threw at {mustCharge.name}, so it must now finish its charge: move it into contact with {mustCharge.name}.</p>;
@@ -443,7 +444,7 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
       )}
       {!!(m.brand || m.ablaze || m.ringOn || m.used?.length) && !m.dead && (
         <ul className="effects">
-          {m.brand && <li>✦ Carries a flaming brand{canThrowBrand(m) ? ', thrown once in place of a shot' : ''}. A Ringwraith it beats in a fight flees D6" after backing away.</li>}
+          {m.brand && <li>✦ Carries a flaming brand{canThrowBrand(m) ? ', thrown once in place of a shot or as he charges' : ''}. A Ringwraith it beats in a fight flees D6" after backing away.</li>}
           {m.ablaze && <li>🔥 {fireLine(m)}</li>}
           {m.ringOn && <li>💍 Wears the One Ring: invisible to all but the Nine. It rolls for Sauron's Will each time it activates.</li>}
           {m.used?.map(u => (
@@ -502,9 +503,12 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
       )}
       {action}
       {mine && state.flow.started && state.phase === 'shoot' && canThrowBrand(m) && !state.flow.shot?.includes(m.id) && (
-        <label className="check small" title="Thrown once a game, in place of a shot. A hit sets the target Ablaze rather than wounding it.">
+        <label className="check small" title="Thrown once a game, in place of a shot or as he charges. A hit sets the target Ablaze rather than wounding it.">
           <input type="checkbox" checked={useBrand} onChange={e => setUseBrand(e.target.checked)} /> Throw the flaming brand ({FLAMING_BRAND.range}") instead of shooting
         </label>
+      )}
+      {mine && state.flow.started && state.phase === 'move' && canThrowBrand(m) && !target && !mustCharge && !state.flow.shot?.includes(m.id) && !engaged(state, m) && (
+        <p className="muted small">To throw the flaming brand as {m.name} charges, tap an enemy within {FLAMING_BRAND.range}".</p>
       )}
       <BeastPanel state={state} catalog={catalog} dispatch={dispatch} role={role} m={m} />
       <SiegePanel state={state} catalog={catalog} dispatch={dispatch} role={role} m={m} />

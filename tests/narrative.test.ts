@@ -190,7 +190,7 @@ describe('Weathertop rules', () => {
     let s = weathertop(2);
     const a = who(s, 'aragorn');
     const w = wraiths(s)[0];
-    s = place(s, { [a.id]: [4, 20], [w.id]: [4, 15] });
+    s = place(s, { [a.id]: [9, 23.4], [w.id]: [9, 18.6] });
     s = { ...s, models: { ...s.models, [a.id]: { ...s.models[a.id], waiting: undefined } }, phase: 'shoot', flow: { ...s.flow, done: [] } };
     delete s.models[a.id].waiting;
     expect(planShot(s, catalog, s.models[a.id], s.models[w.id], { brand: true }).why).toBeUndefined();
@@ -205,6 +205,34 @@ describe('Weathertop rules', () => {
     s = run(s, ...burns(s, catalog, dice([6, 6]), uid));
     expect(s.models[w.id].dead).toBe(true);
     expect(burnDue(s)).toBe(false);
+  });
+
+  it('lets Aragorn throw his brand as he charges, like any throwing weapon, and then finish the charge', () => {
+    let s = weathertop(3);
+    const a = who(s, 'aragorn');
+    const w = wraiths(s)[0];
+    s = place(s, { [a.id]: [9, 23.4], [w.id]: [9, 18.6] });
+    delete s.models[a.id].waiting;
+    const shot = { shooter: { id: a.id, name: 'Aragorn', weapon: 'Flaming Brand', shoot: 3, s: 3, shots: 1 }, target: { id: w.id, name: 'W', d: 8 }, obstacles: 0, brand: true, charge: true };
+    // The Ringwraith causes Terror, so he tests his Courage before he throws: failing, he neither moves nor throws.
+    const afraid = ask(s, 'p1', { type: 'shoot', shot }, [1, 1, 6]);
+    expect(afraid.flow.courage?.[a.id]).toBe(false);
+    expect(afraid.models[w.id].ablaze).toBeUndefined();
+    expect(afraid.models[a.id]).toMatchObject({ x: 9, y: 23.4, brand: true });
+    s = ask(s, 'p1', { type: 'shoot', shot }, [6, 6, 6]);
+    expect(s.flow.courage?.[a.id]).toBe(true);
+    expect(s.models[w.id].ablaze).toBe(true);
+    expect(s.models[a.id].brand).toBeUndefined();
+    // He stopped 1" short to throw, and must now charge the Ringwraith he threw at.
+    expect(distanceBetween(s.models[a.id], s.models[w.id])).toBeCloseTo(1, 1);
+    expect(s.flow.mustCharge).toEqual({ model: a.id, target: w.id });
+  });
+
+  it('has the computer give the Cry as the Move phase begins, even when the Hobbits move first', () => {
+    const s = weathertop(4, 'p1');
+    expect(s.priority).toBe('p1');
+    expect(botStep(s, 'p2', catalog, newMemo(), 1, false)?.action).toEqual({ type: 'cry', seat: 'p2' });
+    expect(botStep(ask(s, 'p2', { type: 'cry', seat: 'p2' }), 'p2', catalog, newMemo(), 1, false)?.action).not.toEqual({ type: 'cry', seat: 'p2' });
   });
 
   it('puts out the flames of a model that crawls 1"', () => {
