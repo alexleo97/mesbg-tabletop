@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { cleanShot, resolveShot } from '../src/shared/fight.ts';
-import { activeSeat, combats, priorityChooser } from '../src/shared/flow.ts';
+import { activeSeat, combats, priorityChooser, fightToOpen, shownFight } from '../src/shared/flow.ts';
 import { initialState, loadState, reduce } from '../src/shared/reducer.ts';
 import type { Action, GameState, Model } from '../src/shared/types.ts';
 
@@ -47,5 +47,33 @@ describe('shooting', () => {
     expect(rolls.map(r => r.dice)).toEqual([[5], [4], [6]]);
     expect(wounds).toBe(1);
     expect(resolveShot(shot, dice(2), 'p1', 'g').rolls.at(-1)!.note).toBe('Archer misses Orc');
+  });
+
+  it('shows an opened fight only in the Fight phase once the battle is under way', () => {
+    const models = [m('a', 'p1', 10, 10), m('b', 'p2', 11, 10)];
+    let s = run(initialState(), { type: 'addModels', models }, { type: 'startGame' }, { type: 'priorityRolled', roll: [6, 2], chooser: 'p1' }, { type: 'choosePriority', seat: 'p1' });
+    s = run(s, { type: 'endActivation', seat: 'p1' }, { type: 'endActivation', seat: 'p2' }, { type: 'endActivation', seat: 'p1' }, { type: 'endActivation', seat: 'p2' });
+    expect(s.phase).toBe('fight');
+    const key = combats(s)[0].key;
+    // It's the fight that opens as the phase comes round, until it has been fought.
+    expect(fightToOpen(s, combats(s))?.key).toBe(key);
+    expect(fightToOpen(run(s, { type: 'resolveCombat', key }), combats(s))).toBeUndefined();
+    expect(shownFight(s, key, combats(s))?.key).toBe(key);
+    // After the losers back away it is still shown, rebuilt from its key, so the wounds can be applied.
+    const apart = run(s, { type: 'resolveCombat', key }, { type: 'updateModel', id: 'b', patch: { x: 14 } });
+    expect(shownFight(apart, key, combats(apart))).toMatchObject({ key, p1: ['a'], p2: ['b'] });
+    // Through the End phase and into the next turn's Move phase, the same models touching again: nothing shown.
+    let next = run(apart, { type: 'nextPhase' });
+    expect(next.phase).toBe('end');
+    expect(shownFight(next, key, combats(next))).toBeUndefined();
+    next = run(next, { type: 'nextPhase' }, { type: 'priorityRolled', roll: [6, 2], chooser: 'p1' }, { type: 'choosePriority', seat: 'p1' }, { type: 'updateModel', id: 'b', patch: { x: 11 } });
+    expect(next).toMatchObject({ turn: 2, phase: 'move' });
+    expect(shownFight(next, key, combats(next))).toBeUndefined();
+    expect(shownFight(s, null, combats(s))).toBeUndefined();
+  });
+
+  it('shows a fight any time before the battle starts, when models are just being tried out', () => {
+    const s = reduce(initialState(), { type: 'addModels', models: [m('a', 'p1', 10, 10), m('b', 'p2', 11, 10)] });
+    expect(shownFight(s, 'a,|,b', combats(s))?.key).toBe('a,|,b');
   });
 });

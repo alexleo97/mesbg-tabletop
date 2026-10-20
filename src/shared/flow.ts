@@ -1,6 +1,6 @@
 // The turn sequence as the app runs it: who acts now, who rolls for priority, and which fights are on.
 import { touching } from './barriers.ts';
-import { fightsAgain } from './movement.ts';
+import { fightDone, fightsAgain } from './movement.ts';
 import { heroicNow } from './heroics.ts';
 import type { GameState, Model, Seat } from './types.ts';
 
@@ -148,6 +148,19 @@ export function combatFromKey(state: GameState, key: string): Combat | undefined
   const c = { key, p1: ids(parts.slice(0, bar)), p2: ids(parts.slice(bar + 1)) };
   return c.p1.length && c.p2.length ? c : undefined;
 }
+
+/**
+ * The fight the battle card shows for an opened key. Once the battle is under way fights only happen in the Fight
+ * phase, so outside it nothing is shown; in it, a fight whose losers backed away is still rebuilt from its key, so its
+ * wounds can be applied.
+ */
+export function shownFight(state: GameState, key: string | null, fights: Combat[]): Combat | undefined {
+  if (!key || (state.flow.started && state.phase !== 'fight')) return undefined;
+  return fights.find(c => c.key === key) ?? combatFromKey(state, key);
+}
+
+/** The fight to open when the Fight phase comes round: the first one still to be rolled. */
+export const fightToOpen = (state: GameState, fights: Combat[]): Combat | undefined => fights.find(c => !fightDone(state, c));
 
 /**
  * Who chooses priority from a roll-off. On turn 1 a tie is re-rolled (null); later a tie goes to
