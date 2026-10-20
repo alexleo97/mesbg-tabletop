@@ -6,7 +6,7 @@ import { distanceBetween, halfExtents, type Point } from './geometry.ts';
 import { HEAVY, helpers, ladderAt } from './fortress.ts';
 import { canActivate } from './heroics.ts';
 import { onTable } from './objects.ts';
-import { engaged, moveLeft, settleMove, testsTerrain } from './movement.ts';
+import { crowded, engaged, moveLeft, settleMove, testsTerrain } from './movement.ts';
 import { formatNeed, woundNeed } from './rules.ts';
 import { climbedLevel, distanceToTerrain, heightOf, heightOfModel, insidePolygon, outline } from './sight.ts';
 import type { Action, DiceRoll, GameState, Model, Seat, Terrain } from './types.ts';
@@ -115,6 +115,16 @@ export function crossingAhead(state: GameState, m: Model, from: Point, to: Point
 }
 
 /**
+ * Where to send a model dropped at `at` after being dragged towards `aim`. The board holds a dragged model at the
+ * stop in front of a wall, rock or stream that needs a test; sending that stop alone hides the crossing from the table,
+ * so the spot it was dragged to goes instead, and the table holds it at the stop with the test offered.
+ */
+export function dropTarget(state: GameState, m: Model, at: Point, aim: Point): Point {
+  const c = state.flow.started && testsTerrain(state, m) ? crossingAhead(state, m, { x: m.x, y: m.y }, aim) : null;
+  return c && Math.hypot(c.stop.x - at.x, c.stop.y - at.y) < 0.05 ? aim : at;
+}
+
+/**
  * Why a model can't take the test in front of it now; unset if it can. A jump or leap needs the Move to reach the
  * far side; a climb takes whatever Move is left (the climb itself is counted double, as difficult ground).
  */
@@ -131,6 +141,8 @@ export function crossBlocked(state: GameState, m: Model, c: Crossing): string | 
     const guard = Object.values(state.models).find(e => e.owner !== m.owner && !e.dead && !e.waiting && !e.escaped && !e.prone && Math.abs(e.x - c.stop.x) < 4 && Math.abs(e.y - c.stop.y) < 4 && distanceToTerrain(e, t) <= 0.2 && (distanceBetween({ ...m, ...c.stop }, e) < 1 || distanceBetween({ ...m, ...c.landing }, e) < 1) && !engaged(state, e));
     if (guard) return `${guard.name} is defending the wall here: charge it instead`;
   }
+  // Nor can it land on top of another model.
+  if (crowded(state, m, c.landing)) return c.test === 'Climb' ? 'No room at the top' : c.test === 'Climb down' ? 'No room at the bottom' : 'No room on the far side';
   const left = moveLeft(state, m) ?? Infinity;
   if (c.test === 'Jump' || c.test === 'Leap') {
     if (Math.hypot(c.landing.x - c.stop.x, c.landing.y - c.stop.y) > left + 1e-6) return c.test === 'Leap' ? 'Not enough Move left to reach the far side' : 'Not enough Move left to get over';

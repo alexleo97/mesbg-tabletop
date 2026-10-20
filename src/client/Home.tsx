@@ -173,7 +173,7 @@ export function MapsPage() {
     };
   }, [enabled, profile?.id, tab, refresh]);
 
-  const play = (m: SavedMap) => (location.search = `?room=${randomRoom()}&map=${m.id}`);
+  const play = (m: SavedMap) => (location.search = `?battle&map=${m.id}`);
 
   return (
     <SitePage page="maps" wide>
@@ -316,7 +316,7 @@ export function MapsCard() {
       ) : (
         <div className="dash-maps">
           {maps.slice(0, 3).map(m => (
-            <button key={m.id} className="dash-map" onClick={() => (location.search = `?room=${randomRoom()}&map=${m.id}`)} title={`Play on ${m.name}`}>
+            <button key={m.id} className="dash-map" onClick={() => (location.search = `?battle&map=${m.id}`)} title={`Play on ${m.name}`}>
               <MapPreview w={m.data.w} h={m.data.h} terrain={m.data.terrain ?? []} />
               <span>{m.name}</span>
             </button>

@@ -578,6 +578,7 @@ export function TablePanel({
   selectedTerrain,
   setSelectedTerrain,
   editor,
+  lesson,
 }: {
   state: GameState;
   dispatch: Dispatch;
@@ -586,6 +587,8 @@ export function TablePanel({
   setSelectedTerrain: (id: string | null) => void;
   /** In the map editor: just the terrain tools, without the game's save, load and finish options. */
   editor?: boolean;
+  /** On a Learn to play table: only what the tapped terrain does. */
+  lesson?: boolean;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const t = selectedTerrain ? state.terrain[selectedTerrain] : undefined;
@@ -611,6 +614,23 @@ export function TablePanel({
 
   const objectives = Object.values(state.terrain).filter(o => o.kind === 'objective' && !SIEGE_GEAR.has(o.object ?? ''));
 
+  if (lesson)
+    return (
+      <div className="panel-body">
+        {t ? (
+          <>
+            <h4>{TERRAIN_INFO[t.kind].name}</h4>
+            <ul className="terrain-rules">
+              {(t.object ? markerNotes(t) : terrainRules(t)).map(r => (
+                <li key={r}>{r}</li>
+              ))}
+            </ul>
+          </>
+        ) : (
+          <p className="hint">Tap a piece of terrain to see what it does.</p>
+        )}
+      </div>
+    );
   // Once the battle starts (and always for spectators) the table is fixed: it only shows what the pieces are.
   if (!editor && (state.flow.started || role === 'spectator'))
     return (

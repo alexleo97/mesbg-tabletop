@@ -131,7 +131,7 @@ const subscribe = (l: () => void) => {
 /** Who is signed in, if anyone. */
 export function useAuth(): Auth {
   useEffect(start, []);
-  return useSyncExternalStore(subscribe, () => state);
+  return useSyncExternalStore(subscribe, () => state, () => state);
 }
 
 /** Sends the player to Discord to sign in, then back to this page. */

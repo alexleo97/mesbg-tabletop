@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { costOf, moveAllowance } from '../src/shared/movement.ts';
+import { costOf, limitMove, moveAllowance } from '../src/shared/movement.ts';
+import { dropTarget } from '../src/shared/terrainTests.ts';
 import { initialState, reduce } from '../src/shared/reducer.ts';
 import { resolveRequest } from '../src/shared/resolve.ts';
 import { eyeOf } from '../src/shared/sight.ts';
@@ -23,6 +24,21 @@ const move = (s: GameState, id: string, x: number, y: number) => run(s, { type: 
 const wall = piece('w', 'wall', 10, 20, 10, 0.5);
 
 describe('terrain tests', () => {
+  it('offers the Jump when a model is dragged into a wall on the board, not only when sent past it', () => {
+    const s = battle([mk('a', 'p1', 10, 24)], [wall]);
+    const m = s.models.a;
+    // The board holds the dragged model at the stop in front of the wall; sending only that hides the wall.
+    const held = limitMove(s, m, { x: 10, y: 17 }, 6, 'p1', m);
+    expect(move(s, 'a', held.x, held.y).flow.blocked?.a).toBeUndefined();
+    // So the spot it was dragged to goes, and the table holds it at the wall with the test offered.
+    const sent = dropTarget(s, m, held, { x: 10, y: 17 });
+    const after = move(s, 'a', sent.x, sent.y);
+    expect(after.models.a.y).toBeCloseTo(held.y, 2);
+    expect(after.flow.blocked?.a?.test).toBe('Jump');
+    // A drop short of any terrain is sent as it is.
+    expect(dropTarget(s, m, { x: 10, y: 23 }, { x: 10, y: 23 })).toEqual({ x: 10, y: 23 });
+  });
+
   it('stops a model at a wall more than half its height, and a Jump test gets it over', () => {
     let s = move(battle([mk('a', 'p1', 10, 24)], [wall]), 'a', 10, 17);
     expect(s.models.a.y).toBeGreaterThan(20.7);

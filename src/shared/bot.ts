@@ -497,8 +497,10 @@ function markerStep(ctx: Ctx, m: Model): BotStep | null {
     // Only its own side's ladders and rams are worth hauling about.
     const object = a.marker ? state.terrain[a.marker] : undefined;
     if (a.kind === 'pickUp' && (object?.object === 'ladder' || object?.object === 'ram') && object.side !== m.owner) continue;
-    // A Demolition Team keeps to its own charge.
-    if (a.kind === 'pickUp' && (object?.object === 'ladder' || object?.object === 'ram') && (m.torch || m.cast === 'engineer')) continue;
+    // A Demolition Team keeps to its own charge, and leaves it to the team while the team is there to carry it.
+    const team = (x: Model) => !!x.torch || x.cast === 'engineer';
+    if (a.kind === 'pickUp' && (object?.object === 'ladder' || object?.object === 'ram') && team(m)) continue;
+    if (a.kind === 'pickUp' && object?.object === 'charge' && !team(m) && side(state, m.owner).some(x => team(x) && centre(x, object) <= 3)) continue;
     // Rocks and oil are thrown from where they stand.
     if (a.kind === 'pickUp' && (object?.object === 'rocks' || object?.object === 'oil')) continue;
     if (a.kind === 'escape') {

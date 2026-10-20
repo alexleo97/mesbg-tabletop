@@ -6,7 +6,7 @@ import { holdInZones, nearEdge } from './deployment.ts';
 import { canActivate, heroicInfo, heroicNow, heroicQueue, mayActivate, shoutedFor, SHOUT_RANGE } from './heroics.ts';
 import { pendingSpell } from './magic.ts';
 import { basePower, cannotAct, effectActive } from './powers.ts';
-import { basesOverlap, costOf, engaged as engagedNow, finishCharge, fightsAgain, limitMove, marchedBy, marchRange, moveAllowance, movedAtAll, movedTooFar, moveLeft, moveStart, retrace, RETRACE, spent, testsTerrain } from './movement.ts';
+import { basesOverlap, costOf, crowded, engaged as engagedNow, finishCharge, fightsAgain, frontFirst, limitMove, marchedBy, marchRange, moveAllowance, movedAtAll, movedTooFar, moveLeft, moveStart, retrace, RETRACE, spent, testsTerrain } from './movement.ts';
 import { FLOORED, floorHeight, flooredAt, insidePolygon, isDifficult, outline } from './sight.ts';
 import { cleanPausedShot, woundsTaken } from './fight.ts';
 import { pairOff } from './flow.ts';
@@ -661,14 +661,14 @@ function step(state: GameState, action: Action): GameState {
       let walked = state.flow.walked;
       let paths = state.flow.paths;
       // Before the battle, models stay in their deployment zones (and a warband switching zones comes along whole).
-      const moves = state.flow.started ? action.moves : holdInZones(state, action.moves.filter(mv => mv && models[mv.id]).map(mv => ({ id: String(mv.id), x: num(mv.x, -24, 200, models[mv.id].x), y: num(mv.y, -24, 200, models[mv.id].y), rot: mv.rot })));
+      const moves = state.flow.started ? frontFirst(state, action.moves) : holdInZones(state, action.moves.filter(mv => mv && models[mv.id]).map(mv => ({ id: String(mv.id), x: num(mv.x, -24, 200, models[mv.id].x), y: num(mv.y, -24, 200, models[mv.id].y), rot: mv.rot })));
       let stood = state.flow.stood;
       let blocked = state.flow.blocked;
       let climbed = state.flow.climbed;
       let charges = state.flow.charges;
       let heroicStarted = state.flow.heroicNow;
       let turned = state.flow.turned;
-      // Models moved together don't block each other.
+      // The models moved in this one drag.
       const together = new Set(moves.map(mv => mv && String(mv.id)));
       // While a model waits to be placed, only it moves, and only where its placing allows.
       const placing = state.flow.started ? placingNow(state) : undefined;
@@ -714,7 +714,9 @@ function step(state: GameState, action: Action): GameState {
         // A Compelled model in a fight can't be moved out of it.
         if (compel && moving && engagedNow(state, prev)) continue;
         // A Compelled model goes where the caster's player takes it, up to half its Move from where it stood.
-        if (compel && moving) to = limitMove(state, { x: compel.from[0], y: compel.from[1] }, to, compel.max, prev.owner, prev, together);
+        // (Each model moved keeps clear of where the others have got to: see frontFirst.)
+        const now = { ...state, models };
+        if (compel && moving) to = limitMove(now, { x: compel.from[0], y: compel.from[1] }, to, compel.max, prev.owner, prev);
         // In Sauron's grip a Ringbearer can't be walked off the table.
         if (compel?.ring && moving) {
           const r = Math.max(halfExtents(prev.base).rx, halfExtents(prev.base).ry);
@@ -730,13 +732,17 @@ function step(state: GameState, action: Action): GameState {
           const here = { x: prev.x, y: prev.y };
           // (Putting it back where it began the phase is always allowed, and gives its whole Move back; so is stepping
           // back along the way it came, which gives back what it spent beyond that point.)
-          const back = Math.hypot(to.x - from.x, to.y - from.y) < RETRACE / 2;
-          const undone = back ? null : retrace(paths?.[prev.id], to);
+          let back = Math.hypot(to.x - from.x, to.y - from.y) < RETRACE / 2;
+          let undone = back ? null : retrace(paths?.[prev.id], to);
+          // (Not if another model has since moved onto that spot.)
+          if ((back || undone) && crowded(now, prev, back ? from : undone!.at)) {
+            [back, undone, to] = [false, null, here];
+          }
           // (Reinforcements coming on may not charge.)
           const arriving = state.phase === 'move' && enteringNoCharge(state, prev);
-          to = back ? from : undone ? undone.at : limitMove(state, here, to, Math.max(0, allowance - spent(state, prev)), prev.owner, prev, together, !arriving);
+          to = back ? from : undone ? undone.at : limitMove(now, here, to, Math.max(0, allowance - spent(state, prev)), prev.owner, prev, undefined, !arriving);
           // A model that stops inside an enemy's control zone is charging it: it must reach base contact, or stay out.
-          if ((state.phase === 'move' || fightsAgain(state, prev)) && !arriving) to = finishCharge(state, prev, here, to, together);
+          if ((state.phase === 'move' || fightsAgain(state, prev)) && !arriving) to = finishCharge(now, prev, here, to);
           // A friend going with a hero (With Me, or At the Double) must end within 6" of it.
           const leader = state.phase === 'move' ? followed(state, prev, heroicStarted) : undefined;
           if (leader && !together.has(leader.id)) to = keepNear(prev, from, to, leader);
@@ -755,7 +761,8 @@ function step(state: GameState, action: Action): GameState {
           paths = { ...paths, [prev.id]: back ? [] : [...(straight ? trail.slice(0, -1) : trail), [to.x, to.y] as [number, number]].slice(-40) };
           // Stopped at terrain that needs a test: remember it, so the model's card can offer the test.
           if (testsTerrain(state, prev)) {
-            const ahead = crossingAhead(state, prev, from, asked);
+            // (Looking from where this drag set off, not where the phase began: a move is often made in several drags.)
+            const ahead = crossingAhead(state, prev, here, asked);
             const { [prev.id]: _, ...rest } = blocked ?? {};
             // (Not if it stopped there to fight an enemy across it.)
             const fighting = ahead && touchingEnemies({ ...state, models }, { ...prev, ...to }).length > 0;

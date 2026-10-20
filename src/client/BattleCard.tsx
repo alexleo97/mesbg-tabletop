@@ -1,8 +1,9 @@
 import { NarrativeCast } from './NarrativePanel.tsx';
 import { useState, type ReactNode, type Ref } from 'react';
 import type { Combat } from '../shared/flow.ts';
-import { scenarioById } from '../shared/scenarios.ts';
-import type { Action, GameState, Model, Role } from '../shared/types.ts';
+import { objectivesMissing, scenarioById } from '../shared/scenarios.ts';
+import { isMaelstrom } from '../shared/maelstrom.ts';
+import { BOT_NAME, type Action, type GameState, type Model, type Role } from '../shared/types.ts';
 import { FightView } from './FightPanel.tsx';
 import { ArmyPanel } from './Panels.tsx';
 import { ScenarioPanel } from './ScenarioPanel.tsx';
@@ -15,13 +16,14 @@ export type SetupTab = 'map' | 'scenario' | 'army';
  * The card down the left of the table: the board tools, then the armies, the scenario (victory points, special rules, game end) and the
  * fight being rolled. It stays put, and on a computer it can be dragged somewhere else and locked there.
  */
-export function BattleCard({ tools, state, dispatch, role, tab, setTab, fight, fights, openFight, photoFor }: { tools: ReactNode; state: GameState; dispatch: (a: Action) => void; role: Role; tab: BattleTab; setTab: (t: BattleTab) => void; fight?: Combat; fights: Combat[]; openFight: (key: string | null) => void; photoFor: (m: Model) => string | undefined }) {
+export function BattleCard({ tools, lesson, state, dispatch, role, tab, setTab, fight, fights, openFight, photoFor }: { tools: ReactNode; lesson?: boolean; state: GameState; dispatch: (a: Action) => void; role: Role; tab: BattleTab; setTab: (t: BattleTab) => void; fight?: Combat; fights: Combat[]; openFight: (key: string | null) => void; photoFor: (m: Model) => string | undefined }) {
   const drag = useDraggable('battle-card');
   const [small, setSmall] = useState(false);
   const shown = tab === 'fight' && !fight ? 'army' : tab;
   const tabs: [BattleTab, string][] = [
     ['army', 'Armies'],
-    ['scenario', scenarioById(state.scenario) || state.narrative ? 'Scenario' : 'No scenario'],
+    // A lesson is never fought over a scenario.
+    ...(lesson ? [] : [['scenario', scenarioById(state.scenario) || state.narrative ? 'Scenario' : 'No scenario'] as [BattleTab, string]]),
     ...(fight ? [['fight', 'Fight'] as [BattleTab, string]] : []),
   ];
   return (
@@ -52,6 +54,35 @@ export function BattleCard({ tools, state, dispatch, role, tab, setTab, fight, f
         </>
       )}
     </section>
+  );
+}
+
+/** The foot of the set-up card: what still stands in the way, then the one button that starts the battle. */
+function StartBattle({ state, dispatch, role }: { state: GameState; dispatch: (a: Action) => void; role: Role }) {
+  if (role !== 'p1' && role !== 'p2') return <p className="setup-foot hint">The players set up the battle; it starts when one of them is ready.</p>;
+  const count = (s: 'p1' | 'p2') => Object.values(state.models).filter(m => m.owner === s).length;
+  const missing = objectivesMissing(state);
+  // A narrative scenario sets everything itself; otherwise both armies must be on the table, and a solo battle is fought over a scenario.
+  const waiting = state.narrative
+    ? ''
+    : state.bot && !scenarioById(state.scenario)
+      ? 'Pick a scenario first.'
+      : missing
+        ? `Place ${missing} more objective marker${missing === 1 ? '' : 's'} first.`
+        : !count(role)
+          ? 'Deploy your army first.'
+          : !count(role === 'p1' ? 'p2' : 'p1')
+            ? state.bot
+              ? `Deploy ${BOT_NAME}'s army first.`
+              : 'Waiting for your opponent to deploy their army.'
+            : '';
+  return (
+    <div className="setup-foot">
+      {waiting ? <p className="hint">{waiting}</p> : <p className="hint">{isMaelstrom(state) ? 'Your warbands wait off the table and roll to arrive as your side starts to move.' : 'Drag your models where you want them in your zone, then start.'}</p>}
+      <button className="primary go" disabled={!!waiting} onClick={() => dispatch({ type: 'startGame' })}>
+        Start the battle
+      </button>
+    </div>
   );
 }
 
@@ -102,6 +133,7 @@ export function SetupCard({ state, dispatch, role, tab, setTab, table }: { state
           </div>
         </>
       )}
+      {!small && <StartBattle state={state} dispatch={dispatch} role={role} />}
     </section>
   );
 }

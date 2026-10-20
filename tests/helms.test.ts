@@ -91,8 +91,6 @@ describe("Helm's Deep: setting up, continued", () => {
     const g = who(s, 'gimli');
     s = run(s, { type: 'moveModels', moves: [{ id: g.id, x: 30, y: 40 }] });
     expect(s.models[g.id].x).toBe(g.x);
-    s = run(s, { type: 'moveModels', moves: [{ id: g.id, x: g.x, y: g.y + 0.5 }] });
-    expect(s.models[g.id].y).toBeCloseTo(g.y + 0.5);
     const t = who(s, 'theoden');
     s = run(s, { type: 'moveModels', moves: [{ id: t.id, x: 30, y: 30 }] });
     expect(s.models[t.id].x).toBe(t.x);
