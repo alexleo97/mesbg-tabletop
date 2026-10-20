@@ -422,6 +422,8 @@ function cleanTerrain(t: Partial<Terrain>, prev?: Terrain): Terrain | null {
       base.path.map(([x, y, hw]) => [(x * out.w) / prev.w, (y * out.h) / prev.h, hw] as [number, number, number])
     : base.path);
   if (path) out.path = path;
+  const look = 'look' in t ? t.look : base.look;
+  if (look === 'stone' || look === 'culvert') out.look = look;
   cleanObject(t, base, out);
   if ('vines' in t ? t.vines === true : base.vines) {
     const side = 'side' in t ? t.side : base.side;

@@ -211,7 +211,7 @@ function ruinWalls(t: Terrain): ReactElement[] {
 
 export function TerrainArt({ t, mat }: { t: Terrain; mat: Mat }) {
   const d = outline(t);
-  const tex = `url(#tex-${MATERIAL[t.kind]})`;
+  const tex = `url(#tex-${t.look === 'stone' ? (t.kind === 'rock' ? 'cliff' : t.kind === 'building' ? 'wall' : 'stone') : MATERIAL[t.kind]})`;
 
   switch (t.kind) {
     case 'wood':
@@ -266,6 +266,14 @@ export function TerrainArt({ t, mat }: { t: Terrain; mat: Mat }) {
         </>
       );
     case 'building':
+      if (t.look === 'stone') return <StoneTower t={t} tex={tex} />;
+      if (t.shape === 'circle')
+        return (
+          <>
+            <ellipse className="ground roof" rx={t.w / 2} ry={t.h / 2} fill={tex} filter="url(#hard-shadow)" />
+            <ellipse className="tint" rx={t.w / 2} ry={t.h / 2} fill="url(#g-dome)" />
+          </>
+        );
       return (
         <>
           <rect className="ground roof" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} fill="#3a2a1c" filter="url(#hard-shadow)" />
@@ -328,6 +336,16 @@ export function TerrainArt({ t, mat }: { t: Terrain; mat: Mat }) {
       return (
         <>
           <rect className="ground wall-top" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} fill={tex} filter="url(#hard-shadow)" />
+          {/* A fortress wall: a walkway down the middle between two lines of battlements. */}
+          {t.sheer && <Battlements w={t.w} h={t.h} />}
+          {t.look === 'culvert' && (
+            <g className="culvert">
+              <rect className="culvert-mouth" x={-0.8} y={-t.h / 2} width={1.6} height={t.h} rx={0.2} />
+              {[-0.45, -0.15, 0.15, 0.45].map(k => (
+                <line key={k} className="culvert-bar" x1={k} x2={k} y1={-t.h / 2} y2={t.h / 2} />
+              ))}
+            </g>
+          )}
         </>
       );
     case 'tower': {
@@ -375,6 +393,24 @@ export function TerrainArt({ t, mat }: { t: Terrain; mat: Mat }) {
             <path className="ground road-bed" d={d} fill={tex} />
             {/* Wheel ruts: two lines running along the track. */}
             <path className="road-rut" d={bandPath(t.path.map(([x, y, hw]) => [x, y, hw * 0.4]))} />
+          </>
+        );
+      if (t.look === 'stone' && t.shape === 'circle')
+        // Paved ground: a courtyard's flagstones.
+        return (
+          <>
+            <ellipse className="ground paving" rx={t.w / 2} ry={t.h / 2} fill={tex} />
+            <ellipse className="tint paving-tint" rx={t.w / 2} ry={t.h / 2} />
+          </>
+        );
+      if (t.look === 'stone')
+        // A stone causeway: paved, with a low parapet down each long side.
+        return (
+          <>
+            <rect className="ground paving" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} fill={tex} filter="url(#hard-shadow)" />
+            <rect className="tint paving-tint" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} />
+            <rect className="parapet" x={-t.w / 2} y={-t.h / 2} width={t.w} height={0.3} fill={`url(#tex-wall)`} />
+            <rect className="parapet" x={-t.w / 2} y={t.h / 2 - 0.3} width={t.w} height={0.3} fill={`url(#tex-wall)`} />
           </>
         );
       return <rect className="ground road-bed" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} fill={tex} />;
@@ -463,6 +499,39 @@ export function TerrainArt({ t, mat }: { t: Terrain; mat: Mat }) {
         </>
       );
   }
+}
+
+/** Merlons along both long faces of a fortress wall, with the walkway between them a shade darker. */
+function Battlements({ w, h }: { w: number; h: number }) {
+  const n = Math.max(2, Math.round(w / 0.6));
+  const m = Math.min(0.24, h * 0.22);
+  return (
+    <g className="battlements" pointerEvents="none">
+      <rect className="walkway" x={-w / 2} y={-h / 2 + m} width={w} height={h - 2 * m} />
+      {Array.from({ length: n }, (_, i) => {
+        const x = -w / 2 + (i * w) / n + w / n / 4;
+        return [-h / 2, h / 2 - m].map(y => <rect key={`${i}-${y}`} className="merlon" x={x} y={y} width={w / n / 2} height={m} />);
+      })}
+    </g>
+  );
+}
+
+/** A stone keep or tower from above: its roof stepped up in tiers, with battlements round the top. */
+function StoneTower({ t, tex }: { t: Terrain; tex: string }) {
+  const round = t.shape === 'circle';
+  const tier = (k: number, cls: string, fill: string, filter?: string) =>
+    round ? <ellipse key={`${cls}-${k}`} className={cls} rx={(t.w / 2) * k} ry={(t.h / 2) * k} fill={fill} filter={filter} /> : <rect key={`${cls}-${k}`} className={cls} x={(-t.w / 2) * k} y={(-t.h / 2) * k} width={t.w * k} height={t.h * k} fill={fill} filter={filter} />;
+  return (
+    <>
+      {tier(1, 'ground keep-wall', tex, 'url(#hard-shadow)')}
+      {tier(1, 'tint keep-edge', 'none')}
+      {tier(0.78, 'tint keep-roof', 'url(#tex-stone)', 'url(#hard-shadow)')}
+      {tier(0.78, 'tint keep-edge', 'none')}
+      {tier(0.45, 'tint keep-top', tex, 'url(#hard-shadow)')}
+      {tier(0.45, 'tint keep-edge', 'none')}
+      {tier(1, 'tint', 'url(#g-dome)')}
+    </>
+  );
 }
 
 /** A letter on each kind of scenario marker, so you can tell them apart at a glance. */

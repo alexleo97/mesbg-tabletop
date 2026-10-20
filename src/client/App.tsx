@@ -19,7 +19,7 @@ import { scenarioById, scenarioMarkers } from '../shared/scenarios.ts';
 import { reduce } from '../shared/reducer.ts';
 import { deployList, newId } from '../shared/importList.ts';
 import { vpTotals } from '../shared/scoring.ts';
-import { useSettings, type Settings } from './settings.ts';
+import { setEvilSeat, useSettings, type Settings } from './settings.ts';
 import { Tutorial } from './Tutorial.tsx';
 import { HeroArt } from './HeroArt.tsx';
 import { ProfilePage } from './Account.tsx';
@@ -214,6 +214,12 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
   const [copied, setCopied] = useState(false);
 
   useEffect(() => () => conn.close(), [conn]);
+  // A narrative scenario's Evil side is red, whichever seat it sits in.
+  const evilSeat = state.narrative ? (state.narrative.good === 'p1' ? 'p2' : 'p1') : undefined;
+  useEffect(() => {
+    setEvilSeat(evilSeat);
+    return () => setEvilSeat(undefined);
+  }, [evilSeat]);
   useEffect(() => {
     if (role) {
       conn.setRole(role);

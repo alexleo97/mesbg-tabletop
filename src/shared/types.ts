@@ -195,6 +195,8 @@ export interface Terrain {
   raised?: string;
   /** A wall that is a defender's Barricade (Defence 7, 2 Wounds), or a spiked one that hurts those crossing it. */
   barricade?: 'plain' | 'spiked';
+  /** Drawn in dressed stone (a fortress's courtyard, causeway, keep or tower), or a wall with a culvert through it. Looks only. */
+  look?: 'stone' | 'culvert';
 }
 
 export const DOOR_TYPES = ['castle', 'dwarven', 'heavyArmoured', 'armoured', 'heavy', 'external', 'internal'] as const;

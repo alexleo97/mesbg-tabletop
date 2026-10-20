@@ -70,6 +70,8 @@ const culvertBottom = D.culvert + D.reach;
 
 export function helmsTerrain(): NarrativeTerrain[] {
   return [
+    // The Hornburg's paved courtyards, drawn under everything else; they change nothing in play.
+    piece({ id: 'courtyard', kind: 'road', shape: 'circle', x: 0, y: 0, w: 2 * OUTER.r, h: 2 * OUTER.r, look: 'stone' }),
     // The Hornburg: its outer wall with the great gate, the door down into the Deep, the inner wall and the keep.
     ...arc('outer', OUTER.r, OUTER.t, 0, 90, [
       { at: GATE_ANGLE, half: halfAngle(GATE_W, OUTER.r) },
@@ -79,16 +81,16 @@ export function helmsTerrain(): NarrativeTerrain[] {
     door('deep-door', OUTER.r, DEEP_DOOR_ANGLE, DOOR_W, OUTER.t, 'heavy'),
     ...arc('inner', INNER.r, INNER.t, 0, 90, [{ at: INNER_DOOR_ANGLE, half: halfAngle(DOOR_W, INNER.r) }]),
     door('inner-door', INNER.r, INNER_DOOR_ANGLE, DOOR_W, INNER.t, 'internal'),
-    piece({ id: 'keep', kind: 'building', x: 3, y: 3, w: 6, h: 6, height: 6 }),
+    piece({ id: 'keep', kind: 'building', x: 3, y: 3, w: 6, h: 6, height: 6, look: 'stone' }),
     // The tower at the west end of the outer wall, on its outcrop of rock.
-    piece({ id: 'west-tower', kind: 'building', shape: 'circle', x: 1.6, y: 23.6, w: 3.2, h: 3.2, height: 4 }),
-    piece({ id: 'outcrop', kind: 'rock', x: 3.6, y: 25.8, w: 6.5, h: 2.2, rot: 12, height: 2 }),
+    piece({ id: 'west-tower', kind: 'building', shape: 'circle', x: 1.6, y: 23.6, w: 3.2, h: 3.2, height: 4, look: 'stone' }),
+    piece({ id: 'outcrop', kind: 'rock', shape: 'circle', x: 3.6, y: 25.8, w: 6.5, h: 2.2, rot: 12, height: 2, look: 'stone' }),
     // The causeway up to the gate.
-    piece({ id: 'causeway', kind: 'road', ...along(OUTER.r + OUTER.t / 2 + 2.75), w: 5.5, h: 3.6, rot: GATE_ANGLE }),
+    piece({ id: 'causeway', kind: 'road', ...along(OUTER.r + OUTER.t / 2 + 2.75), w: 5.5, h: 3.6, rot: GATE_ANGLE, look: 'stone' }),
     // The Deeping Wall: the diagonal run, then the straight run south with the culvert section in the middle of it.
     run('deeping-1', D.from, D.corner, D.t),
     run('deeping-2', D.corner, { x: D.corner.x, y: culvertTop }, D.t),
-    run(CULVERT_ID, { x: D.corner.x, y: culvertTop }, { x: D.corner.x, y: culvertBottom }, D.t, { w: culvertBottom - culvertTop }),
+    run(CULVERT_ID, { x: D.corner.x, y: culvertTop }, { x: D.corner.x, y: culvertBottom }, D.t, { w: culvertBottom - culvertTop, look: 'culvert' }),
     run('deeping-3', { x: D.corner.x, y: culvertBottom }, { x: D.corner.x, y: BOARD + 0.15 }, D.t),
     // The Deeping Stream, out through the culvert.
     piece({ id: 'stream', kind: 'water', x: 13, y: 36, w: 26, h: 1.4, path: [[-13, -0.3, 0.55], [-6, 0.1, 0.6], [2, -0.2, 0.6], [10.6, 0.2, 0.6], [13, 0.2, 0.55]] }),

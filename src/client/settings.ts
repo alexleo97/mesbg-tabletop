@@ -139,12 +139,24 @@ function load(): Settings {
   }
 }
 
+/** In a narrative scenario the Evil side is always red: when Evil sits in the first seat, the seats swap colours. */
+let evilFirst = false;
+let applied: Settings | null = null;
+
+export function setEvilSeat(seat: 'p1' | 'p2' | undefined) {
+  if (evilFirst === (seat === 'p1')) return;
+  evilFirst = seat === 'p1';
+  if (applied) apply(applied);
+}
+
 function apply(s: Settings) {
+  applied = s;
   const root = document.documentElement;
   const theme = THEMES.find(t => t.id === s.theme) ?? THEMES[0];
-  for (const [k, v] of Object.entries(theme.vars)) root.style.setProperty(`--${k}`, v);
-  root.style.setProperty('--p1-soft', `${theme.vars.p1}55`);
-  root.style.setProperty('--p2-soft', `${theme.vars.p2}55`);
+  const vars = evilFirst ? { ...theme.vars, p1: theme.vars.p2, p2: theme.vars.p1 } : theme.vars;
+  for (const [k, v] of Object.entries(vars)) root.style.setProperty(`--${k}`, v);
+  root.style.setProperty('--p1-soft', `${vars.p1}55`);
+  root.style.setProperty('--p2-soft', `${vars.p2}55`);
   root.style.setProperty('--font-head', (HEADING_FONTS.find(f => f.id === s.headingFont) ?? HEADING_FONTS[0]).css);
   root.style.setProperty('--font-body', (BODY_FONTS.find(f => f.id === s.bodyFont) ?? BODY_FONTS[0]).css);
   root.classList.toggle('no-anim', !s.animations);
