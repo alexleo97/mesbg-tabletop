@@ -95,11 +95,15 @@ export function deployReady(state: GameState): boolean {
 /** A warband's key: its side and its warband (models with none go together). */
 export const bandKey = (m: Pick<Model, 'owner' | 'warband'>) => `${m.owner}:${m.warband ?? ''}`;
 
-/** A side's warbands, each as its models (the dead left out); with `waiting`, only those still off the table. */
+/**
+ * A side's warbands, each as its models (the dead left out); with `waiting`, only those still to be set up (off the
+ * table, and not left off for want of room when their warband went down).
+ */
 export function bandsOf(state: GameState, seat: Seat, waiting = false): Model[][] {
   const groups = new Map<string, Model[]>();
+  const noRoom = new Set(state.flow.deploy?.noRoom);
   for (const m of Object.values(state.models)) {
-    if (m.owner !== seat || m.dead || (waiting && !m.waiting)) continue;
+    if (m.owner !== seat || m.dead || (waiting && (!m.waiting || noRoom.has(m.id)))) continue;
     groups.set(bandKey(m), [...(groups.get(bandKey(m)) ?? []), m]);
   }
   return [...groups.values()];
@@ -167,7 +171,12 @@ export function deployZones(state: GameState, m: Model): Zone[] {
   const p = procedureOf(state);
   if (!d || !p || d.step !== 'warbands' || !inCurrent(d, m) || !zones.length) return zones;
   if (p.champion && championFirst(state, d, m.owner)) return m.id === state.flow.picks?.[m.owner]?.champion ? [championZone(state, m)] : zones;
-  if (p.alternateZones) return [zones[d.placed.filter(k => k.startsWith(`${m.owner}:`)).length % zones.length]];
+  if (p.alternateZones) {
+    // (A warband already down keeps its own corner, for any of it that comes on after.)
+    const order = d.placed.filter(k => k.startsWith(`${m.owner}:`));
+    const at = order.indexOf(bandKey(m));
+    return [zones[(at >= 0 ? at : order.length) % zones.length]];
+  }
   if (p.lineGap) return [awayFromLine(state, m.owner, p.lineGap)];
   if (p.d6 && d.roll && d.roll <= 3) {
     const sub = (scenarioById(state.scenario)?.deployment.zones ?? []).filter(z => z.seat === m.owner && z.label?.includes('sub-zone'));
@@ -211,19 +220,24 @@ function captainIdOf(state: GameState, m: Model): string | undefined {
   return known.get(key);
 }
 
+/** What keeps a model of the warband being placed from standing where it is, or null if it may. */
+export function misplaced(state: GameState, m: Model): string | null {
+  const gap = procedureOf(state)?.enemyGap;
+  if (!whollyIn(deployZones(state, m), m)) return `${m.name} isn't wholly inside where it may set up.`;
+  if (gap && tooClose(state, m, gap)) return `${m.name} is within ${gap}" of the enemy.`;
+  const cap = captainOf(state, currentBand(state).filter(o => !o.waiting && !o.aboard && bandKey(o) === bandKey(m)));
+  if (cap && cap.id !== m.id && distanceBetween(m, cap) > CAPTAIN_RANGE + 1e-6) return `${m.name} is more than 6" from ${cap.name}, its Captain.`;
+  return null;
+}
+
 /** What still keeps the warband being placed from going down as it stands (an empty list when it can). */
 export function deployProblems(state: GameState): string[] {
   const d = state.flow.deploy;
   if (!d?.current || d.step !== 'warbands') return [];
   const out = new Set<string>();
-  const band = currentBand(state).filter(m => !m.waiting && !m.aboard);
-  const gap = procedureOf(state)?.enemyGap;
-  for (const m of band) {
-    if (!whollyIn(deployZones(state, m), m)) out.add(`${m.name} isn't wholly inside where it may set up.`);
-    if (gap && tooClose(state, m, gap)) out.add(`${m.name} is within ${gap}" of the enemy.`);
-    const mates = band.filter(o => bandKey(o) === bandKey(m));
-    const cap = captainOf(state, mates);
-    if (cap && cap.id !== m.id && distanceBetween(m, cap) > CAPTAIN_RANGE + 1e-6) out.add(`${m.name} is more than 6" from ${cap.name}, its Captain.`);
+  for (const m of currentBand(state).filter(m => !m.waiting && !m.aboard)) {
+    const x = misplaced(state, m);
+    if (x) out.add(x);
   }
   return [...out].slice(0, 4);
 }
@@ -259,21 +273,31 @@ export function layBand(state: GameState, band: Model[], lane: number, lanesIn: 
   const spacing = (o: Model) => (o.owner !== seat && gap ? gap + 0.05 : 0.1);
   const taken = Object.values(state.models).filter(m => !m.dead && !m.waiting && !m.escaped && !m.aboard && !band.includes(m));
   const placing = band.filter(m => !m.aboard);
-  const cap = captainOf(state, placing) ?? placing[0];
-  const capZone = deployZones(state, cap)[0];
+  // Some of a warband left off when it went down, coming on later, go round its Captain where he already stands.
+  const down = captainOf(state, Object.values(state.models).filter(m => !m.dead && !m.aboard && bandKey(m) === bandKey(band[0]) && (!m.waiting || band.includes(m))));
+  const anchored = down && !band.includes(down) ? down : undefined;
+  const cap = anchored ?? captainOf(state, placing) ?? placing[0];
+  const capZone = anchored ? deployZones(state, placing[0]).find(z => inZone(z, anchored)) : deployZones(state, cap)[0];
   if (!capZone) return [];
-  const restZone = deployZones(state, placing.find(m => m !== cap) ?? cap)[0];
+  const restZone = anchored ? capZone : deployZones(state, placing.find(m => m !== cap) ?? cap)[0];
   const ways = lanes(state, restZone, lanesIn);
   const at = capZone.label === 'Champion' ? { x: state.board.w / 2, y: state.board.h / 2 } : ways[lane % ways.length];
   const rot = seat === 'p1' ? 0 : 180;
-  const capMove = placeNear(state, [cap], capZone, at, taken, spacing)[0];
+  // Clear of difficult ground and water where there's room; on it where there isn't.
+  const place = (models: Model[], zone: Zone, near: Point, others: Model[], ok?: (m: Model, p: Point) => boolean) => {
+    const first = placeNear(state, models, zone, near, others, spacing, ok);
+    const left = models.filter(m => !first.some(mv => mv.id === m.id));
+    const placed = first.map(mv => ({ ...state.models[mv.id], x: mv.x, y: mv.y }));
+    return left.length ? [...first, ...placeNear(state, left, zone, near, [...others, ...placed], spacing, ok, false)] : first;
+  };
+  const capMove = anchored ? { id: cap.id, x: cap.x, y: cap.y } : place([cap], capZone, at, taken)[0];
   if (!capMove) return [];
   const capHere = { ...cap, x: capMove.x, y: capMove.y };
   const rest = placing.filter(m => m !== cap);
   const near = (m: Model, p: Point) => distanceBetween({ ...m, x: p.x, y: p.y }, capHere) <= CAPTAIN_RANGE - 0.05;
   // (Any with no room near the Captain stay off the table.)
-  const others = placeNear(state, rest, restZone, capHere, [...taken, capHere], spacing, near);
-  return [capMove, ...others].map(mv => ({ ...mv, rot }));
+  const others = place(rest, restZone, capHere, [...taken, capHere], near);
+  return [...(anchored ? [] : [capMove]), ...others].map(mv => ({ ...mv, rot }));
 }
 
 /** Whose turn it is after a warband (or a side) has gone down, or null when everyone is on the table. */
