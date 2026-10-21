@@ -902,6 +902,8 @@ export type ServerMessage =
   | { type: 'snapshot'; state: GameState; players: Role[]; blank?: boolean; seq?: number; build?: string }
   /** `seq` counts up by one with each action in a room, so a gap means one was missed. */
   | { type: 'action'; action: Action; seq?: number }
+  /** Several actions in a row, applied together: `seq` is the first one's number (the Palantír's instant moves). */
+  | { type: 'actions'; actions: Action[]; seq: number }
   | { type: 'pong' }
   /** The key to your seat in a battle under way, so you can come back to it after a refresh or a dropped link. */
   | { type: 'seatKey'; seat: Seat; key: string }

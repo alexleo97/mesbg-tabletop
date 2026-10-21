@@ -212,19 +212,21 @@ export class RoomConnection implements Connection {
         if (saved && worthKeeping(saved)) ws.send(JSON.stringify({ type: 'restore', state: saved, invite: this.snap.invite ?? undefined }));
       } else if (msg.type === 'mark') showMark(this.getSnapshot, p => this.set(p), msg.mark);
       else if (msg.type === 'clearMarks') this.set({ marks: (this.snap.marks ?? []).filter(m => m.by !== msg.by) });
-      else if (msg.type === 'action') {
+      else if (msg.type === 'action' || msg.type === 'actions') {
         if (this.syncing) return;
         const fits = actionFits(this.seq, msg.seq);
         if (fits === 'skip') return;
         if (fits === 'gap') return this.resync();
-        let state: GameState;
+        // A run of actions sent together updates the table once.
+        const actions = msg.type === 'actions' ? msg.actions : [msg.action];
+        let state = this.snap.state;
         try {
-          state = reduce(this.snap.state, msg.action);
+          for (const a of actions) state = reduce(state, a);
         } catch (err) {
           console.warn('Could not apply a change from the server; fetching the whole game again.', err);
           return this.resync();
         }
-        if (msg.seq !== undefined) this.seq = msg.seq;
+        if (msg.seq !== undefined) this.seq = msg.seq + actions.length - 1;
         this.set({ state, ...turnMarks(this.snap.state, state, this.snap.marks) });
         this.scheduleSave();
       } else if (msg.type === 'presence') this.set({ players: msg.players });
