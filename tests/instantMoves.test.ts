@@ -86,41 +86,60 @@ describe('Instant moves on the server', () => {
     watcher.ws.close();
   });
 
-  it("moves the Palantír's models one straight after another", async () => {
+  it("sends the Palantír's moves out together, so the table updates once rather than once per model", async () => {
     const p1 = await joinRoom(server.port, 'instant-bot');
+    const snapshot = async () => {
+      p1.got.length = 0;
+      p1.send({ type: 'sync' });
+      return (await p1.next(m => m.type === 'snapshot')) as Extract<ServerMessage, { type: 'snapshot' }>;
+    };
     p1.send({ type: 'hello', role: 'p1' });
     await p1.next(m => m.type === 'presence' && m.players.includes('p1'));
     p1.send({ type: 'action', action: { type: 'setBot', seat: 'p2' } });
     await p1.next(m => m.type === 'action' && m.action.type === 'setBot');
     const base = { shape: 'round', w: 25, h: 25 };
-    const orcs = Array.from({ length: 8 }, (_, i) => ({ id: `o${i}`, owner: 'p2', name: 'Mordor Orc Warrior', x: 6 + i * 4, y: 30, rot: 0, base, move: 6, wounds: 1, maxWounds: 1, points: 8, profileId: '[army-of-gothmog] mordor-orc-warrior' }));
+    const orcs = Array.from({ length: 12 }, (_, i) => ({ id: `o${i}`, owner: 'p2', name: 'Mordor Orc Warrior', x: 4 + i * 3.5, y: 30, rot: 0, base, move: 6, wounds: 1, maxWounds: 1, points: 8, profileId: '[army-of-gothmog] mordor-orc-warrior' }));
     p1.send({ type: 'action', action: { type: 'addModels', models: [{ id: 'a1', owner: 'p1', name: 'Warrior of Minas Tirith', x: 24, y: 16, rot: 180, base, move: 6, wounds: 1, maxWounds: 1, points: 8, profileId: '[minas-tirith] warrior-of-minas-tirith' }, ...orcs] } });
     p1.send({ type: 'action', action: { type: 'setBotInstantMoves', on: true } });
-    p1.send({ type: 'action', action: { type: 'startGame' } });
-    p1.send({ type: 'action', action: { type: 'rollPriority' } });
-    const moves: number[] = [];
+    await p1.next(m => m.type === 'action' && m.action.type === 'setBotInstantMoves');
+    // What a browser holds: the game as it was, with every change since applied as it arrives.
+    const start = await snapshot();
+    let mirror = start.state;
+    let seq = start.seq ?? 0;
+    const moveMessages: number[] = [];
+    const moved = new Set<string>();
     let ended = false;
     p1.ws.on('message', d => {
       const m = JSON.parse(String(d)) as ServerMessage;
-      if (m.type !== 'action') return;
-      if (m.action.type === 'moveModels' && m.action.moves.some(mv => mv.id.startsWith('o'))) moves.push(Date.now());
-      if (m.action.type === 'choosePriority' && m.action.seat === 'p1') p1.send({ type: 'action', action: { type: 'endActivation', seat: 'p1' } });
-      if (m.action.type === 'endActivation' && m.action.seat === 'p2') ended = true;
+      if (m.type !== 'action' && m.type !== 'actions') return;
+      const actions = m.type === 'actions' ? m.actions : [m.action];
+      if (m.seq !== undefined && m.seq <= seq) return;
+      expect(m.seq).toBe(seq + 1);
+      seq += actions.length;
+      for (const a of actions) mirror = reduce(mirror, a);
+      const ours = actions.flatMap(a => (a.type === 'moveModels' ? a.moves.filter(mv => mv.id.startsWith('o')) : []));
+      if (ours.length) moveMessages.push(ours.length);
+      for (const mv of ours) moved.add(mv.id);
+      for (const a of actions) {
+        if (a.type === 'choosePriority' && a.seat === 'p1') p1.send({ type: 'action', action: { type: 'endActivation', seat: 'p1' } });
+        if (a.type === 'endActivation' && a.seat === 'p2') ended = true;
+      }
     });
+    p1.send({ type: 'action', action: { type: 'startGame' } });
+    p1.send({ type: 'action', action: { type: 'rollPriority' } });
     // The Palantír chooses (or you choose for it): either way, let it move.
     for (let i = 0; i < 100 && !ended; i++) {
-      const st = (await (async () => {
-        p1.got.length = 0;
-        p1.send({ type: 'sync' });
-        return ((await p1.next(m => m.type === 'snapshot')) as Extract<ServerMessage, { type: 'snapshot' }>).state;
-      })());
+      const st = (await snapshot()).state;
       if (st.flow.chooser === 'p1' && !st.priority) p1.send({ type: 'action', action: { type: 'choosePriority', seat: 'p2' } });
       if (st.phase !== 'move' && st.turn > 1) break;
       await pause(100);
     }
-    expect(moves.length).toBeGreaterThanOrEqual(8);
-    // At normal pace each move waits 450ms before the next (over 3s for eight); with Instant moves they come one straight after another.
-    expect(moves[7] - moves[0]).toBeLessThan(1800);
+    expect(moved.size).toBeGreaterThanOrEqual(8);
+    // At normal pace that is a message, and a redraw, for every model; here it is a handful at most.
+    expect(moveMessages.length).toBeLessThanOrEqual(3);
+    // And the table a browser builds from those messages is the server's, model for model.
+    const end = (await snapshot()).state;
+    for (const id of Object.keys(end.models)) expect([mirror.models[id].x, mirror.models[id].y]).toEqual([end.models[id].x, end.models[id].y]);
     p1.ws.close();
   }, 20_000);
 });

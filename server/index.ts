@@ -25,7 +25,7 @@ import { loadRoom, pruneRooms, saveRoom, storeEnabled, type StoredRoom } from '.
 import { endRollDue, phaseFinished } from '../src/shared/autoPhase.ts';
 import { endRollLabel, gameWinner } from '../src/shared/status.ts';
 import { diffForUndo, mergeReverts, UNDOABLE } from '../src/shared/undo.ts';
-import { BOT_PACE, botPause, botStep, newMemo, type BotMemo } from '../src/shared/bot.ts';
+import { BOT_PACE, botPause, botStep, newMemo, type BotMemo, type BotStep } from '../src/shared/bot.ts';
 import { rulesFor, startingPoints, type Catalog } from '../src/shared/catalog.ts';
 import catalogJson from '../src/data/mesbg-data.json';
 import { arrivalAuto, rollArrival } from '../src/shared/narrative.ts';
@@ -104,6 +104,8 @@ interface Room {
   seen: number;
   /** How many actions have been sent out, so a browser can tell if it missed one. */
   seq: number;
+  /** Actions held back to go out together in one message (the Palantír's instant moves). */
+  batch?: Action[];
   /** Each seat's private key once the battle has started, so only the player sitting there can come back to it. */
   seats: Partial<Record<Seat, string>>;
   /** When someone last sat in each seat, so a seat left empty long enough opens up again. */
@@ -251,7 +253,20 @@ const broadcast = (room: Room, msg: ServerMessage) => {
   for (const c of room.clients) if (c.ws.readyState === WebSocket.OPEN) c.ws.send(data);
 };
 /** Sends out an action already applied to the room, numbered so every browser applies each one exactly once, in order. */
-const broadcastAction = (room: Room, action: Action) => broadcast(room, { type: 'action', action, seq: ++room.seq });
+const broadcastAction = (room: Room, action: Action) => {
+  if (room.batch) {
+    room.batch.push(action);
+    room.seq++;
+  } else broadcast(room, { type: 'action', action, seq: ++room.seq });
+};
+/** Sends out the actions held back, as one message so browsers update the table once. */
+function flushBatch(room: Room) {
+  const batch = room.batch;
+  room.batch = undefined;
+  if (!batch?.length) return;
+  const first = room.seq - batch.length + 1;
+  broadcast(room, batch.length === 1 ? { type: 'action', action: batch[0], seq: first } : { type: 'actions', actions: batch, seq: first });
+}
 /** The whole game as it stands, for a browser joining or catching up. */
 const sendSnapshot = (ws: WebSocket, room: Room) => send(ws, { type: 'snapshot', state: room.state, players: players(room), blank: room.blank, seq: room.seq, build: BUILD });
 
@@ -806,37 +821,54 @@ function scheduleBot(room: Room, delay = BOT_PAUSE * BOT_PACE[room.state.botSpee
   }, Math.max(30, delay));
 }
 
+/** How long the computer may spend on one run of instant moves before sending them out and letting others have a turn. */
+const BATCH_MS = 300;
+
 /** Plays the computer's next step: one move, roll or choice, then a pause before the next. */
 function runBot(room: Room) {
   const seat = room.state.bot;
   const bot = room.bot;
   if (!seat || !bot) return;
-  let step;
-  try {
-    step = botStep(room.state, seat, CATALOG, bot.memo);
-  } catch (err) {
-    console.warn('The computer player failed a step:', err);
-    return;
-  }
+  const think = () => {
+    try {
+      return botStep(room.state, seat, CATALOG, bot.memo);
+    } catch (err) {
+      console.warn('The computer player failed a step:', err);
+      return null;
+    }
+  };
+  let step = think();
   if (!step) return;
   bot.busy = true;
-  let pause = botPause(room.state, step);
+  let pause: number;
+  // With Instant moves, the moves that follow go straight on and out together, a short slice at a time.
+  if (room.state.botInstantMoves) room.batch ??= [];
+  const until = performance.now() + BATCH_MS;
   try {
-    const action = step.action;
-    if (action && DICE_REQUESTS.has(action.type)) {
-      const out = resolveRequest(room.state, seat, action, () => randomInt(1, 7), () => `${Date.now().toString(36)}-${randomInt(1e9).toString(36)}`, Date.now(), CATALOG);
-      for (const a of [...(out?.apply ?? []), ...(out?.record ? [out.record] : [])]) apply(room, a);
-    } else if (action) {
-      const log = room.state.log;
-      const moved = testTerror(room, action);
-      // A Courage roll for terror still gets its usual pause, so it can be seen.
-      if (room.state.log !== log) pause = Math.max(pause, step.delay * BOT_PACE[room.state.botSpeed ?? 'normal']);
-      if (moved) apply(room, moved);
-    }
+    pause = playBotStep(room, seat, step);
+    while (pause === 0 && performance.now() < until && (step = think())) pause = playBotStep(room, seat, step);
   } finally {
     bot.busy = false;
+    flushBatch(room);
   }
-  scheduleBot(room, pause);
+  if (step) scheduleBot(room, pause);
+}
+
+/** Does one of the computer's steps, and says how long to wait before the next. */
+function playBotStep(room: Room, seat: Seat, step: BotStep): number {
+  let pause = botPause(room.state, step);
+  const action = step.action;
+  if (action && DICE_REQUESTS.has(action.type)) {
+    const out = resolveRequest(room.state, seat, action, () => randomInt(1, 7), () => `${Date.now().toString(36)}-${randomInt(1e9).toString(36)}`, Date.now(), CATALOG);
+    for (const a of [...(out?.apply ?? []), ...(out?.record ? [out.record] : [])]) apply(room, a);
+  } else if (action) {
+    const log = room.state.log;
+    const moved = testTerror(room, action);
+    // A Courage roll for terror still gets its usual pause, so it can be seen.
+    if (room.state.log !== log) pause = Math.max(pause, step.delay * BOT_PACE[room.state.botSpeed ?? 'normal']);
+    if (moved) apply(room, moved);
+  }
+  return pause;
 }
 
 /** Applies a player's action and remembers how to take it back. */
