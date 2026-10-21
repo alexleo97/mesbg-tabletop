@@ -240,6 +240,11 @@ export function Game({ room, settings, updateSettings, practice, overlay, setupC
     if (selectedTerrain && !state.terrain[selectedTerrain]) setSelectedTerrain(null);
   }, [state.models, state.terrain, selected, selectedTerrain]);
 
+  // A group picked up to place it during set-up is let go when the battle starts.
+  useEffect(() => {
+    if (state.flow.started) setSelected(new Set());
+  }, [state.flow.started]);
+
   // On a Learn to play table, each step only lets you do what it teaches.
   const lock = useMemo<LessonLock | null>(() => (practice?.allows && practice.uses && practice.refuse ? { can: a => practice.allows!(a), uses: id => practice.uses!(id), refuse: () => practice.refuse!() } : null), [practice]);
 

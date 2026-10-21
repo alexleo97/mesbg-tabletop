@@ -185,7 +185,6 @@ h1, h3, h4, .topbar .room, .phases .turn, .roster-summary b, .name-input, .tabs 
 .model.p1 .base { fill: var(--p1); }
 .model.p2 .base { fill: var(--p2); }
 .model.hero .base { stroke: var(--hero-gold); stroke-width: 0.1; }
-.model.selected .base { stroke: #fff; stroke-width: 0.12; }
 .model .facing { fill: #fff; opacity: 0.9; }
 .model .label { fill: #fff; font-weight: 700; pointer-events: none; }
 .model .wounds { fill: #fff; paint-order: stroke; stroke: #000; stroke-width: 0.05; pointer-events: none; }
@@ -435,7 +434,8 @@ small.muted, p.small { font-size: 0.8rem; }
 .model.p1 .ring { stroke: var(--p1); }
 .model.p2 .ring { stroke: var(--p2); }
 .model .ring.gold { stroke: var(--hero-gold); }
-.model.selected .ring { stroke: #fff; stroke-width: 0.12; }
+/* Selected models keep their side's ring (and a hero its gold); the selection is a white halo just outside it. */
+.select-ring { fill: none; stroke: #fff; stroke-width: 0.06; pointer-events: none; filter: drop-shadow(0 0 0.04px #000); }
 
 /* Rules quick reference */
 .rules .stepper { flex: 1 1 140px; }
