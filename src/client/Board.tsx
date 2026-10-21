@@ -873,6 +873,7 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
                     {initials(m.name)}
                   </text>
                 )}
+                {selected.has(m.id) && <ZoneShape m={m} pad={0.1} className="select-ring" />}
                 {engagedIds.has(m.id) && <ZoneShape m={m} pad={0.035} className="engaged-ring" />}
                 {sight?.seen.has(m.id) && <ZoneShape m={m} pad={0.12} className="sight-ring" />}
                 {flash[m.id] && <ZoneShape key={flash[m.id]} m={m} pad={0.15} className="moved-flash" />}
