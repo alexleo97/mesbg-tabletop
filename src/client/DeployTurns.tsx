@@ -122,6 +122,7 @@ export function DeployTurns({ state, dispatch, role }: { state: GameState; dispa
       const tally = (
         <p className="hint">
           Still to place: <b className="p1">{name('p1')}</b> {left('p1')}, <b className="p2">{name('p2')}</b> {left('p2')}.
+          {d.noRoom?.length ? ` ${d.noRoom.length} model${d.noRoom.length === 1 ? '' : 's'} had no room near ${d.noRoom.length === 1 ? 'its' : 'their'} Captain and ${d.noRoom.length === 1 ? 'stays' : 'stay'} off the table.` : ''}
         </p>
       );
       if (turn !== me) return (

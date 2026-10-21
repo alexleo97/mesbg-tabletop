@@ -407,6 +407,8 @@ export interface Deploying {
   roll?: number;
   /** The objective marker being placed now. */
   marker?: string;
+  /** Models left off the table because there was no room for them when their warband went down. */
+  noRoom?: string[];
 }
 
 export interface Flow {

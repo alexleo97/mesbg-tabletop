@@ -69,9 +69,9 @@ export function nearestSpot(p: Point, fits: (q: Point) => boolean, reach = 6, st
  * Places models as near as they fit to a point: wholly inside the zone and on the table, clear of other models (by
  * `gap`, a hair by default) and off buildings and cliffs. Used for a warband following one of its models into another zone, and for reinforcements.
  */
-export function placeNear(state: GameState, mates: Model[], zone: Zone, near: Point, taken: Model[], gap: (o: Model) => number = () => 0.1, ok: (m: Model, p: Point) => boolean = () => true): Move[] {
+export function placeNear(state: GameState, mates: Model[], zone: Zone, near: Point, taken: Model[], gap: (o: Model) => number = () => 0.1, ok: (m: Model, p: Point) => boolean = () => true, avoid = true): Move[] {
   const { w, h } = state.board;
-  const solid = solidOutlines(state, true);
+  const solid = solidOutlines(state, avoid);
   const step = 0.25;
   const spots: (Point & { d: number })[] = [];
   for (let x = step / 2; x < w; x += step) for (let y = step / 2; y < h; y += step) if (inZone(zone, { x, y })) spots.push({ x, y, d: Math.hypot(x - near.x, y - near.y) });

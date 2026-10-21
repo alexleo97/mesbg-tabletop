@@ -216,6 +216,30 @@ describe('the computer sets up', () => {
   }
 });
 
+describe('a warband with no room for all of it', () => {
+  // A hero leading more great beasts than fit within 6" of him: the rest have nowhere to go.
+  const horde = (seat: Seat) => [mk(`${seat}-h`, seat, 'h', true), ...Array.from({ length: 8 }, (_, i) => mk(`${seat}-h${i}`, seat, 'h', false, { base: { shape: 'round', w: 160, h: 160 } }))];
+
+  for (const sc of ['divide-and-conquer', 'storm-the-camp', 'breakthrough']) {
+    it(`leaves the ones that don't fit off the table, and the set-up still finishes, in ${sc}`, () => {
+      // The computer (player 2) brings the horde; player 1 has one small warband, as against the Palantír.
+      let s = table(sc, [mk('p1-a', 'p1', 'a', true), mk('p1-a1', 'p1', 'a'), ...horde('p2'), mk('p2-b', 'p2', 'b', true), mk('p2-b1', 'p2', 'b')]);
+      s = botsSetUp(s, dice(6, 1));
+      expect(deployReady(s)).toBe(true);
+      const left = s.flow.deploy!.noRoom ?? [];
+      expect(left.length).toBeGreaterThan(0);
+      expect(left.every(i => s.models[i].waiting && i.startsWith('p2-h'))).toBe(true);
+      // Everything else is down, where it may stand.
+      for (const m of Object.values(s.models).filter(o => !left.includes(o.id))) {
+        expect(m.waiting, m.id).toBeFalsy();
+        expect(whollyIn(zonesOf(s, m.owner), m), m.id).toBe(true);
+      }
+      const band = Object.values(s.models).filter(m => m.warband === 'h' && !m.waiting);
+      for (const m of band) expect(distanceBetween(m, s.models['p2-h'])).toBeLessThanOrEqual(6.01);
+    });
+  }
+});
+
 describe('narrative scenarios', () => {
   it('sets each side up in the order the book gives, and only that side moves', () => {
     // Roast Mutton: the Trolls set up first, then the Company.

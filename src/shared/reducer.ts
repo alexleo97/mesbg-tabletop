@@ -3,7 +3,7 @@ import { mounted, mountProfile } from './cavalry.ts';
 import { boardCommanders, carried, howdahFor, howdahSpot } from './warBeasts.ts';
 import { assignCrew, pushers } from './siege.ts';
 import { holdInZones, nearEdge } from './deployment.ts';
-import { bandKey, bandsOf, deployProblems, inCurrent, layBand, markerSpot, markerStart, mayPutDown, newMarker, nextTurn, procedureOf, swapEnds } from './deploy.ts';
+import { bandKey, bandsOf, deployProblems, inCurrent, layBand, markerSpot, misplaced, markerStart, mayPutDown, newMarker, nextTurn, procedureOf, swapEnds } from './deploy.ts';
 import { objectivesMissing } from './scenarios.ts';
 import { canActivate, heroicInfo, heroicNow, heroicQueue, mayActivate, shoutedFor } from './heroics.ts';
 import { pendingSpell } from './magic.ts';
@@ -1070,6 +1070,19 @@ function step(state: GameState, action: Action): GameState {
         for (const m of band) if (!room.has(m.id) && !m.aboard) out.models[m.id] = { ...out.models[m.id], waiting: true };
         out = step(out, { type: 'moveModels', moves });
       }
+      // So do any the table kept from where they were laid out (in their zone, near their Captain, clear of the enemy):
+      // left off for good, so that the set-up can go on without them.
+      // (Taking one off can change who its warband's Captain is, so look again until none is out of place.)
+      const gone: string[] = [];
+      for (let more = true; more; ) {
+        const off = bands.flat().filter(m => !m.aboard && !gone.includes(m.id) && (out.models[m.id].waiting || misplaced(out, out.models[m.id]))).map(m => m.id);
+        more = off.some(i => !out.models[i].waiting);
+        gone.push(...off);
+        const models = { ...out.models };
+        for (const i of off) models[i] = { ...models[i], waiting: true };
+        out = { ...out, models };
+      }
+      if (gone.length) out = { ...out, flow: { ...out.flow, deploy: { ...out.flow.deploy!, noRoom: [...(d.noRoom ?? []), ...gone] } } };
       return out;
     }
     case 'warbandDone': {
@@ -1719,6 +1732,7 @@ function cleanDeploy(raw: unknown): Deploying | null {
     ...(typeof d.current === 'string' ? { current: str(d.current, 120) } : {}),
     ...(Number.isFinite(d.roll) ? { roll: int(d.roll, 1, 6, 1) } : {}),
     ...(typeof d.marker === 'string' ? { marker: str(d.marker, 80) } : {}),
+    ...(Array.isArray(d.noRoom) ? { noRoom: d.noRoom.slice(0, MAX_MODELS).map(k => str(k, 80)) } : {}),
   };
 }
 
