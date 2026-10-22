@@ -19,6 +19,8 @@ import { canPickUp, markerUpkeep, syncCarried, touching, canEscape } from './obj
 import { aboard, raiseLadders, towerMove } from './fortress.ts';
 import { endPhaseUpkeep } from './scoring.ts';
 import { arrivalDue, mayCry, narrativeById, narrativeTerrain, radius } from './narrative.ts';
+import { bondsPending } from './ambush.ts';
+import { isCaveTroll, tidePending } from './balin.ts';
 import { entering, enteringNoCharge, entryEdge, isMutton, isTroll, nextEntering, onEdge, reinforcementsPending, stillEntering } from './mutton.ts';
 import { isHelms, mayChooseRelief, reliefPending, RELIEF_SPAN } from './helms.ts';
 import { putOut } from './fire.ts';
@@ -126,7 +128,7 @@ function goToPhase(state: GameState, phase: Phase, turn: number, newTurn: boolea
       done: [],
       resolved: newTurn ? [] : state.flow.resolved,
       heroics: newTurn ? [] : state.flow.heroics,
-      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], moved: [], cast: [], spell: undefined, held: [], stood: [], climbed: {}, compel: undefined, supported: [], strikeBonus: {}, charges: {}, brutal: [], hurledAt: [], breached: [], trampled: [], turned: [], cables: [], sauron: [], ringTried: [], sought: [], reinforce: undefined, usedTurn: [], heard: [], freeMove: [], chronicles: undefined, placing: [], joined: [] } : {}),
+      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], moved: [], cast: [], spell: undefined, held: [], stood: [], climbed: {}, compel: undefined, supported: [], strikeBonus: {}, charges: {}, brutal: [], hurledAt: [], breached: [], trampled: [], turned: [], cables: [], sauron: [], ringTried: [], sought: [], reinforce: undefined, bonds: undefined, usedTurn: [], heard: [], freeMove: [], chronicles: undefined, placing: [], joined: [] } : {}),
       ...(phase !== state.phase ? { compel: undefined, mustCharge: undefined } : {}),
       // The fights are paired off as the Fight phase begins, and stay that way until it ends.
       ...(phase !== state.phase ? { pairs: phase === 'fight' && state.flow.started ? pairOff(livingModels(state), { ...state, phase: 'move' }, state.flow.pairChoices).map(c => c.key) : undefined, pairChoices: undefined } : {}),
@@ -295,6 +297,9 @@ export function cleanModel(m: Partial<Model>, prev?: Model): Model | null {
     const turn = k in m ? (m[k] === undefined ? undefined : int(m[k], 0, 99, 0)) : base[k];
     if (turn) out[k] = turn;
   }
+  for (const k of ['bound', 'slips'] as const) if ((k in m ? m[k] === true : base[k]) && !out.dead) out[k] = true;
+  const crawls = 'crawls' in m ? (m.crawls === undefined ? undefined : num(m.crawls, 0, 6, 0)) : base.crawls;
+  if (crawls && out.prone) out.crawls = crawls;
   return out.id ? out : null;
 }
 
@@ -428,7 +433,7 @@ function cleanTerrain(t: Partial<Terrain>, prev?: Terrain): Terrain | null {
   if (('walk' in t ? t.walk : base.walk) === true && out.kind === 'wall') out.walk = true;
   if (('stairs' in t ? t.stairs : base.stairs) === true && out.kind === 'road') out.stairs = true;
   const look = 'look' in t ? t.look : base.look;
-  if (look === 'stone' || look === 'culvert') out.look = look;
+  if (look === 'stone' || look === 'culvert' || look === 'grass' || look === 'pillar' || look === 'tomb' || look === 'well' || look === 'trapdoor' || look === 'doorway') out.look = look;
   cleanObject(t, base, out);
   if ('vines' in t ? t.vines === true : base.vines) {
     const side = 'side' in t ? t.side : base.side;
@@ -772,7 +777,7 @@ function step(state: GameState, action: Action): GameState {
           }
         }
         // A Prone model that moves stands up first, which costs it half its Move this turn.
-        const crawls = state.flow.crawling?.includes(prev.id) || state.flow.lay?.includes(prev.id);
+        const crawls = state.flow.crawling?.includes(prev.id) || state.flow.lay?.includes(prev.id) || !!prev.crawls;
         if (prev.prone && allowance && moving && !crawls && (to.x !== prev.x || to.y !== prev.y)) {
           next = { ...next, prone: undefined };
           delete next.prone;
@@ -1116,8 +1121,11 @@ function step(state: GameState, action: Action): GameState {
         const went = [hero.id, ...shoutedFor(state, hero).map(f => f.id)];
         return { ...state, flow: { ...state.flow, heroicDone: [...(state.flow.heroicDone ?? []), hero.id], heroicNow: undefined, activated: [...new Set([...(state.flow.activated ?? []), ...went])] } };
       }
-      // Roast Mutton: the Company still to come rolls (or comes) first, and moves on before the side is done.
-      if (state.flow.started && (reinforcementsPending(state, action.seat) || reliefPending(state, action.seat))) return state.flow.reinforce === action.seat ? state : { ...state, flow: { ...state.flow, reinforce: action.seat } };
+      // Roast Mutton: the Company still to come rolls (or comes) first, and moves on before the side is done (and the
+      // same for Helm's Deep's Relief Force and Balin's Tomb's Goblin Tide).
+      if (state.flow.started && (reinforcementsPending(state, action.seat) || reliefPending(state, action.seat) || tidePending(state, action.seat))) return state.flow.reinforce === action.seat ? state : { ...state, flow: { ...state.flow, reinforce: action.seat } };
+      // Ambush at Night: the bound Hobbits roll to cut their bonds as the Good side finishes its move.
+      if (bondsPending(state, action.seat)) return state.flow.bonds === action.seat ? state : { ...state, flow: { ...state.flow, bonds: action.seat } };
       // Ending it with a newcomer still at the edge lets it stay there, and the next one comes on.
       if (state.flow.started && state.flow.entering?.seat === action.seat && stillEntering(state)) {
         const waved = onEdge(state) ? comeOn({ ...state, flow: { ...state.flow, entering: { ...state.flow.entering, on: undefined, at: undefined } } }) : state;
@@ -1296,7 +1304,18 @@ function step(state: GameState, action: Action): GameState {
       const rolled = action.rolled === undefined ? state.narrative.rolled : [...new Set([...(state.narrative.rolled ?? []), int(action.rolled, 0, 99, 0)])];
       const dawn = action.dawn === undefined ? state.narrative.dawn : int(action.dawn, 1, 99, 1);
       const breach = action.breach === undefined ? state.narrative.breach : int(action.breach, 0, 99, 0);
-      return moveOn({ ...state, narrative: { ...state.narrative, ...(rolled ? { rolled } : {}), ...(dawn ? { dawn } : {}), ...(breach ? { breach } : {}) } });
+      const crushed = Array.isArray(action.crushed) ? [...new Set([...(state.narrative.crushed ?? []), ...action.crushed.slice(0, 60).map(x => str(x, 80))])].slice(-60) : state.narrative.crushed;
+      const next = { ...state, narrative: { ...state.narrative, ...(rolled ? { rolled } : {}), ...(dawn ? { dawn } : {}), ...(breach ? { breach } : {}), ...(crushed ? { crushed } : {}) } };
+      // Balin's Tomb: the Cave Troll has stepped in at the doorway, its move counted from just outside it.
+      if (action.troll !== undefined && !state.narrative.troll) {
+        const troll = Object.values(state.models).find(isCaveTroll);
+        if (troll && !troll.waiting) {
+          const off: [number, number] = [troll.x, state.board.h + radius(troll)];
+          next.narrative.troll = int(action.troll, 1, 99, state.turn);
+          next.flow = { ...state.flow, starts: { ...state.flow.starts, [troll.id]: off }, walked: { ...state.flow.walked, [troll.id]: 2 * radius(troll) }, paths: { ...state.flow.paths, [troll.id]: [off, [troll.x, troll.y]] } };
+        }
+      }
+      return moveOn(next);
     }
     case 'reliefPoint': {
       // Helm's Deep: where on the eastern half of the south edge the Relief Force rides on.
@@ -1309,7 +1328,21 @@ function step(state: GameState, action: Action): GameState {
       const ids = action.ids.filter(i => state.models[i]?.waiting && state.models[i].owner === action.seat).slice(0, 40);
       const from: [number, number] = Array.isArray(action.from) ? [num(action.from[0], -24, 200, 0), num(action.from[1], -24, 200, 0)] : [0, state.board.h / 2];
       const span: [number, number] | undefined = Array.isArray(action.span) ? [num(action.span[0], 0, 200, 0), num(action.span[1], 0, 200, 200)] : undefined;
-      const next = comeOn({ ...state, flow: { ...state.flow, entering: { seat: action.seat, ids, from, turn: state.turn, ...(span ? { span } : {}), ...(action.charge === true ? { charge: true } : {}) } } });
+      // Balin's Tomb: those coming up through a trapdoor or out of the well are put there at once, their move counted from there.
+      let models = state.models;
+      let starts = state.flow.starts;
+      for (const sp of Array.isArray(action.spots) ? action.spots.slice(0, 40) : []) {
+        const m = Array.isArray(sp) ? models[str(sp[0], 80)] : undefined;
+        if (!m || !ids.includes(m.id) || !m.waiting) continue;
+        const { waiting: _, ...rest } = m;
+        const at = { x: num(sp[1], 0, state.board.w, m.x), y: num(sp[2], 0, state.board.h, m.y) };
+        models = { ...models, [m.id]: { ...rest, ...at, rot: Math.round((Math.atan2(state.board.w / 2 - at.x, at.y - state.board.h / 2) * 180) / Math.PI + 360) % 360 } };
+        starts = { ...starts, [m.id]: [at.x, at.y] };
+      }
+      // (Back from the dead, they have their move to make whatever they did before they fell.)
+      const fresh = (list?: string[]) => list?.filter(i => !ids.includes(i));
+      const flow = { ...state.flow, starts, stopped: fresh(state.flow.stopped), activated: fresh(state.flow.activated) };
+      const next = comeOn({ ...state, models, flow: { ...flow, entering: { seat: action.seat, ids, from, turn: state.turn, ...(span ? { span } : {}), ...(action.charge === true ? { charge: true } : {}) } } });
       // Nobody came: the side's move is over.
       return ids.length ? next : step(next, { type: 'endActivation', seat: action.seat });
     }
@@ -1762,7 +1795,7 @@ export function loadState(raw: unknown): GameState {
   if (o.advance === 'click') out = { ...out, advance: 'click' };
   const n = o.narrative;
   if (n && typeof n === 'object' && narrativeById(n.id) && isSeat(n.good))
-    out = { ...out, narrative: { id: n.id, good: n.good, ...(Number.isFinite(n.cry) ? { cry: int(n.cry, 0, 99, 0) } : {}), ...(Array.isArray(n.rolled) ? { rolled: n.rolled.slice(0, 40).map(t => int(t, 0, 99, 0)) } : {}), ...(Number.isFinite(n.dawn) ? { dawn: int(n.dawn, 1, 99, 1) } : {}), ...(n.bilbo === true ? { bilbo: true } : {}), ...(Number.isFinite(n.turns) ? { turns: int(n.turns, 1, 40, 15) } : {}), ...(Number.isFinite(n.relief) ? { relief: num(n.relief, 0, 200, 36) } : {}), ...(Number.isFinite(n.breach) ? { breach: int(n.breach, 0, 99, 0) } : {}) } };
+    out = { ...out, narrative: { id: n.id, good: n.good, ...(Number.isFinite(n.cry) ? { cry: int(n.cry, 0, 99, 0) } : {}), ...(Array.isArray(n.rolled) ? { rolled: n.rolled.slice(0, 40).map(t => int(t, 0, 99, 0)) } : {}), ...(Number.isFinite(n.dawn) ? { dawn: int(n.dawn, 1, 99, 1) } : {}), ...(n.bilbo === true ? { bilbo: true } : {}), ...(Number.isFinite(n.turns) ? { turns: int(n.turns, 1, 40, 15) } : {}), ...(Number.isFinite(n.relief) ? { relief: num(n.relief, 0, 200, 36) } : {}), ...(Number.isFinite(n.breach) ? { breach: int(n.breach, 0, 99, 0) } : {}), ...(Number.isFinite(n.troll) ? { troll: int(n.troll, 1, 99, 1) } : {}), ...(Array.isArray(n.crushed) ? { crushed: n.crushed.slice(0, 60).map(x => str(x, 80)) } : {}) } };
   if (o.flow && typeof o.flow === 'object') {
     const f = o.flow as Partial<Flow>;
     const seats = (v: unknown) => (Array.isArray(v) ? [...new Set(v.filter(isSeat))] : []);
@@ -1851,6 +1884,7 @@ export function loadState(raw: unknown): GameState {
         ...(Array.isArray(f.joined) ? { joined: f.joined.slice(0, 20).map(x => str(x, 80)) } : {}),
         ...(f.entering && typeof f.entering === 'object' && isSeat(f.entering.seat) && Array.isArray(f.entering.ids) ? { entering: { seat: f.entering.seat, ids: f.entering.ids.slice(0, 40).map(x => str(x, 80)), from: [num(f.entering.from?.[0], -24, 200, 0), num(f.entering.from?.[1], -24, 200, 0)] as [number, number], turn: int(f.entering.turn, 0, 99, 0), ...(Array.isArray(f.entering.span) ? { span: [num(f.entering.span[0], 0, 200, 0), num(f.entering.span[1], 0, 200, 200)] as [number, number] } : {}), ...(f.entering.charge === true ? { charge: true } : {}), ...(typeof f.entering.on === 'string' && Array.isArray(f.entering.at) ? { on: str(f.entering.on, 80), at: [num(f.entering.at[0], -24, 200, 0), num(f.entering.at[1], -24, 200, 0)] as [number, number] } : {}) } } : {}),
         ...(isSeat(f.reinforce) ? { reinforce: f.reinforce } : {}),
+        ...(isSeat(f.bonds) ? { bonds: f.bonds } : {}),
         ...(Array.isArray(f.placing) ? { placing: f.placing.map(p => cleanPlacing(p, out)).filter((p): p is Placing => !!p).slice(0, 20) } : {}),
       },
     };

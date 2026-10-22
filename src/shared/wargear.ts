@@ -11,6 +11,7 @@ import { declared } from './heroics.ts';
 import { hasKeyword, isCavalry } from './powers.ts';
 import { mountLabel, mountOf } from './cavalry.ts';
 import { isMonster } from './monsters.ts';
+import { trollRampage } from './balin.ts';
 import type { DiceRoll, GameState, Model, Seat } from './types.ts';
 
 const unitOf = (catalog: Catalog | null | undefined, m: Model) => (m.profileId ? catalog?.units[m.profileId] : undefined);
@@ -196,6 +197,11 @@ export function fighterOf(state: GameState, catalog: Catalog | null | undefined,
     duel--;
     wound--;
     notes.push('Unarmed: -1 duel, -1 to wound');
+  }
+  // Balin's Tomb: the Cave Troll fights harder in a turn it charged.
+  if (trollRampage(state, m)) {
+    f.f = Math.min(10, f.f + 1);
+    notes.push('Troll Rampage: +1 Fight (it charged)');
   }
   if (duel) f.duelMod = duel;
   if (wound) f.woundMod = wound;

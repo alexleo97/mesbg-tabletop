@@ -1,4 +1,5 @@
 import { mounted } from './cavalry.ts';
+import { isAmbush, isHobbit } from './ambush.ts';
 import { distanceToBase, halfExtents, inBaseContact, type Point } from './geometry.ts';
 import { fortressNotes, helpers, HEAVY } from './fortress.ts';
 import { scenarioById, type Zone } from './scenarios.ts';
@@ -100,6 +101,8 @@ export const inHalf = (state: GameState, seat: Seat, p: Point) => (seat === 'p1'
 export function exitEdges(state: GameState, m: Model): ('top' | 'bottom' | 'left' | 'right')[] {
   const enemyEdge = m.owner === 'p1' ? 'top' : 'bottom';
   const carrying = carriedBy(state, m);
+  // Ambush at Night: Merry and Pippin get away off any edge.
+  if (isAmbush(state) && isHobbit(m)) return ['top', 'bottom', 'left', 'right'];
   switch (state.scenario) {
     case 'reconnoitre':
       return [enemyEdge];

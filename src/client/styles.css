@@ -143,6 +143,7 @@ h1, h3, h4, .topbar .room, .phases .turn, .roster-summary b, .name-input, .tabs 
 .terrain .ridge { stroke: #3b2a1a; stroke-width: 0.18; pointer-events: none; }
 .terrain .furrow { stroke: #5d5130aa; stroke-width: 0.08; pointer-events: none; }
 .terrain .hedge { fill: none; stroke: #2f4a1f; stroke-width: 0.35; pointer-events: none; }
+.terrain .grass-tuft { fill: none; stroke: #6f5a22cc; stroke-width: 0.07; stroke-linecap: round; pointer-events: none; }
 .terrain .tree { stroke: #0f210c; stroke-width: 0.04; }
 .terrain .tree-shadow { fill: #0006; }
 .terrain .tree-base { fill: #2f4a1f; }
@@ -1229,3 +1230,12 @@ select.ready-made {
 .effects .fx-swords { fill: #fff; paint-order: stroke; stroke: #000; stroke-width: 0.06; transform-box: fill-box; transform-origin: center; opacity: 0; animation: swords 0.8s 0.3s ease-out both; }
 @keyframes swords { 0% { opacity: 0; transform: scale(2); } 30% { opacity: 1; transform: scale(0.9); } 70% { opacity: 1; transform: scale(1); } 100% { opacity: 0; } }
 .effects .fx-engaged { fill: var(--clash); font-weight: 800; paint-order: stroke; stroke: #000; stroke-width: 0.08; opacity: 0; animation: float 1.2s 0.35s ease-out both; }
+
+/* Balin's Tomb */
+.terrain .ledge-top { fill: #ffffff26; stroke: #1a1714; stroke-width: 0.08; }
+.terrain .moria-carving { fill: none; stroke: #00000055; stroke-width: 0.06; }
+.terrain .moria-lid { fill: #d8d2c4; stroke: #6d665a; stroke-width: 0.05; }
+.terrain .moria-well-mouth { fill: #06080a; stroke: #00000088; stroke-width: 0.08; }
+.terrain .moria-trapdoor-frame { fill: none; stroke: #2b2118; stroke-width: 0.1; }
+.terrain .moria-ring { fill: none; stroke: #8a8578; stroke-width: 0.07; }
+.terrain .moria-dark { fill: #0a0908; }
