@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { entryPoints } from '../shared/catalog.ts';
 import { botRoster, playableArmies } from '../shared/botList.ts';
 import { newId, type ListEntry } from '../shared/importList.ts';
-import { PREMADE, premadeRoster } from '../shared/premade.ts';
+import { PREMADE, PREMADE_SIZES, premadeRoster, premadeSize } from '../shared/premade.ts';
 import { POOLS, SCENARIOS, scenarioById, scenarioFromDice } from '../shared/scenarios.ts';
 import { COMMUNITY_BOARDS, MIDDLE_EARTH_MAPS, tableByKey, type TableChoice } from '../shared/tables.ts';
 import { BOT_NAME, type Mat, type Terrain } from '../shared/types.ts';
@@ -302,19 +302,17 @@ export function BattleMenu() {
               <div key={side} className="pool">
                 <h3>{side}</h3>
                 <div className="story-grid army-grid">
-                  {PREMADE.filter(p => (side === 'Good' ? p.seed < 20 : p.seed >= 20)).map(p => (
+                  {PREMADE.filter(p => p.side === side).map(p => (
                     <button key={p.id} className={`side-card ${premade === p.id ? 'on' : ''}`} aria-pressed={premade === p.id} onClick={() => setPremade(p.id)}>
                       <b>{p.name}</b>
                       <span>{p.army}</span>
+                      <span>{p.about}</span>
                     </button>
                   ))}
                 </div>
               </div>
             ))}
-            <label className="mini-stat">
-              Points
-              <input className="points" type="number" min={100} max={2000} step={50} value={points} onChange={e => setPoints(Math.max(100, Math.min(2000, Number(e.target.value) || 500)))} />
-            </label>
+            <SizePicker value={premadeSize(points)} onChange={setPoints} />
           </>
         )}
         {mode === 'table' && <p className="muted">Build, import or pick your army in the set-up card once you're at the table.</p>}
@@ -368,10 +366,11 @@ export function BattleMenu() {
                 <div key={side} className="pool">
                   <h3>{side}</h3>
                   <div className="story-grid army-grid">
-                    {PREMADE.filter(p => (side === 'Good' ? p.seed < 20 : p.seed >= 20)).map(p => (
+                    {PREMADE.filter(p => p.side === side).map(p => (
                       <button key={p.id} className={`side-card ${foe === p.id ? 'on' : ''}`} aria-pressed={foe === p.id} onClick={() => setFoe(p.id)}>
                         <b>{p.name}</b>
                         <span>{p.army}</span>
+                        <span>{p.about}</span>
                       </button>
                     ))}
                   </div>
@@ -393,7 +392,8 @@ export function BattleMenu() {
                   You haven't built any lists yet. Build one on the <a href="?armies">Armies</a> page, or give {BOT_NAME} a premade army.
                 </p>
               ))}
-            {foeMode !== 'lists' && (
+            {foeMode === 'premade' && <SizePicker value={premadeSize(theirPoints)} onChange={setFoePoints} />}
+            {foeMode === 'random' && (
               <label className="mini-stat">
                 Points
                 <input className="points" type="number" min={100} max={2000} step={50} value={theirPoints} onChange={e => setFoePoints(Math.max(100, Math.min(2000, Number(e.target.value) || 500)))} />
@@ -425,5 +425,18 @@ function TableCard({ t, on, pick }: { t: TableChoice; on: boolean; pick: () => v
         </span>
       </span>
     </button>
+  );
+}
+
+/** The two sizes premade armies come in. */
+function SizePicker({ value, onChange }: { value: number; onChange: (points: number) => void }) {
+  return (
+    <div className="row seg" role="group" aria-label="Points">
+      {PREMADE_SIZES.map(n => (
+        <button key={n} className={value === n ? 'on' : ''} aria-pressed={value === n} onClick={() => onChange(n)}>
+          {n} pts
+        </button>
+      ))}
+    </div>
   );
 }
