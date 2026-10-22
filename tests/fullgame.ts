@@ -31,6 +31,8 @@ ws.on('message', d => {
   const m = JSON.parse(String(d));
   if (m.type === 'snapshot') state = m.state;
   else if (m.type === 'action') state = reduce(state, m.action);
+  // (The Palantír's instant moves come together, in one message.)
+  else if (m.type === 'actions') state = m.actions.reduce(reduce, state);
   else return;
   for (const r of state.log) if (!turnOf.has(r.id)) {
     turnOf.set(r.id, `${state.turn}${state.phase}`);

@@ -135,7 +135,7 @@ export function play(state: GameState, rand: () => number, maxSteps = 20000, wat
         counts[k2] = (counts[k2] ?? 0) + 1;
         if (step.action.type === 'updateModel') counts[`${seat}:fled`] = (counts[`${seat}:fled`] ?? 0) + 1;
         acted = true;
-      } else if (step) acted = acted || false;
+      } else if (step && step.delay === 0) acted = true; // (still thinking: it carries on next step)
     }
     if (acted) {
       idle = 0;

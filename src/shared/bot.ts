@@ -98,6 +98,10 @@ export function botPause(state: GameState, step: BotStep): number {
 }
 const DICE_PAUSE = 1100;
 const THINK_PAUSE = 700;
+/** How many models that stay put the computer thinks through in one step before carrying on in the next. */
+const THINK_SLICE = 6;
+/** How many targets it can see an archer weighs from each spot it might move to (see bestShot). */
+const SHOT_TARGETS = 6;
 const WAIT_PAUSE = 1500;
 /** A safety net: no phase should need this many steps, so past it the computer just finishes up. */
 const MAX_STEPS = 400;
@@ -124,6 +128,9 @@ interface Ctx {
   memo: BotMemo;
   now: number;
   profiles: Map<string, Profile>;
+  /** What front() and a model's shot from where it stands come to, worked out once a step (the table doesn't change in it). */
+  fronts: Map<string, number>;
+  shotsFrom: Map<string, Shot | null>;
   /** The other side is a person, who may want to spend Might before strikes are rolled. */
   person: boolean;
 }
@@ -195,7 +202,7 @@ function sync(memo: BotMemo, state: GameState, now: number) {
  */
 export function botStep(state: GameState, seat: Seat, catalog: Catalog | null, memo: BotMemo, now = Date.now(), person = true): BotStep | null {
   sync(memo, state, now);
-  const ctx: Ctx = { state, seat, catalog, memo, now, profiles: new Map(), person };
+  const ctx: Ctx = { state, seat, catalog, memo, now, profiles: new Map(), fronts: new Map(), shotsFrom: new Map(), person };
   if (state.result) return resultStep(ctx);
   // A side with nothing left does nothing; one whose warbands are still waiting to arrive still takes its turns.
   if (!Object.values(state.models).some(m => m.owner === seat && !m.dead && !m.escaped)) return null;
@@ -500,6 +507,7 @@ function moveStep(ctx: Ctx): BotStep {
     .filter(m => !memo.acted.includes(m.id) && !m.siege && !(m.crewOf && state.models[m.crewOf] && !state.models[m.crewOf].dead))
     .sort((a, b) => Number(hauling(a)) - Number(hauling(b)) || Number(reach(b)) - Number(reach(a)) || (reach(a) ? nearest(a) - nearest(b) : nearest(b) - nearest(a)));
   const goals = assignGoals(ctx);
+  let stayed = 0;
   for (const m of queue) {
     // Not now: waiting for a hero's heroic activation to finish (or gone with one already).
     if (!mayActivate(state, m)) continue;
@@ -525,6 +533,9 @@ function moveStep(ctx: Ctx): BotStep {
       const act = markerStep(ctx, m);
       if (act) return act;
       memo.pending = undefined;
+      // A big army holding its ground (the defenders on Helm's Deep's walls) would take seconds to think through in one
+      // go, so it carries on in the next step, and the server gets on with other games in between.
+      if (++stayed >= THINK_SLICE) return { delay: 0 };
       continue;
     }
     memo.moved[m.id] = (memo.moved[m.id] ?? 0) + centre(m, to.at);
@@ -956,7 +967,7 @@ function scoreFor(ctx: Ctx, m: Model, at: Point, goal?: Goal, vpBefore?: number)
     const near = (q: Point) => Math.min(...enemies.map(e => centre(q, e)), 60);
     // Neither side giving ground for turns on end: the stronger one goes in (and in a long one, both do).
     if (!p.weapon) score += (near(moved) - near(at)) * (standoff(ctx) ? 0.4 : aggressive(ctx) ? 0.22 : 0.06);
-    else if (!shot && (hauling || !bestShot(ctx, moved))) score += (near(moved) - near(at)) * 0.12;
+    else if (!shot && (hauling || !shotFromHere(ctx, moved))) score += (near(moved) - near(at)) * 0.12;
     // Fast models and heroes don't run far ahead of the battle line on their own.
     if (!goal && !standoff(ctx)) {
       const ahead = front(ctx, m) - 3 - near(at);
@@ -999,13 +1010,17 @@ function scoreFor(ctx: Ctx, m: Model, at: Point, goal?: Goal, vpBefore?: number)
 
 /** How far the middle of the army is from the enemy: the battle line the rest keep to. */
 function front(ctx: Ctx, m: Model): number {
+  const known = ctx.fronts.get(m.id);
+  if (known !== undefined) return known;
   const { state, seat } = ctx;
   const enemies = side(state, other(seat));
   const gaps = side(state, seat)
     .filter(f => f.id !== m.id)
     .map(f => Math.min(...enemies.map(e => centre(f, e)), 60))
     .sort((a, b) => a - b);
-  return gaps.length ? gaps[Math.floor(gaps.length / 2)] : 0;
+  const at = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 0;
+  ctx.fronts.set(m.id, at);
+  return at;
 }
 
 /** No Wound lost for two turns while this side is the stronger, or for four whichever it is. */
@@ -1029,21 +1044,37 @@ interface Shot {
 /** The shot most worth taking from where `m` stands: likely wounds times what the target is worth. */
 function bestShot(ctx: Ctx, m: Model, state = ctx.state): Shot | null {
   const p = profile(ctx, m);
-  if (!p.weapon) return null;
+  const weapon = p.weapon;
+  if (!weapon) return null;
+  // What a wound on the target is worth to us, before the dice to hit. (A siege engine's wound slays outright.)
+  const worth = (e: Model) => (woundChance(weapon.s, profile(ctx, e).d) * profile(ctx, e).value) / (m.siege ? 1 : Math.max(1, e.wounds)) / (e.hero && e.fate ? 2 : 1);
+  // Sight lines are the slow part, so in a big battle only the targets worth most are looked at, nearest first among
+  // equals: enough of them that it can still see some, and few enough that a move doesn't take seconds to think through.
+  const targets = side(state, other(m.owner))
+    .filter(e => Math.abs(e.x - m.x) <= weapon.range + 3 && Math.abs(e.y - m.y) <= weapon.range + 3)
+    .map(e => ({ e, worth: worth(e), d: distanceBetween(m, e) }))
+    .filter(t => t.d <= weapon.range)
+    .sort((a, b) => b.worth - a.worth || a.d - b.d);
   let best: Shot | null = null;
-  for (const e of side(state, other(m.owner))) {
-    if (distanceBetween(m, e) > p.weapon.range) continue;
-    const plan = planShot(state, ctx.catalog, m, e, { fallback: { weapon: p.weapon, shoot: p.shoot } });
+  let seen = 0;
+  for (const [i, { e, worth: w }] of targets.entries()) {
+    if (seen >= SHOT_TARGETS || i >= SHOT_TARGETS * 3) break;
+    const plan = planShot(state, ctx.catalog, m, e, { fallback: { weapon, shoot: p.shoot } });
     if (plan.why) continue;
+    seen++;
     const obstacles = Math.min(5, plan.inWay.length);
     // A shot into a fight might hit a friend instead.
     const stray = plan.fight?.length ? 0.5 : 1;
-    const hit = plan.shots * chance(plan.need) * Math.pow(0.5, obstacles) * stray * woundChance(p.weapon.s, profile(ctx, e).d);
-    // (A siege engine's wound slays outright.)
-    const value = (hit * profile(ctx, e).value) / (m.siege ? 1 : Math.max(1, e.wounds)) / (e.hero && e.fate ? 2 : 1);
+    const value = plan.shots * chance(plan.need) * Math.pow(0.5, obstacles) * stray * w;
     if (!best || value > best.value) best = { target: e, obstacles, value };
   }
   return best;
+}
+
+/** bestShot from where a model stands now, once a step. */
+function shotFromHere(ctx: Ctx, m: Model): Shot | null {
+  if (!ctx.shotsFrom.has(m.id)) ctx.shotsFrom.set(m.id, bestShot(ctx, m));
+  return ctx.shotsFrom.get(m.id)!;
 }
 
 /** A power cast at one of the computer's models: resist it with a die of Will (two for a hero with Will to spare). */
