@@ -31,6 +31,7 @@ import { pushers } from './siege.ts';
 import { chargeAim, chargesDue, straightOn } from './trample.ts';
 import { arrivalAuto, arrivalDue, castModel, mayCry } from './narrative.ts';
 import { isAmbush, isGrishnakh, isHobbit } from './ambush.ts';
+import { isBalin } from './balin.ts';
 import { courageOf, willOfEvil } from './courage.ts';
 import { hasMorgulBlade } from './morgul.ts';
 import { AXE_FREED, canHeadbutt, hasMattock, longbeardFor, mayAxeTest, mayTend, rerollFor, spentPoints, swapPair, trumpetDue } from './company.ts';
@@ -146,8 +147,8 @@ function profile(ctx: Ctx, m: Model): Profile {
     weapon: unit ? weaponFor(ctx.catalog, m) : undefined,
     heroics: unit?.heroics ?? [],
     terror: !!unit?.rules.some(r => /^Terror\b/.test(r)),
-    // In Weathertop, Frodo is the whole game.
-    value: worth(m) * (m.cast === 'frodo' && ctx.state.narrative?.id === 'weathertop' ? 6 : 1),
+    // In Weathertop and Balin's Tomb, Frodo is the whole game.
+    value: worth(m) * (m.cast === 'frodo' && (ctx.state.narrative?.id === 'weathertop' || isBalin(ctx.state)) ? 6 : 1),
   };
   ctx.profiles.set(m.id, p);
   return p;
@@ -773,6 +774,19 @@ function assignGoals(ctx: Ctx): Map<string, Goal> {
           if (foe) out.set(m.id, { at: { x: foe.x, y: foe.y }, pull: 1 });
         } else if (m.id !== frodo.id) out.set(m.id, { at: { x: frodo.x, y: frodo.y }, pull: 0.8, near: 1.2 });
         else if (hunters.length) out.set(m.id, { at: { x: state.board.w / 2, y: state.board.h / 2 }, pull: 0.3 });
+      }
+    }
+  }
+
+  // Balin's Tomb: the Goblins go for Frodo, and the Fellowship holds together round him at the north end of the tomb.
+  if (isBalin(state)) {
+    const frodo = castModel(state, 'frodo');
+    if (frodo && !frodo.dead) {
+      for (const m of ours) {
+        if (out.has(m.id)) continue;
+        if (m.owner !== frodo.owner) out.set(m.id, { at: { x: frodo.x, y: frodo.y }, pull: 1 });
+        else if (m.id === frodo.id) out.set(m.id, { at: { x: 12, y: 9.6 }, pull: 0.4 });
+        else out.set(m.id, { at: { x: frodo.x, y: frodo.y }, pull: 0.6, near: 2.5 });
       }
     }
   }

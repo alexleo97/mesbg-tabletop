@@ -268,6 +268,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
       );
     case 'building':
       if (t.look === 'stone') return <StoneTower t={t} tex={tex} />;
+      if (t.look === 'pillar' || t.look === 'tomb' || t.look === 'well') return <MoriaPiece t={t} />;
       if (t.shape === 'circle')
         return (
           <>
@@ -339,6 +340,8 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
           <rect className="ground wall-top" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} fill={tex} filter="url(#hard-shadow)" />
           {/* A fortress wall: a walkway down the middle between two lines of battlements. */}
           {t.sheer && <Battlements w={t.w} h={t.h} />}
+          {/* A ledge to stand on (Balin's Tomb): its top lit paler than the floor below, its lip picked out. */}
+          {t.walk && !t.sheer && <rect className="tint ledge-top" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} />}
           {t.look === 'culvert' && (
             <g className="culvert">
               <rect className="culvert-mouth" x={-0.8} y={-t.h / 2} width={1.6} height={t.h} rx={0.2} />
@@ -421,6 +424,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
             <ellipse className="tint paving-tint" rx={t.w / 2} ry={t.h / 2} />
           </>
         );
+      if (t.look === 'trapdoor' || t.look === 'doorway') return <MoriaPiece t={t} />;
       if (t.stairs) {
         // A flight of steps up to a wall's walkway: treads running along the wall, rising towards it (local -y).
         const n = Math.max(4, Math.round(t.h / 0.3));
@@ -533,6 +537,63 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
   }
 }
 
+/** The pieces of Balin's Tomb: a dwarf-hewn pillar, the tomb on its plinth, the well, a trapdoor, the doorway. */
+function MoriaPiece({ t }: { t: Terrain }) {
+  const octagon = (r: number) =>
+    Array.from({ length: 8 }, (_, i) => {
+      const a = ((i + 0.5) * Math.PI) / 4;
+      return `${(Math.cos(a) * r).toFixed(3)},${(Math.sin(a) * r).toFixed(3)}`;
+    }).join(' ');
+  switch (t.look) {
+    case 'pillar':
+      return (
+        <>
+          <polygon className="ground moria-stone" points={octagon(t.w / 2)} fill="url(#tex-wall)" filter="url(#hard-shadow)" />
+          <polygon className="tint moria-carving" points={octagon(t.w * 0.36)} />
+          <polygon className="tint" points={octagon(t.w / 2)} fill="url(#g-dome)" />
+        </>
+      );
+    case 'tomb':
+      return (
+        <>
+          <rect className="ground moria-stone" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} fill="url(#tex-wall)" filter="url(#hard-shadow)" />
+          <rect className="tint moria-lid" x={-t.w / 2 + 0.25} y={-t.h / 2 + 0.25} width={t.w - 0.5} height={t.h - 0.5} />
+          <path className="tint moria-carving" d={`M 0 ${-t.h / 2 + 0.6} L 0 ${t.h / 2 - 0.6} M -0.35 ${-t.h / 2 + 0.9} L 0.35 ${-t.h / 2 + 0.9}`} />
+        </>
+      );
+    case 'well':
+      return (
+        <>
+          <circle className="ground moria-stone" r={t.w / 2} fill="url(#tex-wall)" filter="url(#hard-shadow)" />
+          <circle className="tint moria-well-mouth" r={t.w / 2 - 0.22} />
+        </>
+      );
+    case 'trapdoor': {
+      const planks = 4;
+      return (
+        <>
+          <rect className="ground gate-leaf" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} rx={0.06} />
+          {Array.from({ length: planks - 1 }, (_, i) => {
+            const y = -t.h / 2 + ((i + 1) * t.h) / planks;
+            return <line key={i} className="gate-plank" x1={-t.w / 2} x2={t.w / 2} y1={y} y2={y} />;
+          })}
+          <rect className="moria-trapdoor-frame" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} rx={0.06} />
+          <circle className="moria-ring" r={0.18} />
+        </>
+      );
+    }
+    default:
+      // The doorway: the dark beyond, between two stone door-posts.
+      return (
+        <>
+          <rect className="ground moria-dark" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} />
+          <rect className="parapet" x={-t.w / 2 - 0.3} y={-t.h / 2} width={0.3} height={t.h} fill="url(#tex-wall)" />
+          <rect className="parapet" x={t.w / 2} y={-t.h / 2} width={0.3} height={t.h} fill="url(#tex-wall)" />
+        </>
+      );
+  }
+}
+
 /** Merlons along both long faces of a fortress wall, with the walkway between them a shade darker. */
 function Battlements({ w, h }: { w: number; h: number }) {
   const n = Math.max(2, Math.round(w / 0.6));
@@ -609,8 +670,8 @@ function hull(pts: Point[]): Point[] {
   return [...lower.slice(0, -1), ...upper.slice(0, -1)];
 }
 
-/** Whether a piece is part of a fortress that stands tall: its walls, gates, keep, towers and the rock under them. */
-const tall = (t: Terrain) => !t.gone && (t.sheer || t.kind === 'gate' || (t.look === 'stone' && t.kind !== 'road'));
+/** Whether a piece is part of a fortress that stands tall (its walls, gates, keep, towers and the rock under them), or a stone piece of Balin's Tomb. */
+const tall = (t: Terrain) => !t.gone && (t.sheer || t.kind === 'gate' || (t.look === 'stone' && t.kind !== 'road') || t.look === 'pillar' || t.look === 'tomb' || t.look === 'well');
 
 /** The ground a piece's faces cover, from its top down to its foot; a causeway slopes from the gate to the ground. */
 function face(t: Terrain, lean: Point): Point[] {

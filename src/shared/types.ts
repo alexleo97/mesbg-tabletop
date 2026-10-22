@@ -205,8 +205,8 @@ export interface Terrain {
   walk?: boolean;
   /** A flight of steps up onto a rampart's walkway: models go up and down there without a test. */
   stairs?: boolean;
-  /** Drawn in dressed stone (a fortress's courtyard, causeway, keep or tower), a wall with a culvert through it, or a field of long grass. Looks only. */
-  look?: 'stone' | 'culvert' | 'grass';
+  /** Drawn in dressed stone (a fortress's courtyard, causeway, keep or tower), a wall with a culvert through it, a field of long grass, or a piece of Balin's Tomb (a pillar, the tomb, the well, a trapdoor, the doorway: the well and trapdoors are where its Goblins come back). */
+  look?: 'stone' | 'culvert' | 'grass' | 'pillar' | 'tomb' | 'well' | 'trapdoor' | 'doorway';
 }
 
 export const DOOR_TYPES = ['castle', 'dwarven', 'heavyArmoured', 'armoured', 'heavy', 'external', 'internal'] as const;
@@ -338,6 +338,9 @@ export interface NarrativeState {
   relief?: number;
   /** The turn the culvert section of the Deeping Wall was blown apart (Helm's Deep). */
   breach?: number;
+  /** The turn the Cave Troll burst in (Balin's Tomb), and the Goblins it has trampled on its way. */
+  troll?: number;
+  crushed?: string[];
 }
 
 export type BotSpeed = 'normal' | 'fast' | 'instant';
@@ -711,7 +714,7 @@ export type Action =
   /** Request: the Good player at Weathertop rolls for Aragorn this turn, or doesn't. */
   | { type: 'aragorn'; roll: boolean }
   /** Server only: bookkeeping for a narrative scenario's rules. */
-  | { type: 'narrativeNote'; rolled?: number; dawn?: number; bilbo?: boolean; breach?: number }
+  | { type: 'narrativeNote'; rolled?: number; dawn?: number; bilbo?: boolean; breach?: number; troll?: number; crushed?: string[] }
   /** Helm's Deep: the Good player picks where on the south edge the Relief Force will ride on. */
   | { type: 'reliefPoint'; seat: Seat; x: number }
   /** Helm's Deep: a Good hero by the gate mounts up (resolved with the profiles). */
@@ -721,7 +724,7 @@ export type Action =
   /** An Assault Ballista's Raise the Ladders! shot at the battlements above one of its side's ladders. */
   | { type: 'raiseLadder'; model: string; ladder: string }
   /** Server only: reinforcements have come on and move onto the table now, from `from` (see mutton.ts). */
-  | { type: 'entering'; seat: Seat; ids: string[]; from: [number, number]; span?: [number, number]; charge?: boolean }
+  | { type: 'entering'; seat: Seat; ids: string[]; from: [number, number]; span?: [number, number]; charge?: boolean; /** Those that come up at their own spots instead (Balin's Tomb: a trapdoor or the well), placed at once. */ spots?: [string, number, number][] }
   /** Server only: a once-a-turn ability (Healing Herbs, Raising Spirits, Combat Synergy's re-roll) has been used. */
   | { type: 'usedTurn'; key: string; model: string }
   /** Server only: a free heroic action (Óin's Hearing Trumpet), or a free Heroic Move earned this turn (Bifur). */

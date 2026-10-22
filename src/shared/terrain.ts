@@ -26,13 +26,14 @@ export const isMarker = (t: Terrain) => t.kind === 'objective' || !!t.vines;
 
 /**
  * Where a piece is drawn, bottom first: roads, then water, then whatever stands on the ground (a raised stone causeway
- * among it), then bridges over the water, then markers, then markers being carried. The difficult-ground hatching goes
+ * among it), then bridges over the water (and trapdoors on a ledge), then markers, then markers being carried. The difficult-ground hatching goes
  * on between bridges and markers, so it never covers a marker.
  */
 export function drawLayer(t: Terrain): number {
   if (t.carrier) return 5;
   if (isMarker(t)) return 4;
-  if (t.kind === 'bridge') return 3;
+  // (A trapdoor in Balin's Tomb lies on its ledge, so it goes on top of it.)
+  if (t.kind === 'bridge' || t.look === 'trapdoor') return 3;
   if (t.kind === 'road') return t.look === 'stone' && t.shape === 'rect' ? 2 : 0;
   return t.kind === 'water' ? 1 : 2;
 }

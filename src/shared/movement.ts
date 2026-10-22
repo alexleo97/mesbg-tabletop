@@ -9,6 +9,7 @@ import { laden, overlapsPiece, shutGates } from './fortress.ts';
 import { crossingAhead } from './terrainTests.ts';
 import { invisibleTo, mayChargeAt } from './ring.ts';
 import { surprised } from './ambush.ts';
+import { tramplesThrough } from './balin.ts';
 import type { GameState, Model, Seat } from './types.ts';
 
 /**
@@ -247,7 +248,9 @@ export function blockMove(state: GameState, m: Model, from: Point, to: Point, sk
   const all = Object.values(state.models).filter(e => e.id !== m.id && !e.dead && !e.waiting && !e.escaped && !e.aboard && !skip?.has(e.id) && near(e));
   // An Invisible model and those that can't see it pass through each other, though neither may stop on the other.
   const ghosts = all.filter(e => passesThrough(m, e));
-  const others = all.filter(e => !ghosts.includes(e));
+  // Balin's Tomb's Cave Troll, the turn it bursts in, goes through its own side and may stop on them (see balin.ts).
+  const trodden = all.filter(e => tramplesThrough(state, m, e));
+  const others = all.filter(e => !ghosts.includes(e) && !trodden.includes(e));
   const zonesApply = state.phase === 'move' || fightsAgain(state, m);
   const enemies = zonesApply ? others.filter(e => e.owner !== m.owner) : [];
   // (A siege engine has no control zone, nor has an Invisible model, and an Invisible model ignores those of foes

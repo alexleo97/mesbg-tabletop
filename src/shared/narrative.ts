@@ -6,6 +6,8 @@ import { offTable } from './maelstrom.ts';
 import { muttonWinner } from './mutton.ts';
 import { helmsWinner } from './helms.ts';
 import { ambushWinner, isHobbit } from './ambush.ts';
+import { balinWinner } from './balin.ts';
+import { balinCast, balinTerrain } from './balinMap.ts';
 import { BALLISTA_BASE, deepingSlots, evilSlots, GATE_ANGLE, HELMS_TEAMS, helmsTerrain, hornburgSlots, inHelmsZone, onArc, OUTER, type HelmsZone } from './helmsMap.ts';
 import type { Action, Base, DiceRoll, GameState, Mat, Model, Seat, Terrain } from './types.ts';
 
@@ -266,6 +268,38 @@ export const NARRATIVES: Narrative[] = [
       },
     ],
     cast: ambushCast(),
+  },
+  {
+    id: 'balins-tomb',
+    name: "Balin's Tomb",
+    from: 'The Fellowship of the Ring',
+    saga: 'lotr',
+    blurb: 'The Chamber of Mazarbul: drums in the deep, Goblins pouring in through every door, trapdoor and well, and a Cave Troll on its way. The Fellowship must hold out.',
+    board: { w: 24, h: 24, mat: 'stone' },
+    terrain: balinTerrain(),
+    sides: {
+      good: { name: 'The Fellowship', cast: 'Frodo, Sam, Merry, Pippin, Gandalf, Aragorn, Legolas, Gimli and Boromir' },
+      evil: { name: 'The Goblins of Moria', cast: '2 Moria Goblin Captains, 24 Moria Goblin Warriors and a Cave Troll' },
+    },
+    layout:
+      "A 2' by 2' chamber: Balin's tomb stands in the middle and the well 6\" in from the middle of the north edge. A ledge 3\" wide and 1\" high runs right round the walls, broken only by the passage down to the doorway in the middle of the south edge. Four pillars stand on each side of the floor, and there is a trapdoor on the ledge in the middle of the west and east edges.",
+    setupOrder: ['good', 'evil'],
+    deployment:
+      'The Fellowship sets up wholly within 6" of the middle of the table. Then the Goblins set up wholly within 6" of the doorway, none of them within 1" of the Fellowship. The Cave Troll is kept off the table.',
+    objectives:
+      'The battle lasts 10 turns. The Fellowship wins if Frodo and at least four others are still alive at the end. The Goblins win as soon as five of the Fellowship are slain, or the moment Frodo is.',
+    rules: [
+      {
+        name: 'The Goblin Tide',
+        text: 'A Goblin Warrior that is slain is kept aside. Each time the Goblins finish their move, every one kept aside comes back: one up through each trapdoor no member of the Fellowship stands on, two out of the well, and the rest in at the doorway. Those that can\'t get in try again next turn. They then make their move, and may charge.',
+      },
+      {
+        name: '"They have a Cave Troll!"',
+        text: 'As the Goblins start their move in turn 4, the Cave Troll bursts in at the doorway, and moves and charges as normal. That turn it may move through its own side: each Goblin it moves through takes a Strength 3 hit, and any it ends its move on is slain.',
+      },
+      { name: 'Troll Rampage', text: 'The Cave Troll has +1 Fight in a turn in which it charged.' },
+    ],
+    cast: balinCast(),
   },
   {
     id: 'helms-deep',
@@ -634,7 +668,9 @@ export function holdNarrative(state: GameState, mv: { id: string; x: number; y: 
   if ('area' in p) {
     // The same for a deployment zone; and at Ambush at Night no foe may be set up touching Merry or Pippin.
     const onHobbit = n?.id === 'ambush-at-night' && Object.values(state.models).some(o => o.owner !== m.owner && isHobbit(o) && Math.hypot(o.x - mv.x, o.y - mv.y) < radius(o) + radius(m) + 0.25);
-    return whollyInArea(p.area, mv, radius(m)) && !onHobbit ? mv : { ...mv, x: m.x, y: m.y };
+    // At Balin's Tomb no Goblin may be set up within 1" of the Fellowship (in its control zone).
+    const zoned = n?.id === 'balins-tomb' && c.side === 'evil' && Object.values(state.models).some(o => o.owner !== m.owner && !o.dead && !o.waiting && distanceBetween({ ...m, ...mv }, o) < 1);
+    return whollyInArea(p.area, mv, radius(m)) && !onHobbit && !zoned ? mv : { ...mv, x: m.x, y: m.y };
   }
   return { ...mv, x: m.x, y: m.y };
 }
@@ -646,6 +682,7 @@ export function narrativeWinner(state: GameState): Seat | 'draw' | null {
   if (n.id === 'roast-mutton') return muttonWinner(state);
   if (n.id === 'helms-deep') return helmsWinner(state);
   if (n.id === 'ambush-at-night') return ambushWinner(state);
+  if (n.id === 'balins-tomb') return balinWinner(state);
   if (n.id === 'weathertop') {
     // The Nazgûl win as soon as Frodo falls; the Hobbits when every one of them is gone.
     if (castModel(state, 'frodo')?.dead) return seatOf(state, 'evil') ?? null;
