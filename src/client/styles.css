@@ -841,6 +841,7 @@ details.finish summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
 .story-card .map-preview { width: 92px; height: 92px; flex: none; border-radius: 6px; }
 .story-text { display: flex; flex-direction: column; gap: 4px; line-height: 1.35; }
 .story-text b { font-family: var(--font-head); color: var(--gold); font-size: 1.1rem; }
+.story-text .clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; }
 .narrative-menu .narrative-sides { margin: 0; }
 .narrative-menu .side-card { padding: 14px; font-size: 1rem; }
 .story-brief { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
@@ -862,6 +863,7 @@ details.finish summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
 .page-body { display: flex; flex-direction: column; gap: 14px; }
 .center-self { align-self: center; }
 .page-tabs { width: min(420px, 100%); align-self: center; }
+.page-tabs.three { width: min(560px, 100%); }
 .icon-btn { width: 34px; min-height: 34px; padding: 0; background: transparent; border-color: transparent; color: var(--muted); }
 .icon-btn:hover { border-color: var(--line); color: var(--text); }
 .icon-btn.on { background: var(--panel); border-color: var(--gold); color: var(--gold); }

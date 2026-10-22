@@ -8,6 +8,8 @@ export interface StarterBoard {
   id: string;
   name: string;
   blurb: string;
+  /** Who laid it out: these boards are listed with the community maps, credited to them. */
+  author: string;
   mat: Mat;
   w: number;
   h: number;
@@ -60,7 +62,8 @@ const road = (course: Pt[], width = 2.8) => band('road', course, width, 0.05);
 const bridge = (x: number, y: number, rot: number, span = 8): Piece => ({ kind: 'bridge', shape: 'rect', x, y, w: span, h: 2.8, rot });
 
 /**
- * Original layouts for a 48"×48" table. At this scale a model's base is about an inch, so a 6"×4"
+ * Original layouts for a 48"×48" table, made by Alex and listed with the community maps (the Middle-earth maps in
+ * tables.ts come first). At this scale a model's base is about an inch, so a 6"×4"
  * building is a cottage and a 12"×7" field is a small paddock. Every board has a reason for its terrain
  * to be where it is (a road to a bridge, houses along a street, fields round a farm). The two halves
  * are laid out differently but get a similar amount of cover, so neither side starts ahead
@@ -72,6 +75,7 @@ export const STARTER_BOARDS: StarterBoard[] = [
     id: 'river-crossing',
     name: 'River Crossing',
     blurb: 'A river cuts the field in two. The road meets it at an old bridge, the only quick way across.',
+    author: 'Alex',
     mat: 'grass',
     w: 48,
     h: 48,
@@ -102,6 +106,7 @@ export const STARTER_BOARDS: StarterBoard[] = [
     id: 'ruined-city',
     name: 'Ruined Town',
     blurb: 'A burned-out market town: houses along two crossing streets, walled yards behind them and a manor hall to the north.',
+    author: 'Alex',
     mat: 'grass',
     w: 48,
     h: 48,
@@ -137,6 +142,7 @@ export const STARTER_BOARDS: StarterBoard[] = [
     id: 'woodland-edge',
     name: 'Woodland Edge',
     blurb: 'Deep woods on the flanks, low hills, and a stream winding between them, crossed by two footbridges.',
+    author: 'Alex',
     mat: 'grass',
     w: 48,
     h: 48,
@@ -164,6 +170,7 @@ export const STARTER_BOARDS: StarterBoard[] = [
     id: 'mountain-pass',
     name: 'Mountain Pass',
     blurb: 'A road climbs through a snowbound pass between two ridges, past a ruined watchtower.',
+    author: 'Alex',
     mat: 'snow',
     w: 48,
     h: 48,
@@ -196,6 +203,7 @@ export const STARTER_BOARDS: StarterBoard[] = [
     id: 'farmstead',
     name: 'Farmstead',
     blurb: 'A farm lane runs between hedged fields, past a farmhouse and barn round a yard, an orchard and a mill.',
+    author: 'Alex',
     mat: 'plains',
     w: 48,
     h: 48,
