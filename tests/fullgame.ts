@@ -1,5 +1,5 @@
 // Plays one whole game through a running server (npx tsx tests/fullgame.ts <scenario id|none> <seed> [army] [army]):
-// this script is player 1, played by the computer player's logic as a stand-in for a person, and the Palantír is
+// a narrative scenario's id plays its own cast, with this side Good (or Evil with SIDE=evil). This script is player 1, played by the computer player's logic as a stand-in for a person, and the Palantír is
 // player 2. It reports where the game got stuck and any roll made twice.
 import { STARTER_BOARDS, starterTerrain } from '../src/shared/boards.ts';
 import { writeFileSync } from 'node:fs';
@@ -14,6 +14,7 @@ import { initialState, reduce } from '../src/shared/reducer.ts';
 import { scenarioById, scenarioMarkers } from '../src/shared/scenarios.ts';
 import { deployReady, procedureOf, rollDue } from '../src/shared/deploy.ts';
 import { listEntries } from '../src/shared/warbands.ts';
+import { NARRATIVES } from '../src/shared/narrative.ts';
 import type { Action, GameState } from '../src/shared/types.ts';
 import { catalog, seeded } from './botsim.ts';
 
@@ -46,7 +47,12 @@ ws.on('open', async () => {
   await sleep(300);
   send({ type: 'setBot', seat: 'p2' });
   send({ type: 'setBotSpeed', speed: 'instant' } as Action);
-  const sc = scenario === 'none' ? null : scenarioById(scenario) ?? null;
+  const story = NARRATIVES.find(n => n.id === scenario);
+  if (story) {
+    send({ type: 'setNarrative', id: story.id, good: process.env.SIDE === 'evil' ? 'p2' : 'p1' });
+    await sleep(500);
+  }
+  const sc = scenario === 'none' || story ? null : scenarioById(scenario) ?? null;
   if (sc) {
     send({ type: 'setScenario', id: sc.id });
     await sleep(200);
@@ -60,7 +66,7 @@ ws.on('open', async () => {
     for (const t of starterTerrain(board, p => `${p}${n++}`)) send({ type: 'addTerrain', terrain: t });
   }
   await sleep(300);
-  for (const [seat, army] of [['p1', armyA], ['p2', armyB]] as const) {
+  for (const [seat, army] of story ? [] : ([['p1', armyA], ['p2', armyB]] as const)) {
     // FORCE=unit-id,unit-id adds those units (where the army has them) to the computer's list, to try them out.
     const roster = botRoster(catalog, army, 500, rand);
     const force = (process.env.FORCE ?? '').split(',').filter(id => catalog.armies[army]?.units.includes(id));

@@ -11,8 +11,10 @@ const read = f => JSON.parse(readFileSync(join(src, 'src/assets/data', f), 'utf8
 // Our own fixes to the source data, by option id: a shield the source forgot gives +1 Defence.
 const OPTION_MODS = { OPT1432: [['D', 1]], OPT1116: [['D', 1]] };
 // And rule names the source spells differently from the book.
-const RULE_NAMES = { 'Embedded Axe-blade': 'Embedded Axe' };
+const RULE_NAMES = { 'Embedded Axe-blade': 'Embedded Axe', Acurate: 'Accurate' };
 const ruleName = name => RULE_NAMES[name] ?? name;
+// And wargear: a misspelling, and the Isengard Uruk-hai Captain's heavy armour (his Defence already counts it).
+const wargearName = (u, w) => (w === 'Amour' ? 'Armour' : w === 'Armour' && u.profile_origin === 'Isengard' && u.name.startsWith('Uruk-Hai Captain') ? 'Heavy armour' : w);
 
 const units = read('mesbg_data.json');
 const profiles = read('profile_data.json');
@@ -78,7 +80,7 @@ for (const u of Object.values(units)) {
     ...(p?.heroic_actions?.length ? { heroics: p.heroic_actions } : {}),
     ...(p?.magic_powers?.length ? { powers: p.magic_powers.map(m => ({ name: m.name, range: m.range, cast: m.cast })) } : {}),
     ...(constraints[u.model_id]?.valid_warband_units?.length ? { followers: constraints[u.model_id].valid_warband_units } : {}),
-    wargear: p?.wargear ?? [],
+    wargear: (p?.wargear ?? []).map(w => wargearName(u, w)),
     ...(u.unique ? { unique: true } : {}),
     ...(u.warband_size ? { warbandSize: u.warband_size } : {}),
     ...(u.opt_mandatory ? { pickOne: true } : {}),
