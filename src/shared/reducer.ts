@@ -19,6 +19,7 @@ import { canPickUp, markerUpkeep, syncCarried, touching, canEscape } from './obj
 import { aboard, raiseLadders, towerMove } from './fortress.ts';
 import { endPhaseUpkeep } from './scoring.ts';
 import { arrivalDue, mayCry, narrativeById, narrativeTerrain, radius } from './narrative.ts';
+import { bondsPending } from './ambush.ts';
 import { entering, enteringNoCharge, entryEdge, isMutton, isTroll, nextEntering, onEdge, reinforcementsPending, stillEntering } from './mutton.ts';
 import { isHelms, mayChooseRelief, reliefPending, RELIEF_SPAN } from './helms.ts';
 import { putOut } from './fire.ts';
@@ -126,7 +127,7 @@ function goToPhase(state: GameState, phase: Phase, turn: number, newTurn: boolea
       done: [],
       resolved: newTurn ? [] : state.flow.resolved,
       heroics: newTurn ? [] : state.flow.heroics,
-      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], moved: [], cast: [], spell: undefined, held: [], stood: [], climbed: {}, compel: undefined, supported: [], strikeBonus: {}, charges: {}, brutal: [], hurledAt: [], breached: [], trampled: [], turned: [], cables: [], sauron: [], ringTried: [], sought: [], reinforce: undefined, usedTurn: [], heard: [], freeMove: [], chronicles: undefined, placing: [], joined: [] } : {}),
+      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], moved: [], cast: [], spell: undefined, held: [], stood: [], climbed: {}, compel: undefined, supported: [], strikeBonus: {}, charges: {}, brutal: [], hurledAt: [], breached: [], trampled: [], turned: [], cables: [], sauron: [], ringTried: [], sought: [], reinforce: undefined, bonds: undefined, usedTurn: [], heard: [], freeMove: [], chronicles: undefined, placing: [], joined: [] } : {}),
       ...(phase !== state.phase ? { compel: undefined, mustCharge: undefined } : {}),
       // The fights are paired off as the Fight phase begins, and stay that way until it ends.
       ...(phase !== state.phase ? { pairs: phase === 'fight' && state.flow.started ? pairOff(livingModels(state), { ...state, phase: 'move' }, state.flow.pairChoices).map(c => c.key) : undefined, pairChoices: undefined } : {}),
@@ -295,6 +296,9 @@ export function cleanModel(m: Partial<Model>, prev?: Model): Model | null {
     const turn = k in m ? (m[k] === undefined ? undefined : int(m[k], 0, 99, 0)) : base[k];
     if (turn) out[k] = turn;
   }
+  for (const k of ['bound', 'slips'] as const) if ((k in m ? m[k] === true : base[k]) && !out.dead) out[k] = true;
+  const crawls = 'crawls' in m ? (m.crawls === undefined ? undefined : num(m.crawls, 0, 6, 0)) : base.crawls;
+  if (crawls && out.prone) out.crawls = crawls;
   return out.id ? out : null;
 }
 
@@ -428,7 +432,7 @@ function cleanTerrain(t: Partial<Terrain>, prev?: Terrain): Terrain | null {
   if (('walk' in t ? t.walk : base.walk) === true && out.kind === 'wall') out.walk = true;
   if (('stairs' in t ? t.stairs : base.stairs) === true && out.kind === 'road') out.stairs = true;
   const look = 'look' in t ? t.look : base.look;
-  if (look === 'stone' || look === 'culvert') out.look = look;
+  if (look === 'stone' || look === 'culvert' || look === 'grass') out.look = look;
   cleanObject(t, base, out);
   if ('vines' in t ? t.vines === true : base.vines) {
     const side = 'side' in t ? t.side : base.side;
@@ -772,7 +776,7 @@ function step(state: GameState, action: Action): GameState {
           }
         }
         // A Prone model that moves stands up first, which costs it half its Move this turn.
-        const crawls = state.flow.crawling?.includes(prev.id) || state.flow.lay?.includes(prev.id);
+        const crawls = state.flow.crawling?.includes(prev.id) || state.flow.lay?.includes(prev.id) || !!prev.crawls;
         if (prev.prone && allowance && moving && !crawls && (to.x !== prev.x || to.y !== prev.y)) {
           next = { ...next, prone: undefined };
           delete next.prone;
@@ -1118,6 +1122,8 @@ function step(state: GameState, action: Action): GameState {
       }
       // Roast Mutton: the Company still to come rolls (or comes) first, and moves on before the side is done.
       if (state.flow.started && (reinforcementsPending(state, action.seat) || reliefPending(state, action.seat))) return state.flow.reinforce === action.seat ? state : { ...state, flow: { ...state.flow, reinforce: action.seat } };
+      // Ambush at Night: the bound Hobbits roll to cut their bonds as the Good side finishes its move.
+      if (bondsPending(state, action.seat)) return state.flow.bonds === action.seat ? state : { ...state, flow: { ...state.flow, bonds: action.seat } };
       // Ending it with a newcomer still at the edge lets it stay there, and the next one comes on.
       if (state.flow.started && state.flow.entering?.seat === action.seat && stillEntering(state)) {
         const waved = onEdge(state) ? comeOn({ ...state, flow: { ...state.flow, entering: { ...state.flow.entering, on: undefined, at: undefined } } }) : state;
@@ -1851,6 +1857,7 @@ export function loadState(raw: unknown): GameState {
         ...(Array.isArray(f.joined) ? { joined: f.joined.slice(0, 20).map(x => str(x, 80)) } : {}),
         ...(f.entering && typeof f.entering === 'object' && isSeat(f.entering.seat) && Array.isArray(f.entering.ids) ? { entering: { seat: f.entering.seat, ids: f.entering.ids.slice(0, 40).map(x => str(x, 80)), from: [num(f.entering.from?.[0], -24, 200, 0), num(f.entering.from?.[1], -24, 200, 0)] as [number, number], turn: int(f.entering.turn, 0, 99, 0), ...(Array.isArray(f.entering.span) ? { span: [num(f.entering.span[0], 0, 200, 0), num(f.entering.span[1], 0, 200, 200)] as [number, number] } : {}), ...(f.entering.charge === true ? { charge: true } : {}), ...(typeof f.entering.on === 'string' && Array.isArray(f.entering.at) ? { on: str(f.entering.on, 80), at: [num(f.entering.at[0], -24, 200, 0), num(f.entering.at[1], -24, 200, 0)] as [number, number] } : {}) } } : {}),
         ...(isSeat(f.reinforce) ? { reinforce: f.reinforce } : {}),
+        ...(isSeat(f.bonds) ? { bonds: f.bonds } : {}),
         ...(Array.isArray(f.placing) ? { placing: f.placing.map(p => cleanPlacing(p, out)).filter((p): p is Placing => !!p).slice(0, 20) } : {}),
       },
     };

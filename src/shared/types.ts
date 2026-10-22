@@ -123,6 +123,12 @@ export interface Model {
   noMove?: number;
   /** The turn Tom the Troll's Lingering Cold halved its Fight (until the turn ends). */
   chilled?: number;
+  /** Bound hand and foot (Ambush at Night): it can only crawl, can't charge, and may roll to cut its bonds. */
+  bound?: boolean;
+  /** It can only crawl, this far, and can't stand up (bound, or wounded like Grishnákh at Ambush at Night). */
+  crawls?: number;
+  /** Underfoot (Ambush at Night): no control zone, ignores its foes', and it and its foes move through each other. */
+  slips?: boolean;
 }
 
 /** A power at work on a model: which one, who cast it and the turn it was cast. */
@@ -199,8 +205,8 @@ export interface Terrain {
   walk?: boolean;
   /** A flight of steps up onto a rampart's walkway: models go up and down there without a test. */
   stairs?: boolean;
-  /** Drawn in dressed stone (a fortress's courtyard, causeway, keep or tower), or a wall with a culvert through it. Looks only. */
-  look?: 'stone' | 'culvert';
+  /** Drawn in dressed stone (a fortress's courtyard, causeway, keep or tower), a wall with a culvert through it, or a field of long grass. Looks only. */
+  look?: 'stone' | 'culvert' | 'grass';
 }
 
 export const DOOR_TYPES = ['castle', 'dwarven', 'heavyArmoured', 'armoured', 'heavy', 'external', 'internal'] as const;
@@ -552,6 +558,8 @@ export interface Flow {
   entering?: { seat: Seat; ids: string[]; from: [number, number]; turn: number; on?: string; at?: [number, number]; span?: [number, number]; charge?: boolean };
   /** The side that has asked to end its Move activation with reinforcements still to roll for (see mutton.ts). */
   reinforce?: Seat;
+  /** The side that has asked to end its Move activation with bound Hobbits still to roll to cut their bonds (see ambush.ts). */
+  bonds?: Seat;
   /** Once-a-turn abilities used this turn, as `${key}:${model}` (Healing Herbs, Raising Spirits, Combat Synergy). */
   usedTurn?: string[];
   /** The turn Kíli and Fíli last swapped places (Combat Synergy). */

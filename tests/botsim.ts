@@ -18,6 +18,7 @@ import { chargeSabotage, reliefArrives, reliefDue } from '../src/shared/helms.ts
 import { shrugOff, towersAfter } from '../src/shared/towers.ts';
 import { markModel } from '../src/shared/marking.ts';
 import { dawnDue, reinforceDue, rollDawn, rollReinforcements } from '../src/shared/mutton.ts';
+import { bondsDue, rollBonds } from '../src/shared/ambush.ts';
 import { chronicled, listenDue, listenFor } from '../src/shared/company.ts';
 import { isMonster } from '../src/shared/monsters.ts';
 import { recoveryDue, recoveryRolls } from '../src/shared/powers.ts';
@@ -107,7 +108,7 @@ export function play(state: GameState, rand: () => number, maxSteps = 20000, wat
     if (state.narrative) {
       for (let k = 0; k < 4; k++) {
         const bearer = sauronDue(state);
-        const out = arrivalAuto(state) ? rollArrival(state, d6, uid, now) : reinforceDue(state) ? rollReinforcements(state, d6, uid, now) : reliefDue(state) ? reliefArrives(state, uid, now) : listenDue(state, catalog) ? listenFor(state, catalog) : dawnDue(state) ? rollDawn(state, d6, uid, now) : bearer ? sauronRoll(state, bearer, d6, uid, now) : burnDue(state) ? burns(state, catalog, d6, uid, now) : willOfEvilDue(state) ? willOfEvilToll(state, catalog, uid, now) : [];
+        const out = arrivalAuto(state) ? rollArrival(state, d6, uid, now) : reinforceDue(state) ? rollReinforcements(state, d6, uid, now) : bondsDue(state) ? rollBonds(state, d6, uid, now) : reliefDue(state) ? reliefArrives(state, uid, now) : listenDue(state, catalog) ? listenFor(state, catalog) : dawnDue(state) ? rollDawn(state, d6, uid, now) : bearer ? sauronRoll(state, bearer, d6, uid, now) : burnDue(state) ? burns(state, catalog, d6, uid, now) : willOfEvilDue(state) ? willOfEvilToll(state, catalog, uid, now) : [];
         for (const a of out) state = reduce(state, a);
         if (!out.length) break;
       }

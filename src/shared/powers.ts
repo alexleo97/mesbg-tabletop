@@ -1,6 +1,7 @@
 // What magical powers do once they work, applied by the game: the effects that stay on models (Transfix, Paralyse,
 // auras and the rest), the hits and wounds they cause, models knocked Prone or thrown from their mounts, and the
 // odd ones that move models or put a marker down. The rest of the rules ask here whether a model is held by one.
+import { fightsUpright } from './ambush.ts';
 import { mounted } from './cavalry.ts';
 import magic from '../data/magic.json';
 import { modelStats, rulesFor, startingPoints, type Catalog } from './catalog.ts';
@@ -117,7 +118,7 @@ export const cannotAct = (state: GameState, m: Model) => !m.dead && heldBy(state
 
 /** Why a model that wins a fight makes no strikes, if it doesn't. */
 export function noStrikes(state: GameState, m: Model): string | null {
-  return heldBy(state, m) ?? (m.prone ? 'Prone' : null);
+  return heldBy(state, m) ?? (m.prone && !fightsUpright(state, m) ? 'Prone' : null);
 }
 
 /** Terrifying Aura gives its caster Terror. */

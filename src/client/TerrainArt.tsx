@@ -212,7 +212,7 @@ function ruinWalls(t: Terrain): ReactElement[] {
 
 export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How far the table is turned, so a marker's letter stays upright. */ turn?: number }) {
   const d = outline(t);
-  const tex = `url(#tex-${t.look === 'stone' ? (t.kind === 'rock' ? 'cliff' : t.kind === 'building' ? 'wall' : 'stone') : MATERIAL[t.kind]})`;
+  const tex = `url(#tex-${t.look === 'stone' ? (t.kind === 'rock' ? 'cliff' : t.kind === 'building' ? 'wall' : 'stone') : t.look === 'grass' ? 'grass' : MATERIAL[t.kind]})`;
 
   switch (t.kind) {
     case 'wood':
@@ -377,6 +377,23 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
       );
     }
     case 'field':
+      if (t.look === 'grass') {
+        // Long grass: a pale tussocky patch, with tufts scattered across it (in a fixed pattern, so it doesn't shimmer).
+        const n = Math.max(6, Math.round((t.w * t.h) / 3));
+        return (
+          <>
+            <path className="ground long-grass" d={d} fill={tex} filter="url(#soft-shadow)" />
+            <path className="tint" d={d} fill="#b8a04a66" />
+            {Array.from({ length: n }, (_, i) => {
+              const a = i * 2.39996;
+              const k = Math.sqrt((i + 0.5) / n) * 0.42;
+              const x = Math.cos(a) * t.w * k;
+              const y = Math.sin(a) * t.h * k;
+              return <path key={i} className="grass-tuft" d={`M ${x - 0.25} ${y + 0.12} l 0.12 -0.42 M ${x} ${y + 0.12} l 0 -0.5 M ${x + 0.25} ${y + 0.12} l -0.12 -0.42`} />;
+            })}
+          </>
+        );
+      }
       return (
         <>
           <rect className="ground" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} rx={0.2} fill={tex} />
