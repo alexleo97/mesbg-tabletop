@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { STARTER_BOARDS, starterTerrain } from '../shared/boards.ts';
 import { entryPoints } from '../shared/catalog.ts';
 import { botRoster, playableArmies } from '../shared/botList.ts';
 import { newId, type ListEntry } from '../shared/importList.ts';
 import { PREMADE, premadeRoster } from '../shared/premade.ts';
 import { POOLS, SCENARIOS, scenarioById, scenarioFromDice } from '../shared/scenarios.ts';
+import { COMMUNITY_BOARDS, MIDDLE_EARTH_MAPS, tableByKey, type TableChoice } from '../shared/tables.ts';
 import { BOT_NAME, type Mat, type Terrain } from '../shared/types.ts';
 import { listEntries } from '../shared/warbands.ts';
 import { useAuth } from './auth.ts';
@@ -57,8 +57,8 @@ export function BattleMenu() {
   const { enabled, profile } = useAuth();
   const [scenario, setScenario] = useState<string>('roll');
   const [vs, setVs] = useState<'computer' | 'friend'>(params.get('vs') === 'computer' ? 'computer' : 'friend');
-  // The table: a starter board, one of the saved maps, or an empty one to lay out yourself.
-  const [table, setTable] = useState<string>(params.get('map') ? `map:${params.get('map')}` : `board:${STARTER_BOARDS[0].id}`);
+  // The table: a Middle-earth map, a community board or saved map, or an empty one to lay out yourself.
+  const [table, setTable] = useState<string>(() => (params.get('map') ? `map:${params.get('map')}` : (tableByKey(params.get('table'))?.key ?? COMMUNITY_BOARDS[0].key)));
   const [mapTab, setMapTab] = useState<'shared' | 'mine'>('shared');
   const [maps, setMaps] = useState<SavedMap[] | null>(null);
   const [fromLink, setFromLink] = useState<SavedMap | null>(null);
@@ -112,10 +112,9 @@ export function BattleMenu() {
     const room = randomRoom();
     const pick = shownScenario === 'roll' ? scenarioFromDice(Array.from({ length: 4 }, () => 1 + Math.floor(Math.random() * 6)))!.id : shownScenario === 'open' ? null : shownScenario;
     const setup: BattleSetup = { scenario: pick };
-    if (table.startsWith('board:')) {
-      const b = STARTER_BOARDS.find(x => `board:${x.id}` === table)!;
-      setup.table = { w: b.w, h: b.h, mat: b.mat, terrain: starterTerrain(b, newId) };
-    } else if (table.startsWith('map:')) {
+    const built = tableByKey(table);
+    if (built) setup.table = { w: built.w, h: built.h, mat: built.mat, terrain: built.terrain(newId) };
+    else if (table.startsWith('map:')) {
       const m = chosenMap ?? (await getMap(table.slice(4)));
       if (m) setup.table = { w: m.data.w, h: m.data.h, mat: m.data.mat, terrain: (m.data.terrain ?? []).map((t: Terrain) => ({ ...t, id: newId('t') })) };
     }
@@ -217,15 +216,11 @@ export function BattleMenu() {
         ))}
 
         <h2>3. Choose a table</h2>
+        <h3>Middle-earth maps</h3>
+        <p className="muted">The tables from the narrative scenarios, to fight any battle on.</p>
         <div className="story-grid">
-          {STARTER_BOARDS.map(b => (
-            <button key={b.id} className={`story-card ${table === `board:${b.id}` ? 'on' : ''}`} aria-pressed={table === `board:${b.id}`} onClick={() => setTable(`board:${b.id}`)}>
-              <MapPreview w={b.w} h={b.h} terrain={starterTerrain(b, newId)} />
-              <span className="story-text">
-                <b>{b.name}</b>
-                <span>{b.blurb}</span>
-              </span>
-            </button>
+          {MIDDLE_EARTH_MAPS.map(t => (
+            <TableCard key={t.key} t={t} on={table === t.key} pick={() => setTable(t.key)} />
           ))}
           <button className={`story-card ${table === 'empty' ? 'on' : ''}`} aria-pressed={table === 'empty'} onClick={() => setTable('empty')}>
             <MapPreview w={48} h={48} terrain={[]} />
@@ -244,35 +239,34 @@ export function BattleMenu() {
             </button>
           )}
         </div>
+        <h3>Community maps</h3>
         {enabled && (
-          <details className="story-brief">
-            <summary>Or play on a saved map</summary>
-            <div className="row seg page-tabs">
-              <button className={mapTab === 'shared' ? 'on' : ''} onClick={() => setMapTab('shared')}>
-                Community maps
-              </button>
-              <button className={mapTab === 'mine' ? 'on' : ''} onClick={() => setMapTab('mine')}>
-                My maps
-              </button>
-            </div>
-            {mapTab === 'mine' && !profile && <p className="muted">Sign in with Discord to see the maps you've saved.</p>}
-            {maps === null && <p className="muted">Loading maps…</p>}
-            {maps?.length === 0 && (mapTab === 'shared' || profile) && <p className="muted">No maps here yet.</p>}
-            <div className="story-grid">
-              {maps?.map(m => (
-                <button key={m.id} className={`story-card ${table === `map:${m.id}` ? 'on' : ''}`} aria-pressed={table === `map:${m.id}`} onClick={() => setTable(`map:${m.id}`)}>
-                  <MapPreview w={m.data.w} h={m.data.h} terrain={m.data.terrain ?? []} />
-                  <span className="story-text">
-                    <b>{m.name}</b>
-                    <small className="muted">
-                      {m.data.w}"×{m.data.h}"{m.author ? ` · by ${m.author}` : ''}
-                    </small>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </details>
+          <div className="row seg page-tabs">
+            <button className={mapTab === 'shared' ? 'on' : ''} onClick={() => setMapTab('shared')}>
+              Community maps
+            </button>
+            <button className={mapTab === 'mine' ? 'on' : ''} onClick={() => setMapTab('mine')}>
+              My maps
+            </button>
+          </div>
         )}
+        {mapTab === 'mine' && !profile && <p className="muted">Sign in with Discord to see the maps you've saved.</p>}
+        {enabled && maps === null && <p className="muted">Loading maps…</p>}
+        {mapTab === 'mine' && maps?.length === 0 && profile && <p className="muted">No maps here yet.</p>}
+        <div className="story-grid">
+          {mapTab === 'shared' && COMMUNITY_BOARDS.map(t => <TableCard key={t.key} t={t} on={table === t.key} pick={() => setTable(t.key)} />)}
+          {maps?.map(m => (
+            <button key={m.id} className={`story-card ${table === `map:${m.id}` ? 'on' : ''}`} aria-pressed={table === `map:${m.id}`} onClick={() => setTable(`map:${m.id}`)}>
+              <MapPreview w={m.data.w} h={m.data.h} terrain={m.data.terrain ?? []} />
+              <span className="story-text">
+                <b>{m.name}</b>
+                <small className="muted">
+                  {m.data.w}"×{m.data.h}"{m.author ? ` · by ${m.author}` : ''}
+                </small>
+              </span>
+            </button>
+          ))}
+        </div>
 
         <h2>4. Choose your army</h2>
         <div className="row seg page-tabs">
@@ -413,5 +407,23 @@ export function BattleMenu() {
         </button>
       </section>
     </SitePage>
+  );
+}
+
+/** A Middle-earth map or community board in the table picker. */
+function TableCard({ t, on, pick }: { t: TableChoice; on: boolean; pick: () => void }) {
+  return (
+    <button className={`story-card ${on ? 'on' : ''}`} aria-pressed={on} onClick={pick}>
+      <MapPreview w={t.w} h={t.h} terrain={t.terrain(newId)} />
+      <span className="story-text">
+        <b>{t.name}</b>
+        <small className="muted">
+          {t.w}"×{t.h}" · {t.from ?? `by ${t.author}`}
+        </small>
+        <span className="clamp" title={t.blurb}>
+          {t.blurb}
+        </span>
+      </span>
+    </button>
   );
 }

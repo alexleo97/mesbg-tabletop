@@ -10,7 +10,8 @@ import { TERRAIN_GROUPS, TERRAIN_INFO, terrainRules } from '../shared/terrain.ts
 import { markerNotes } from '../shared/objects.ts';
 import { breakable, DOORS } from '../shared/fortress.ts';
 import { useRef, useState } from 'react';
-import { objectiveMarkers, river, STARTER_BOARDS, starterTerrain } from '../shared/boards.ts';
+import { objectiveMarkers, river } from '../shared/boards.ts';
+import { COMMUNITY_BOARDS, MIDDLE_EARTH_MAPS } from '../shared/tables.ts';
 import { loadCatalog, parseBuilderExport, STAT_NAMES, statsWithOptions } from '../shared/catalog.ts';
 import { deployList, newId, parseList, type ListEntry } from '../shared/importList.ts';
 import { addSavedList, ListBuilder, loadSaved, SavedLists, Portrait, useCatalog } from './ListBuilder.tsx';
@@ -668,22 +669,31 @@ export function TablePanel({
 
   return (
     <div className="panel-body">
-      <h4>Starter boards</h4>
-      <div className="boards">
-        {STARTER_BOARDS.map(b => (
-          <button
-            key={b.id}
-            onClick={() => {
-              if (Object.keys(state.terrain).length && !confirm(`Replace the current terrain with ${b.name}? Models stay where they are.`)) return;
-              dispatch({ type: 'setScenery', w: b.w, h: b.h, mat: b.mat, terrain: starterTerrain(b, newId) });
-              setSelectedTerrain(null);
-            }}
-          >
-            <b>{b.name}</b>
-            <small>{b.blurb}</small>
-          </button>
-        ))}
-      </div>
+      {(
+        [
+          ['Middle-earth maps', MIDDLE_EARTH_MAPS],
+          ['Community maps', COMMUNITY_BOARDS],
+        ] as const
+      ).map(([heading, tables]) => (
+        <div key={heading}>
+          <h4>{heading}</h4>
+          <div className="boards">
+            {tables.map(b => (
+              <button
+                key={b.key}
+                onClick={() => {
+                  if (Object.keys(state.terrain).length && !confirm(`Replace the current terrain with ${b.name}? Models stay where they are.`)) return;
+                  dispatch({ type: 'setScenery', w: b.w, h: b.h, mat: b.mat, terrain: b.terrain(newId) });
+                  setSelectedTerrain(null);
+                }}
+              >
+                <b>{b.name}</b>
+                <small>{b.from ?? `${b.blurb} By ${b.author}.`}</small>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
       {!editor && <MapsSection state={state} dispatch={dispatch} onLoaded={() => setSelectedTerrain(null)} />}
       <label>
         Ground
