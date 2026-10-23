@@ -1,5 +1,6 @@
 import { mounted } from './cavalry.ts';
 import { isAmbush, isHobbit } from './ambush.ts';
+import { atBoats, carriesHobbit, isAmon, mayCarryHobbit } from './amon.ts';
 import { distanceToBase, halfExtents, inBaseContact, type Point } from './geometry.ts';
 import { fortressNotes, helpers, HEAVY } from './fortress.ts';
 import { scenarioById, type Zone } from './scenarios.ts';
@@ -22,6 +23,8 @@ export const OBJECT_NAMES: Record<MarkerObject, string> = {
   rocks: 'Rocks',
   oil: 'Boiling Oil',
   rally: 'Rallying Point',
+  hobbit: 'Knocked-out Hobbit',
+  boat: 'Boats',
 };
 
 /** How far a model's base is from a marker's edge. */
@@ -103,6 +106,8 @@ export function exitEdges(state: GameState, m: Model): ('top' | 'bottom' | 'left
   const carrying = carriedBy(state, m);
   // Ambush at Night: Merry and Pippin get away off any edge.
   if (isAmbush(state) && isHobbit(m)) return ['top', 'bottom', 'left', 'right'];
+  // Amon Hen: an Uruk-hai carrying off a Hobbit goes by any edge but the river's.
+  if (isAmon(state)) return carriesHobbit(state, m) ? ['top', 'bottom', 'right'] : [];
   switch (state.scenario) {
     case 'reconnoitre':
       return [enemyEdge];
@@ -125,7 +130,7 @@ function atEdge(state: GameState, m: Model, edge: 'top' | 'bottom' | 'left' | 'r
   return m.x + rx >= state.board.w - slack;
 }
 
-export const canEscape = (state: GameState, m: Model) => !m.dead && !m.escaped && exitEdges(state, m).some(e => atEdge(state, m, e));
+export const canEscape = (state: GameState, m: Model) => !m.dead && !m.escaped && !m.waiting && (exitEdges(state, m).some(e => atEdge(state, m, e)) || atBoats(state, m));
 
 export interface MarkerAction {
   kind: 'pickUp' | 'uncover' | 'flip' | 'drop' | 'escape';
@@ -138,7 +143,7 @@ export function markerActions(state: GameState, m: Model): MarkerAction[] {
   if (m.dead || m.escaped) return [];
   const out: MarkerAction[] = [];
   for (const t of carriedBy(state, m)) out.push({ kind: 'drop', marker: t.id, label: `Drop the ${OBJECT_NAMES[t.object!]}` });
-  if (canEscape(state, m)) out.push({ kind: 'escape', label: 'Leave the table here' });
+  if (canEscape(state, m)) out.push({ kind: 'escape', label: atBoats(state, m) ? 'Get into a boat and away' : carriesHobbit(state, m) ? 'Carry him off the table' : 'Leave the table here' });
   for (const t of onTable(state)) {
     if (!t.object || t.carrier || !touching(m, t)) continue;
     const name = OBJECT_NAMES[t.object];
@@ -153,7 +158,9 @@ export function markerActions(state: GameState, m: Model): MarkerAction[] {
 
 export function canPickUp(state: GameState, m: Model, t: Terrain): boolean {
   if (!t.object || t.gone || t.carrier || t.hidden || !touching(m, t) || m.dead || m.escaped) return false;
-  if (t.object === 'supply' || t.object === 'decoy' || t.object === 'rally' || t.object === 'campfire') return false;
+  if (t.object === 'supply' || t.object === 'decoy' || t.object === 'rally' || t.object === 'campfire' || t.object === 'boat') return false;
+  // A knocked-out Hobbit is carried off by the Uruk-hai, one apiece.
+  if (t.object === 'hobbit') return !isCavalry(m) && mayCarryHobbit(state, m, t);
   // Rocks and oil are only for the defenders who brought them.
   if ((t.object === 'rocks' || t.object === 'oil') && t.side && t.side !== m.owner) return false;
   // Cavalry can't carry a Heavy Object; a raised ladder stays against its wall, and a ram takes two to lift.
@@ -277,6 +284,10 @@ export function markerNotes(t: Terrain): string[] {
       return ['A light object for the defenders. A model touching it on the walls can drop it in the Shoot phase on an enemy within 1" of the walls or on a ladder, 8" away at most: 4+ to hit, then a Strength 6 hit.'];
     case 'oil':
       return ['A vat of boiling oil: a Heavy Object. Two defenders touching it on the walls pour it as a shot (4+ to hit): Strength 8 on the target and Strength 4 on everyone within 2". It runs dry on a 1 afterwards.'];
+    case 'hobbit':
+      return ['A Hobbit knocked out (as if Paralysed). The Uruk-hai carry him as a Heavy Object, and capture him by carrying him off the north, south or east edge. A friend ending the Good move touching him brings him round, Prone; otherwise he comes round on a 6 in the End phase.'];
+    case 'boat':
+      return ['The boats on the Anduin. Frodo, touching them, can get away in one.'];
     case 'campfire':
       return ["The Trolls' fire. Bert can roast a foe he beats within 6\" of it: it is put beside the fire and Set Ablaze."];
     case 'rally':

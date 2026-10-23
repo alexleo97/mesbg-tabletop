@@ -8,6 +8,8 @@ import { helmsWinner } from './helms.ts';
 import { ambushWinner, isHobbit } from './ambush.ts';
 import { balinWinner } from './balin.ts';
 import { balinCast, balinTerrain } from './balinMap.ts';
+import { amonWinner } from './amon.ts';
+import { amonCast, amonTerrain } from './amonMap.ts';
 import { BALLISTA_BASE, deepingSlots, evilSlots, GATE_ANGLE, HELMS_TEAMS, helmsTerrain, hornburgSlots, inHelmsZone, onArc, OUTER, type HelmsZone } from './helmsMap.ts';
 import type { Action, Base, DiceRoll, GameState, Mat, Model, Seat, Terrain } from './types.ts';
 
@@ -39,15 +41,54 @@ export type Placement =
   | { edge: 'north' | 'east' | 'south' | 'west' }
   /** Starting at `at`, and kept within one of the scenario's own areas (Helm's Deep: the Hornburg, the Deeping Wall). */
   | { zone: HelmsZone; at: [number, number] }
-  /** Starting at `at`, and kept wholly within an area of the table (a deployment zone). */
-  | { area: Area; at: [number, number] };
+  /**
+   * Starting at `at`, and kept wholly within an area of the table (a deployment zone); and, where the scenario says so,
+   * within so far of each of a group of friends (Amon Hen: Merry, Pippin and Boromir within 1" of each other).
+   */
+  | { area: Area; at: [number, number]; close?: { keys: string[]; within: number } }
+  /** Starting at `at`, in base contact with the edge of a piece of terrain (Amon Hen: the Seeing Seat). */
+  | { against: string; at: [number, number] }
+  /** Starting at `at`, and kept at least so far from every friend (Amon Hen: Sam, 12" from the rest of the Fellowship). */
+  | { apart: number; at: [number, number] };
 
-/** A deployment zone: a circle round a point (x, y, radius), or a box (x0, y0, x1, y1). */
-export type Area = { circle: [number, number, number] } | { box: [number, number, number, number] };
+/**
+ * A deployment zone: a circle round a point (x, y, radius), a box (x0, y0, x1, y1), a ring round a point (x, y, from,
+ * to), within so far of a piece of terrain (by its id in the scenario), or between so far and so far of a member of the
+ * cast (measured from its base).
+ */
+export type Area =
+  | { circle: [number, number, number] }
+  | { box: [number, number, number, number] }
+  | { ring: [number, number, number, number] }
+  | { piece: string; within: number }
+  | { around: string; from: number; to: number };
+
+/** What an area can be measured from: the scenario's pieces (by id, as on the table) and the cast on the table. */
+export interface AreaFrom {
+  terrain?: Record<string, Terrain> | Terrain[];
+  models?: Record<string, Model> | Model[];
+}
+
+/** How far a point is from a rectangular piece (0 on or inside it). */
+export const toPiece = (t: Pick<Terrain, 'x' | 'y' | 'w' | 'h'>, p: Point) => Math.hypot(Math.max(t.x - t.w / 2 - p.x, 0, p.x - t.x - t.w / 2), Math.max(t.y - t.h / 2 - p.y, 0, p.y - t.y - t.h / 2));
 
 /** Whether a model this far across (from its middle) stands wholly within an area. */
-export function whollyInArea(a: Area, p: Point, r: number): boolean {
+export function whollyInArea(a: Area, p: Point, r: number, from: AreaFrom = {}): boolean {
   if ('circle' in a) return Math.hypot(p.x - a.circle[0], p.y - a.circle[1]) + r <= a.circle[2] + 0.01;
+  if ('ring' in a) {
+    const d = Math.hypot(p.x - a.ring[0], p.y - a.ring[1]);
+    return d - r >= a.ring[2] - 0.01 && d + r <= a.ring[3] + 0.01;
+  }
+  if ('piece' in a) {
+    const t = Object.values(from.terrain ?? {}).find(x => x.id === `n-${a.piece}`);
+    return !t || toPiece(t, p) + r <= a.within + 0.01;
+  }
+  if ('around' in a) {
+    const m = Object.values(from.models ?? {}).find(x => x.cast === a.around && !x.dead && !x.waiting);
+    if (!m) return true;
+    const d = Math.hypot(p.x - m.x, p.y - m.y) - radius(m);
+    return d - r >= a.from - 0.01 && d + r <= a.to + 0.01;
+  }
   const [x0, y0, x1, y1] = a.box;
   return p.x - r >= x0 - 0.01 && p.x + r <= x1 + 0.01 && p.y - r >= y0 - 0.01 && p.y + r <= y1 + 0.01;
 }
@@ -60,6 +101,8 @@ export interface CastMember {
   unit: string;
   /** Wargear the scenario gives it, by option name. */
   options?: string[];
+  /** Wargear the scenario gives it that its profile has no option for (Amon Hen: an Elven cloak). */
+  gear?: string[];
   /** Characteristics the scenario sets, in place of the profile's. */
   stats?: Partial<Record<StatName, number>>;
   might?: number;
@@ -300,6 +343,37 @@ export const NARRATIVES: Narrative[] = [
       { name: 'Troll Rampage', text: 'The Cave Troll has +1 Fight in a turn in which it charged.' },
     ],
     cast: balinCast(),
+  },
+  {
+    id: 'amon-hen',
+    name: 'Amon Hen',
+    from: 'The Fellowship of the Ring',
+    saga: 'lotr',
+    blurb: 'The woods below the Seeing Seat: the Fellowship is scattered, Lurtz and his Uruk-hai are hunting the Halflings, and Frodo must reach the boats on the Anduin.',
+    board: { w: 48, h: 48, mat: 'forest' },
+    terrain: amonTerrain(),
+    sides: {
+      good: { name: 'The Fellowship', cast: 'Frodo, Sam, Merry, Pippin, Aragorn, Legolas, Gimli and Boromir, every one in an Elven cloak' },
+      evil: { name: 'The Uruk-hai', cast: 'Lurtz, an Uruk-hai Scout Captain and 24 Uruk-hai Scouts' },
+    },
+    layout:
+      "A 4' by 4' table thick with trees and undergrowth. The River Anduin runs down the west edge, with the boats drawn up on its bank, and the Seeing Seat stands in the eastern half: a paved platform with steps up to the dais and the seat on it.",
+    setupOrder: ['good', 'evil'],
+    deployment:
+      'Aragorn and Frodo set up touching the Seeing Seat, Legolas and Gimli wholly within 6" of the north-east corner, and Merry, Pippin and Boromir wholly between 6" and 12" of the middle of the west edge, within 1" of each other. Then the Scout Captain and 12 Scouts set up wholly within 6" of the Seeing Seat and Lurtz and 12 more wholly within 12" of Boromir but no closer than 6", none of them within 1" of the Fellowship. Sam sets up last, at least 12" from the rest of the Fellowship (here he is placed with them).',
+    objectives:
+      'The battle goes on until Frodo leaves the table. The Fellowship wins if he gets away by reaching the boats; the Uruk-hai win if they carry him off. If Frodo gets away but the Uruk-hai have carried off two of the other Hobbits, it is a draw.',
+    rules: [
+      {
+        name: '"Find the Halflings!"',
+        text: 'A Hobbit who suffers his last Wound is not slain: he keeps 1 Wound and is knocked out, as if Paralysed. The Uruk-hai can carry him as a Heavy Object (halving their Move), and capture him by carrying him off the north, south or east edge (never into the river). A Good model that ends the Fellowship\'s move touching him brings him round, and he starts his next move Prone; otherwise he comes round on a 6 in the End phase.',
+      },
+      {
+        name: 'The Legions of Isengard',
+        text: 'Each time the Uruk-hai finish their move, roll a D6 for each Scout slain: on a 4+ it comes back on as a reinforcement from the north, south or east edge, at the point nearest Frodo. It may not charge as it comes on.',
+      },
+    ],
+    cast: amonCast(),
   },
   {
     id: 'helms-deep',
@@ -586,7 +660,7 @@ export function narrativeSetup(n: Narrative, good: Seat, catalog: Catalog, newId
       hero: e.hero,
       dead: false,
       profileId: c.unit,
-      ...(e.options?.length ? { options: e.options } : {}),
+      ...(e.options?.length || c.gear?.length ? { options: [...(e.options ?? []), ...(c.gear ?? [])] } : {}),
       ...(e.siege ? { siege: e.siege } : {}),
       cast: c.key,
       ...(c.stats ? { stats: c.stats } : {}),
@@ -665,12 +739,50 @@ export function holdNarrative(state: GameState, mv: { id: string; x: number; y: 
     // Anywhere in its area: a model dragged out of it stays where it was.
     return inHelmsZone(p.zone, mv, radius(m)) ? mv : { ...mv, x: m.x, y: m.y };
   }
+  const here = { ...m, ...mv };
+  const onTable = Object.values(state.models).filter(o => o.id !== m.id && !o.dead && !o.waiting);
   if ('area' in p) {
     // The same for a deployment zone; and at Ambush at Night no foe may be set up touching Merry or Pippin.
     const onHobbit = n?.id === 'ambush-at-night' && Object.values(state.models).some(o => o.owner !== m.owner && isHobbit(o) && Math.hypot(o.x - mv.x, o.y - mv.y) < radius(o) + radius(m) + 0.25);
-    // At Balin's Tomb no Goblin may be set up within 1" of the Fellowship (in its control zone).
-    const zoned = n?.id === 'balins-tomb' && c.side === 'evil' && Object.values(state.models).some(o => o.owner !== m.owner && !o.dead && !o.waiting && distanceBetween({ ...m, ...mv }, o) < 1);
-    return whollyInArea(p.area, mv, radius(m)) && !onHobbit && !zoned ? mv : { ...mv, x: m.x, y: m.y };
+    // At Balin's Tomb and Amon Hen no Evil model may be set up within 1" of a Good one (in its control zone).
+    const zoned = (n?.id === 'balins-tomb' || n?.id === 'amon-hen') && c.side === 'evil' && onTable.some(o => o.owner !== m.owner && distanceBetween(here, o) < 1);
+    // Kept within so far of each of its group.
+    const apart = p.close && onTable.some(o => o.cast && p.close!.keys.includes(o.cast) && distanceBetween(here, o) > p.close!.within + 0.01);
+    return whollyInArea(p.area, mv, radius(m), state) && !onHobbit && !zoned && !apart ? mv : { ...mv, x: m.x, y: m.y };
+  }
+  if ('against' in p) {
+    // Slid round the piece's edge, touching it, to the point nearest where it was dragged.
+    const t = rimPiece(state, p.against);
+    if (t) {
+      const d = toPiece(t, mv) - radius(m);
+      const r = radius(m) + 0.02;
+      const x0 = t.x - t.w / 2 - r;
+      const x1 = t.x + t.w / 2 + r;
+      const y0 = t.y - t.h / 2 - r;
+      const y1 = t.y + t.h / 2 + r;
+      let x = Math.max(x0, Math.min(x1, mv.x));
+      let y = Math.max(y0, Math.min(y1, mv.y));
+      if (x > x0 && x < x1 && y > y0 && y < y1) {
+        // (Dragged onto the piece: out to its nearest side.)
+        const k = [x - x0, x1 - x, y - y0, y1 - y];
+        const i = k.indexOf(Math.min(...k));
+        if (i === 0) x = x0;
+        else if (i === 1) x = x1;
+        else if (i === 2) y = y0;
+        else y = y1;
+      }
+      // (Already touching it, near enough, it stays where it was put.)
+      const spot = d >= 0 && d <= 0.06 ? mv : { ...mv, x, y };
+      ({ x, y } = spot);
+      return onTable.some(o => Math.hypot(o.x - x, o.y - y) < radius(o) + radius(m) - 0.02) ? { ...mv, x: m.x, y: m.y } : spot;
+    }
+  }
+  if ('apart' in p) {
+    // Anywhere at least so far from every friend.
+    const near = onTable.some(o => o.owner === m.owner && distanceBetween(here, o) < p.apart - 0.01);
+    const r = radius(m);
+    const inside = mv.x >= r && mv.y >= r && mv.x <= state.board.w - r && mv.y <= state.board.h - r;
+    return !near && inside ? mv : { ...mv, x: m.x, y: m.y };
   }
   return { ...mv, x: m.x, y: m.y };
 }
@@ -683,6 +795,7 @@ export function narrativeWinner(state: GameState): Seat | 'draw' | null {
   if (n.id === 'helms-deep') return helmsWinner(state);
   if (n.id === 'ambush-at-night') return ambushWinner(state);
   if (n.id === 'balins-tomb') return balinWinner(state);
+  if (n.id === 'amon-hen') return amonWinner(state);
   if (n.id === 'weathertop') {
     // The Nazgûl win as soon as Frodo falls; the Hobbits when every one of them is gone.
     if (castModel(state, 'frodo')?.dead) return seatOf(state, 'evil') ?? null;

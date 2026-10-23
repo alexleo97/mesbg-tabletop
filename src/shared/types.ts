@@ -184,6 +184,8 @@ export interface Terrain {
   hidden?: boolean;
   /** The model carrying it. */
   carrier?: string;
+  /** A knocked-out Hobbit lying where he fell (Amon Hen): the model it stands for, off the table until he is revived. */
+  who?: string;
   /** Where it started, for relics that score for being moved. */
   home?: [number, number];
   /** Off the table: carried off an edge, destroyed, rescued, or a decoy turned over. */
@@ -206,13 +208,13 @@ export interface Terrain {
   /** A flight of steps up onto a rampart's walkway: models go up and down there without a test. */
   stairs?: boolean;
   /** Drawn in dressed stone (a fortress's courtyard, causeway, keep or tower), a wall with a culvert through it, a field of long grass, or a piece of Balin's Tomb (a pillar, the tomb, the well, a trapdoor, the doorway: the well and trapdoors are where its Goblins come back). */
-  look?: 'stone' | 'culvert' | 'grass' | 'pillar' | 'tomb' | 'well' | 'trapdoor' | 'doorway';
+  look?: 'stone' | 'culvert' | 'grass' | 'pillar' | 'tomb' | 'well' | 'trapdoor' | 'doorway' | 'brush';
 }
 
 export const DOOR_TYPES = ['castle', 'dwarven', 'heavyArmoured', 'armoured', 'heavy', 'external', 'internal'] as const;
 export type DoorType = (typeof DOOR_TYPES)[number];
 
-export const MARKER_OBJECTS = ['artefact', 'relic', 'heirloom', 'decoy', 'supply', 'ally', 'ladder', 'ram', 'rocks', 'oil', 'rally', 'campfire', 'charge'] as const;
+export const MARKER_OBJECTS = ['artefact', 'relic', 'heirloom', 'decoy', 'supply', 'ally', 'ladder', 'ram', 'rocks', 'oil', 'rally', 'campfire', 'charge', 'hobbit', 'boat'] as const;
 export type MarkerObject = (typeof MARKER_OBJECTS)[number];
 
 /** Secret choices some scenarios ask each player to make, by model or terrain id. */
@@ -341,6 +343,8 @@ export interface NarrativeState {
   /** The turn the Cave Troll burst in (Balin's Tomb), and the Goblins it has trampled on its way. */
   troll?: number;
   crushed?: string[];
+  /** The turn knocked-out Hobbits last rolled to come round in the End phase (Amon Hen). */
+  woke?: number;
 }
 
 export type BotSpeed = 'normal' | 'fast' | 'instant';
@@ -714,7 +718,7 @@ export type Action =
   /** Request: the Good player at Weathertop rolls for Aragorn this turn, or doesn't. */
   | { type: 'aragorn'; roll: boolean }
   /** Server only: bookkeeping for a narrative scenario's rules. */
-  | { type: 'narrativeNote'; rolled?: number; dawn?: number; bilbo?: boolean; breach?: number; troll?: number; crushed?: string[] }
+  | { type: 'narrativeNote'; rolled?: number; dawn?: number; bilbo?: boolean; breach?: number; troll?: number; crushed?: string[]; woke?: number; revive?: string[] }
   /** Helm's Deep: the Good player picks where on the south edge the Relief Force will ride on. */
   | { type: 'reliefPoint'; seat: Seat; x: number }
   /** Helm's Deep: a Good hero by the gate mounts up (resolved with the profiles). */

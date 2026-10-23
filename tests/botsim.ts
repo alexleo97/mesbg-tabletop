@@ -17,6 +17,7 @@ import { arrivalAuto, rollArrival } from '../src/shared/narrative.ts';
 import { chargeSabotage, reliefArrives, reliefDue } from '../src/shared/helms.ts';
 import { shrugOff, towersAfter } from '../src/shared/towers.ts';
 import { markModel } from '../src/shared/marking.ts';
+import { legionsArrive, legionsDue, wakeDue, wakeUp } from '../src/shared/amon.ts';
 import { goblinTide, tideDue, trample, trampleDue, trollDue, trollEnters } from '../src/shared/balin.ts';
 import { dawnDue, reinforceDue, rollDawn, rollReinforcements } from '../src/shared/mutton.ts';
 import { bondsDue, rollBonds } from '../src/shared/ambush.ts';
@@ -109,7 +110,7 @@ export function play(state: GameState, rand: () => number, maxSteps = 20000, wat
     if (state.narrative) {
       for (let k = 0; k < 4; k++) {
         const bearer = sauronDue(state);
-        const out = arrivalAuto(state) ? rollArrival(state, d6, uid, now) : reinforceDue(state) ? rollReinforcements(state, d6, uid, now) : bondsDue(state) ? rollBonds(state, d6, uid, now) : trollDue(state) ? trollEnters(state, uid, now) : trampleDue(state) ? trample(state, catalog, d6, uid, now) : tideDue(state) ? goblinTide(state, uid, now) : reliefDue(state) ? reliefArrives(state, uid, now) : listenDue(state, catalog) ? listenFor(state, catalog) : dawnDue(state) ? rollDawn(state, d6, uid, now) : bearer ? sauronRoll(state, bearer, d6, uid, now) : burnDue(state) ? burns(state, catalog, d6, uid, now) : willOfEvilDue(state) ? willOfEvilToll(state, catalog, uid, now) : [];
+        const out = arrivalAuto(state) ? rollArrival(state, d6, uid, now) : reinforceDue(state) ? rollReinforcements(state, d6, uid, now) : bondsDue(state) ? rollBonds(state, d6, uid, now) : trollDue(state) ? trollEnters(state, uid, now) : trampleDue(state) ? trample(state, catalog, d6, uid, now) : tideDue(state) ? goblinTide(state, uid, now) : legionsDue(state) ? legionsArrive(state, d6, uid, now) : wakeDue(state) ? wakeUp(state, d6, uid, now) : reliefDue(state) ? reliefArrives(state, uid, now) : listenDue(state, catalog) ? listenFor(state, catalog) : dawnDue(state) ? rollDawn(state, d6, uid, now) : bearer ? sauronRoll(state, bearer, d6, uid, now) : burnDue(state) ? burns(state, catalog, d6, uid, now) : willOfEvilDue(state) ? willOfEvilToll(state, catalog, uid, now) : [];
         for (const a of out) state = reduce(state, a);
         if (!out.length) break;
       }
