@@ -834,12 +834,14 @@ details.finish summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
   background: linear-gradient(120deg, color-mix(in srgb, var(--accent) 28%, var(--panel)), var(--panel) 75%) var(--panel); border: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
   transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
 }
-.menu-card:hover { transform: translateY(-2px); border-color: var(--accent); box-shadow: 0 0 20px 1px color-mix(in srgb, var(--accent) 35%, transparent); }
+/* Hover lifts only where there is a mouse, so a tap on a phone doesn't leave the card raised. */
+@media (hover: hover) { .menu-card:hover { transform: translateY(-2px); border-color: var(--accent); box-shadow: 0 0 20px 1px color-mix(in srgb, var(--accent) 35%, transparent); } }
 .menu-card .menu-icon { font-size: 1.9rem; line-height: 1; }
 .menu-card b { display: block; font-size: 1.15rem; color: var(--accent); font-family: var(--font-head); }
 .menu-card small { color: var(--muted); font-size: 0.85rem; line-height: 1.35; }
 .menu-card .menu-go { margin-left: auto; font-size: 1.5rem; color: var(--accent); }
-.menu-card.start { background: linear-gradient(120deg, color-mix(in srgb, var(--accent) 55%, var(--panel)), color-mix(in srgb, var(--accent) 12%, var(--panel)) 80%) var(--panel); border-color: var(--accent); }
+/* The main call to action keeps the default gold in every theme. */
+.menu-card.start { --accent: #c9a227; background: linear-gradient(120deg, color-mix(in srgb, var(--accent) 55%, var(--panel)), color-mix(in srgb, var(--accent) 12%, var(--panel)) 80%) var(--panel); border-color: var(--accent); }
 .hero-actions .menu-card { padding: 12px 18px; }
 .hero-actions .menu-card b { white-space: nowrap; }
 .menu-card.start b, .menu-card.start .menu-go { color: var(--text); }
@@ -1010,6 +1012,8 @@ details.finish summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
 .hero-art .hero-pan { animation: hero-pan 40s ease-in-out infinite alternate; transform-origin: 30px 26px; }
 @keyframes hero-pan { from { transform: scale(1) translate(0, 0); } to { transform: scale(1.03) translate(0.3px, -0.1px); } }
 @media (prefers-reduced-motion: reduce) { .hero-art .hero-pan { animation: none; } }
+/* Phones and tablets hold the banner still: the slow pan repaints the whole table every frame, which halves the frame rate while scrolling. */
+@media (max-width: 900px), (hover: none) and (pointer: coarse) { .hero-art .hero-pan { animation: none; } }
 .hero-base { fill: var(--panel-2); filter: drop-shadow(0 0.12px 0.18px #000c); }
 .hero-ring { fill: none; stroke-width: 0.1; }
 .hero-initials { fill: var(--text); font-weight: 700; }
