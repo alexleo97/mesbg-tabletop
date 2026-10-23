@@ -63,7 +63,7 @@ export function unseenTerrain(): NarrativeTerrain[] {
     // The mounds of roots and stones, then the great trunks on them.
     ...GREAT_TREES.map(t => piece({ id: `roots-${t.id}`, kind: 'rock', shape: 'circle', x: t.roots[0], y: t.roots[1], w: t.roots[2], h: t.roots[3], rot: t.roots[4], height: ROOTS_HEIGHT, difficult: true, look: 'roots' })),
     ...GREAT_TREES.map(t => piece({ id: `trunk-${t.id}`, kind: 'building', shape: 'circle', x: t.trunk[0], y: t.trunk[1], w: t.trunk[2], h: t.trunk[2], height: TRUNK_HEIGHT, sheer: true, look: 'trunk' })),
-    ...TREES.map(([x, y, w, h, rot], i) => piece({ id: `trees-${i + 1}`, kind: 'wood', shape: 'circle', x, y, w, h, rot, height: TREE_HEIGHT })),
+    ...TREES.map(([x, y, w, h, rot], i) => piece({ id: `trees-${i + 1}`, kind: 'wood', shape: 'circle', x, y, w, h, rot, height: TREE_HEIGHT, look: 'gnarled' })),
     ...BOULDERS.map(([x, y, w, h, rot, height], i) => piece({ id: `boulder-${i + 1}`, kind: 'rock', shape: 'circle', x, y, w, h, rot, height, look: 'stone' })),
     // The three webbed bundles: two hold Dwarves, one is a decoy (the Evil player's secret).
     ...BUNDLES.map(([x, y], i) => ({ ...piece({ id: `bundle-${i + 1}`, kind: 'objective', shape: 'circle', x, y, w: MARKER, h: MARKER, object: 'cocoon', hidden: true }), locked: false })),

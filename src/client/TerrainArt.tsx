@@ -217,6 +217,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
 
   switch (t.kind) {
     case 'wood':
+      if (t.look === 'gnarled') return <MirkwoodPiece t={t} />;
       return (
         <>
           <path className="ground wood-floor" d={d} fill={tex} filter="url(#soft-shadow)" />
@@ -566,84 +567,131 @@ function seeded(id: string, k: number) {
   return ((h >>> 0) % 1000) / 1000;
 }
 
+/** One length of a gnarled tree: where it runs, and how thick it is. */
+interface Limb {
+  d: string;
+  w: number;
+  /** Where it ends, and whether it's one of the great boughs (a knot-hole may sit there). */
+  end: Point;
+  big: boolean;
+}
+
 /**
- * Mirkwood (The Unseen Hero): a great tree seen from above. Its mound of roots and stones carries the spreading crown
- * of the tree, with the roots showing past its edge; the trunk rises through the middle of it.
+ * A gnarled limb of a Mirkwood tree seen from above, from (x, y) at angle `a`: it wavers as it goes, thinning, then
+ * splits into lesser limbs, `depth` times over. The same piece always grows the same way.
+ */
+function gnarl(id: string, k: number, x: number, y: number, a: number, len: number, w: number, depth: number, out: Limb[]) {
+  const steps = 3;
+  let [px, py, dir] = [x, y, a];
+  for (let s = 0; s < steps; s++) {
+    dir += (seeded(id, k * 11 + s) - 0.5) * 0.8;
+    const seg = len / steps;
+    const nx = px + Math.cos(dir) * seg;
+    const ny = py + Math.sin(dir) * seg;
+    const sway = (seeded(id, k * 11 + s + 5) - 0.5) * seg * 0.6;
+    const cx = (px + nx) / 2 + Math.cos(dir + Math.PI / 2) * sway;
+    const cy = (py + ny) / 2 + Math.sin(dir + Math.PI / 2) * sway;
+    out.push({ d: `M ${px.toFixed(2)} ${py.toFixed(2)} Q ${cx.toFixed(2)} ${cy.toFixed(2)} ${nx.toFixed(2)} ${ny.toFixed(2)}`, w: w * (1 - s * 0.14), end: { x: nx, y: ny }, big: depth >= 2 && s === 1 });
+    // (A bigger limb puts out a crooked side branch partway along.)
+    if (s === 1 && depth >= 2) {
+      const side = seeded(id, k * 23) > 0.5 ? 1 : -1;
+      gnarl(id, k * 4 + 9, nx, ny, dir + side * (0.9 + seeded(id, k * 29) * 0.5), len * 0.4, w * 0.45, depth - 2, out);
+    }
+    [px, py] = [nx, ny];
+  }
+  if (depth <= 0) return;
+  const n = seeded(id, k * 13 + 3) > 0.6 ? 3 : 2;
+  for (let i = 0; i < n; i++) {
+    const turn = (i - (n - 1) / 2) * 0.75 + (seeded(id, k * 17 + i) - 0.5) * 0.5;
+    gnarl(id, k * 4 + i + 1, px, py, dir + turn, len * (0.55 + seeded(id, k * 19 + i) * 0.2), w * 0.55, depth - 1, out);
+  }
+}
+
+/** Gnarled limbs drawn as old grey-brown wood: a shadow on the ground, a dark edge, the bark, a paler ridge, knot-holes. */
+function Limbs({ limbs }: { limbs: Limb[] }) {
+  return (
+    <g className="tint" pointerEvents="none">
+      <g transform="translate(0.22 0.32)">
+        {limbs.map((l, i) => (
+          <path key={i} className="limb-shadow" d={l.d} strokeWidth={l.w} />
+        ))}
+      </g>
+      {limbs.map((l, i) => (
+        <path key={i} className="limb-edge" d={l.d} strokeWidth={l.w + 0.14} />
+      ))}
+      {limbs.map((l, i) => (
+        <path key={i} className="limb-bark" d={l.d} strokeWidth={l.w} />
+      ))}
+      {limbs.map((l, i) => (l.w > 0.25 ? <path key={i} className="limb-ridge" d={l.d} strokeWidth={l.w * 0.22} /> : null))}
+      {limbs.map((l, i) => (l.big ? <ellipse key={i} className="limb-knot" cx={l.end.x} cy={l.end.y} rx={l.w * 0.28} ry={l.w * 0.18} /> : null))}
+    </g>
+  );
+}
+
+/**
+ * Mirkwood (The Unseen Hero), drawn after the book's map: twisted, gnarled trees seen from above, grey with age. A great
+ * tree's mound of roots and stones, with its huge limbs spreading out across it; the great trunk where they meet; and
+ * the lesser trees, each a crooked trunk and its branches over a patch of dark leaf-litter.
  */
 function MirkwoodPiece({ t }: { t: Terrain }) {
   const rx = t.w / 2;
   const ry = t.h / 2;
   if (t.look === 'trunk') {
-    // Gnarled bark: the trunk flares into the roots it stands on, its bark running up it in ridges.
-    // (A smooth, uneven outline: bulging where a great root leaves it.)
-    const n = 11;
-    const pt = (i: number) => {
-      const a = (i / n) * Math.PI * 2;
-      const k = 0.9 + seeded(t.id, i % n) * 0.18;
-      return [Math.cos(a) * rx * k, Math.sin(a) * ry * k];
-    };
-    const mid = (i: number) => [(pt(i)[0] + pt(i + 1)[0]) / 2, (pt(i)[1] + pt(i + 1)[1]) / 2];
-    const f = (p: number[]) => `${p[0].toFixed(2)} ${p[1].toFixed(2)}`;
-    const outlineD = `M ${f(mid(0))} ` + Array.from({ length: n }, (_, i) => `Q ${f(pt(i + 1))} ${f(mid(i + 1))}`).join(' ') + ' Z';
-    const ridges = Array.from({ length: 10 }, (_, i) => {
-      const a = ((i + seeded(t.id, i + 30) * 0.5) / 10) * Math.PI * 2;
-      const twist = (seeded(t.id, i + 50) - 0.5) * 0.8;
-      return `M ${(Math.cos(a) * rx * 0.15).toFixed(2)} ${(Math.sin(a) * ry * 0.15).toFixed(2)} Q ${(Math.cos(a + twist) * rx * 0.55).toFixed(2)} ${(Math.sin(a + twist) * ry * 0.55).toFixed(2)} ${(Math.cos(a) * rx * 0.95).toFixed(2)} ${(Math.sin(a) * ry * 0.95).toFixed(2)}`;
-    });
+    // The great trunk itself: a knot of twisted wood, its limbs and roots wound round each other.
+    const limbs: Limb[] = [];
+    for (let i = 0; i < 6; i++) {
+      const a = ((i + seeded(t.id, i) * 0.5) / 6) * Math.PI * 2;
+      gnarl(t.id, i + 1, Math.cos(a + 2.2) * rx * 0.35, Math.sin(a + 2.2) * ry * 0.35, a, Math.min(rx, ry) * 1.1, Math.min(rx, ry) * 0.62, 0, limbs);
+    }
     return (
       <>
-        <path className="ground trunk-bark" d={outlineD} filter="url(#hard-shadow)" />
-        {ridges.map((d, i) => (
-          <path key={i} className="tint trunk-ridge" d={d} />
-        ))}
-        <ellipse className="tint trunk-knot" rx={rx * 0.22} ry={ry * 0.18} />
-        <ellipse className="tint" rx={rx} ry={ry} fill="url(#g-dome)" />
+        <ellipse className="ground trunk-floor" rx={rx} ry={ry} />
+        <Limbs limbs={limbs} />
+        <ellipse className="tint trunk-hollow" cx={rx * 0.1} cy={-ry * 0.05} rx={rx * 0.2} ry={ry * 0.14} />
       </>
     );
   }
-  // Thick roots snaking out from the trunk to the edge of the mound, tapering as they go, and stones among them.
-  const roots = Array.from({ length: 9 }, (_, i) => {
-    const a = ((i + seeded(t.id, i) * 0.6) / 9) * Math.PI * 2;
-    const bend = (seeded(t.id, i + 20) - 0.5) * 0.9;
-    const at = (k: number, b: number) => `${(Math.cos(a + b) * rx * k).toFixed(2)} ${(Math.sin(a + b) * ry * k).toFixed(2)}`;
-    return [`M 0 0 Q ${at(0.3, bend * 0.5)} ${at(0.55, bend)}`, `M ${at(0.55, bend)} Q ${at(0.75, bend * 0.4)} ${at(0.95, 0)}`];
-  });
+  if (t.look === 'gnarled') {
+    // One crooked tree lying along the patch (two in a big one), its branches reaching out across it.
+    const along = Math.max(rx, ry);
+    const across = rx >= ry ? 0 : Math.PI / 2;
+    const n = t.w * t.h > 70 ? 2 : 1;
+    const limbs: Limb[] = [];
+    for (let i = 0; i < n; i++) {
+      const side = n === 1 ? 0 : i ? 0.3 : -0.3;
+      const flip = seeded(t.id, 200 + i) > 0.5 ? Math.PI : 0;
+      const from = { x: Math.cos(across + flip) * along * (0.55 - Math.abs(side) * 0.3), y: Math.sin(across + flip) * along * (0.55 - Math.abs(side) * 0.3) };
+      const off = { x: Math.cos(across + Math.PI / 2) * Math.min(rx, ry) * side * 1.5, y: Math.sin(across + Math.PI / 2) * Math.min(rx, ry) * side * 1.5 };
+      gnarl(t.id, 30 + i, from.x + off.x, from.y + off.y, across + flip + Math.PI + (seeded(t.id, 210 + i) - 0.5) * 0.4, along * (n === 1 ? 0.75 : 0.6), 0.8, 3, limbs);
+    }
+    return (
+      <>
+        <path className="ground gnarled-floor" d={outline(t)} filter="url(#soft-shadow)" />
+        <Limbs limbs={limbs} />
+      </>
+    );
+  }
+  // A great tree's mound: its huge limbs spread from the trunk across the mound, and stones lie among them.
   const stones = Array.from({ length: 6 }, (_, i) => {
     const a = seeded(t.id, i + 40) * Math.PI * 2;
-    const d = 0.7 + seeded(t.id, i + 60) * 0.22;
+    const d = 0.62 + seeded(t.id, i + 60) * 0.3;
     return { x: Math.cos(a) * rx * d, y: Math.sin(a) * ry * d, r: 0.25 + seeded(t.id, i + 80) * 0.35 };
   });
-  // The crown: a great spread of boughs over the mound, thickest in the middle, the roots showing past its edge.
-  const leaf = Math.min(rx, ry);
-  const ring = Math.max(5, Math.round((Math.PI * (rx + ry) * 0.45) / 1.6));
-  const boughs = [
-    ...Array.from({ length: ring }, (_, i) => {
-      const a = ((i + seeded(t.id, i + 100) * 0.5) / ring) * Math.PI * 2;
-      return { x: Math.cos(a) * rx * 0.5, y: Math.sin(a) * ry * 0.5, r: leaf * (0.3 + seeded(t.id, i + 120) * 0.08) };
-    }),
-    { x: 0, y: 0, r: leaf * 0.45 },
-  ];
+  const limbs: Limb[] = [];
+  const n = 7;
+  for (let i = 0; i < n; i++) {
+    const a = ((i + seeded(t.id, i) * 0.6) / n) * Math.PI * 2;
+    // (Each limb reaches most of the way to the mound's edge in its direction.)
+    const reach = 1 / Math.hypot(Math.cos(a) / rx, Math.sin(a) / ry);
+    gnarl(t.id, i + 1, 0, 0, a, reach * 0.48, 1.1, 2, limbs);
+  }
   return (
     <>
       <ellipse className="ground roots-mound" rx={rx} ry={ry} filter="url(#soft-shadow)" />
-      {roots.map(([inner, outer], i) => (
-        <g key={i}>
-          <path className="tint root" d={inner} strokeWidth={0.8 - (i % 3) * 0.15} />
-          <path className="tint root" d={outer} strokeWidth={0.4 - (i % 3) * 0.08} />
-        </g>
-      ))}
       {stones.map((p, i) => (
         <ellipse key={i} className="tint roots-stone" cx={p.x} cy={p.y} rx={p.r} ry={p.r * 0.8} />
       ))}
-      <g className="tint great-crown" pointerEvents="none">
-        {boughs.map((b, i) => (
-          <g key={i} transform={`translate(${b.x.toFixed(2)} ${b.y.toFixed(2)})`}>
-            <circle className="tree-shadow" cx={0.25} cy={0.35} r={b.r * 0.95} />
-            <circle className="tree-base" r={b.r * 0.8} />
-            <image href={TREES.oak} x={-b.r * 1.55} y={-b.r * 1.55} width={b.r * 3.1} height={b.r * 3.1} transform={`rotate(${(seeded(t.id, i + 140) * 360).toFixed(1)})`} />
-          </g>
-        ))}
-      </g>
+      <Limbs limbs={limbs} />
     </>
   );
 }

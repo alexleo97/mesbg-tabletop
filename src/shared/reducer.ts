@@ -437,7 +437,7 @@ function cleanTerrain(t: Partial<Terrain>, prev?: Terrain): Terrain | null {
   if (('walk' in t ? t.walk : base.walk) === true && out.kind === 'wall') out.walk = true;
   if (('stairs' in t ? t.stairs : base.stairs) === true && out.kind === 'road') out.stairs = true;
   const look = 'look' in t ? t.look : base.look;
-  if (look === 'stone' || look === 'culvert' || look === 'grass' || look === 'pillar' || look === 'tomb' || look === 'well' || look === 'trapdoor' || look === 'doorway' || look === 'brush' || look === 'orthanc' || look === 'scaffold' || look === 'ladder' || look === 'pit' || look === 'roots' || look === 'trunk') out.look = look;
+  if (look === 'stone' || look === 'culvert' || look === 'grass' || look === 'pillar' || look === 'tomb' || look === 'well' || look === 'trapdoor' || look === 'doorway' || look === 'brush' || look === 'orthanc' || look === 'scaffold' || look === 'ladder' || look === 'pit' || look === 'roots' || look === 'trunk' || look === 'gnarled') out.look = look;
   cleanObject(t, base, out);
   if ('vines' in t ? t.vines === true : base.vines) {
     const side = 'side' in t ? t.side : base.side;
