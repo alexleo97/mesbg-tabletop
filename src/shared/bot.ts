@@ -99,7 +99,7 @@ export function botPause(state: GameState, step: BotStep): number {
 const DICE_PAUSE = 1100;
 const THINK_PAUSE = 700;
 /** How many models that stay put the computer thinks through in one step before carrying on in the next. */
-const THINK_SLICE = 6;
+const THINK_SLICE = 2;
 /** How many targets it can see an archer weighs from each spot it might move to (see bestShot). */
 const SHOT_TARGETS = 6;
 const WAIT_PAUSE = 1500;
