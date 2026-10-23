@@ -47,7 +47,7 @@ const AVOIDED: ReadonlySet<TerrainKind> = new Set(['building', 'rock', 'water', 
  */
 export const solidOutlines = (state: Pick<GameState, 'terrain'>, auto = false) =>
   Object.values(state.terrain ?? {})
-    .filter(t => isSolid(t) || (auto && !t.gone && !t.carrier && AVOIDED.has(t.kind)))
+    .filter(t => isSolid(t) || (auto && !t.gone && !t.carrier && !t.deep && AVOIDED.has(t.kind)))
     .map(t => outline(t));
 
 /** The nearest point to `p` (within `reach` inches) that `fits`, looking outwards in rings; null if there's none. */

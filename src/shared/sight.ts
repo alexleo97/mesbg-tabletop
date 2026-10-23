@@ -261,6 +261,23 @@ export function distanceToTerrain(m: Model, t: Terrain): number {
 
 /** A pit (Isengard): a narrow crevice, water-like in that it is crossed by leaping, but dry. */
 export const isPit = (t: Terrain) => t.kind === 'water' && t.look === 'pit';
+
+/** Water too deep to wade (Terrain.deep): Lake-town's Long Lake. */
+export const isDeep = (t: Terrain) => t.kind === 'water' && !!t.deep && !t.gone;
+/** What stands on deep water and keeps a model on it dry: walkways, boats, houses, floes. */
+const DRY: ReadonlySet<TerrainKind> = new Set(['road', 'bridge', 'building', 'rock', 'hill', 'cliff', 'ruin', 'wall', 'tower', 'gate']);
+const inBox = (t: Terrain, p: Point) => {
+  const [x0, y0, x1, y1] = boxOf(outline(t));
+  return p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1;
+};
+/** Whether a point is out in deep water, with nothing standing there to keep it dry. */
+export function inDeepWater(state: Pick<GameState, 'terrain'>, p: Point): boolean {
+  const all = Object.values(state.terrain);
+  if (!all.some(t => isDeep(t) && inBox(t, p) && insidePolygon(outline(t), p))) return false;
+  return !all.some(t => DRY.has(t.kind) && !t.gone && inBox(t, p) && insidePolygon(outline(t), p));
+}
+/** Whether a model stands (its middle) in deep water. */
+export const swimming = (state: Pick<GameState, 'terrain'>, m: Pick<Model, 'x' | 'y' | 'dead' | 'escaped' | 'waiting'>) => !m.dead && !m.escaped && !m.waiting && inDeepWater(state, m);
 /** Whether a model this tall steps over a pit without breaking stride: it is no wider than half the model's height. */
 export const stepsOver = (t: Terrain, tall: number) => isPit(t) && tall > 0 && Math.min(t.w, t.h) <= tall / 2 + 1e-6;
 

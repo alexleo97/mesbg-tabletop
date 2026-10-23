@@ -31,6 +31,8 @@ import { mightBlocked } from './mightUse.ts';
 import { placeSpot, placingNow } from './placing.ts';
 import { longshanksFree } from './sam.ts';
 import { bundleFits, isUnseen, keepOnTable, skitterDone, spidersDue } from './unseen.ts';
+import { bolgOwesCharge, contactAlarms, disturbs, isLake, isSentry, keepInSection, sentriesDue, sentryDue } from './lake.ts';
+import { SECTIONS, type Section } from './lakeMap.ts';
 import { BOT_NAME, BOT_SPEEDS, type Deploying, DOOR_TYPES, FIGHT_TARGETS, MARKER_OBJECTS, MATS, PHASES, PICK_KEYS, TERRAIN_KINDS, type Action, type FightPicks, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type ModelEffect, type Phase, type Picks, type Placing, type Seat, type SpellPending, type Terrain } from './types.ts';
 
 export const MAX_MODELS = 600;
@@ -131,7 +133,7 @@ function goToPhase(state: GameState, phase: Phase, turn: number, newTurn: boolea
       done: [],
       resolved: newTurn ? [] : state.flow.resolved,
       heroics: newTurn ? [] : state.flow.heroics,
-      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], moved: [], cast: [], spell: undefined, held: [], stood: [], climbed: {}, compel: undefined, supported: [], strikeBonus: {}, charges: {}, brutal: [], hurledAt: [], breached: [], trampled: [], turned: [], cables: [], sauron: [], ringTried: [], sought: [], reinforce: undefined, bonds: undefined, usedTurn: [], heard: [], freeMove: [], chronicles: undefined, placing: [], joined: [], skittered: [] } : {}),
+      ...(newTurn ? { courage: {}, braved: [], shot: [], arrived: [], duels: [], farMoved: [], moved: [], cast: [], spell: undefined, held: [], stood: [], climbed: {}, compel: undefined, supported: [], strikeBonus: {}, charges: {}, brutal: [], hurledAt: [], breached: [], trampled: [], turned: [], cables: [], sauron: [], ringTried: [], sought: [], reinforce: undefined, bonds: undefined, usedTurn: [], heard: [], freeMove: [], chronicles: undefined, placing: [], joined: [], skittered: [], sentried: [] } : {}),
       ...(phase !== state.phase ? { compel: undefined, mustCharge: undefined, skitter: undefined } : {}),
       // The fights are paired off as the Fight phase begins, and stay that way until it ends.
       ...(phase !== state.phase ? { pairs: phase === 'fight' && state.flow.started ? pairOff(livingModels(state), { ...state, phase: 'move' }, state.flow.pairChoices).map(c => c.key) : undefined, pairChoices: undefined } : {}),
@@ -381,6 +383,7 @@ function cleanObject(t: Partial<Terrain>, base: Terrain, out: Terrain) {
     if (isSeat(by)) out.by = by;
     return;
   }
+  if (pick('deep') === true && out.kind === 'water') out.deep = true;
   if (pick('sheer') === true && (out.kind === 'wall' || out.kind === 'building' || out.kind === 'rock' || out.kind === 'cliff')) out.sheer = true;
   const object = pick('object');
   if (out.kind !== 'objective' || !MARKER_OBJECTS.includes(object as never)) return;
@@ -438,7 +441,7 @@ function cleanTerrain(t: Partial<Terrain>, prev?: Terrain): Terrain | null {
   if (('walk' in t ? t.walk : base.walk) === true && out.kind === 'wall') out.walk = true;
   if (('stairs' in t ? t.stairs : base.stairs) === true && out.kind === 'road') out.stairs = true;
   const look = 'look' in t ? t.look : base.look;
-  if (look === 'stone' || look === 'culvert' || look === 'grass' || look === 'pillar' || look === 'tomb' || look === 'well' || look === 'trapdoor' || look === 'doorway' || look === 'brush' || look === 'orthanc' || look === 'scaffold' || look === 'ladder' || look === 'pit' || look === 'roots' || look === 'trunk' || look === 'gnarled') out.look = look;
+  if (look === 'stone' || look === 'culvert' || look === 'grass' || look === 'pillar' || look === 'tomb' || look === 'well' || look === 'trapdoor' || look === 'doorway' || look === 'brush' || look === 'orthanc' || look === 'scaffold' || look === 'ladder' || look === 'pit' || look === 'roots' || look === 'trunk' || look === 'gnarled' || look === 'planks' || look === 'boat' || look === 'floe' || look === 'lakehouse') out.look = look;
   cleanObject(t, base, out);
   if ('vines' in t ? t.vines === true : base.vines) {
     const side = 'side' in t ? t.side : base.side;
@@ -638,6 +641,23 @@ function challengesSettled(before: GameState, state: GameState): GameState {
   return { ...state, models, flow: { ...state.flow, challenges: list.filter(c => !ended.includes(c)) } };
 }
 
+/** Lake-town Escape: an Orc that knows Legolas is about walking up to a Sentry raises the alarm in its section at once; Legolas charging a Sentry may raise it in the End phase. */
+function lakeAfterMove(before: GameState, after: GameState): GameState {
+  if (!isLake(after) || !after.flow.started || !after.narrative) return after;
+  const raised = contactAlarms(after);
+  const charged = Object.entries(after.flow.charges ?? {}).filter(([id, foe]) => before.flow.charges?.[id] !== foe && disturbs(after, after.models[id], after.models[foe]));
+  if (!raised.length && !charged.length) return after;
+  const n = after.narrative;
+  return {
+    ...after,
+    narrative: {
+      ...n,
+      ...(raised.length ? { alarm: [...new Set([...(n.alarm ?? []), ...raised])] } : {}),
+      ...(charged.length ? { disturbed: [...(n.disturbed ?? []), ...charged.map(([, foe]) => ({ id: foe, turn: after.turn }))].slice(-40) } : {}),
+    },
+  };
+}
+
 function step(state: GameState, action: Action): GameState {
   switch (action.type) {
     case 'addModels': {
@@ -712,6 +732,8 @@ function step(state: GameState, action: Action): GameState {
         // While reinforcements come on, the rest of their side has had its activation.
         if (state.flow.started && state.phase === 'move' && askedToMove && state.flow.entering?.turn === state.turn && state.flow.entering.seat === prev.owner && !entering(state, prev)) continue;
         if (state.flow.started && state.phase === 'move' && askedToMove && !state.flow.compel && !mayActivate(state, prev)) continue;
+        // Lake-town Escape: Sentries move first, each once it has rolled on the Sentry Chart, one at a time.
+        if (state.flow.started && state.phase === 'move' && askedToMove && isLake(state) && (sentryDue(state, prev) || (state.flow.skitter && state.flow.skitter.model !== prev.id) || (!isSentry(state, prev) && sentriesDue(state, prev.owner).length > 0))) continue;
         if (state.flow.started && state.phase === 'move' && askedToMove && !heroicStarted && heroicQueue(state).some(h => h.id === prev.id) && heroicNow(state)?.seat === prev.owner) heroicStarted = prev.id;
         let to = asked;
         const moving = to.x !== prev.x || to.y !== prev.y;
@@ -746,8 +768,11 @@ function step(state: GameState, action: Action): GameState {
             [back, undone, to] = [false, null, here];
           }
           // (Reinforcements coming on may not charge.)
-          const arriving = state.phase === 'move' && enteringNoCharge(state, prev);
+          // (Nor may a Sentry: it doesn't know the enemy is there.)
+          const arriving = state.phase === 'move' && (enteringNoCharge(state, prev) || isSentry(state, prev));
           to = back ? from : undone ? undone.at : dropMove(now, here, to, Math.max(0, allowance - spent(state, prev)), prev.owner, prev, undefined, !arriving);
+          // A Sentry keeps to its own section.
+          if (isLake(state)) to = keepInSection(now, prev, here, to);
           // A model that stops inside an enemy's control zone is charging it: it must reach base contact, or stay out.
           if ((state.phase === 'move' || fightsAgain(state, prev)) && !arriving) to = finishCharge(now, prev, here, to);
           // A friend going with a hero (With Me, or At the Double) must end within 6" of it, and a siege crew within 6"
@@ -811,7 +836,7 @@ function step(state: GameState, action: Action): GameState {
         starts !== state.flow.starts || walked !== state.flow.walked || paths !== state.flow.paths || stood !== state.flow.stood || climbed !== state.flow.climbed || blocked !== state.flow.blocked || charges !== state.flow.charges || heroicStarted !== state.flow.heroicNow || turned !== state.flow.turned
           ? { flow: { ...state.flow, starts, ...(walked ? { walked } : {}), ...(paths ? { paths } : {}), ...(stood ? { stood } : {}), ...(climbed ? { climbed } : {}), ...(blocked ? { blocked } : {}), ...(charges ? { charges } : {}), ...(heroicStarted ? { heroicNow: heroicStarted } : {}), ...(turned ? { turned } : {}) } }
           : {};
-      return comeOn(bilboCharged(state, { ...state, models, ...flow }));
+      return lakeAfterMove(state, comeOn(bilboCharged(state, { ...state, models, ...flow })));
     }
     case 'trampled': {
       // A war beast or chariot has made its move (the game drove it; see warBeasts.ts): it moves no more this phase.
@@ -883,7 +908,9 @@ function step(state: GameState, action: Action): GameState {
       const crossed = terrain ? { ...state.flow.crossed, [m.id]: [...new Set([...(state.flow.crossed?.[m.id] ?? []), terrain])] } : state.flow.crossed;
       const stopped = action.stop ? [...new Set([...(state.flow.stopped ?? []), m.id])] : state.flow.stopped;
       const { [m.id]: _, ...blocked } = state.flow.blocked ?? {};
-      return { ...state, flow: { ...state.flow, ...(crossed ? { crossed } : {}), ...(stopped ? { stopped } : {}), blocked } };
+      const slowed = num(action.slowed, 0, 20, 0);
+      const climbed = slowed ? { ...state.flow.climbed, [m.id]: (state.flow.climbed?.[m.id] ?? 0) + slowed } : state.flow.climbed;
+      return { ...state, flow: { ...state.flow, ...(crossed ? { crossed } : {}), ...(stopped ? { stopped } : {}), ...(climbed ? { climbed } : {}), blocked } };
     }
     case 'crawl': {
       // A Prone model crawls up to 1" and stays Prone, instead of standing up.
@@ -1132,6 +1159,8 @@ function step(state: GameState, action: Action): GameState {
       if (grip && grip.owner === action.seat && state.flow.started) return state;
       // The Unseen Hero: every Spider takes its test and moves its D6" (by whichever player won it) before its side is done.
       if (state.flow.started && isUnseen(state) && (state.flow.skitter || spidersDue(state, action.seat).length)) return state;
+      // Lake-town Escape: every Sentry rolls (and is moved) before its side is done, and Bolg must charge Legolas if he can.
+      if (state.flow.started && isLake(state) && state.phase === 'move' && (state.flow.skitter || sentriesDue(state, action.seat).length || (!heroicNow(state) && bolgOwesCharge(state)))) return state;
       // Ending a hero's Heroic Move or Heroic Shoot: it and the friends it shouted for have had their activation.
       const heroic = state.flow.started ? heroicNow(state) : null;
       if (heroic) {
@@ -1328,7 +1357,9 @@ function step(state: GameState, action: Action): GameState {
       const webbed = action.webbed === undefined ? state.narrative.webbed : int(action.webbed, 0, 99, 0);
       const hazed = action.hazed === undefined ? state.narrative.hazed : int(action.hazed, 0, 99, 0);
       const nested = action.nested === undefined ? state.narrative.nested : int(action.nested, 0, 99, 0);
-      const next = { ...state, narrative: { ...state.narrative, ...(rolled ? { rolled } : {}), ...(dawn ? { dawn } : {}), ...(breach ? { breach } : {}), ...(crushed ? { crushed } : {}), ...(woke ? { woke } : {}), ...(webbed ? { webbed } : {}), ...(hazed ? { hazed } : {}), ...(nested ? { nested } : {}) } };
+      const alarm = Array.isArray(action.alarm) ? [...new Set([...(state.narrative.alarm ?? []), ...action.alarm.filter(x => SECTIONS.includes(x as Section))])] : state.narrative.alarm;
+      const alarmed = action.alarmed === undefined ? state.narrative.alarmed : int(action.alarmed, 0, 99, 0);
+      const next = { ...state, narrative: { ...state.narrative, ...(rolled ? { rolled } : {}), ...(dawn ? { dawn } : {}), ...(breach ? { breach } : {}), ...(crushed ? { crushed } : {}), ...(woke ? { woke } : {}), ...(webbed ? { webbed } : {}), ...(hazed ? { hazed } : {}), ...(nested ? { nested } : {}), ...(alarm ? { alarm } : {}), ...(alarmed ? { alarmed } : {}) } };
       // Balin's Tomb: the Cave Troll has stepped in at the doorway, its move counted from just outside it.
       if (action.troll !== undefined && !state.narrative.troll) {
         const troll = Object.values(state.models).find(isCaveTroll);
@@ -1438,8 +1469,13 @@ function step(state: GameState, action: Action): GameState {
       const sk = action.skitter;
       const m = sk && state.models[id(sk.model)];
       if (!m || !isSeat(sk.by) || state.flow.skitter) return state;
-      const skitter = { model: m.id, by: sk.by, dist: int(sk.dist, 1, 6, 1) };
+      const skitter = { model: m.id, by: sk.by, dist: sk.upTo ? num(sk.dist, 0, 12, 1) : int(sk.dist, 1, 6, 1), ...(sk.upTo ? { upTo: true } : {}) };
       return { ...state, flow: { ...state.flow, skitter, skittered: [...new Set([...(state.flow.skittered ?? []), m.id])] } };
+    }
+    case 'sentried': {
+      const m = state.models[action.id];
+      if (!m || !isLake(state)) return state;
+      return { ...state, flow: { ...state.flow, sentried: [...new Set([...(state.flow.sentried ?? []), m.id])] } };
     }
     case 'skitterDone': {
       const sk = state.flow.skitter;
@@ -1673,6 +1709,8 @@ function step(state: GameState, action: Action): GameState {
       const log = [...state.log, r];
       // A shot's first roll marks its shooter as having shot this turn.
       const shooter = r.group?.startsWith('s-') && r.id === `${r.group}-0` ? r.model : undefined;
+      // (Lake-town Escape: Legolas shooting at a Sentry may raise the alarm, if it lives to the End phase.)
+      const narrative = shooter && r.aim && state.narrative && disturbs(state, state.models[shooter], state.models[r.aim]) ? { ...state.narrative, disturbed: [...(state.narrative.disturbed ?? []), { id: r.aim, turn: state.turn }].slice(-40) } : state.narrative;
       // (Once for each Shooting Attack, for models that make more than one: a Pinpoint Shot counts as all three.)
       let flow = shooter ? { ...state.flow, shot: [...(state.flow.shot ?? []), ...Array(r.pinpoint ? 3 : 1).fill(shooter)].slice(-400) } : state.flow;
       // A weapon thrown as a model charges commits it to charging that target.
@@ -1684,7 +1722,7 @@ function step(state: GameState, action: Action): GameState {
       if (r.support && r.model && !flow.supported?.includes(r.model)) flow = { ...flow, supported: [...(flow.supported ?? []), r.model].slice(-400) };
       // A hero's Heroic Strike bonus lasts the whole phase.
       if (r.group?.startsWith('f-') && r.label.startsWith('Heroic Strike') && r.model) flow = { ...flow, strikeBonus: { ...flow.strikeBonus, [r.model]: r.dice[0] } };
-      return { ...state, flow, log: log.slice(-MAX_LOG) };
+      return { ...state, flow, log: log.slice(-MAX_LOG), ...(narrative ? { narrative } : {}) };
     }
     case 'loadState':
       return loadState(action.state);
@@ -1771,7 +1809,7 @@ function step(state: GameState, action: Action): GameState {
   }
 }
 
-const TESTS = ['Jump', 'Climb', 'Climb down', 'Leap'] as const;
+const TESTS = ['Jump', 'Climb', 'Climb down', 'Leap', 'Swim'] as const;
 /** Where models were stopped to take a terrain test, from untrusted JSON. */
 function cleanBlocked(raw: object): NonNullable<Flow['blocked']> {
   const out: NonNullable<Flow['blocked']> = {};
@@ -1836,7 +1874,7 @@ export function loadState(raw: unknown): GameState {
   if (o.advance === 'click') out = { ...out, advance: 'click' };
   const n = o.narrative;
   if (n && typeof n === 'object' && narrativeById(n.id) && isSeat(n.good))
-    out = { ...out, narrative: { id: n.id, good: n.good, ...(Number.isFinite(n.cry) ? { cry: int(n.cry, 0, 99, 0) } : {}), ...(Array.isArray(n.rolled) ? { rolled: n.rolled.slice(0, 40).map(t => int(t, 0, 99, 0)) } : {}), ...(Number.isFinite(n.dawn) ? { dawn: int(n.dawn, 1, 99, 1) } : {}), ...(n.bilbo === true ? { bilbo: true } : {}), ...(Number.isFinite(n.turns) ? { turns: int(n.turns, 1, 40, 15) } : {}), ...(Number.isFinite(n.relief) ? { relief: num(n.relief, 0, 200, 36) } : {}), ...(Number.isFinite(n.breach) ? { breach: int(n.breach, 0, 99, 0) } : {}), ...(Number.isFinite(n.troll) ? { troll: int(n.troll, 1, 99, 1) } : {}), ...(Array.isArray(n.crushed) ? { crushed: n.crushed.slice(0, 60).map(x => str(x, 80)) } : {}), ...(Number.isFinite(n.woke) ? { woke: int(n.woke, 0, 99, 0) } : {}), ...(Number.isFinite(n.webbed) ? { webbed: int(n.webbed, 0, 99, 0) } : {}), ...(Number.isFinite(n.hazed) ? { hazed: int(n.hazed, 0, 99, 0) } : {}), ...(Number.isFinite(n.nested) ? { nested: int(n.nested, 0, 99, 0) } : {}) } };
+    out = { ...out, narrative: { id: n.id, good: n.good, ...(Number.isFinite(n.cry) ? { cry: int(n.cry, 0, 99, 0) } : {}), ...(Array.isArray(n.rolled) ? { rolled: n.rolled.slice(0, 40).map(t => int(t, 0, 99, 0)) } : {}), ...(Number.isFinite(n.dawn) ? { dawn: int(n.dawn, 1, 99, 1) } : {}), ...(n.bilbo === true ? { bilbo: true } : {}), ...(Number.isFinite(n.turns) ? { turns: int(n.turns, 1, 40, 15) } : {}), ...(Number.isFinite(n.relief) ? { relief: num(n.relief, 0, 200, 36) } : {}), ...(Number.isFinite(n.breach) ? { breach: int(n.breach, 0, 99, 0) } : {}), ...(Number.isFinite(n.troll) ? { troll: int(n.troll, 1, 99, 1) } : {}), ...(Array.isArray(n.crushed) ? { crushed: n.crushed.slice(0, 60).map(x => str(x, 80)) } : {}), ...(Number.isFinite(n.woke) ? { woke: int(n.woke, 0, 99, 0) } : {}), ...(Number.isFinite(n.webbed) ? { webbed: int(n.webbed, 0, 99, 0) } : {}), ...(Number.isFinite(n.hazed) ? { hazed: int(n.hazed, 0, 99, 0) } : {}), ...(Number.isFinite(n.nested) ? { nested: int(n.nested, 0, 99, 0) } : {}), ...(Array.isArray(n.alarm) ? { alarm: n.alarm.filter((x: unknown) => SECTIONS.includes(x as Section)) } : {}), ...(Array.isArray(n.disturbed) ? { disturbed: n.disturbed.slice(0, 40).filter((d: unknown) => d && typeof d === 'object').map((d: { id: unknown; turn: unknown }) => ({ id: str(d.id, 80), turn: int(d.turn, 0, 99, 0) })) } : {}), ...(Number.isFinite(n.alarmed) ? { alarmed: int(n.alarmed, 0, 99, 0) } : {}) } };
   if (o.flow && typeof o.flow === 'object') {
     const f = o.flow as Partial<Flow>;
     const seats = (v: unknown) => (Array.isArray(v) ? [...new Set(v.filter(isSeat))] : []);
@@ -1922,7 +1960,8 @@ export function loadState(raw: unknown): GameState {
         ...(Array.isArray(f.ringTried) ? { ringTried: f.ringTried.slice(0, 20).map(x => str(x, 80)) } : {}),
         ...(Array.isArray(f.sought) ? { sought: f.sought.slice(0, 40).map(x => str(x, 80)) } : {}),
         ...(Array.isArray(f.skittered) ? { skittered: f.skittered.slice(0, 40).map(x => str(x, 80)) } : {}),
-        ...(f.skitter && typeof f.skitter === 'object' && isSeat(f.skitter.by) ? { skitter: { model: str(f.skitter.model, 80), by: f.skitter.by, dist: int(f.skitter.dist, 1, 6, 1) } } : {}),
+        ...(Array.isArray(f.sentried) ? { sentried: f.sentried.slice(0, 40).map(x => str(x, 80)) } : {}),
+        ...(f.skitter && typeof f.skitter === 'object' && isSeat(f.skitter.by) ? { skitter: { model: str(f.skitter.model, 80), by: f.skitter.by, dist: f.skitter.upTo === true ? num(f.skitter.dist, 0, 12, 1) : int(f.skitter.dist, 1, 6, 1), ...(f.skitter.upTo === true ? { upTo: true } : {}) } } : {}),
         ...(f.mighty && typeof f.mighty === 'object' && f.mighty.base && typeof f.mighty.base === 'object' ? { mighty: { turn: int(f.mighty.turn, 0, 99, 0), base: cleanCounts(f.mighty.base, 9) } } : {}),
         ...(Array.isArray(f.joined) ? { joined: f.joined.slice(0, 20).map(x => str(x, 80)) } : {}),
         ...(f.entering && typeof f.entering === 'object' && isSeat(f.entering.seat) && Array.isArray(f.entering.ids) ? { entering: { seat: f.entering.seat, ids: f.entering.ids.slice(0, 40).map(x => str(x, 80)), from: [num(f.entering.from?.[0], -24, 200, 0), num(f.entering.from?.[1], -24, 200, 0)] as [number, number], turn: int(f.entering.turn, 0, 99, 0), ...(Array.isArray(f.entering.span) ? { span: [num(f.entering.span[0], 0, 200, 0), num(f.entering.span[1], 0, 200, 200)] as [number, number] } : {}), ...(f.entering.charge === true ? { charge: true } : {}), ...(typeof f.entering.on === 'string' && Array.isArray(f.entering.at) ? { on: str(f.entering.on, 80), at: [num(f.entering.at[0], -24, 200, 0), num(f.entering.at[1], -24, 200, 0)] as [number, number] } : {}) } } : {}),

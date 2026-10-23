@@ -110,6 +110,7 @@ const TEST_HELP: Record<CrossTest, string> = {
   Climb: 'a Climb test gets it up',
   'Climb down': 'a Climb test gets it down',
   Leap: 'a Leap test gets it across',
+  Swim: 'a Swim test takes it into the water (on a 1 it sinks)',
 };
 
 /** In the Move phase: the test for terrain the model was stopped at, and crawling or lying down. */

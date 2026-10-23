@@ -34,6 +34,7 @@ import { arrivalAuto, arrivalDue, mayCry, narrativeById, narrativeSetup, radius,
 import { terrorAhead, terrorTest } from './courage.ts';
 import { invisibleTo, ringRequest, seekRequest } from './ring.ts';
 import { skitterRequest } from './unseen.ts';
+import { sentryRequest } from './lake.ts';
 import { isTroll, spareFor } from './mutton.ts';
 import { bag, roast, sneeze, steadyAgainst, trollSacks } from './trolls.ts';
 import { AXE_FREED, axeMastery, axeTest, canHeadbutt, deadeye, goodSort, hasMattock, hasOakenshield, longbeard, loyalTo, mayAxeTest, mayLongbeard, maySwap, mayTend, rerollFor, spentPoints, tend, trumpet, trumpetDue } from './company.ts';
@@ -44,7 +45,7 @@ import { bandName, bandsOf, mayPutDown, procedureOf, rollDue, rollMeans } from '
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
 /** Dice requests a player sends, which only whoever holds the dice (the server, or the browser in practice games) can answer. */
-export const DICE_REQUESTS = new Set<Action['type']>(['setNarrative', 'ring', 'cry', 'aragorn', 'seek', 'skitter', 'roll', 'fight', 'strikes', 'shoot', 'shotOn', 'banner', 'dismount', 'trample', 'cross', 'rollFate', 'rollPriority', 'rollDeploy', 'deployWarband', 'uncover', 'cast', 'resist', 'breach', 'hurl', 'swap', 'reroll', 'tend', 'longbeard', 'trumpet', 'axeTest', 'chronicled', 'detonate', 'rideOut', 'raiseLadder']);
+export const DICE_REQUESTS = new Set<Action['type']>(['setNarrative', 'ring', 'cry', 'aragorn', 'seek', 'skitter', 'sentry', 'roll', 'fight', 'strikes', 'shoot', 'shotOn', 'banner', 'dismount', 'trample', 'cross', 'rollFate', 'rollPriority', 'rollDeploy', 'deployWarband', 'uncover', 'cast', 'resist', 'breach', 'hurl', 'swap', 'reroll', 'tend', 'longbeard', 'trumpet', 'axeTest', 'chronicled', 'detonate', 'rideOut', 'raiseLadder']);
 
 export interface Resolved {
   /** Results everyone applies, in order. */
@@ -239,6 +240,10 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
     }
     case 'skitter': {
       const out = skitterRequest(state, catalog, seat, String(action.id), d6, uid, now);
+      return out && { apply: out };
+    }
+    case 'sentry': {
+      const out = sentryRequest(state, seat, String(action.id), d6, uid, now);
       return out && { apply: out };
     }
     case 'cry': {

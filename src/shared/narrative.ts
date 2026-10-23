@@ -16,6 +16,8 @@ import { unseenWinner } from './unseen.ts';
 import { unseenCast, unseenTerrain } from './unseenMap.ts';
 import { elvesWinner } from './elves.ts';
 import { elvesCast, elvesTerrain } from './elvesMap.ts';
+import { lakeWinner } from './lake.ts';
+import { lakeCast, lakeTerrain } from './lakeMap.ts';
 import { insidePolygon, outline } from './sight.ts';
 import { BALLISTA_BASE, deepingSlots, evilSlots, GATE_ANGLE, HELMS_TEAMS, helmsTerrain, hornburgSlots, inHelmsZone, onArc, OUTER, type HelmsZone } from './helmsMap.ts';
 import type { Action, Base, DiceRoll, GameState, Mat, Model, Seat, Terrain } from './types.ts';
@@ -76,7 +78,9 @@ export type Area =
   /** Wholly on top of one of these pieces (Last March of the Ents: any of the scaffolds). */
   | { on: string[] }
   /** Wholly within any one of these areas. */
-  | { any: Area[] };
+  | { any: Area[] }
+  /** Wholly within every one of these areas (Lake-town Escape: section D, and within 3" of Bard's House). */
+  | { all: Area[] };
 
 /** What an area can be measured from: the scenario's pieces (by id, as on the table) and the cast on the table. */
 export interface AreaFrom {
@@ -98,6 +102,7 @@ export const toPiece = (t: Pick<Terrain, 'x' | 'y' | 'w' | 'h'>, p: Point) => Ma
 /** Whether a model this far across (from its middle) stands wholly within an area. */
 export function whollyInArea(a: Area, p: Point, r: number, from: AreaFrom = {}): boolean {
   if ('any' in a) return a.any.some(x => whollyInArea(x, p, r, from));
+  if ('all' in a) return a.all.every(x => whollyInArea(x, p, r, from));
   if ('on' in a) {
     const all = Object.values(from.terrain ?? {});
     if (!all.length) return true;
@@ -378,6 +383,45 @@ export const NARRATIVES: Narrative[] = [
       },
     ],
     cast: elvesCast(),
+  },
+  {
+    id: 'lake-town-escape',
+    name: 'Lake-town Escape',
+    from: 'The Hobbit: The Desolation of Smaug',
+    saga: 'hobbit',
+    blurb: 'Their raid on Bard’s House has failed to find Thorin, and the Orcs are creeping back through Lake-town to report to their masters. Legolas means to hunt down every one of them before they get away.',
+    board: { w: 48, h: 48, mat: 'water' },
+    terrain: lakeTerrain(),
+    sides: {
+      good: { name: 'Legolas', cast: 'Legolas Greenleaf, Prince of Mirkwood, with Orcrist' },
+      evil: { name: 'Bolg’s Orcs', cast: 'Bolg, Spawn of Azog; Fimbul, Hunter Orc Captain; 24 Hunter Orc Warriors (6 with Orc bows, 6 with two-handed weapons)' },
+    },
+    layout:
+      "A 4' by 4' corner of Lake-town on the Long Lake: wooden walkways winding between houses and towers, with boats tied up and ice floes drifting between. Bard's House stands on the east edge. Everything else is the lake: Deep Water.",
+    setupOrder: ['evil', 'good'],
+    deployment:
+      'The table is split into four sections, A to D from west to east, each 12" wide. The Evil player sets up a group of 6 Hunter Orc Warriors in each section, not within 3" of another section; the group in section D wholly within 3" of Bard\'s House. Bolg sets up with the group in section A, and Fimbul with the group in section C. Then Legolas sets up touching Bard\'s House.',
+    objectives:
+      'The battle goes on until the end of a turn in which a side has done what it came to do. Legolas wins once every Evil model is slain. The Evil side wins if Legolas is slain, or if Bolg leaves by the west edge without being seriously injured. (Once Legolas or the last Orc falls, the game ends there and then.)',
+    rules: [
+      {
+        name: 'Silent Assassins',
+        text: "Only the Orcs in section D start knowing Legolas is there; the rest are Sentries until the alarm is raised in their section. A Sentry can't charge, shoot or leave its own section, and as it activates, before the rest of its side moves, it rolls on the Sentry Chart: on a 1 it searches about and doesn't move; on a 2-3 it hears a noise, and the Good player moves it up to half its Move; on a 4-5 it is suspicious, and the Evil player moves it up to half its Move; on a 6 it moves as normal. The alarm goes up in a section at once when an Orc that knows walks into base contact with one of its Sentries, or in the End phase if Legolas charged or shot at one of its Sentries that turn and it is still alive.",
+      },
+      {
+        name: "Legolas' Fury",
+        text: 'Legolas has 3 Attacks and Fight 7.',
+      },
+      {
+        name: 'The Spawn of Azog',
+        text: "Bolg has 3 Fate points. While he has all his Wounds he can't leave the table, and as he activates he must charge Legolas if he can (unless he is still a Sentry). On his last Wound he is seriously injured: if he leaves by the west edge then, the Evil side can do no better than a draw.",
+      },
+      {
+        name: 'Deep Water',
+        text: "Away from the walkways, houses, boats and floes, the lake is Deep Water. A model going into it, or starting its move in it, takes a Swim test: on a 1 it sinks and is lost; on a 2-5 it swims on with half the Move it has left; on a 6 with all of it. A gap no wider than twice a model's height can be leapt instead. Nobody shoots from the water.",
+      },
+    ],
+    cast: lakeCast(),
   },
   {
     id: 'ambush-at-night',
@@ -954,6 +998,7 @@ export function narrativeWinner(state: GameState): Seat | 'draw' | null {
   if (n.id === 'last-march-of-the-ents') return entsWinner(state);
   if (n.id === 'the-unseen-hero') return unseenWinner(state);
   if (n.id === 'the-elves-of-mirkwood') return elvesWinner(state);
+  if (n.id === 'lake-town-escape') return lakeWinner(state);
   if (n.id === 'weathertop') {
     // The Nazgûl win as soon as Frodo falls; the Hobbits when every one of them is gone.
     if (castModel(state, 'frodo')?.dead) return seatOf(state, 'evil') ?? null;

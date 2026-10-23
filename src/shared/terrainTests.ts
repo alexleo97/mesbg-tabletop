@@ -8,10 +8,10 @@ import { canActivate } from './heroics.ts';
 import { onTable } from './objects.ts';
 import { crowded, engaged, moveLeft, settleMove, testsTerrain } from './movement.ts';
 import { formatNeed, woundNeed } from './rules.ts';
-import { climbedLevel, distanceToTerrain, heightOf, heightOfModel, insidePolygon, isPit, outline, stepsOver, walkway } from './sight.ts';
+import { climbedLevel, distanceToTerrain, heightOf, heightOfModel, inDeepWater, insidePolygon, isDeep, isPit, outline, stepsOver, walkway } from './sight.ts';
 import type { Action, DiceRoll, GameState, Model, Seat, Terrain } from './types.ts';
 
-export type CrossTest = 'Jump' | 'Climb' | 'Climb down' | 'Leap';
+export type CrossTest = 'Jump' | 'Climb' | 'Climb down' | 'Leap' | 'Swim';
 
 export interface Crossing {
   terrain: string;
@@ -67,11 +67,17 @@ export function crossingAhead(state: GameState, m: Model, from: Point, to: Point
   if (!pieces.length) return null;
   // (A rampart's walkway is climbed onto, like a rock, rather than crossed.)
   const walls = pieces.filter(t => t.kind === 'wall' && !walkway(t) && testFor(heightOf(t), tall)).map(t => ({ t, poly: outline(t) }));
-  const water = pieces.filter(t => t.kind === 'water' && !stepsOver(t, tall)).map(t => ({ t, poly: outline(t) }));
+  const water = pieces.filter(t => t.kind === 'water' && !t.deep && !stepsOver(t, tall)).map(t => ({ t, poly: outline(t) }));
+  // Deep water: walkways, boats and floes over it are dry, and the rest is swum (or a narrow gap leapt).
+  const lake = pieces.find(isDeep);
+  const wet = (p: Point) => !!lake && inDeepWater(state, p);
+  // A model starting its move out in it takes a Swim test before it goes anywhere.
+  if (lake && wet(from)) return { terrain: lake.id, test: 'Swim', stop: from, landing: from, drop: 0 };
+  let wasWet = false;
   const climbed = pieces.filter(t => (t.kind === 'rock' || t.kind === 'cliff' || (t.kind === 'building' && !t.floors) || walkway(t)) && heightOf(t) > 0).map(t => ({ t, poly: outline(t), top: heightOf(t) }));
   // Steps or a ladder take a model up onto a piece, or down off it, without a test.
   const free = (piece: Terrain, p: Point) => ladderAt(state, piece.id, p, r) || (walkway(piece) && stairsAt(state, p, r));
-  if (!walls.length && !water.length && !climbed.length) return null;
+  if (!walls.length && !water.length && !climbed.length && !lake) return null;
   const overlaps = (poly: Point[], p: Point) => insidePolygon(poly, p) || edgeDistance(poly, p) < r - 0.01;
   const startOn = new Set(walls.filter(w => overlaps(w.poly, from)).map(w => w.t.id));
   const levelOf = (p: Point) => {
@@ -92,6 +98,18 @@ export function crossingAhead(state: GameState, m: Model, from: Point, to: Point
       let k = t;
       while (k < d + r * 2 + 4 && overlaps(w.poly, along(k))) k += 0.05;
       return { terrain: w.t.id, test: testFor(heightOf(w.t), tall)!, stop: along(Math.max(0, t - 0.06)), landing: along(k + 0.02), drop: 0 };
+    }
+    // Going into deep water: a gap narrow enough to leap (no wider than twice the model's height) is leapt; otherwise
+    // the model stops at the edge to take a Swim test.
+    if (lake) {
+      const now = wet(p);
+      if (now && !wasWet) {
+        let k = t;
+        while (k < d && wet(along(k))) k += 0.05;
+        if (k < d && k - t <= tall * 2) return { terrain: lake.id, test: 'Leap', stop: along(Math.max(0, t - r - 0.02)), landing: along(k + r + 0.02), drop: 0 };
+        return { terrain: lake.id, test: 'Swim', stop: along(Math.max(0, t - 0.06)), landing: along(t + 0.02), drop: 0 };
+      }
+      wasWet = now;
     }
     // A stream narrow enough to leap (no wider than twice the model's height), when the move goes right across it.
     for (const w of water) {
@@ -134,7 +152,7 @@ export function dropTarget(state: GameState, m: Model, at: Point, aim: Point): P
 export function crossBlocked(state: GameState, m: Model, c: Crossing): string | undefined {
   // Cavalry can't climb, though it can ride down a drop (its mount taking the knocks).
   if (c.test === 'Climb' && isCavalryBase(m)) return 'Cavalry can’t climb';
-  if (m.prone) return 'A Prone model can’t jump, leap or climb';
+  if (m.prone && c.test !== 'Swim') return 'A Prone model can’t jump, leap or climb';
   if (engaged(state, m)) return 'It is in a fight';
   // A purpose-built wall too tall to jump is too sheer to climb without a ladder, unless the model has Swift Movement.
   const t = state.terrain[c.terrain];
@@ -145,7 +163,7 @@ export function crossBlocked(state: GameState, m: Model, c: Crossing): string | 
     if (guard) return `${guard.name} is defending the wall here: charge it instead`;
   }
   // Nor can it land on top of another model.
-  if (crowded(state, m, c.landing)) return c.test === 'Climb' ? 'No room at the top' : c.test === 'Climb down' ? 'No room at the bottom' : 'No room on the far side';
+  if (c.test !== 'Swim' && crowded(state, m, c.landing)) return c.test === 'Climb' ? 'No room at the top' : c.test === 'Climb down' ? 'No room at the bottom' : 'No room on the far side';
   const left = moveLeft(state, m) ?? Infinity;
   if (c.test === 'Jump' || c.test === 'Leap') {
     if (Math.hypot(c.landing.x - c.stop.x, c.landing.y - c.stop.y) > left + 1e-6) return c.test === 'Leap' ? 'Not enough Move left to reach the far side' : 'Not enough Move left to get over';
@@ -154,7 +172,7 @@ export function crossBlocked(state: GameState, m: Model, c: Crossing): string | 
 }
 
 const NAMES: Record<string, string> = { wall: 'wall', rock: 'rocks', cliff: 'cliff', building: 'building', water: 'stream' };
-export const terrainName = (t: Terrain | undefined) => (t ? (isPit(t) ? 'pit' : t.look === 'scaffold' ? 'scaffold' : t.look === 'orthanc' ? 'tower' : t.look === 'roots' ? 'roots' : t.look === 'trunk' ? 'tree' : (NAMES[t.kind] ?? t.kind)) : 'obstacle');
+export const terrainName = (t: Terrain | undefined) => (t ? (isPit(t) ? 'pit' : isDeep(t) ? 'deep water' : t.look === 'floe' ? 'ice floe' : t.look === 'boat' ? 'boat' : t.look === 'planks' ? 'walkway' : t.look === 'scaffold' ? 'scaffold' : t.look === 'orthanc' ? 'tower' : t.look === 'roots' ? 'roots' : t.look === 'trunk' ? 'tree' : (NAMES[t.kind] ?? t.kind)) : 'obstacle');
 
 /** S3 hits for a fall further than the model's own height: one, and another for each full inch beyond it. */
 export const fallingHits = (m: Model, drop: number) => (drop > heightOfModel(m) + 1e-6 ? 1 + Math.floor(drop - heightOfModel(m) + 1e-6) : 0);
@@ -247,6 +265,19 @@ function crossOne(state: GameState, seat: Seat, id: string, d6: () => number, ui
     if (ground.includes('cave') && roll < 6) roll++;
   }
   const out: Action[] = [];
+  // Swimming: 1 sinks, and the model is lost; 2-5 swims on with half the Move it has left; 6 swims on with all of it.
+  if (c.test === 'Swim') {
+    const last = rolls[rolls.length - 1];
+    if (roll === 1) {
+      last.note = `${m.name} sinks and is lost`;
+      out.push({ type: 'crossed', id: m.id, stop: true }, { type: 'affect', id: m.id, patch: { dead: true, wounds: 0 } });
+      return { actions: [...rolls.map((r): Action => ({ type: 'rolled', roll: r })), ...out], roll };
+    }
+    const left = Math.max(0, (moveLeft(state, m) ?? 0) - Math.hypot(c.landing.x - c.stop.x, c.landing.y - c.stop.y));
+    last.note = roll === 6 ? `${m.name} swims on` : `${m.name} swims on, with half the Move it has left`;
+    out.push({ type: 'crossed', id: m.id, terrain: c.terrain, ...(roll < 6 ? { slowed: +(left / 2).toFixed(2) } : {}) }, { type: 'affect', id: m.id, patch: { x: c.landing.x, y: c.landing.y } });
+    return { actions: [...rolls.map((r): Action => ({ type: 'rolled', roll: r })), ...out], roll };
+  }
   // Jumping a Spiked Barricade without a clean 6 snags the model on the stakes: a Strength 3 hit.
   if (c.test === 'Jump' && t?.barricade === 'spiked' && roll < 6) out.push(...hitModel(m, modelStats(catalog, m)?.D ?? 4, 3, 'Spiked barricade', d6, seat, `${group}-sp`, now, group).actions);
   // The model is put where the test takes it (the Move it costs is counted from where it began the phase).
@@ -274,7 +305,8 @@ function crossOne(state: GameState, seat: Seat, id: string, d6: () => number, ui
   }
   const way = c.test === 'Leap' ? 'across' : c.test === 'Climb' ? 'up' : c.test === 'Climb down' ? 'down' : 'over';
   rolls[rolls.length - 1].note = `${roll === 6 ? `${m.name} gets ${way} and may carry on` : `${m.name} gets ${way}; its move ends`}${ground.includes('cave') && !sure && !shared ? ' (Cave Dweller +1)' : ''}`;
-  out.push({ type: 'crossed', id: m.id, terrain: c.terrain }, place(c.landing));
+  // (A gap in deep water leapt is no leave to swim: the next one is leapt, or swum, again.)
+  out.push({ type: 'crossed', id: m.id, ...(t?.deep ? {} : { terrain: c.terrain }) }, place(c.landing));
   // Landing within 1" of an enemy it can reach, it goes on to charge the nearest; otherwise a 2-5 ends its move.
   const after: GameState = { ...state, models: { ...state.models, [m.id]: { ...m, ...c.landing } }, flow: { ...state.flow, crossed: { ...state.flow.crossed, [m.id]: [...(state.flow.crossed?.[m.id] ?? []), c.terrain] } } };
   const settled = settleMove(after, after.models[m.id], c.landing);

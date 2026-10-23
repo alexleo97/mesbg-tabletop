@@ -23,7 +23,7 @@ import { chance, fightOdds, woundChance, type Side } from './odds.ts';
 import { PICKS, pickOptions } from './picks.ts';
 import { scoreLines } from './scoring.ts';
 import { seekTargets } from './ring.ts';
-import { climbedLevel, flooredAt, floorHeight, heightOf, insidePolygon, outline } from './sight.ts';
+import { climbedLevel, flooredAt, floorHeight, heightOf, inDeepWater, insidePolygon, outline } from './sight.ts';
 import { planShot, weaponFor } from './shooting.ts';
 import { atCrossing, crossBlocked, crossingAhead, fallingHits } from './terrainTests.ts';
 import { armyStatus } from './status.ts';
@@ -36,6 +36,8 @@ import { atBoats, boats, carriesHobbit, isAmon, isHalfling } from './amon.ts';
 import { bringDownTarget, dam, isEnt, isEnts } from './ents.ts';
 import { bundles as webBundles, isUnseen, keepOnTable, skitterDone, skitterLeft, spidersDue } from './unseen.ts';
 import { courageOf, willOfEvil } from './courage.ts';
+import { bolgChargeAt, isLake, isSentry, legolasOf, sentriesDue } from './lake.ts';
+import { walkDistance, waypoint } from './lakeNav.ts';
 import { hasMorgulBlade } from './morgul.ts';
 import { AXE_FREED, canHeadbutt, hasMattock, longbeardFor, mayAxeTest, mayTend, rerollFor, spentPoints, swapPair, trumpetDue } from './company.ts';
 import { fitsSack, keepsForLater, lingeringCold } from './trolls.ts';
@@ -483,6 +485,18 @@ function moveStep(ctx: Ctx): BotStep {
   if (state.flow.skitter) return { delay: WAIT_PAUSE };
   const spider = spidersDue(state, seat)[0];
   if (spider) return { action: { type: 'skitter', id: spider.id }, delay: DICE_PAUSE };
+  // Lake-town Escape: each Sentry rolls on the Sentry Chart as it activates, before the rest of its side moves; then
+  // Bolg charges Legolas, if he must.
+  const sentry = isLake(state) ? sentriesDue(state, seat)[0] : undefined;
+  if (sentry) return { action: { type: 'sentry', id: sentry.id }, delay: DICE_PAUSE };
+  const bolg = isLake(state) ? bolgChargeAt(state) : null;
+  const bolgM = bolg ? Object.values(state.models).find(m => m.cast === 'bolg') : undefined;
+  const legolas = legolasOf(state);
+  if (bolg && bolgM?.owner === seat && legolas && distanceBetween(bolgM, legolas) > 0.05 && !(memo.tested ??= []).includes(`b:${state.turn}`)) {
+    memo.tested.push(`b:${state.turn}`);
+    memo.acted.push(bolgM.id);
+    return { action: { type: 'moveModels', moves: [{ id: bolgM.id, x: bolg.x, y: bolg.y, rot: facing(bolg, legolas) }] }, delay: MOVE_PAUSE };
+  }
 
   const cast = castStep(ctx);
   if (cast) return cast;
@@ -602,7 +616,7 @@ function markerStep(ctx: Ctx, m: Model): BotStep | null {
     if (a.kind === 'pickUp' && (object?.object === 'rocks' || object?.object === 'oil')) continue;
     if (a.kind === 'escape') {
       // Leave the table with something worth carrying off, or in a scenario that scores getting models away.
-      if (carriedBy(state, m).length || state.scenario === 'reconnoitre' || (isAmbush(state) && isHobbit(m)) || atBoats(state, m)) return { action: { type: 'escape', model: m.id }, delay: MOVE_PAUSE };
+      if (carriedBy(state, m).length || state.scenario === 'reconnoitre' || (isAmbush(state) && isHobbit(m)) || atBoats(state, m) || (isLake(state) && m.cast === 'bolg')) return { action: { type: 'escape', model: m.id }, delay: MOVE_PAUSE };
       continue;
     }
     if (a.kind === 'uncover') return { action: { type: 'uncover', model: m.id, marker: a.marker!, intelligence: profile(ctx, m).i }, delay: DICE_PAUSE };
@@ -635,6 +649,8 @@ interface Goal {
   ride?: boolean;
   /** Keeps this far back from the foot of these walls (where the ladders and charges need room to get in). */
   holdOff?: { from: Terrain[]; by: number; lanes: [Point, Point][] };
+  /** Lake-town Escape: there's no dry way there, so it swims for it. */
+  swim?: boolean;
 }
 
 /**
@@ -973,6 +989,26 @@ function assignGoals(ctx: Ctx): Map<string, Goal> {
     if (charge) out.set(m.id, { at: { x: charge.x, y: charge.y }, pull: 1.1, near: 0.6 });
   }
 
+  // Lake-town Escape: the Orcs that know Legolas is about hunt him along the walkways, and Bolg, once hurt, makes for the
+  // west edge to get away; Legolas hunts the nearest Orc, a Sentry before the rest. (The Sentries go where the Sentry
+  // Chart lets them: see sentryStep.)
+  if (isLake(state)) {
+    const legolas = legolasOf(state);
+    const good = seat === state.narrative?.good;
+    const foes = side(state, other(seat));
+    for (const m of ours) {
+      if (out.has(m.id) || isSentry(state, m)) continue;
+      const walk = (p: Point) => walkDistance(state, m, p);
+      let to: Point | undefined;
+      if (good) to = [...foes].sort((a, b) => walk(a) - (isSentry(state, a) ? 4 : 0) - (walk(b) - (isSentry(state, b) ? 4 : 0)))[0];
+      else if (m.cast === 'bolg' && m.wounds < m.maxWounds) to = [{ x: radius(m), y: 16 }, { x: radius(m), y: 28.2 }].sort((a, b) => walk(a) - walk(b))[0];
+      else to = legolas;
+      if (!to) continue;
+      const wp = waypoint(state, m, to, (moveAllowance(state, m) ?? m.move) + 2);
+      out.set(m.id, wp ? { at: wp, pull: 1, bold: true } : { at: { x: to.x, y: to.y }, pull: 1, bold: true, swim: true });
+    }
+  }
+
   // Reconnoitre scores getting models off the far edge, so everyone else heads that way.
   if (state.scenario === 'reconnoitre') {
     for (const m of ours) if (!out.has(m.id)) out.set(m.id, { at: { x: m.x, y: seat === 'p1' ? 0 : h }, pull: 0.35 });
@@ -1048,7 +1084,9 @@ function planMove(ctx: Ctx, m: Model, goal: Goal | undefined): Plan | null {
     const c = aim && state.flow.started && testsTerrain(state, m) && !atCrossing(state, m) ? crossingAhead(state, m, from, aim) : null;
     // (Once a phase each, in case the table won't have it.)
     const tried = (ctx.memo.tested ??= []);
-    if (c && centre(c.stop, from) < 0.05 && !crossBlocked(state, m, c) && c.test !== 'Climb down' && !engagedWith(state, m).length && !tried.includes(`n:${m.id}`)) {
+    // (Lake-town's Deep Water only when there's no dry way, or it's already in it.)
+    const swim = !c || c.test !== 'Swim' || goal?.swim || inDeepWater(state, from);
+    if (c && swim && centre(c.stop, from) < 0.05 && !crossBlocked(state, m, c) && c.test !== 'Climb down' && !engagedWith(state, m).length && !tried.includes(`n:${m.id}`)) {
       tried.push(`n:${m.id}`);
       return { at: aim!, rot: m.rot };
     }
@@ -1415,6 +1453,7 @@ function skitterStep(ctx: Ctx): BotStep | null {
   const { state, seat, memo } = ctx;
   const sk = state.flow.skitter;
   if (!sk || sk.by !== seat) return null;
+  if (sk.upTo) return sentryStep(ctx, sk.model, sk.dist);
   if (skitterDone(state)) return { action: { type: 'skitterDone', seat }, delay: THINK_PAUSE };
   const m = state.models[sk.model];
   const bilbo = castModel(state, 'bilbo');
@@ -1442,6 +1481,24 @@ function skitterStep(ctx: Ctx): BotStep | null {
     .sort((a, b) => score(b) - score(a))[0];
   if (!best) return null;
   return { action: { type: 'moveModels', moves: [{ id: m.id, x: best.x, y: best.y, rot: facing(m, best) }] }, delay: MOVE_PAUSE };
+}
+
+/**
+ * Lake-town Escape: a Sentry moved up to half its Move by the Sentry Chart. Its own side walks it towards the nearest
+ * Orc that knows Legolas is about, to raise the alarm by walking up to it; the Good side leaves it where it is.
+ */
+function sentryStep(ctx: Ctx, id: string, dist: number): BotStep {
+  const { state, seat, memo } = ctx;
+  const done: BotStep = { action: { type: 'skitterDone', seat }, delay: THINK_PAUSE };
+  const m = state.models[id];
+  if (memo.skitters?.model !== id) memo.skitters = { model: id, n: 0 };
+  if (!m || seat !== m.owner || memo.skitters.n++ > 0) return done;
+  const woken = side(state, seat).filter(o => o.id !== m.id && !isSentry(state, o));
+  const to = woken.sort((a, b) => walkDistance(state, m, a) - walkDistance(state, m, b))[0];
+  const way = to && Number.isFinite(walkDistance(state, m, to)) ? waypoint(state, m, to, dist) : null;
+  const at = way && limitMove(state, m, way, skitterLeft(state), seat, m);
+  if (!at || centre(m, at) < 0.05) return done;
+  return { action: { type: 'moveModels', moves: [{ id: m.id, x: at.x, y: at.y, rot: facing(m, at) }] }, delay: MOVE_PAUSE };
 }
 
 /** The Unseen Hero: the webbed bundle Bilbo is making for, the nearest he hasn't cut open. */

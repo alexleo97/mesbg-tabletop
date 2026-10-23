@@ -1,6 +1,7 @@
 import { mounted } from './cavalry.ts';
 import { isAmbush, isHobbit } from './ambush.ts';
 import { atBoats, carriesHobbit, isAmon, mayCarryHobbit } from './amon.ts';
+import { isLake } from './lake.ts';
 import { distanceToBase, halfExtents, inBaseContact, type Point } from './geometry.ts';
 import { fortressNotes, helpers, HEAVY } from './fortress.ts';
 import { scenarioById, type Zone } from './scenarios.ts';
@@ -109,6 +110,8 @@ export function exitEdges(state: GameState, m: Model): ('top' | 'bottom' | 'left
   if (isAmbush(state) && isHobbit(m)) return ['top', 'bottom', 'left', 'right'];
   // Amon Hen: an Uruk-hai carrying off a Hobbit goes by any edge but the river's.
   if (isAmon(state)) return carriesHobbit(state, m) ? ['top', 'bottom', 'right'] : [];
+  // Lake-town Escape: Bolg may leave by the west edge, once he has lost a Wound.
+  if (isLake(state)) return m.cast === 'bolg' && m.wounds < m.maxWounds ? ['left'] : [];
   switch (state.scenario) {
     case 'reconnoitre':
       return [enemyEdge];

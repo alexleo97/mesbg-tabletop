@@ -239,6 +239,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
     case 'rock':
     case 'cliff':
       if (t.look === 'roots') return <MirkwoodPiece t={t} />;
+      if (t.look === 'floe') return <LakePiece t={t} />;
       return (
         <>
           <path className={`ground ${t.kind}-face`} d={d} fill={tex} filter="url(#hard-shadow)" />
@@ -250,6 +251,8 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
       );
     case 'water':
       if (t.look === 'pit') return <IsengardPiece t={t} />;
+      // Deep water under a whole table is the mat itself (Lake-town's Long Lake): only a darker sheen.
+      if (t.deep) return <rect className="lake-depth" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} pointerEvents="none" />;
       if (t.path && t.path.length > 1) {
         const hw = t.path.reduce((a, p) => a + p[2], 0) / t.path.length;
         return (
@@ -275,6 +278,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
       if (t.look === 'trunk') return <MirkwoodPiece t={t} />;
       if (t.look === 'stone') return <StoneTower t={t} tex={tex} />;
       if (t.look === 'pillar' || t.look === 'tomb' || t.look === 'well') return <MoriaPiece t={t} />;
+      if (t.look === 'lakehouse') return <LakePiece t={t} />;
       if (t.shape === 'circle')
         return (
           <>
@@ -433,6 +437,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
         );
       if (t.look === 'trapdoor' || t.look === 'doorway') return <MoriaPiece t={t} />;
       if (t.look === 'ladder') return <IsengardPiece t={t} />;
+      if (t.look === 'planks' || t.look === 'boat') return <LakePiece t={t} />;
       if (t.stairs) {
         // A flight of steps up to a wall's walkway: treads running along the wall, rising towards it (local -y).
         const n = Math.max(4, Math.round(t.h / 0.3));
@@ -692,6 +697,103 @@ function MirkwoodPiece({ t }: { t: Terrain }) {
         <ellipse key={i} className="tint roots-stone" cx={p.x} cy={p.y} rx={p.r} ry={p.r * 0.8} />
       ))}
       <Limbs limbs={limbs} />
+    </>
+  );
+}
+
+/**
+ * Lake-town (Lake-town Escape): plank walkways on posts over the lake, rowing boats tied up, ice floes, and timber
+ * houses with shingled roofs: a ridge along a long house, four slopes meeting at a point on a square one.
+ */
+function LakePiece({ t }: { t: Terrain }) {
+  const { w, h } = t;
+  if (t.look === 'planks') {
+    // Boards laid across the walkway, a post at each end and every 2" along, both sides.
+    const boards = Math.max(2, Math.round(w / 0.42));
+    const posts = Math.max(1, Math.round(w / 2));
+    return (
+      <>
+        <rect className="ground walk-deck" x={-w / 2} y={-h / 2} width={w} height={h} filter="url(#hard-shadow)" />
+        {Array.from({ length: boards - 1 }, (_, i) => {
+          const x = -w / 2 + ((i + 1) * w) / boards;
+          return <line key={i} className="walk-seam" x1={x} x2={x + (seeded(t.id, i) - 0.5) * 0.05} y1={-h / 2} y2={h / 2} />;
+        })}
+        <rect className="walk-rail" x={-w / 2} y={-h / 2} width={w} height={0.14} />
+        <rect className="walk-rail" x={-w / 2} y={h / 2 - 0.14} width={w} height={0.14} />
+        {Array.from({ length: posts + 1 }, (_, i) =>
+          [-1, 1].map(k => <circle key={`${i}${k}`} className="walk-post" cx={-w / 2 + 0.15 + (i * (w - 0.3)) / posts} cy={k * (h / 2 - 0.07)} r={0.16} />),
+        )}
+      </>
+    );
+  }
+  if (t.look === 'boat') {
+    // A rowing boat seen from above: pointed at the bow, square at the stern, two thwarts across.
+    const hull = `M ${-w / 2} ${-h / 2} L ${w * 0.18} ${-h / 2} Q ${w / 2} ${-h * 0.3} ${w / 2} 0 Q ${w / 2} ${h * 0.3} ${w * 0.18} ${h / 2} L ${-w / 2} ${h / 2} Z`;
+    return (
+      <>
+        <path className="ground boat-hull" d={hull} filter="url(#hard-shadow)" />
+        <path className="tint boat-inside" d={hull} transform="scale(0.78 0.6)" />
+        {[-0.22, 0.12].map(k => (
+          <line key={k} className="boat-thwart" x1={w * k} x2={w * k} y1={-h * 0.3} y2={h * 0.3} />
+        ))}
+      </>
+    );
+  }
+  if (t.look === 'floe') {
+    // A slab of ice: a pale, angular outline with a few cracks.
+    const pts = Array.from({ length: 7 }, (_, i) => {
+      const a = (i / 7) * Math.PI * 2 + seeded(t.id, i) * 0.5;
+      const k = 0.78 + seeded(t.id, i + 10) * 0.22;
+      return `${((Math.cos(a) * w) / 2) * k},${((Math.sin(a) * h) / 2) * k}`;
+    });
+    return (
+      <>
+        <polygon className="ground ice-floe" points={pts.join(' ')} filter="url(#soft-shadow)" />
+        <path className="ice-crack" d={`M ${-w * 0.25} ${-h * 0.1} l ${w * 0.2} ${h * 0.15} l ${w * 0.18} ${-h * 0.2}`} />
+      </>
+    );
+  }
+  // A house: square ones have four roof slopes meeting at a point, long ones two meeting at a ridge.
+  const square = Math.min(w, h) / Math.max(w, h) > 0.8;
+  const [hw, hh] = [w / 2, h / 2];
+  const along = w >= h;
+  const ridge = along ? Math.max(0, hw - hh) : Math.max(0, hh - hw);
+  const faces = square
+    ? [`M ${-hw} ${-hh} L ${hw} ${-hh} L 0 0 Z`, `M ${hw} ${-hh} L ${hw} ${hh} L 0 0 Z`, `M ${hw} ${hh} L ${-hw} ${hh} L 0 0 Z`, `M ${-hw} ${hh} L ${-hw} ${-hh} L 0 0 Z`]
+    : along
+      ? [`M ${-hw} ${-hh} L ${hw} ${-hh} L ${hw} 0 L ${-hw} 0 Z`, `M ${-hw} ${hh} L ${hw} ${hh} L ${hw} 0 L ${-hw} 0 Z`]
+      : [`M ${-hw} ${-hh} L 0 ${-hh} L 0 ${hh} L ${-hw} ${hh} Z`, `M ${hw} ${-hh} L 0 ${-hh} L 0 ${hh} L ${hw} ${hh} Z`];
+  const shade = square ? ['#ffffff1f', '#00000024', '#0000004a', '#00000010'] : ['#ffffff1c', '#00000045'];
+  const rows = Math.max(3, Math.round(Math.max(w, h) / 0.45));
+  return (
+    <>
+      <rect className="ground house-eaves" x={-hw - 0.12} y={-hh - 0.12} width={w + 0.24} height={h + 0.24} filter="url(#hard-shadow)" />
+      {faces.map((f, i) => (
+        <g key={i}>
+          <path className="house-roof" d={f} />
+          <path className="tint" d={f} fill={shade[i]} />
+        </g>
+      ))}
+      {/* Rows of shingles running along the eaves. */}
+      {Array.from({ length: rows - 1 }, (_, i) => {
+        const k = (i + 1) / rows;
+        return along || square ? (
+          <line key={i} className="house-shingle" x1={-hw} x2={hw} y1={-hh + k * h} y2={-hh + k * h} />
+        ) : (
+          <line key={i} className="house-shingle" x1={-hw + k * w} x2={-hw + k * w} y1={-hh} y2={hh} />
+        );
+      })}
+      {square ? (
+        <>
+          <line className="house-ridge" x1={-hw} y1={-hh} x2={hw} y2={hh} />
+          <line className="house-ridge" x1={hw} y1={-hh} x2={-hw} y2={hh} />
+          <rect className="house-chimney" x={-0.3} y={-0.3} width={0.6} height={0.6} />
+        </>
+      ) : along ? (
+        <line className="house-ridge" x1={-hw + (ridge ? 0 : 0)} x2={hw} y1={0} y2={0} />
+      ) : (
+        <line className="house-ridge" x1={0} x2={0} y1={-hh} y2={hh} />
+      )}
     </>
   );
 }
