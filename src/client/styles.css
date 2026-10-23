@@ -818,6 +818,13 @@ details.finish summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
 .nav-discord { gap: 6px; background: transparent; color: #c9cdfb; }
 .nav-discord:hover { background: #5865f22e; color: #fff; }
 .nav-discord svg { flex: 0 0 auto; }
+/* Signed in: a round picture the height of the Discord button, with the name beside it on wide screens. */
+.site-nav .account-me {
+  box-sizing: border-box; height: 36px; min-height: 0; padding: 0 12px 0 3px; gap: 8px; border-radius: 18px;
+  font-weight: 600; white-space: nowrap; max-width: 220px;
+}
+.site-nav .account-me > span:not(.avatar) { overflow: hidden; text-overflow: ellipsis; }
+.site-nav .account-me .avatar { width: 28px; height: 28px; }
 .nav-settings { position: relative; }
 .nav-settings .icon-btn { width: 38px; min-height: 38px; padding: 0; font-size: 1.1rem; }
 .nav-settings-panel { position: absolute; right: 0; top: calc(100% + 8px); z-index: 30; width: min(380px, calc(100vw - 32px)); max-height: 75vh; overflow-y: auto; text-align: left; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 30px #000a; }
@@ -977,7 +984,8 @@ details.finish summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
   .site-nav nav a { flex: 1; flex-direction: column; gap: 2px; padding: 6px 2px; font-size: 0.72rem; }
   .site-nav nav a span { font-size: 1.25rem; }
   .site-nav .brand { flex: 1; }
-  .site-nav .account-me span:not(.avatar) { display: none; }
+  .site-nav .account-me > span:not(.avatar) { display: none; }
+  .site-nav .account-me { width: 34px; height: 34px; padding: 0; justify-content: center; border-radius: 50%; }
   .site-nav .nav-long { display: none; }
   .nav-discord, .site-nav .discord-signin { height: 34px; padding: 0 10px; font-size: 0.85rem; }
   .site-main { padding-top: 20px; }
