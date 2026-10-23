@@ -566,45 +566,84 @@ function seeded(id: string, k: number) {
   return ((h >>> 0) % 1000) / 1000;
 }
 
-/** Mirkwood (The Unseen Hero): a mound of roots and stones under a great tree, and the great trunk itself. */
+/**
+ * Mirkwood (The Unseen Hero): a great tree seen from above. Its mound of roots and stones carries the spreading crown
+ * of the tree, with the roots showing past its edge; the trunk rises through the middle of it.
+ */
 function MirkwoodPiece({ t }: { t: Terrain }) {
   const rx = t.w / 2;
   const ry = t.h / 2;
   if (t.look === 'trunk') {
-    // Gnarled bark seen from above, the rings of the old wood showing where it has split.
+    // Gnarled bark: the trunk flares into the roots it stands on, its bark running up it in ridges.
+    // (A smooth, uneven outline: bulging where a great root leaves it.)
+    const n = 11;
+    const pt = (i: number) => {
+      const a = (i / n) * Math.PI * 2;
+      const k = 0.9 + seeded(t.id, i % n) * 0.18;
+      return [Math.cos(a) * rx * k, Math.sin(a) * ry * k];
+    };
+    const mid = (i: number) => [(pt(i)[0] + pt(i + 1)[0]) / 2, (pt(i)[1] + pt(i + 1)[1]) / 2];
+    const f = (p: number[]) => `${p[0].toFixed(2)} ${p[1].toFixed(2)}`;
+    const outlineD = `M ${f(mid(0))} ` + Array.from({ length: n }, (_, i) => `Q ${f(pt(i + 1))} ${f(mid(i + 1))}`).join(' ') + ' Z';
+    const ridges = Array.from({ length: 10 }, (_, i) => {
+      const a = ((i + seeded(t.id, i + 30) * 0.5) / 10) * Math.PI * 2;
+      const twist = (seeded(t.id, i + 50) - 0.5) * 0.8;
+      return `M ${(Math.cos(a) * rx * 0.15).toFixed(2)} ${(Math.sin(a) * ry * 0.15).toFixed(2)} Q ${(Math.cos(a + twist) * rx * 0.55).toFixed(2)} ${(Math.sin(a + twist) * ry * 0.55).toFixed(2)} ${(Math.cos(a) * rx * 0.95).toFixed(2)} ${(Math.sin(a) * ry * 0.95).toFixed(2)}`;
+    });
     return (
       <>
-        <ellipse className="ground trunk-bark" rx={rx} ry={ry} filter="url(#hard-shadow)" />
-        {[0.72, 0.48, 0.24].map(k => (
-          <ellipse key={k} className="tint trunk-ring" rx={rx * k} ry={ry * k} />
+        <path className="ground trunk-bark" d={outlineD} filter="url(#hard-shadow)" />
+        {ridges.map((d, i) => (
+          <path key={i} className="tint trunk-ridge" d={d} />
         ))}
+        <ellipse className="tint trunk-knot" rx={rx * 0.22} ry={ry * 0.18} />
         <ellipse className="tint" rx={rx} ry={ry} fill="url(#g-dome)" />
       </>
     );
   }
-  // Roots snaking out from the middle to the edge of the mound, and stones lying among them.
+  // Thick roots snaking out from the trunk to the edge of the mound, tapering as they go, and stones among them.
   const roots = Array.from({ length: 9 }, (_, i) => {
     const a = ((i + seeded(t.id, i) * 0.6) / 9) * Math.PI * 2;
     const bend = (seeded(t.id, i + 20) - 0.5) * 0.9;
-    const [ex, ey] = [Math.cos(a) * rx * 0.92, Math.sin(a) * ry * 0.92];
-    const [mx, my] = [Math.cos(a + bend) * rx * 0.5, Math.sin(a + bend) * ry * 0.5];
-    return `M 0 0 Q ${mx.toFixed(2)} ${my.toFixed(2)} ${ex.toFixed(2)} ${ey.toFixed(2)}`;
+    const at = (k: number, b: number) => `${(Math.cos(a + b) * rx * k).toFixed(2)} ${(Math.sin(a + b) * ry * k).toFixed(2)}`;
+    return [`M 0 0 Q ${at(0.3, bend * 0.5)} ${at(0.55, bend)}`, `M ${at(0.55, bend)} Q ${at(0.75, bend * 0.4)} ${at(0.95, 0)}`];
   });
   const stones = Array.from({ length: 6 }, (_, i) => {
     const a = seeded(t.id, i + 40) * Math.PI * 2;
-    const d = 0.55 + seeded(t.id, i + 60) * 0.35;
+    const d = 0.7 + seeded(t.id, i + 60) * 0.22;
     return { x: Math.cos(a) * rx * d, y: Math.sin(a) * ry * d, r: 0.25 + seeded(t.id, i + 80) * 0.35 };
   });
+  // The crown: a great spread of boughs over the mound, thickest in the middle, the roots showing past its edge.
+  const leaf = Math.min(rx, ry);
+  const ring = Math.max(5, Math.round((Math.PI * (rx + ry) * 0.45) / 1.6));
+  const boughs = [
+    ...Array.from({ length: ring }, (_, i) => {
+      const a = ((i + seeded(t.id, i + 100) * 0.5) / ring) * Math.PI * 2;
+      return { x: Math.cos(a) * rx * 0.5, y: Math.sin(a) * ry * 0.5, r: leaf * (0.3 + seeded(t.id, i + 120) * 0.08) };
+    }),
+    { x: 0, y: 0, r: leaf * 0.45 },
+  ];
   return (
     <>
       <ellipse className="ground roots-mound" rx={rx} ry={ry} filter="url(#soft-shadow)" />
-      {roots.map((d, i) => (
-        <path key={i} className="tint root" d={d} strokeWidth={0.55 - (i % 3) * 0.12} />
+      {roots.map(([inner, outer], i) => (
+        <g key={i}>
+          <path className="tint root" d={inner} strokeWidth={0.8 - (i % 3) * 0.15} />
+          <path className="tint root" d={outer} strokeWidth={0.4 - (i % 3) * 0.08} />
+        </g>
       ))}
       {stones.map((p, i) => (
         <ellipse key={i} className="tint roots-stone" cx={p.x} cy={p.y} rx={p.r} ry={p.r * 0.8} />
       ))}
-      <ellipse className="tint" rx={rx} ry={ry} fill="url(#g-dome)" />
+      <g className="tint great-crown" pointerEvents="none">
+        {boughs.map((b, i) => (
+          <g key={i} transform={`translate(${b.x.toFixed(2)} ${b.y.toFixed(2)})`}>
+            <circle className="tree-shadow" cx={0.25} cy={0.35} r={b.r * 0.95} />
+            <circle className="tree-base" r={b.r * 0.8} />
+            <image href={TREES.oak} x={-b.r * 1.55} y={-b.r * 1.55} width={b.r * 3.1} height={b.r * 3.1} transform={`rotate(${(seeded(t.id, i + 140) * 360).toFixed(1)})`} />
+          </g>
+        ))}
+      </g>
     </>
   );
 }
@@ -836,11 +875,9 @@ function hull(pts: Point[]): Point[] {
 }
 
 /** Whether a piece is part of a fortress that stands tall (its walls, gates, keep, towers and the rock under them), or a stone piece of Balin's Tomb. */
-const tall = (t: Terrain) => !t.gone && (t.sheer || t.kind === 'gate' || (t.look === 'stone' && t.kind !== 'road') || t.look === 'pillar' || t.look === 'tomb' || t.look === 'well' || t.look === 'scaffold');
+const tall = (t: Terrain) => !t.gone && ((t.sheer && t.look !== 'trunk') || t.kind === 'gate' || (t.look === 'stone' && t.kind !== 'road') || t.look === 'pillar' || t.look === 'tomb' || t.look === 'well' || t.look === 'scaffold');
 /** Orthanc's faces are cut short, so the tower doesn't hide the table round it (its height is written on top). */
 const FACE_CAP = 5.5;
-/** So are the great trunks of Mirkwood, which would otherwise lie across half the table. */
-const TRUNK_CAP = 2.5;
 
 /** The ground a piece's faces cover, from its top down to its foot; a causeway slopes from the gate to the ground. */
 function face(t: Terrain, lean: Point): Point[] {
@@ -851,7 +888,7 @@ function face(t: Terrain, lean: Point): Point[] {
     const along = (p: Point) => ((p.x - t.x) * Math.cos(a) + (p.y - t.y) * Math.sin(a)) / t.w + 0.5;
     return hull([...top, ...top.map(p => ({ x: p.x + lean.x * 2.2 * (1 - along(p)), y: p.y + lean.y * 2.2 * (1 - along(p)) }))]);
   }
-  const h = t.look === 'orthanc' ? Math.min(heightOf(t), FACE_CAP) : t.look === 'trunk' ? Math.min(heightOf(t), TRUNK_CAP) : heightOf(t);
+  const h = t.look === 'orthanc' ? Math.min(heightOf(t), FACE_CAP) : heightOf(t);
   return hull([...top, ...top.map(p => ({ x: p.x + lean.x * h, y: p.y + lean.y * h }))]);
 }
 
@@ -866,7 +903,7 @@ export function TerrainFaces({ terrain, turn = 0 }: { terrain: Terrain[]; /** Ho
         return (
           <g key={t.id}>
             <polygon className="face-shadow" points={pts} transform="translate(0.35 0.45)" filter="url(#bank-blur)" />
-            <polygon className="face" points={pts} fill={t.look === 'orthanc' ? '#1d1e23' : t.look === 'trunk' ? '#3b2c1d' : t.look === 'scaffold' ? '#5a3d1f' : t.kind === 'rock' ? 'url(#tex-cliff)' : 'url(#tex-wall)'} />
+            <polygon className="face" points={pts} fill={t.look === 'orthanc' ? '#1d1e23' : t.look === 'scaffold' ? '#5a3d1f' : t.kind === 'rock' ? 'url(#tex-cliff)' : 'url(#tex-wall)'} />
             <polygon className="face-shade" points={pts} />
           </g>
         );

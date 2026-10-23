@@ -3,16 +3,15 @@ import type { Terrain } from './types.ts';
 
 // The Unseen Hero (Flies and Spiders, part 1): the table, drawn in our own way from the scenario's map, and where the
 // cast starts. Inches from the north-west corner of a 4' by 4' table. Great gnarled trees stand on mounds of roots and
-// stones, lesser trees and their tangled undergrowth fill the gaps, and a low rocky bank cuts across the south-west.
+// stones, and lesser trees and their tangled undergrowth fill the gaps.
 // (Heights and where they come from are in plans/the-unseen-hero-audit.md.)
 
 export const BOARD = 48;
 /** How tall the trees stand: the great trees' trunks, and the lesser trees with their undergrowth. */
 export const TRUNK_HEIGHT = 8;
 export const TREE_HEIGHT = 6;
-/** The mounds of roots and stones the great trees stand on, and the rocky bank. */
+/** The mounds of roots and stones the great trees stand on. */
 export const ROOTS_HEIGHT = 0.5;
-export const BANK_HEIGHT = 0.5;
 /** The webbed bundles: 25mm markers. */
 export const MARKER = 25 / 25.4;
 /** How far apart the bundles, and the Spiders, must be set up. */
@@ -52,15 +51,6 @@ export const BOULDERS: [number, number, number, number, number, number][] = [
   [36.6, 35, 1, 1, 0, 1],
 ];
 
-/** The low rocky bank across the south-west, as straight stretches along its line. */
-export const BANK: [number, number][] = [
-  [0, 31],
-  [14, 32.2],
-  [23, 37.3],
-  [31.6, 42],
-  [31.8, 48],
-];
-
 /** Where the webbed bundles start (the Evil player may move them before the battle). */
 export const BUNDLES: [number, number][] = [
   [9.5, 9.6],
@@ -69,13 +59,7 @@ export const BUNDLES: [number, number][] = [
 ];
 
 export function unseenTerrain(): NarrativeTerrain[] {
-  const bank = BANK.slice(1).map((b, i) => {
-    const a = BANK[i];
-    const long = Math.hypot(b[0] - a[0], b[1] - a[1]);
-    return piece({ id: `bank-${i + 1}`, kind: 'rock', x: (a[0] + b[0]) / 2, y: (a[1] + b[1]) / 2, w: +(long + 0.6).toFixed(2), h: 1.2, rot: +((Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI).toFixed(1), height: BANK_HEIGHT });
-  });
   return [
-    ...bank,
     // The mounds of roots and stones, then the great trunks on them.
     ...GREAT_TREES.map(t => piece({ id: `roots-${t.id}`, kind: 'rock', shape: 'circle', x: t.roots[0], y: t.roots[1], w: t.roots[2], h: t.roots[3], rot: t.roots[4], height: ROOTS_HEIGHT, difficult: true, look: 'roots' })),
     ...GREAT_TREES.map(t => piece({ id: `trunk-${t.id}`, kind: 'building', shape: 'circle', x: t.trunk[0], y: t.trunk[1], w: t.trunk[2], h: t.trunk[2], height: TRUNK_HEIGHT, sheer: true, look: 'trunk' })),
