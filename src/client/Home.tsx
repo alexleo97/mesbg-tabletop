@@ -7,6 +7,8 @@ import { deleteMap, listMaps, updateMap, type SavedMap } from './cloud.ts';
 import { ListBuilder, loadSaved, type Roster } from './ListBuilder.tsx';
 import { cloudLists, mergeLists } from './cloud.ts';
 import { SettingsPanel } from './Panels.tsx';
+import { COMMUNITY_BOARDS, MIDDLE_EARTH_MAPS, type TableChoice } from '../shared/tables.ts';
+import { newId } from '../shared/importList.ts';
 import { useSettings } from './settings.ts';
 
 const DISCORD_INVITE = 'https://discord.gg/epNRWMxGws';
@@ -150,16 +152,16 @@ export function randomRoom() {
   return `${PLACES[Math.floor(Math.random() * PLACES.length)]}-${Math.floor(1000 + Math.random() * 9000)}`;
 }
 
-/** Your maps and the ones other players have shared, ready to play on. */
+/** The Middle-earth maps, the community's and your own, ready to play on. */
 export function MapsPage() {
   const { enabled, loading, profile } = useAuth();
-  const [tab, setTab] = useState<'shared' | 'mine'>('shared');
+  const [tab, setTab] = useState<'middle-earth' | 'shared' | 'mine'>('middle-earth');
   const [maps, setMaps] = useState<SavedMap[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [refresh, setRefresh] = useState(0);
 
   useEffect(() => {
-    if (!enabled || (tab === 'mine' && !profile)) return;
+    if (!enabled || tab === 'middle-earth' || (tab === 'mine' && !profile)) return;
     let alive = true;
     setMaps(null);
     setFailed(false);
@@ -184,7 +186,10 @@ export function MapsPage() {
           + Create a map
         </a>
       </div>
-      <div className="row seg page-tabs">
+      <div className="row seg page-tabs three">
+        <button className={tab === 'middle-earth' ? 'on' : ''} onClick={() => setTab('middle-earth')}>
+          Middle-earth maps
+        </button>
         <button className={tab === 'shared' ? 'on' : ''} onClick={() => setTab('shared')}>
           Community maps
         </button>
@@ -192,7 +197,14 @@ export function MapsPage() {
           My maps
         </button>
       </div>
-      {!loading && !enabled && <p>Maps aren't switched on for this site yet.</p>}
+      {tab !== 'mine' && (
+        <ul className="map-grid">
+          {(tab === 'middle-earth' ? MIDDLE_EARTH_MAPS : COMMUNITY_BOARDS).map(t => (
+            <BuiltMapCard key={t.key} t={t} />
+          ))}
+        </ul>
+      )}
+      {tab === 'mine' && !loading && !enabled && <p>Saved maps aren't switched on for this site yet.</p>}
       {enabled && tab === 'mine' && !profile && !loading && (
         <>
           <p>Sign in with Discord to save your own maps.</p>
@@ -201,10 +213,10 @@ export function MapsPage() {
           </button>
         </>
       )}
-      {failed && <p className="warn">Couldn't load maps. Try again in a moment.</p>}
-      {enabled && (tab === 'shared' || profile) && maps === null && <p className="muted">Loading maps…</p>}
-      {maps?.length === 0 && !failed && <p className="muted">{tab === 'mine' ? 'You haven’t saved a map yet.' : 'Nobody has shared a map yet. Be the first!'}</p>}
-      {!!maps?.length && (
+      {tab !== 'middle-earth' && failed && <p className="warn">Couldn't load maps. Try again in a moment.</p>}
+      {enabled && (tab === 'shared' || (tab === 'mine' && profile)) && maps === null && <p className="muted">Loading maps…</p>}
+      {tab === 'mine' && maps?.length === 0 && !failed && <p className="muted">You haven’t saved a map yet.</p>}
+      {tab !== 'middle-earth' && !!maps?.length && (
         <ul className="map-grid">
           {maps.map(m => (
             <li key={m.id} className="map-card">
@@ -255,6 +267,26 @@ export function MapsPage() {
         </ul>
       )}
     </SitePage>
+  );
+}
+
+/** A Middle-earth map or community board on the Maps page. */
+function BuiltMapCard({ t }: { t: TableChoice }) {
+  return (
+    <li className="map-card">
+      <MapPreview w={t.w} h={t.h} terrain={t.terrain(newId)} />
+      <div className="map-info">
+        <b>{t.name}</b>
+        <small className="muted">
+          {t.w}×{t.h}" · {t.from ?? `by ${t.author}`}
+        </small>
+      </div>
+      <div className="map-actions">
+        <button className="primary" onClick={() => (location.search = `?battle&table=${t.key}`)}>
+          Play on this map
+        </button>
+      </div>
+    </li>
   );
 }
 

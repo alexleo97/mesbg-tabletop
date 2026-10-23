@@ -88,8 +88,12 @@ export interface ListCheck {
   text: string;
 }
 
+// Army restrictions (ids in rules-text.json) that leave some warriors out of the Bow Limit.
+const RIDERS_IGNORED = 'd9fd87d63e'; // Riders of Rohan
+const KNIGHTS_IGNORED = '167b33dda0'; // Rivendell Knights, while Elrond is in the army
+
 /** Plain-language checks for a list: a hero to lead it, warband sizes, the bow limit and the points limit. */
-export function checkList(entries: WarbandEntry[], catalog: Catalog, pointsLimit?: number, bowLimit = 1 / 3): ListCheck[] {
+export function checkList(entries: WarbandEntry[], catalog: Catalog, pointsLimit?: number, bowLimit = 1 / 3, restrictions: string[] = []): ListCheck[] {
   const out: ListCheck[] = [];
   const { warbands, loose } = organise(entries, catalog);
   const points = entries.reduce((a, e) => a + entryPoints(catalog.units[e.unitId], e.optionIds, e.count), 0);
@@ -100,7 +104,10 @@ export function checkList(entries: WarbandEntry[], catalog: Catalog, pointsLimit
   }
   if (loose.length) out.push({ ok: false, text: `${loose.length} unit${loose.length === 1 ? " isn't" : "s aren't"} in a warband yet.` });
 
-  const warriors = entries.filter(e => isWarrior(catalog.units[e.unitId]));
+  const elrond = entries.some(e => catalog.units[e.unitId]?.name === 'Elrond');
+  const ignored = (unit: CatalogUnit) =>
+    (restrictions.includes(RIDERS_IGNORED) && unit.name === 'Rider of Rohan') || (restrictions.includes(KNIGHTS_IGNORED) && elrond && unit.name === 'Rivendell Knight');
+  const warriors = entries.filter(e => isWarrior(catalog.units[e.unitId]) && !ignored(catalog.units[e.unitId]));
   const total = warriors.reduce((a, e) => a + e.count, 0);
   const bows = warriors.filter(e => hasBow(catalog.units[e.unitId], e.optionIds)).reduce((a, e) => a + e.count, 0);
   // The data writes a third as 0.33.

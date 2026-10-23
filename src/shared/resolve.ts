@@ -23,6 +23,7 @@ import { oneSpearEach, supporters } from './support.ts';
 import { fightDone, foughtThisTurn } from './movement.ts';
 import { rollCast, rollResist } from './magic.ts';
 import { intelligenceWorse, noStrikes, under, witheredStrength } from './powers.ts';
+import { fightsUpright } from './ambush.ts';
 import { touching } from './objects.ts';
 import { brandRetreats } from './fire.ts';
 import { placingNow } from './placing.ts';
@@ -346,10 +347,12 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       // the smaller one gives ground; see warBeasts.ts).
       const fixed = (id: string) => !!state.models[id] && immovable(catalog, state.models[id]);
       let standoff: DiceRoll | undefined;
+      // (A Hobbit and Grishnákh fighting at Ambush at Night fight as if neither were Prone.)
+      const downed = (id: string) => !!state.models[id]?.prone && !fightsUpright(state, state.models[id]);
       const giving = (winner: 0 | 1): { movers: string[]; from: string[] } => {
         const losing = ids((1 - winner) as 0 | 1);
         const winning = ids(winner);
-        const movers = losing.filter(id => !state.models[id].prone && id !== hurled?.id && !fixed(id));
+        const movers = losing.filter(id => !downed(id) && id !== hurled?.id && !fixed(id));
         const big = losing.find(fixed);
         if (!big) return { movers, from: winning };
         const rival = winning.find(fixed);
@@ -391,7 +394,7 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
         const k = knocksFor(winner);
         // A war beast or chariot is never trapped.
         if (fixed(target)) return false;
-        const stuck = !!state.models[target]?.prone || k.prone.includes(target) || k.flying.includes(target) || (!held && retreatFor(winner).trapped.includes(target));
+        const stuck = downed(target) || k.prone.includes(target) || k.flying.includes(target) || (!held && retreatFor(winner).trapped.includes(target));
         if (stuck) trapped.add(target);
         return stuck;
       };
@@ -407,7 +410,7 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       const slays = new Set(bladed.filter(x => strikeWounds(strikes.filter(r => r.model === x.by && r.against === x.target)) > 0).map(x => x.target));
       const bladeUsed = bladed.map((x): Action => ({ type: 'affect', id: x.by, patch: { used: [...(state.models[x.by].used ?? []), MORGUL] } }));
       // A Prone winner gets up instead of striking (unless Paralysed).
-      const rise = winners.filter(id => state.models[id].prone && !under(state, state.models[id], 'Paralyse'));
+      const rise = winners.filter(id => downed(id) && !state.models[id].crawls && !under(state, state.models[id], 'Paralyse'));
       const slain = (id: string) => (outcome.hits.find(h => h.target.id === id)?.wounds ?? 0) >= (state.models[id]?.wounds ?? 1);
       const moves: Extract<Action, { type: 'backAway' }>['moves'] = [];
       // A defender that falls lets its attacker take its place; otherwise the attacker backs away (when it can).

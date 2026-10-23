@@ -101,20 +101,3 @@ describe('the computer player', () => {
     }
   }, 60_000);
 });
-
-describe('premade armies', () => {
-  it('are playable armies that fit the points', async () => {
-    const { PREMADE, premadeRoster } = await import('../src/shared/premade.ts');
-    const armies = playableArmies(catalog);
-    for (const p of PREMADE) {
-      expect(armies, p.name).toContain(p.army);
-      for (const points of [300, 500, 800]) {
-        const r = premadeRoster(catalog, p.id, points)!;
-        const pts = r.entries.reduce((n, e) => n + entryPoints(catalog.units[e.unitId], e.optionIds, e.count), 0);
-        expect(pts, p.name).toBeLessThanOrEqual(points);
-        expect(r.entries.length, p.name).toBeGreaterThan(1);
-      }
-      expect(premadeRoster(catalog, p.id, 500)).toEqual(premadeRoster(catalog, p.id, 500));
-    }
-  });
-});

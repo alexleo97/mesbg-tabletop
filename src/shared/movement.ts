@@ -8,6 +8,8 @@ import { cannotAct } from './powers.ts';
 import { laden, overlapsPiece, shutGates } from './fortress.ts';
 import { crossingAhead } from './terrainTests.ts';
 import { invisibleTo, mayChargeAt } from './ring.ts';
+import { surprised } from './ambush.ts';
+import { tramplesThrough } from './balin.ts';
 import type { GameState, Model, Seat } from './types.ts';
 
 /**
@@ -20,12 +22,14 @@ export function moveAllowance(state: GameState, m: Model): number | null {
   if (!state.flow.started || m.dead) return null;
   if (state.phase === 'move') {
     // A model held by a power or a Compel (or stunned by Sam's Frying Pan) stays put; one getting up from Prone has half its Move left.
-    if (!canActivate(state, m.owner) || state.flow.courage?.[m.id] === false || cannotAct(state, m) || state.flow.held?.includes(m.id) || m.panned === state.turn || m.noMove === state.turn) return 0;
+    if (!canActivate(state, m.owner) || state.flow.courage?.[m.id] === false || cannotAct(state, m) || state.flow.held?.includes(m.id) || m.panned === state.turn || m.noMove === state.turn || surprised(state, m)) return 0;
     // A model already in a fight when its turn to move comes can't move (one that has just charged may still adjust).
     if (!state.flow.starts?.[m.id] && engaged(state, m)) return 0;
     // A model whose move has ended (a failed test, or a test passed on 2-5) goes no further; a Prone one crawls 1".
     if (state.flow.stopped?.includes(m.id)) return 0;
     if (m.prone && (state.flow.crawling?.includes(m.id) || state.flow.lay?.includes(m.id))) return 1;
+    // One that can only crawl (bound, at Ambush at Night) crawls its own distance, and never stands up.
+    if (m.crawls) return m.crawls;
     // Climbing between floors of a building spends Move too.
     const climbed = state.flow.climbed?.[m.id] ?? 0;
     // So does carrying a Heavy Object alone.
@@ -223,8 +227,11 @@ export function frontFirst<T extends { id: string; x: number; y: number }>(state
  */
 export const keptOffMarkers = (m: Model) => !m.beast && !m.siege;
 
-/** Whether two models may move through each other: one is Invisible to the other (see ring.ts). */
-export const passesThrough = (a: Model, b: Model) => invisibleTo(a, b) || invisibleTo(b, a);
+/**
+ * Whether two models may move through each other: one is Invisible to the other (see ring.ts), or they are foes and
+ * one of them is underfoot (Merry, Pippin and Grishnákh at Ambush at Night).
+ */
+export const passesThrough = (a: Model, b: Model) => invisibleTo(a, b) || invisibleTo(b, a) || ((!!a.slips || !!b.slips) && a.owner !== b.owner);
 
 export function blockMove(state: GameState, m: Model, from: Point, to: Point, skip?: ReadonlySet<string>, charge = true): Point {
   if (Math.hypot(to.x - from.x, to.y - from.y) < 1e-6) return to;
@@ -241,7 +248,9 @@ export function blockMove(state: GameState, m: Model, from: Point, to: Point, sk
   const all = Object.values(state.models).filter(e => e.id !== m.id && !e.dead && !e.waiting && !e.escaped && !e.aboard && !skip?.has(e.id) && near(e));
   // An Invisible model and those that can't see it pass through each other, though neither may stop on the other.
   const ghosts = all.filter(e => passesThrough(m, e));
-  const others = all.filter(e => !ghosts.includes(e));
+  // Balin's Tomb's Cave Troll, the turn it bursts in, goes through its own side and may stop on them (see balin.ts).
+  const trodden = all.filter(e => tramplesThrough(state, m, e));
+  const others = all.filter(e => !ghosts.includes(e) && !trodden.includes(e));
   const zonesApply = state.phase === 'move' || fightsAgain(state, m);
   const enemies = zonesApply ? others.filter(e => e.owner !== m.owner) : [];
   // (A siege engine has no control zone, nor has an Invisible model, and an Invisible model ignores those of foes

@@ -246,7 +246,7 @@ export function ListBuilder({ onDeploy, deployLabel, wide: page }: { onDeploy?: 
   const { warbands, independents, loose } = organise(roster.entries, catalog);
   const leader = armyLeader(roster.entries, catalog, roster.leader);
   const army = catalog.armies[roster.army] as CatalogArmy | undefined;
-  const checks = checkList(roster.entries, catalog, roster.points, army?.bowLimit);
+  const checks = checkList(roster.entries, catalog, roster.points, army?.bowLimit, army?.restrictions);
 
   const toggleOption = (e: RosterEntry, unit: CatalogUnit, optId: string) => {
     const on = e.optionIds.includes(optId);

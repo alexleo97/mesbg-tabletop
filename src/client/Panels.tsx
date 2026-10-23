@@ -10,11 +10,12 @@ import { TERRAIN_GROUPS, TERRAIN_INFO, terrainRules } from '../shared/terrain.ts
 import { markerNotes } from '../shared/objects.ts';
 import { breakable, DOORS } from '../shared/fortress.ts';
 import { useRef, useState } from 'react';
-import { objectiveMarkers, river, STARTER_BOARDS, starterTerrain } from '../shared/boards.ts';
+import { objectiveMarkers, river } from '../shared/boards.ts';
+import { COMMUNITY_BOARDS, MIDDLE_EARTH_MAPS } from '../shared/tables.ts';
 import { loadCatalog, parseBuilderExport, STAT_NAMES, statsWithOptions } from '../shared/catalog.ts';
 import { deployList, newId, parseList, type ListEntry } from '../shared/importList.ts';
 import { addSavedList, ListBuilder, loadSaved, SavedLists, Portrait, useCatalog } from './ListBuilder.tsx';
-import { PREMADE, premadeRoster } from '../shared/premade.ts';
+import { PREMADE, PREMADE_SIZES, premadeRoster, premadeSize } from '../shared/premade.ts';
 import { listEntries } from '../shared/warbands.ts';
 import { botRoster, playableArmies } from '../shared/botList.ts';
 import { parseAdmiral } from '../shared/admiral.ts';
@@ -297,7 +298,17 @@ function OpponentArmy({ state, dispatch, seat }: { state: GameState; dispatch: D
         {!fromList && (
           <label className="mini-stat">
             Points
-            <input className="points" type="number" min={100} max={2000} step={50} value={points} onChange={e => setPoints(Math.max(100, Math.min(2000, Number(e.target.value) || 500)))} />
+            {PREMADE.some(p => p.id === pick) ? (
+              <select className="points" value={premadeSize(points)} onChange={e => setPoints(Number(e.target.value))}>
+                {PREMADE_SIZES.map(n => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input className="points" type="number" min={100} max={2000} step={50} value={points} onChange={e => setPoints(Math.max(100, Math.min(2000, Number(e.target.value) || 500)))} />
+            )}
           </label>
         )}
         <button className="primary" disabled={state.flow.started} onClick={deploy}>
@@ -308,42 +319,49 @@ function OpponentArmy({ state, dispatch, seat }: { state: GameState; dispatch: D
   );
 }
 
-/** One of the ready-made armies, at the points the player picks: the same list every time for a given size. */
+/** One of the ready-made armies, at 500 or 750 points. */
 function ReadyMade({ state, owner, onDeploy }: { state: GameState; owner: Seat; onDeploy: (entries: ListEntry[], note: string) => void }) {
   const { catalog } = useCatalog();
   const [pick, setPick] = useState(PREMADE[0].id);
   // Match the other side's army if it's already on the table.
   const theirs = Object.values(state.models).filter(m => m.owner !== owner).reduce((n, m) => n + (m.points ?? 0), 0);
-  const [points, setPoints] = useState(() => (theirs > 0 ? Math.max(200, Math.round(theirs / 50) * 50) : 500));
+  const [points, setPoints] = useState(() => premadeSize(theirs > 0 ? theirs : 500));
   if (!catalog) return <p className="hint">Loading armies…</p>;
   const premade = PREMADE.find(p => p.id === pick)!;
   const deploy = () => {
     const roster = premadeRoster(catalog, premade.id, points);
-    if (roster) onDeploy(listEntries(roster, catalog).flatMap(g => g.entries), ` ${premade.name} (${premade.army}), about ${points} pts.`);
+    if (roster) onDeploy(listEntries(roster, catalog).flatMap(g => g.entries), ` ${premade.name} (${premade.army}), ${points} pts.`);
   };
   return (
     <>
-      <p className="hint">No list to hand? Pick a premade army and how many points to play, and it goes straight on the table.</p>
+      <p className="hint">No list to hand? Pick a premade army at 500 or 750 points, and it goes straight on the table.</p>
       <select className="ready-made" value={pick} onChange={e => setPick(e.target.value)} aria-label="Premade army">
           <optgroup label="Good">
-            {PREMADE.filter(p => p.seed < 20).map(p => (
+            {PREMADE.filter(p => p.side === 'Good').map(p => (
               <option key={p.id} value={p.id}>
                 {p.name} ({p.army})
               </option>
             ))}
           </optgroup>
           <optgroup label="Evil">
-            {PREMADE.filter(p => p.seed >= 20).map(p => (
+            {PREMADE.filter(p => p.side === 'Evil').map(p => (
               <option key={p.id} value={p.id}>
                 {p.name} ({p.army})
               </option>
             ))}
           </optgroup>
       </select>
+      <p className="hint">{premade.about}</p>
       <div className="row wrap">
         <label className="mini-stat">
           Points
-          <input className="points" type="number" min={100} max={2000} step={50} value={points} onChange={e => setPoints(Math.max(100, Math.min(2000, Number(e.target.value) || 500)))} />
+          <select className="points" value={points} onChange={e => setPoints(Number(e.target.value) as typeof points)}>
+            {PREMADE_SIZES.map(n => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
         </label>
         <button className="primary" onClick={deploy}>
           Deploy for {state.names[owner] || (owner === 'p1' ? 'Player 1' : 'Player 2')}
@@ -668,22 +686,31 @@ export function TablePanel({
 
   return (
     <div className="panel-body">
-      <h4>Starter boards</h4>
-      <div className="boards">
-        {STARTER_BOARDS.map(b => (
-          <button
-            key={b.id}
-            onClick={() => {
-              if (Object.keys(state.terrain).length && !confirm(`Replace the current terrain with ${b.name}? Models stay where they are.`)) return;
-              dispatch({ type: 'setScenery', w: b.w, h: b.h, mat: b.mat, terrain: starterTerrain(b, newId) });
-              setSelectedTerrain(null);
-            }}
-          >
-            <b>{b.name}</b>
-            <small>{b.blurb}</small>
-          </button>
-        ))}
-      </div>
+      {(
+        [
+          ['Middle-earth maps', MIDDLE_EARTH_MAPS],
+          ['Community maps', COMMUNITY_BOARDS],
+        ] as const
+      ).map(([heading, tables]) => (
+        <div key={heading}>
+          <h4>{heading}</h4>
+          <div className="boards">
+            {tables.map(b => (
+              <button
+                key={b.key}
+                onClick={() => {
+                  if (Object.keys(state.terrain).length && !confirm(`Replace the current terrain with ${b.name}? Models stay where they are.`)) return;
+                  dispatch({ type: 'setScenery', w: b.w, h: b.h, mat: b.mat, terrain: b.terrain(newId) });
+                  setSelectedTerrain(null);
+                }}
+              >
+                <b>{b.name}</b>
+                <small>{b.from ?? `${b.blurb} By ${b.author}.`}</small>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
       {!editor && <MapsSection state={state} dispatch={dispatch} onLoaded={() => setSelectedTerrain(null)} />}
       <label>
         Ground

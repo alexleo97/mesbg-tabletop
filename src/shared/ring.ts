@@ -7,6 +7,7 @@ import { heroicsSettled, mayActivate } from './heroics.ts';
 import { mounted } from './cavalry.ts';
 import { engaged } from './movement.ts';
 import { isRingwraith } from './narrative.ts';
+import { ambushMayCharge } from './ambush.ts';
 import { intelligenceWorse } from './powers.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
@@ -27,6 +28,8 @@ const seekRoll = (state: GameState, m: Model, e: Model) => state.log.find(r => s
 
 /** Whether `m` may charge `e`: it can always charge a model it can see, and an Invisible one after passing its test. */
 export function mayChargeAt(state: GameState, m: Model, e: Model): boolean {
+  // (At Ambush at Night only Grishnákh may charge the Hobbits, and the bound charge nobody.)
+  if (!ambushMayCharge(state, m, e)) return false;
   if (!invisibleTo(e, m)) return true;
   const r = seekRoll(state, m, e);
   return !!r && r.dice[0] + r.dice[1] >= (r.sum ?? 7);

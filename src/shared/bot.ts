@@ -30,6 +30,8 @@ import { armyStatus } from './status.ts';
 import { pushers } from './siege.ts';
 import { chargeAim, chargesDue, straightOn } from './trample.ts';
 import { arrivalAuto, arrivalDue, castModel, mayCry } from './narrative.ts';
+import { isAmbush, isGrishnakh, isHobbit } from './ambush.ts';
+import { isBalin } from './balin.ts';
 import { courageOf, willOfEvil } from './courage.ts';
 import { hasMorgulBlade } from './morgul.ts';
 import { AXE_FREED, canHeadbutt, hasMattock, longbeardFor, mayAxeTest, mayTend, rerollFor, spentPoints, swapPair, trumpetDue } from './company.ts';
@@ -152,8 +154,8 @@ function profile(ctx: Ctx, m: Model): Profile {
     weapon: unit ? weaponFor(ctx.catalog, m) : undefined,
     heroics: unit?.heroics ?? [],
     terror: !!unit?.rules.some(r => /^Terror\b/.test(r)),
-    // In Weathertop, Frodo is the whole game.
-    value: worth(m) * (m.cast === 'frodo' && ctx.state.narrative?.id === 'weathertop' ? 6 : 1),
+    // In Weathertop and Balin's Tomb, Frodo is the whole game.
+    value: worth(m) * (m.cast === 'frodo' && (ctx.state.narrative?.id === 'weathertop' || isBalin(ctx.state)) ? 6 : 1),
   };
   ctx.profiles.set(m.id, p);
   return p;
@@ -583,7 +585,7 @@ function markerStep(ctx: Ctx, m: Model): BotStep | null {
     if (a.kind === 'pickUp' && (object?.object === 'rocks' || object?.object === 'oil')) continue;
     if (a.kind === 'escape') {
       // Leave the table with something worth carrying off, or in a scenario that scores getting models away.
-      if (carriedBy(state, m).length || state.scenario === 'reconnoitre') return { action: { type: 'escape', model: m.id }, delay: MOVE_PAUSE };
+      if (carriedBy(state, m).length || state.scenario === 'reconnoitre' || (isAmbush(state) && isHobbit(m))) return { action: { type: 'escape', model: m.id }, delay: MOVE_PAUSE };
       continue;
     }
     if (a.kind === 'uncover') return { action: { type: 'uncover', model: m.id, marker: a.marker!, intelligence: profile(ctx, m).i }, delay: DICE_PAUSE };
@@ -783,6 +785,36 @@ function assignGoals(ctx: Ctx): Map<string, Goal> {
           if (foe) out.set(m.id, { at: { x: foe.x, y: foe.y }, pull: 1 });
         } else if (m.id !== frodo.id) out.set(m.id, { at: { x: frodo.x, y: frodo.y }, pull: 0.8, near: 1.2 });
         else if (hunters.length) out.set(m.id, { at: { x: state.board.w / 2, y: state.board.h / 2 }, pull: 0.3 });
+      }
+    }
+  }
+
+  // Balin's Tomb: the Goblins go for Frodo, and the Fellowship holds together round him at the north end of the tomb.
+  if (isBalin(state)) {
+    const frodo = castModel(state, 'frodo');
+    if (frodo && !frodo.dead) {
+      for (const m of ours) {
+        if (out.has(m.id)) continue;
+        if (m.owner !== frodo.owner) out.set(m.id, { at: { x: frodo.x, y: frodo.y }, pull: 1 });
+        else if (m.id === frodo.id) out.set(m.id, { at: { x: 12, y: 9.6 }, pull: 0.4 });
+        else out.set(m.id, { at: { x: frodo.x, y: frodo.y }, pull: 0.6, near: 2.5 });
+      }
+    }
+  }
+
+  // Ambush at Night: Merry and Pippin make for the nearest edge (away from Grishnákh), and Grishnákh crawls after them.
+  if (isAmbush(state)) {
+    const hobbits = Object.values(state.models).filter(x => isHobbit(x) && isUp(x));
+    const grishnakh = Object.values(state.models).find(x => isGrishnakh(x) && isUp(x));
+    for (const m of ours) {
+      if (out.has(m.id)) continue;
+      if (isHobbit(m)) {
+        const edges = [{ x: m.x, y: 0 }, { x: m.x, y: h }, { x: 0, y: m.y }, { x: w, y: m.y }];
+        const cost = (p: Point) => centre(m, p) + (grishnakh ? Math.max(0, 8 - centre(grishnakh, p)) : 0);
+        out.set(m.id, { at: edges.sort((a, b) => cost(a) - cost(b))[0], pull: 3, bold: true });
+      } else if (isGrishnakh(m)) {
+        const prey = [...hobbits].sort((a, b) => centre(m, a) - centre(m, b))[0];
+        if (prey) out.set(m.id, { at: { x: prey.x, y: prey.y }, pull: 3, bold: true });
       }
     }
   }
@@ -1054,6 +1086,8 @@ function bestShot(ctx: Ctx, m: Model, state = ctx.state): Shot | null {
     .filter(e => Math.abs(e.x - m.x) <= weapon.range + 3 && Math.abs(e.y - m.y) <= weapon.range + 3)
     .map(e => ({ e, worth: worth(e), d: distanceBetween(m, e) }))
     .filter(t => t.d <= weapon.range)
+    // (At Ambush at Night the Uruk-hai have orders to bring the Hobbits back alive, so the computer doesn't shoot them.)
+    .filter(t => !(isAmbush(state) && isHobbit(t.e)))
     .sort((a, b) => b.worth - a.worth || a.d - b.d);
   let best: Shot | null = null;
   let seen = 0;

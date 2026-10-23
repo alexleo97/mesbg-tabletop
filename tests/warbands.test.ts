@@ -49,4 +49,23 @@ describe('warbands', () => {
     ]);
     expect(checkList(entries, catalog, undefined, 0.5).at(-1)).toEqual({ ok: true, text: '5 of 10 warriors carry bows (this army allows 5, half rounded up)' });
   });
+
+  it('leaves Riders of Rohan, and Rivendell Knights with Elrond, out of the bow limit', () => {
+    const rohan = catalog.armies['Kingdom of Rohan'];
+    const riders = [
+      { key: 'e', unitId: '[kingdom-of-rohan] eomer', count: 1, optionIds: [] },
+      { key: 'r', unitId: '[kingdom-of-rohan] rider-of-rohan', count: 9, optionIds: [], lead: 'e' },
+      { key: 'w', unitId: '[kingdom-of-rohan] warrior-of-rohan', count: 3, optionIds: [], lead: 'e' },
+    ];
+    expect(checkList(riders, catalog, undefined, rohan.bowLimit).at(-1)?.ok).toBe(false);
+    expect(checkList(riders, catalog, undefined, rohan.bowLimit, rohan.restrictions).every(c => c.ok)).toBe(true);
+    const rivendell = catalog.armies.Rivendell;
+    const knights = [
+      { key: 'a', unitId: '[rivendell] arwen', count: 1, optionIds: [] },
+      { key: 'k', unitId: '[rivendell] rivendell-knight', count: 6, optionIds: [], lead: 'a' },
+    ];
+    expect(checkList(knights, catalog, undefined, rivendell.bowLimit, rivendell.restrictions).at(-1)?.ok).toBe(false);
+    const withElrond = [...knights, { key: 'el', unitId: '[rivendell] elrond', count: 1, optionIds: [] }];
+    expect(checkList(withElrond, catalog, undefined, rivendell.bowLimit, rivendell.restrictions).every(c => c.ok)).toBe(true);
+  });
 });

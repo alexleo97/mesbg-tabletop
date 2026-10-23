@@ -17,7 +17,7 @@ beforeAll(() => {
 });
 
 /** What a lesson must never show: set-up, seats and game settings, saving or ending the game, and manual tests. */
-const NEVER = ['1 · Table', '2 · Scenario', '3 · Armies', 'Leave game', 'Save game', 'Finish the game early', 'Let the Palantír', 'Moving on', 'No scenario', 'Lie down', 'Dismount', 'Deploy', 'Starter boards'];
+const NEVER = ['1 · Table', '2 · Scenario', '3 · Armies', 'Leave game', 'Save game', 'Finish the game early', 'Let the Palantír', 'Moving on', 'No scenario', 'Lie down', 'Dismount', 'Deploy', 'Middle-earth maps', 'Community maps'];
 
 const load = async () => {
   const { CHAPTERS } = await import('../src/client/lessons.tsx');

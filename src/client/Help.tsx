@@ -101,7 +101,7 @@ export function AppGuide() {
             <b>Armies</b> is where you build and keep your army lists.
           </li>
           <li>
-            <b>Maps</b> has tables made by you and by other players, and the map editor.
+            <b>Maps</b> has the Middle-earth maps from the narrative scenarios, tables made by you and by other players, and the map editor.
           </li>
           <li>
             <b>Leaderboard</b> and your <b>profile</b> appear once you sign in with Discord.
@@ -118,7 +118,7 @@ export function AppGuide() {
           <li>
             Choose a scenario: one of the 24 matched play scenarios (in pools: {POOLS.slice(1).join(', ')}), <b>Roll for it</b>, or <b>Open play</b> with no scenario.
           </li>
-          <li>Choose a table: a starter board, an empty table, or a saved map.</li>
+          <li>Choose a table: a Middle-earth map, a community map, an empty table, or one of your own.</li>
           <li>Choose your army: one of your lists, a premade army at a points size, or pick it at the table.</li>
           <li>Press <b>Play</b>. You arrive at the table with it set up.</li>
         </ol>
@@ -174,10 +174,10 @@ export function AppGuide() {
 
       <Part title="Maps and the map editor">
         <p>
-          The <b>Maps</b> page shows community maps and your own. <b>Play on this map</b> starts a game on it. Your own maps can be edited, shared or kept private, and deleted.
+          The <b>Maps</b> page shows the Middle-earth maps (the tables from the narrative scenarios), community maps and your own. <b>Play on this map</b> starts a game on it. Your own maps can be edited, shared or kept private, and deleted.
         </p>
         <p>
-          <b>New map</b> opens the editor. Start from a starter board or add pieces: woods, hills, ruins, walls, buildings, water, gates, towers and more. Drag a piece to move it,
+          <b>New map</b> opens the editor. Start from a Middle-earth or community map or add pieces: woods, hills, ruins, walls, buildings, water, gates, towers and more. Drag a piece to move it,
           and tap it to change its type, width, depth, height, floors, shape and turn, mark it difficult, sheer or locked, or delete it. Gates, barricades and towers take
           wounds and can belong to a side. Pick the board size (48"×48", 72"×48" or 24"×24"), name the map and save it. Saving needs you to be signed in.
         </p>
@@ -188,7 +188,7 @@ export function AppGuide() {
         <p>Before the battle the <b>Set up the battle</b> card walks you through three steps:</p>
         <ol>
           <li>
-            <b>Table:</b> pick a starter board or lay out terrain.
+            <b>Table:</b> pick a Middle-earth or community map, or lay out terrain.
           </li>
           <li>
             <b>Scenario:</b> pick or roll one. The table draws its deployment zones and objectives, and any secret picks are made here.

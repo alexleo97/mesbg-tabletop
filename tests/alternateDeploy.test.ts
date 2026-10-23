@@ -7,7 +7,11 @@ import { initialState, reduce } from '../src/shared/reducer.ts';
 import { DICE_REQUESTS, resolveRequest } from '../src/shared/resolve.ts';
 import { objectivesMissing, scenarioById, scenarioMarkers, SCENARIOS } from '../src/shared/scenarios.ts';
 import type { Action, GameState, Model, Seat } from '../src/shared/types.ts';
-import { catalog } from './botsim.ts';
+import { botRoster } from '../src/shared/botList.ts';
+import { STARTER_BOARDS, starterTerrain } from '../src/shared/boards.ts';
+import { deployList } from '../src/shared/importList.ts';
+import { listEntries } from '../src/shared/warbands.ts';
+import { catalog, seeded } from './botsim.ts';
 
 const mk = (id: string, owner: Seat, warband: string, hero = false, extra: Partial<Model> = {}): Model => ({
   id, owner, name: id, x: 24, y: owner === 'p1' ? 44 : 4, rot: 0, base: { shape: 'round', w: 25, h: 25 }, move: 6, wounds: 1, maxWounds: 1, might: 0, will: 0, fate: 0, hero, dead: false, warband, ...(hero ? { tier: 3 } : {}), ...extra,
@@ -236,6 +240,45 @@ describe('a warband with no room for all of it', () => {
       }
       const band = Object.values(s.models).filter(m => m.warband === 'h' && !m.waiting);
       for (const m of band) expect(distanceBetween(m, s.models['p2-h'])).toBeLessThanOrEqual(6.01);
+    });
+  }
+});
+
+describe('against the Palantír with real armies', () => {
+  // Games that stalled on "Waiting for The Palantír to place a warband" with nothing left to place, before the
+  // Palantír's models with no room near their Captain were left off the table: the player picks their warbands in
+  // any order and either pair of corners, the Palantír as it would.
+  for (const seed of [2, 3, 151]) {
+    it(`finishes setting up Divide and Conquer (game ${seed})`, () => {
+      const rand = seeded(seed);
+      let k = 0;
+      let s = reduce(initialState(), { type: 'setScenario', id: 'divide-and-conquer' });
+      const board = STARTER_BOARDS[seed % (STARTER_BOARDS.length + 1)];
+      for (const t of board ? starterTerrain(board, p => `${p}${k++}`) : []) s = reduce(s, { type: 'addTerrain', terrain: t });
+      for (const t of scenarioMarkers(scenarioById('divide-and-conquer')!, 48, 48, p => `${p}${k++}`, rand)) s = reduce(s, { type: 'addTerrain', terrain: t });
+      const armies = Object.keys(catalog.armies);
+      const pick = [armies[Math.floor(rand() * armies.length)], armies[Math.floor(rand() * armies.length)]];
+      const points = [300, 500, 700, 900][seed % 4];
+      (['p1', 'p2'] as const).forEach((seat, i) => {
+        const entries = listEntries(botRoster(catalog, pick[i], points, rand), catalog).flatMap(g => g.entries);
+        s = reduce(s, { type: 'addModels', models: deployList(entries, seat, s, scenarioById('divide-and-conquer')).map(m => ({ ...m, id: `${seat}-${k++}` })) });
+      });
+      s = { ...s, bot: 'p2' };
+      const d6 = () => 1 + Math.floor(rand() * 6);
+      const memo = { p1: newMemo(), p2: newMemo() };
+      s = act(s, 'p1', { type: 'rollDeploy' }, d6);
+      for (let i = 0; i < 600 && !deployReady(s); i++) {
+        const seat = s.flow.deploy?.turn ?? s.flow.deploy?.winner ?? 'p1';
+        let step = botStep(s, seat, catalog, memo[seat], 0, false);
+        if (seat === 'p1' && step?.action?.type === 'deployWarband') {
+          const bands = bandsOf(s, 'p1', true);
+          step = { ...step, action: { type: 'deployWarband', seat, warband: bands[Math.floor(rand() * bands.length)][0].warband ?? '' } };
+        }
+        if (seat === 'p1' && step?.action?.type === 'pickSide') step = { ...step, action: { type: 'pickSide', seat, far: rand() < 0.5 } };
+        if (!step?.action) throw new Error(`stuck at ${JSON.stringify(s.flow.deploy)}`);
+        s = act(s, seat, step.action, d6);
+      }
+      expect(deployReady(s)).toBe(true);
     });
   }
 });

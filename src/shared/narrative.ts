@@ -5,6 +5,9 @@ import { guessBase } from './importList.ts';
 import { offTable } from './maelstrom.ts';
 import { muttonWinner } from './mutton.ts';
 import { helmsWinner } from './helms.ts';
+import { ambushWinner, isHobbit } from './ambush.ts';
+import { balinWinner } from './balin.ts';
+import { balinCast, balinTerrain } from './balinMap.ts';
 import { BALLISTA_BASE, deepingSlots, evilSlots, GATE_ANGLE, HELMS_TEAMS, helmsTerrain, hornburgSlots, inHelmsZone, onArc, OUTER, type HelmsZone } from './helmsMap.ts';
 import type { Action, Base, DiceRoll, GameState, Mat, Model, Seat, Terrain } from './types.ts';
 
@@ -35,7 +38,19 @@ export type Placement =
   /** Touching the middle of a table edge. */
   | { edge: 'north' | 'east' | 'south' | 'west' }
   /** Starting at `at`, and kept within one of the scenario's own areas (Helm's Deep: the Hornburg, the Deeping Wall). */
-  | { zone: HelmsZone; at: [number, number] };
+  | { zone: HelmsZone; at: [number, number] }
+  /** Starting at `at`, and kept wholly within an area of the table (a deployment zone). */
+  | { area: Area; at: [number, number] };
+
+/** A deployment zone: a circle round a point (x, y, radius), or a box (x0, y0, x1, y1). */
+export type Area = { circle: [number, number, number] } | { box: [number, number, number, number] };
+
+/** Whether a model this far across (from its middle) stands wholly within an area. */
+export function whollyInArea(a: Area, p: Point, r: number): boolean {
+  if ('circle' in a) return Math.hypot(p.x - a.circle[0], p.y - a.circle[1]) + r <= a.circle[2] + 0.01;
+  const [x0, y0, x1, y1] = a.box;
+  return p.x - r >= x0 - 0.01 && p.x + r <= x1 + 0.01 && p.y - r >= y0 - 0.01 && p.y + r <= y1 + 0.01;
+}
 
 export interface CastMember {
   /** Who it is, for the scenario's rules: 'frodo', 'aragorn'. */
@@ -60,6 +75,11 @@ export interface CastMember {
   base?: Base;
   /** Which way it faces at the start, in degrees (0 up the table); unset, it faces the middle of the table. */
   facing?: number;
+  /** Starts Prone; bound (it can only crawl, and may roll to cut its bonds); crawls this far and can't stand up; and is underfoot (Ambush at Night). */
+  prone?: boolean;
+  bound?: boolean;
+  crawls?: number;
+  slips?: boolean;
   place: Placement;
 }
 
@@ -214,6 +234,74 @@ export const NARRATIVES: Narrative[] = [
     ],
   },
   {
+    id: 'ambush-at-night',
+    name: 'Ambush at Night',
+    from: 'The Two Towers',
+    saga: 'lotr',
+    blurb: "Night on the eaves of Fangorn: Éomer's riders fall on the Uruk-hai camp, while Merry and Pippin, bound by the fire, wriggle for the trees.",
+    board: { w: 48, h: 48, mat: 'plains' },
+    terrain: ambushTerrain(),
+    sides: {
+      good: { name: 'The Riders of Éomer', cast: 'Éomer on Firefoot, a Captain of Rohan and 12 Riders of Rohan, with Merry and Pippin tied up in the camp' },
+      evil: { name: 'The Uruk-hai camp', cast: 'Uglúk, Grishnákh, Snaga, an Uruk-hai Scout Captain, 12 Uruk-hai Scouts and 12 Isengard Orc Warriors' },
+    },
+    layout:
+      "A 4' by 4' stretch of grassland by Fangorn: the forest's edge lines the north of the table, with clumps of trees in front of it. The camp's fire burns in the middle, and patches of long grass and a few boulders lie about the rest.",
+    setupOrder: ['evil', 'good'],
+    deployment:
+      'Merry and Pippin lie as close to the middle of the table as they can, just south of the fire. Grishnákh is 3" from them towards the south edge, and the rest of the Evil side stand wholly within 6" of the middle. Then Éomer and half the Riders set up wholly within 6" of the west edge, and the Captain of Rohan with the other half wholly within 6" of the east edge.',
+    objectives:
+      "The battle goes on until the end of a turn in which one side is down to a quarter of its models and both Hobbits are off the table. The Good side wins if the Evil side is the one down to a quarter, the Evil side if the Good side is, and both at once is a draw. If Merry or Pippin is slain, the Good side can do no better than a draw.",
+    rules: [
+      { name: 'Surprise Attack', text: 'The Evil side may not move in the first turn.' },
+      {
+        name: 'Merry and Pippin',
+        text: "The Hobbits start Prone and bound. While bound they move only by crawling (1\") and may not charge. Nobody may charge them but Grishnákh. They have no control zone, ignore their foes' control zones and may move through enemy models, though not stop on one; their foes may move through them in the same way. They may leave the table by any edge.",
+      },
+      {
+        name: '"Their bonds were cut"',
+        text: 'Each time the Good side finishes its move, each bound Hobbit rolls a D6: on a 6 he cuts his bonds and stands up free. Touching the other Hobbit, already free, he adds 1 to the roll.',
+      },
+      {
+        name: 'Grishnákh',
+        text: 'Wounded, Grishnákh moves like the bound Hobbits, but crawls 3" and has no bonds to cut. Only he may charge the Hobbits, and he charges nobody else. He and a Hobbit fight each other as normal, though both lie Prone. He has 1 Attack and only 1 Might, 1 Will and 1 Fate.',
+      },
+    ],
+    cast: ambushCast(),
+  },
+  {
+    id: 'balins-tomb',
+    name: "Balin's Tomb",
+    from: 'The Fellowship of the Ring',
+    saga: 'lotr',
+    blurb: 'The Chamber of Mazarbul: drums in the deep, Goblins pouring in through every door, trapdoor and well, and a Cave Troll on its way. The Fellowship must hold out.',
+    board: { w: 24, h: 24, mat: 'stone' },
+    terrain: balinTerrain(),
+    sides: {
+      good: { name: 'The Fellowship', cast: 'Frodo, Sam, Merry, Pippin, Gandalf, Aragorn, Legolas, Gimli and Boromir' },
+      evil: { name: 'The Goblins of Moria', cast: '2 Moria Goblin Captains, 24 Moria Goblin Warriors and a Cave Troll' },
+    },
+    layout:
+      "A 2' by 2' chamber: Balin's tomb stands in the middle and the well 6\" in from the middle of the north edge. A ledge 3\" wide and 1\" high runs right round the walls, broken only by the passage down to the doorway in the middle of the south edge. Four pillars stand on each side of the floor, and there is a trapdoor on the ledge in the middle of the west and east edges.",
+    setupOrder: ['good', 'evil'],
+    deployment:
+      'The Fellowship sets up wholly within 6" of the middle of the table. Then the Goblins set up wholly within 6" of the doorway, none of them within 1" of the Fellowship. The Cave Troll is kept off the table.',
+    objectives:
+      'The battle lasts 10 turns. The Fellowship wins if Frodo and at least four others are still alive at the end. The Goblins win as soon as five of the Fellowship are slain, or the moment Frodo is.',
+    rules: [
+      {
+        name: 'The Goblin Tide',
+        text: 'A Goblin Warrior that is slain is kept aside. Each time the Goblins finish their move, every one kept aside comes back: one up through each trapdoor no member of the Fellowship stands on, two out of the well, and the rest in at the doorway. Those that can\'t get in try again next turn. They then make their move, and may charge.',
+      },
+      {
+        name: '"They have a Cave Troll!"',
+        text: 'As the Goblins start their move in turn 4, the Cave Troll bursts in at the doorway, and moves and charges as normal. That turn it may move through its own side: each Goblin it moves through takes a Strength 3 hit, and any it ends its move on is slain.',
+      },
+      { name: 'Troll Rampage', text: 'The Cave Troll has +1 Fight in a turn in which it charged.' },
+    ],
+    cast: balinCast(),
+  },
+  {
     id: 'helms-deep',
     name: "Helm's Deep",
     from: 'The Two Towers',
@@ -332,6 +420,100 @@ function helmsCast(): CastMember[] {
   return out;
 }
 
+/**
+ * Ambush at Night: the book's map, measured off it at 1" to the grid. The eaves of Fangorn run along the north edge, a
+ * band of trees with a ragged southern edge; two clumps of trees stand out in front of them and a third in the north-east
+ * corner. Two patches of long grass, a few boulders, and the camp's fire in the middle. (Heights and where they come
+ * from are in plans/ambush-at-night-audit.md.)
+ */
+function ambushTerrain(): NarrativeTerrain[] {
+  const tree = (id: string, x: number, y: number, w: number, h = w) => piece({ id, kind: 'wood', shape: 'circle', x, y, w, h, height: 5 });
+  return [
+    piece({ id: 'campfire', kind: 'objective', object: 'campfire', shape: 'circle', x: 24, y: 24, w: 1.6, h: 1.6 }),
+    // Fangorn's eaves: a solid band of trees along the edge, bulging further out in places.
+    piece({ id: 'fangorn', kind: 'wood', x: 24, y: 1.75, w: 48, h: 3.5, height: 6 }),
+    tree('eaves-1', 3.5, 3.6, 4.4, 2.6),
+    tree('eaves-2', 9.5, 3.8, 4.6, 2.8),
+    tree('eaves-3', 15, 4.4, 4.6, 3.2),
+    tree('eaves-4', 20.5, 5, 3.6),
+    tree('eaves-5', 27.3, 5.6, 4.4, 3.6),
+    tree('eaves-6', 33, 4.6, 3.8, 2.8),
+    tree('eaves-7', 38.6, 5.4, 4.2, 3.4),
+    tree('eaves-8', 44.5, 3.4, 4.4, 2.4),
+    // The clumps in front: west of the middle, north of the middle, and in the north-east corner.
+    tree('clump-w', 11.6, 9.4, 7, 5.6),
+    tree('clump-w2', 16.6, 11, 2.6),
+    tree('clump-n', 29.8, 10.3, 5, 4.6),
+    tree('clump-n2', 33.8, 7.9, 2.2),
+    tree('clump-ne', 46.4, 9.4, 3.6, 5),
+    // Long grass: tall enough to get in the way of a shot, not enough to slow anyone down.
+    piece({ id: 'grass-e', kind: 'field', look: 'grass', shape: 'circle', x: 40.2, y: 22.9, w: 10.6, h: 8.6, rot: -8, height: 0.5, difficult: false }),
+    piece({ id: 'grass-sw', kind: 'field', look: 'grass', shape: 'circle', x: 14.8, y: 37.1, w: 11, h: 8.8, rot: -12, height: 0.5, difficult: false }),
+    // Boulders, knee to waist high to a man.
+    piece({ id: 'boulder-w', kind: 'rock', shape: 'circle', x: 8.4, y: 23.6, w: 1.6, h: 1.1, rot: 15, height: 1 }),
+    piece({ id: 'boulder-ne', kind: 'rock', shape: 'circle', x: 40, y: 13.8, w: 2.2, h: 1.2, rot: 20, height: 1 }),
+    piece({ id: 'boulder-se', kind: 'rock', shape: 'circle', x: 36.3, y: 35.7, w: 2, h: 1.3, rot: -10, height: 1 }),
+    piece({ id: 'boulder-se2', kind: 'rock', shape: 'circle', x: 40.1, y: 35.1, w: 1.3, h: 1.4, rot: 10, height: 1 }),
+    piece({ id: 'boulder-s', kind: 'rock', shape: 'circle', x: 20.9, y: 40.1, w: 1.1, h: 1.4, rot: -5, height: 1 }),
+  ];
+}
+
+/** Ambush at Night: the book's cast, set out where the scenario starts them. */
+function ambushCast(): CastMember[] {
+  const R = '[kingdom-of-rohan]';
+  const U = "[ugluk's-scouts]";
+  const C = 24;
+  const out: CastMember[] = [
+    // Merry and Pippin, side by side just south of the fire, and Grishnákh 3" south of them.
+    { key: 'merry', side: 'good', unit: '[the-fellowship] meriadoc-brandybuck', prone: true, bound: true, crawls: 1, slips: true, facing: 180, place: { at: [C - 0.52, C + 1.36] } },
+    { key: 'pippin', side: 'good', unit: '[the-fellowship] peregrin-took', prone: true, bound: true, crawls: 1, slips: true, facing: 180, place: { at: [C + 0.52, C + 1.36] } },
+    { key: 'grishnakh', side: 'evil', unit: `${U} grishnakh`, stats: { A: 1 }, might: 1, will: 1, fate: 1, prone: true, crawls: 3, slips: true, facing: 0, place: { at: [C, C + 1.36 + 0.49 + 3 + 0.49] } },
+  ];
+  // The rest of the camp, in rings round the fire: the Uruk-hai heroes and Scouts nearest, the Orcs further out.
+  const camp: Omit<CastMember, 'place'>[] = [
+    { key: 'ugluk', side: 'evil', unit: `${U} ugluk` },
+    { key: 'snaga', side: 'evil', unit: `${U} snaga` },
+    { key: 'scout-captain', side: 'evil', unit: `${U} uruk-hai-scout-captain` },
+    ...[...Array(4).fill(['Shield']), ...Array(4).fill(['Uruk-hai bow']), ...Array(4).fill([])].map((options: string[]) => ({ key: 'scout', side: 'evil' as const, unit: `${U} uruk-hai-scout`, ...(options.length ? { options } : {}) })),
+    ...[...Array(4).fill(['Shield']), ...Array(4).fill(['Spear']), ...Array(2).fill(['Two-handed weapon']), ...Array(2).fill(['Orc bow'])].map(options => ({ key: 'orc', side: 'evil' as const, unit: `${U} isengard-orc-warrior`, options })),
+  ];
+  const slots = campSlots(C, C, out.map(c => ('at' in c.place ? { x: c.place.at[0], y: c.place.at[1] } : { x: C, y: C })));
+  camp.forEach((c, i) => {
+    const p = slots[i];
+    // Facing whichever flank is nearer, where the riders are coming from.
+    out.push({ ...c, facing: p.x < C ? 270 : 90, place: { area: { circle: [C, C, 6] }, at: [p.x, p.y] } });
+  });
+  // The riders: Éomer and half of them by the west edge, the Captain and the other half by the east, in a line facing in.
+  const riders = (n: number, spears: number): Omit<CastMember, 'place'>[] =>
+    Array.from({ length: n }, (_, i) => ({ key: 'rider', side: 'good' as const, unit: `${R} rider-of-rohan`, ...(i < spears ? { options: ['Throwing spears'] } : {}) }));
+  const line = (leader: Omit<CastMember, 'place'>, rest: Omit<CastMember, 'place'>[], x: number, box: Area, facing: number) =>
+    [leader, ...rest].forEach((c, i) => {
+      const k = i === 0 ? 0 : (i % 2 ? 1 : -1) * Math.ceil(i / 2);
+      out.push({ ...c, facing, place: { area: box, at: [x, C + k * 1.5] } });
+    });
+  line({ key: 'eomer', side: 'good', unit: `${R} eomer`, options: ['Firefoot'] }, riders(6, 2), 3, { box: [0, 0, 6, 48] }, 90);
+  line({ key: 'captain-rohan', side: 'good', unit: `${R} captain-of-rohan`, options: ['Horse', 'Shield'] }, riders(6, 2), 45, { box: [42, 0, 48, 48] }, 270);
+  return out;
+}
+
+/** Spots for 25mm bases round the fire, wholly within 6" of the middle and clear of the fire, the Hobbits and Grishnákh. */
+function campSlots(cx: number, cy: number, taken: Point[]): Point[] {
+  const r = 25 / 25.4 / 2;
+  const out: Point[] = [];
+  for (const ring of [2.2, 3.4, 4.6]) {
+    const n = Math.floor((2 * Math.PI * ring) / 1.08);
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * 2 * Math.PI + ring;
+      const p = { x: cx + Math.sin(a) * ring, y: cy - Math.cos(a) * ring };
+      // (Not touching Merry or Pippin, whom nobody but Grishnákh may come at.)
+      if (taken.some(q => Math.hypot(q.x - p.x, q.y - p.y) < 2 * r + 0.6)) continue;
+      if (out.some(q => Math.hypot(q.x - p.x, q.y - p.y) < 2 * r + 0.06)) continue;
+      out.push(p);
+    }
+  }
+  return out;
+}
+
 export const narrativeById = (id: string | null | undefined) => NARRATIVES.find(n => n.id === id);
 export const narrativeOf = (state: Pick<GameState, 'narrative'>) => narrativeById(state.narrative?.id);
 
@@ -411,6 +593,10 @@ export function narrativeSetup(n: Narrative, good: Seat, catalog: Catalog, newId
       ...(c.brand ? { brand: true } : {}),
       ...(c.torch ? { torch: true } : {}),
       ...('aside' in c.place ? { waiting: true } : {}),
+      ...(c.prone ? { prone: true } : {}),
+      ...(c.bound ? { bound: true } : {}),
+      ...(c.crawls ? { crawls: c.crawls } : {}),
+      ...(c.slips ? { slips: true } : {}),
     };
     const p = at(c, m);
     models.push({ ...m, ...p, rot: facing(c, p, owner) });
@@ -427,7 +613,7 @@ export function narrativeSetup(n: Narrative, good: Seat, catalog: Catalog, newId
         let d = 0;
         let p = along(engine, engine.rot + turn, d);
         while (distanceBetween({ ...hand, ...p }, engine) < 0.02 && d < 10) p = along(engine, engine.rot + turn, (d += 0.02));
-        const inside = p.x >= r && p.y >= r && p.x <= n.board.w - r && p.y <= n.board.h - r && (!('zone' in c.place) || inHelmsZone(c.place.zone, p, r));
+        const inside = p.x >= r && p.y >= r && p.x <= n.board.w - r && p.y <= n.board.h - r && (!('zone' in c.place) || inHelmsZone(c.place.zone, p, r)) && (!('area' in c.place) || whollyInArea(c.place.area, p, r));
         if (inside && models.every(o => o.id === engine.id || Math.hypot(o.x - p.x, o.y - p.y) >= radius(o) + r)) {
           spot = p;
           break;
@@ -479,6 +665,13 @@ export function holdNarrative(state: GameState, mv: { id: string; x: number; y: 
     // Anywhere in its area: a model dragged out of it stays where it was.
     return inHelmsZone(p.zone, mv, radius(m)) ? mv : { ...mv, x: m.x, y: m.y };
   }
+  if ('area' in p) {
+    // The same for a deployment zone; and at Ambush at Night no foe may be set up touching Merry or Pippin.
+    const onHobbit = n?.id === 'ambush-at-night' && Object.values(state.models).some(o => o.owner !== m.owner && isHobbit(o) && Math.hypot(o.x - mv.x, o.y - mv.y) < radius(o) + radius(m) + 0.25);
+    // At Balin's Tomb no Goblin may be set up within 1" of the Fellowship (in its control zone).
+    const zoned = n?.id === 'balins-tomb' && c.side === 'evil' && Object.values(state.models).some(o => o.owner !== m.owner && !o.dead && !o.waiting && distanceBetween({ ...m, ...mv }, o) < 1);
+    return whollyInArea(p.area, mv, radius(m)) && !onHobbit && !zoned ? mv : { ...mv, x: m.x, y: m.y };
+  }
   return { ...mv, x: m.x, y: m.y };
 }
 
@@ -488,6 +681,8 @@ export function narrativeWinner(state: GameState): Seat | 'draw' | null {
   if (!n || !state.flow.started) return null;
   if (n.id === 'roast-mutton') return muttonWinner(state);
   if (n.id === 'helms-deep') return helmsWinner(state);
+  if (n.id === 'ambush-at-night') return ambushWinner(state);
+  if (n.id === 'balins-tomb') return balinWinner(state);
   if (n.id === 'weathertop') {
     // The Nazgûl win as soon as Frodo falls; the Hobbits when every one of them is gone.
     if (castModel(state, 'frodo')?.dead) return seatOf(state, 'evil') ?? null;

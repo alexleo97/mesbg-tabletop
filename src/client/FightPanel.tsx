@@ -12,6 +12,7 @@ import { declared, phaseAllows } from '../shared/heroics.ts';
 import { waitingOnMight } from '../shared/bot.ts';
 import { fightDone, foughtThisTurn } from '../shared/movement.ts';
 import { noStrikes, under } from '../shared/powers.ts';
+import { fightsUpright } from '../shared/ambush.ts';
 import { cantShield, fighterOf, twoHandedChoice } from '../shared/wargear.ts';
 import { mountLabel, mountOf } from '../shared/cavalry.ts';
 import { hasMorgulBlade } from '../shared/morgul.ts';
@@ -28,6 +29,7 @@ function fightEffects(state: GameState, m: Model): string[] {
   const out: string[] = [];
   if (under(state, m, 'Paralyse')) out.push('Paralysed: adds nothing');
   else if (noStrikes(state, m)) out.push(`${noStrikes(state, m)}: no strikes${m.prone ? ', trapped if it loses' : ''}`);
+  else if (fightsUpright(state, m)) out.push('Prone, but fights as normal: a Hobbit and Grishnákh');
   if (under(state, m, 'Bladewrath')) out.push('Bladewrath: strikes at S6');
   if (under(state, m, 'Enchant Blades')) out.push('Enchant Blades: re-rolls To Wound');
   if (under(state, m, 'Enrage Beast')) out.push('Enraged: +2 F, S and A');
