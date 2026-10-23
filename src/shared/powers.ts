@@ -88,8 +88,8 @@ const inTerrain = (state: GameState, m: Model, kinds: Set<string>, reach = 0.25)
  * its caster has Will left. Any effect ends with its caster slain or gone from the table.
  */
 export function effectActive(state: GameState, e: ModelEffect): boolean {
-  // A Troll's sack holds its victim whatever becomes of the Troll.
-  if (e.sack) return true;
+  // A Troll's sack holds its victim whatever becomes of the Troll, and so does a Spider's web.
+  if (e.sack || e.web) return true;
   const caster = state.models[e.by];
   if (!caster || caster.dead || caster.escaped) return false;
   if (e.duration === 'Temporary') return e.turn === state.turn && state.phase !== 'end';

@@ -442,10 +442,11 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
         const beast = state.models[state.models[id]?.aboard ?? ''];
         return beast && !beast.dead ? beast.id : id;
       };
-      // Only your own models move (and the Palantír's in a solo game, and a model your caster has Compelled).
+      // Only your own models move (and the Palantír's in a solo game, a model your caster has Compelled, and a Spider
+      // you won the right to move under the Power of the Ring).
       const compel = state.flow.compel;
       const movable = (id: string) =>
-        (!role || state.models[id].owner === role || state.models[id].owner === state.bot || (compel?.model === id && state.models[compel.caster]?.owner === role)) &&
+        (!role || state.models[id].owner === role || state.models[id].owner === state.bot || (compel?.model === id && state.models[compel.caster]?.owner === role) || (state.flow.skitter?.model === id && state.flow.skitter.by === role)) &&
         // On a Learn to play table, only the models the step moves.
         (!lock || lock.can({ type: 'moveModels', moves: [{ id, x: state.models[id].x, y: state.models[id].y }] }));
       for (const id of [...group].map(ridden)) if (state.models[id] && movable(id)) origin[id] = { x: state.models[id].x, y: state.models[id].y };

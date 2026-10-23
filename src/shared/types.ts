@@ -141,6 +141,8 @@ export interface ModelEffect {
   spared?: string[];
   /** Stuffed in a Troll's sack: Paralysed as by the power, but it doesn't end with the Troll (see trolls.ts). */
   sack?: boolean;
+  /** Caught in a Mirkwood Giant Spider's web: Paralysed as by the power, but it doesn't end with the Spider. */
+  web?: boolean;
 }
 
 export const TERRAIN_KINDS = ['wood', 'rock', 'building', 'water', 'hill', 'wall', 'ruin', 'cliff', 'field', 'objective', 'bridge', 'road', 'gate', 'tower'] as const;
@@ -208,13 +210,13 @@ export interface Terrain {
   /** A flight of steps up onto a rampart's walkway: models go up and down there without a test. */
   stairs?: boolean;
   /** Drawn in dressed stone (a fortress's courtyard, causeway, keep or tower), a wall with a culvert through it, a field of long grass, or a piece of Balin's Tomb (a pillar, the tomb, the well, a trapdoor, the doorway: the well and trapdoors are where its Goblins come back), undergrowth, or a piece of Isengard (the tower of Orthanc, a timber scaffold, a ladder up one, a pit). */
-  look?: 'stone' | 'culvert' | 'grass' | 'pillar' | 'tomb' | 'well' | 'trapdoor' | 'doorway' | 'brush' | 'orthanc' | 'scaffold' | 'ladder' | 'pit';
+  look?: 'stone' | 'culvert' | 'grass' | 'pillar' | 'tomb' | 'well' | 'trapdoor' | 'doorway' | 'brush' | 'orthanc' | 'scaffold' | 'ladder' | 'pit' | 'roots' | 'trunk' | 'gnarled';
 }
 
 export const DOOR_TYPES = ['castle', 'dwarven', 'heavyArmoured', 'armoured', 'heavy', 'external', 'internal', 'dam'] as const;
 export type DoorType = (typeof DOOR_TYPES)[number];
 
-export const MARKER_OBJECTS = ['artefact', 'relic', 'heirloom', 'decoy', 'supply', 'ally', 'ladder', 'ram', 'rocks', 'oil', 'rally', 'campfire', 'charge', 'hobbit', 'boat'] as const;
+export const MARKER_OBJECTS = ['artefact', 'relic', 'heirloom', 'decoy', 'supply', 'ally', 'ladder', 'ram', 'rocks', 'oil', 'rally', 'campfire', 'charge', 'hobbit', 'boat', 'cocoon'] as const;
 export type MarkerObject = (typeof MARKER_OBJECTS)[number];
 
 /** Secret choices some scenarios ask each player to make, by model or terrain id. */
@@ -228,8 +230,10 @@ export interface Picks {
   protect?: string;
   hunt?: string;
   terrain?: string;
+  /** The Unseen Hero: the web marker that holds no Dwarves. */
+  decoy?: string;
 }
-export const PICK_KEYS = ['target', 'assassin', 'champion', 'protect', 'hunt', 'terrain'] as const;
+export const PICK_KEYS = ['target', 'assassin', 'champion', 'protect', 'hunt', 'terrain', 'decoy'] as const;
 
 export interface DiceRoll {
   id: string;
@@ -345,6 +349,8 @@ export interface NarrativeState {
   crushed?: string[];
   /** The turn knocked-out Hobbits last rolled to come round in the End phase (Amon Hen). */
   woke?: number;
+  /** The turn Bilbo last rolled to cut open the webs he was touching in the End phase (The Unseen Hero). */
+  webbed?: number;
 }
 
 export type BotSpeed = 'normal' | 'fast' | 'instant';
@@ -514,6 +520,12 @@ export interface Flow {
   compel?: { model: string; caster: string; max: number; from: [number, number]; /** Sauron's Will: the Ringbearer's foes move it, during its own side's move. */ ring?: boolean };
   /** Models that can't move again this turn (moved by Compel). */
   held?: string[];
+  /**
+   * The Unseen Hero: a Mirkwood Giant Spider moving its D6" under the Power of the Ring, by the player who won its
+   * Intelligence test (`by`), who must take it the whole way; and the Spiders that have tested this turn.
+   */
+  skitter?: { model: string; by: Seat; dist: number };
+  skittered?: string[];
   /** Models that stood up from Prone this turn, which costs half their Move. */
   stood?: string[];
   /** Inches each model has spent climbing between floors this Move phase. */
@@ -718,7 +730,7 @@ export type Action =
   /** Request: the Good player at Weathertop rolls for Aragorn this turn, or doesn't. */
   | { type: 'aragorn'; roll: boolean }
   /** Server only: bookkeeping for a narrative scenario's rules. */
-  | { type: 'narrativeNote'; rolled?: number; dawn?: number; bilbo?: boolean; breach?: number; troll?: number; crushed?: string[]; woke?: number; revive?: string[] }
+  | { type: 'narrativeNote'; rolled?: number; dawn?: number; bilbo?: boolean; breach?: number; troll?: number; crushed?: string[]; woke?: number; revive?: string[]; webbed?: number }
   /** Helm's Deep: the Good player picks where on the south edge the Relief Force will ride on. */
   | { type: 'reliefPoint'; seat: Seat; x: number }
   /** Helm's Deep: a Good hero by the gate mounts up (resolved with the profiles). */
@@ -762,6 +774,12 @@ export type Action =
   | { type: 'ringMark'; key: 'sauron' | 'ringTried' | 'sought'; id: string }
   /** Request: an Intelligence test for `id` to charge the Invisible model `target`. */
   | { type: 'seek'; id: string; target: string }
+  /** Request: a Mirkwood Giant Spider's Intelligence test and D6" move under the Power of the Ring (The Unseen Hero). */
+  | { type: 'skitter'; id: string }
+  /** Server only: the Spider `skitter.model` now moves `skitter.dist`, by `skitter.by`'s hand. */
+  | { type: 'skittering'; skitter: { model: string; by: Seat; dist: number } }
+  /** The player moving a Spider's D6" has taken it the whole way (or into Bilbo). */
+  | { type: 'skitterDone'; seat: Seat }
   /** A model for a player to place (the game's). */
   | { type: 'placing'; placing: Placing }
   /** The player has put the first model waiting to be placed where they want it. */

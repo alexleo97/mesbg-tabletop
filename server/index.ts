@@ -39,6 +39,7 @@ import { bondsDue, rollBonds } from '../src/shared/ambush.ts';
 import { isMonster } from '../src/shared/monsters.ts';
 import { chronicled, listenDue, listenFor, longbeardFor, trumpetDue } from '../src/shared/company.ts';
 import { sauronDue, sauronRoll } from '../src/shared/ring.ts';
+import { cutWebs, webDue } from '../src/shared/unseen.ts';
 import { mightyBonus, mightyDue } from '../src/shared/mighty.ts';
 import { longshanksDue, longshanksMove } from '../src/shared/sam.ts';
 import { burnDue, burns } from '../src/shared/fire.ts';
@@ -308,6 +309,7 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
     case 'narrativeNote':
     case 'burned':
     case 'ringMark':
+    case 'skittering':
     case 'placing':
     case 'mightyHero':
     case 'entering':
@@ -417,6 +419,9 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
       return client.role === 'p1' || client.role === 'p2' ? action : null;
     case 'setAdvance':
       return client.role === 'p1' || client.role === 'p2' ? action : null;
+    case 'skitterDone':
+      // Said by the player moving the Spider (or for the computer, by its server).
+      return state.flow.skitter && (state.flow.skitter.by === client.role || state.flow.skitter.by === state.bot) && action.seat === state.flow.skitter.by ? action : null;
     case 'compel':
       // The game starts a Compel; the caster's player says when they've finished moving the model.
       return action.compel === null && state.flow.compel && state.models[state.flow.compel.caster]?.owner === client.role ? action : null;
@@ -446,6 +451,9 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
           // A Compelled model is moved by the caster's player, not its own.
           const compel = state.flow.compel;
           if (compel && mv?.id === compel.model) return state.models[compel.caster]?.owner === client.role || (!!state.bot && state.models[compel.caster]?.owner === state.bot);
+          // A Spider moving its D6" under the Power of the Ring is moved by whichever player won its test.
+          const sk = state.flow.skitter;
+          if (sk && mv?.id === sk.model) return sk.by === client.role || (!!state.bot && sk.by === state.bot);
           return mine(mv?.id) || (!!state.bot && state.models[mv?.id]?.owner === state.bot);
         }),
       };
@@ -730,14 +738,14 @@ function narrativeUpkeep(room: Room) {
   upkeeping = true;
   try {
     const s = room.state;
-    const bearer = sauronDue(s);
+    const bearer = sauronDue(s, CATALOG);
     const sam = longshanksDue(s);
-    const out = mightyDue(s, CATALOG) ? mightyBonus(s, CATALOG, serverId) : sam ? longshanksMove(s, sam) : arrivalAuto(s) ? rollArrival(s, serverDice, serverId) : reinforceDue(s) ? companyArrives(s, serverDice, serverId) : bondsDue(s) ? rollBonds(s, serverDice, serverId) : trollDue(s) ? trollEnters(s, serverId) : trampleDue(s) ? trollTramples(s, CATALOG, serverDice, serverId) : tideDue(s) ? goblinTide(s, serverId) : legionsDue(s) ? legionsArrive(s, serverDice, serverId) : wakeDue(s) ? wakeUp(s, serverDice, serverId) : reliefDue(s) ? reliefArrives(s, serverId) : listenDue(s, CATALOG) ? listenFor(s, CATALOG) : dawnDue(s) ? rollDawn(s, serverDice, serverId) : bearer ? sauronRoll(s, bearer, serverDice, serverId) : burnDue(s) ? burns(s, CATALOG, serverDice, serverId) : [];
+    const out = mightyDue(s, CATALOG) ? mightyBonus(s, CATALOG, serverId) : sam ? longshanksMove(s, sam) : arrivalAuto(s) ? rollArrival(s, serverDice, serverId) : reinforceDue(s) ? companyArrives(s, serverDice, serverId) : bondsDue(s) ? rollBonds(s, serverDice, serverId) : trollDue(s) ? trollEnters(s, serverId) : trampleDue(s) ? trollTramples(s, CATALOG, serverDice, serverId) : tideDue(s) ? goblinTide(s, serverId) : legionsDue(s) ? legionsArrive(s, serverDice, serverId) : wakeDue(s) ? wakeUp(s, serverDice, serverId) : reliefDue(s) ? reliefArrives(s, serverId) : listenDue(s, CATALOG) ? listenFor(s, CATALOG) : dawnDue(s) ? rollDawn(s, serverDice, serverId) : webDue(s) ? cutWebs(s, serverDice, serverId) : bearer ? sauronRoll(s, bearer, serverDice, serverId) : burnDue(s) ? burns(s, CATALOG, serverDice, serverId) : [];
     for (const a of out) apply(room, a);
   } finally {
     upkeeping = false;
   }
-  if (mightyDue(room.state, CATALOG) || longshanksDue(room.state) || arrivalAuto(room.state) || reinforceDue(room.state) || bondsDue(room.state) || trollDue(room.state) || trampleDue(room.state) || tideDue(room.state) || legionsDue(room.state) || wakeDue(room.state) || reliefDue(room.state) || listenDue(room.state, CATALOG) || dawnDue(room.state) || sauronDue(room.state) || burnDue(room.state)) narrativeUpkeep(room);
+  if (mightyDue(room.state, CATALOG) || longshanksDue(room.state) || arrivalAuto(room.state) || reinforceDue(room.state) || bondsDue(room.state) || trollDue(room.state) || trampleDue(room.state) || tideDue(room.state) || legionsDue(room.state) || wakeDue(room.state) || reliefDue(room.state) || listenDue(room.state, CATALOG) || dawnDue(room.state) || webDue(room.state) || sauronDue(room.state, CATALOG) || burnDue(room.state)) narrativeUpkeep(room);
 }
 
 /** In the End phase, Paralysed models roll to recover. */

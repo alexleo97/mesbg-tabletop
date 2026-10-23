@@ -15,6 +15,7 @@ import { canThrowBrand, FLAMING_BRAND, isThrowing, planShot, shooterBlocked, thr
 import { cloaked, stones } from '../shared/wargear.ts';
 import { fireLine } from '../shared/fire.ts';
 import { cantRemove, cantWear, compelWear, ringbearer, seekTargets } from '../shared/ring.ts';
+import { isSpider, ringPower, skitterDue } from '../shared/unseen.ts';
 import { mounted, mountLabel, mountOf } from '../shared/cavalry.ts';
 import { commanderStats, howdahFor, immovable } from '../shared/warBeasts.ts';
 import { BeastPanel } from './BeastPanel.tsx';
@@ -507,6 +508,10 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
         <p className="warn">{m.name} is {held === 'Thrown from its mount' ? 'thrown from its mount' : held}, so it can't move or act this turn.</p>
       ) : state.flow.compel?.model === m.id && state.flow.compel.ring ? (
         <p className="warn">Sauron's Will holds {m.name}: {state.models[state.flow.compel.caster]?.owner === role ? 'you move' : 'your opponent moves'} it up to {formatInches(state.flow.compel.max)} this turn, charging if it can.</p>
+      ) : state.flow.skitter?.model === m.id ? (
+        <p className="warn">{state.flow.skitter.by === role ? 'You move' : 'Your opponent moves'} {m.name} {formatInches(state.flow.skitter.dist)} this turn: the whole way, stopping only if it touches Bilbo.</p>
+      ) : ringPower(state) && isSpider(m) && state.phase === 'move' && !skitterDue(state, m) && !state.flow.skittered?.includes(m.id) ? (
+        <p className="warn">While Bilbo wears the Ring, {m.name} moves only by the Power of the Ring: an Intelligence test as it activates, then D6".</p>
       ) : state.flow.compel?.model === m.id ? (
         <p className="warn">{m.name} is Compelled: {state.models[state.flow.compel.caster]?.name ?? 'the caster'}'s player moves it up to {formatInches(state.flow.compel.max)}.</p>
       ) : state.flow.held?.includes(m.id) && state.phase === 'move' ? (
@@ -558,6 +563,13 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
               {h.label}
             </button>
           ))}
+        </div>
+      )}
+      {mine && skitterDue(state, m) && (
+        <div className="row wrap marker-actions">
+          <button className="primary" onClick={() => dispatch({ type: 'skitter', id: m.id })} title={`While Bilbo wears the Ring, ${m.name} starts its move with an Intelligence test: passed, you move it D6"; failed, your opponent does. It must go the whole way, stopping only if it touches Bilbo.`}>
+            Intelligence test, then move D6"
+          </button>
         </div>
       )}
       {seeks.length > 0 && (

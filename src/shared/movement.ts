@@ -8,6 +8,7 @@ import { cannotAct } from './powers.ts';
 import { laden, overlapsPiece, shutGates } from './fortress.ts';
 import { crossingAhead } from './terrainTests.ts';
 import { invisibleTo, mayChargeAt } from './ring.ts';
+import { isSpider, ringPower, skittersInto } from './unseen.ts';
 import { surprised } from './ambush.ts';
 import { tramplesThrough } from './balin.ts';
 import type { GameState, Model, Seat } from './types.ts';
@@ -21,6 +22,10 @@ import type { GameState, Model, Seat } from './types.ts';
 export function moveAllowance(state: GameState, m: Model): number | null {
   if (!state.flow.started || m.dead) return null;
   if (state.phase === 'move') {
+    // The Unseen Hero: under the Power of the Ring a Spider moves only its D6", by whichever player won its test.
+    const sk = state.flow.skitter;
+    if (sk?.model === m.id) return sk.dist;
+    if (ringPower(state) && isSpider(m)) return 0;
     // A model held by a power or a Compel (or stunned by Sam's Frying Pan) stays put; one getting up from Prone has half its Move left.
     if (!canActivate(state, m.owner) || state.flow.courage?.[m.id] === false || cannotAct(state, m) || state.flow.held?.includes(m.id) || m.panned === state.turn || m.noMove === state.turn || surprised(state, m)) return 0;
     // A model already in a fight when its turn to move comes can't move (one that has just charged may still adjust).
@@ -247,7 +252,8 @@ export function blockMove(state: GameState, m: Model, from: Point, to: Point, sk
   };
   const all = Object.values(state.models).filter(e => e.id !== m.id && !e.dead && !e.waiting && !e.escaped && !e.aboard && !skip?.has(e.id) && near(e));
   // An Invisible model and those that can't see it pass through each other, though neither may stop on the other.
-  const ghosts = all.filter(e => passesThrough(m, e));
+  // (A Spider moving its D6" under the Power of the Ring stops on touching Bilbo: see unseen.ts.)
+  const ghosts = all.filter(e => passesThrough(m, e) && !skittersInto(state, m, e));
   // Balin's Tomb's Cave Troll, the turn it bursts in, goes through its own side and may stop on them (see balin.ts).
   const trodden = all.filter(e => tramplesThrough(state, m, e));
   const others = all.filter(e => !ghosts.includes(e) && !trodden.includes(e));
@@ -255,7 +261,7 @@ export function blockMove(state: GameState, m: Model, from: Point, to: Point, sk
   const enemies = zonesApply ? others.filter(e => e.owner !== m.owner) : [];
   // (A siege engine has no control zone, nor has an Invisible model, and an Invisible model ignores those of foes
   // that can't see it.)
-  const zoned = enemies.filter(e => !e.prone && !e.siege && !engaged(state, e, m.id) && !invisibleTo(m, e));
+  const zoned = enemies.filter(e => !e.prone && !e.siege && !engaged(state, e, m.id) && !invisibleTo(m, e) && !invisibleTo(e, m));
   const start = at(from);
   const startD = new Map(zoned.map(e => [e.id, distanceBetween(start, e)]));
   // The enemy being charged: the nearest one the move ends within 1" of, if this model may charge and could see it.

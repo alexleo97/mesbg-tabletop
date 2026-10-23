@@ -12,6 +12,7 @@ import { hasKeyword, isCavalry } from './powers.ts';
 import { mountLabel, mountOf } from './cavalry.ts';
 import { isMonster } from './monsters.ts';
 import { trollRampage } from './balin.ts';
+import { braveBaggins } from './unseen.ts';
 import type { DiceRoll, GameState, Model, Seat } from './types.ts';
 
 const unitOf = (catalog: Catalog | null | undefined, m: Model) => (m.profileId ? catalog?.units[m.profileId] : undefined);
@@ -202,6 +203,12 @@ export function fighterOf(state: GameState, catalog: Catalog | null | undefined,
   if (trollRampage(state, m)) {
     f.f = Math.min(10, f.f + 1);
     notes.push('Troll Rampage: +1 Fight (it charged)');
+  }
+  // The Unseen Hero: Bilbo fights harder in a turn he charged.
+  if (braveBaggins(state, m)) {
+    f.f = Math.min(10, f.f + 1);
+    f.a = Math.min(10, f.a + 1);
+    notes.push('Brave Master Baggins: +1 Fight, +1 Attack (he charged)');
   }
   if (duel) f.duelMod = duel;
   if (wound) f.woundMod = wound;

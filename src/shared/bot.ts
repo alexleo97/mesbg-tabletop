@@ -15,7 +15,7 @@ import { heroicBlocked, mightBlocked } from './mightUse.ts';
 import { canActivate, canDeclare, declared, heroicInfo, heroicTurn, heroicsSettled, mayActivate, orderRollLabel, orderRollNeeded, phaseHeroics } from './heroics.ts';
 import { canCast, castTargets, pendingSpell, powersOf, untargeted, type KnownPower } from './magic.ts';
 import { brutalOptions } from './monsters.ts';
-import { fightDone, limitMove, moveAllowance, moveLeft, testsTerrain } from './movement.ts';
+import { fightDone, limitMove, moveAllowance, moveLeft, moveStart, retrace, RETRACE, testsTerrain } from './movement.ts';
 import { affected, basePower, cannotAct, effectsOn, isCavalry, isLinePower, under } from './powers.ts';
 import { carriedBy, exitEdges, markerActions, onTable, sanctuary, touching as touchingMarker } from './objects.ts';
 import { reaches as reachesFoe, touching as touchingFoe } from './barriers.ts';
@@ -34,6 +34,7 @@ import { isAmbush, isGrishnakh, isHobbit } from './ambush.ts';
 import { isBalin } from './balin.ts';
 import { atBoats, boats, carriesHobbit, isAmon, isHalfling } from './amon.ts';
 import { bringDownTarget, dam, isEnt, isEnts } from './ents.ts';
+import { bundles as webBundles, isUnseen, keepOnTable, skitterDone, skitterLeft, spidersDue } from './unseen.ts';
 import { courageOf, willOfEvil } from './courage.ts';
 import { hasMorgulBlade } from './morgul.ts';
 import { AXE_FREED, canHeadbutt, hasMattock, longbeardFor, mayAxeTest, mayTend, rerollFor, spentPoints, swapPair, trumpetDue } from './company.ts';
@@ -78,6 +79,8 @@ export interface BotMemo {
   quiet?: number;
   /** Steps spent waiting for the other player to drive a Stampede this phase. */
   waits?: number;
+  /** Goes it has had at moving a Spider its D6" under the Power of the Ring (the Unseen Hero). */
+  skitters?: { model: string; n: number };
 }
 
 export const newMemo = (): BotMemo => ({ key: '', turn: 0, since: 0, acted: [], moved: {}, courage: {}, steps: 0 });
@@ -218,7 +221,7 @@ export function botStep(state: GameState, seat: Seat, catalog: Catalog | null, m
   if (place) return place.seat === seat ? { action: { type: 'placed', seat }, delay: THINK_PAUSE } : null;
   // Playing the Hobbits at Weathertop, the computer always rolls for Aragorn when it may.
   if (arrivalDue(state)) return seat === state.narrative?.good && !arrivalAuto(state) ? { action: { type: 'aragorn', roll: true }, delay: DICE_PAUSE } : null;
-  const spell = spellStep(ctx) ?? compelStep(ctx);
+  const spell = spellStep(ctx) ?? compelStep(ctx) ?? skitterStep(ctx);
   if (spell) return spell;
   if (++memo.steps > MAX_STEPS) return finish(ctx);
   return fateStep(ctx) ?? challengeStep(ctx) ?? (state.flow.shotPause ? pausedShot(ctx) : null) ?? companyStep(ctx) ?? phaseStep(ctx);
@@ -321,7 +324,7 @@ function picksStep(ctx: Ctx): BotStep | null {
  * on its own side of the table (apart, so it can hold them), and puts its warbands down one at a time, its Champion's
  * first, then the biggest, each spread along its zone (the game lays them out within 6" of their Captain).
  */
-function deployStep({ state, seat }: Ctx): BotStep | null {
+function deployStep({ state, seat, now }: Ctx): BotStep | null {
   const d = state.flow.deploy;
   if (!d) return null;
   switch (d.step) {
@@ -352,9 +355,16 @@ function deployStep({ state, seat }: Ctx): BotStep | null {
       const warband = nextBandFor(state, seat);
       return warband === null ? null : { action: { type: 'deployWarband', seat, warband }, delay: DICE_PAUSE };
     }
-    case 'sides':
+    case 'sides': {
+      if (d.turn !== seat) return null;
+      // The Unseen Hero: the Spiders' player secretly picks which webbed bundle is the decoy (any of them will do).
+      if (isUnseen(state) && seat !== state.narrative?.good && !state.flow.picks?.[seat]?.decoy) {
+        const all = webBundles(state).sort((a, b) => (a.id < b.id ? -1 : 1));
+        if (all.length) return { action: { type: 'setPick', seat, key: 'decoy', value: all[Math.floor(now / 7) % all.length].id }, delay: THINK_PAUSE };
+      }
       // A narrative scenario's cast is already where its story puts it.
-      return d.turn === seat ? { action: { type: 'warbandDone', seat }, delay: THINK_PAUSE } : null;
+      return { action: { type: 'warbandDone', seat }, delay: THINK_PAUSE };
+    }
     default:
       return null;
   }
@@ -468,6 +478,11 @@ function moveStep(ctx: Ctx): BotStep {
     const t = seekTargets(state, ctx.catalog, m).find(x => x.need <= 12 && centre(m, x.target) <= (moveAllowance(state, m) ?? 6) + 1);
     if (t) return { action: { type: 'seek', id: m.id, target: t.target.id }, delay: DICE_PAUSE };
   }
+
+  // The Unseen Hero: under the Power of the Ring each Spider tests as it activates, then moves its D6" (see skitterStep).
+  if (state.flow.skitter) return { delay: WAIT_PAUSE };
+  const spider = spidersDue(state, seat)[0];
+  if (spider) return { action: { type: 'skitter', id: spider.id }, delay: DICE_PAUSE };
 
   const cast = castStep(ctx);
   if (cast) return cast;
@@ -896,6 +911,16 @@ function assignGoals(ctx: Ctx): Map<string, Goal> {
         gang.set(prey.id, (gang.get(prey.id) ?? 0) + 1);
         out.set(m.id, { at: { x: prey.x, y: prey.y }, pull: 1 });
       }
+    }
+  }
+
+  // The Unseen Hero: Bilbo makes for the nearest webbed bundle he hasn't cut open, and stays touching it until he has.
+  // (The Spiders mostly go where the dice and the Ring send them: see skitterStep.)
+  if (isUnseen(state)) {
+    for (const m of ours) {
+      if (out.has(m.id) || m.cast !== 'bilbo') continue;
+      const t = bilboGoal(state, m);
+      if (t) out.set(m.id, { at: { x: t.x, y: t.y }, pull: 2, bold: true });
     }
   }
 
@@ -1379,6 +1404,51 @@ function compelStep(ctx: Ctx): BotStep | null {
   const d = centre(t, near);
   const k = Math.max(0, (d - radius(t) - radius(near) - 0.02) / (d || 1));
   return { action: { type: 'moveModels', moves: [{ id: t.id, x: t.x + (near.x - t.x) * k, y: t.y + (near.y - t.y) * k }] }, delay: MOVE_PAUSE };
+}
+
+/**
+ * The Unseen Hero: a Spider moving its D6" under the Power of the Ring, for whichever player moves it. The Spiders'
+ * player sends it at Bilbo, into contact if it can reach him; Bilbo's player sends it as far from him, and from the
+ * bundle he's after, as it will go. It goes the whole way, in more than one go if something stands in its way.
+ */
+function skitterStep(ctx: Ctx): BotStep | null {
+  const { state, seat, memo } = ctx;
+  const sk = state.flow.skitter;
+  if (!sk || sk.by !== seat) return null;
+  if (skitterDone(state)) return { action: { type: 'skitterDone', seat }, delay: THINK_PAUSE };
+  const m = state.models[sk.model];
+  const bilbo = castModel(state, 'bilbo');
+  if (!m || !bilbo) return null;
+  // (Something's wrong if it takes this many goes: leave it to the other player rather than loop.)
+  if (memo.skitters?.model !== m.id) memo.skitters = { model: m.id, n: 0 };
+  if (++memo.skitters.n > 24) return null;
+  const left = skitterLeft(state);
+  const hunt = seat === m.owner;
+  const goal = hunt ? undefined : bilboGoal(state, bilbo);
+  const score = (p: Point) => (hunt ? -centre(p, bilbo) : centre(p, bilbo) + (goal ? 0.5 * centre(p, goal) : 0));
+  const ways: Point[] = hunt ? [{ x: bilbo.x, y: bilbo.y }] : [];
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * 2 * Math.PI;
+    ways.push({ x: m.x + Math.cos(a) * left, y: m.y + Math.sin(a) * left });
+  }
+  // (Where each way would really take it, in a straight line: only ways that get it somewhere count, and not back the
+  // way it came, nor back where it began, which would only give the distance back.)
+  const trail = state.flow.paths?.[m.id];
+  const start = moveStart(state, m);
+  const best = ways
+    .map(p => keepOnTable(state, m, p))
+    .map(p => limitMove(state, m, p, left, seat, m))
+    .filter(p => centre(m, p) > 0.05 && centre(start, p) > RETRACE && !retrace(trail, p))
+    .sort((a, b) => score(b) - score(a))[0];
+  if (!best) return null;
+  return { action: { type: 'moveModels', moves: [{ id: m.id, x: best.x, y: best.y, rot: facing(m, best) }] }, delay: MOVE_PAUSE };
+}
+
+/** The Unseen Hero: the webbed bundle Bilbo is making for, the nearest he hasn't cut open. */
+function bilboGoal(state: GameState, bilbo: Model): Terrain | undefined {
+  return webBundles(state)
+    .filter(t => !t.gone)
+    .sort((a, b) => centre(bilbo, a) - centre(bilbo, b))[0];
 }
 
 function shootStep(ctx: Ctx): BotStep {

@@ -154,7 +154,7 @@ export function crossBlocked(state: GameState, m: Model, c: Crossing): string | 
 }
 
 const NAMES: Record<string, string> = { wall: 'wall', rock: 'rocks', cliff: 'cliff', building: 'building', water: 'stream' };
-export const terrainName = (t: Terrain | undefined) => (t ? (isPit(t) ? 'pit' : t.look === 'scaffold' ? 'scaffold' : t.look === 'orthanc' ? 'tower' : (NAMES[t.kind] ?? t.kind)) : 'obstacle');
+export const terrainName = (t: Terrain | undefined) => (t ? (isPit(t) ? 'pit' : t.look === 'scaffold' ? 'scaffold' : t.look === 'orthanc' ? 'tower' : t.look === 'roots' ? 'roots' : t.look === 'trunk' ? 'tree' : (NAMES[t.kind] ?? t.kind)) : 'obstacle');
 
 /** S3 hits for a fall further than the model's own height: one, and another for each full inch beyond it. */
 export const fallingHits = (m: Model, drop: number) => (drop > heightOfModel(m) + 1e-6 ? 1 + Math.floor(drop - heightOfModel(m) + 1e-6) : 0);

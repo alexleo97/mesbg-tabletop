@@ -4,6 +4,7 @@ import { heroicsSettled } from './heroics.ts';
 import { fightDone, fightsAgain } from './movement.ts';
 import { recoveryDue } from './powers.ts';
 import { endCheck, endRollLabel, gameEnded } from './status.ts';
+import { webDue } from './unseen.ts';
 import type { GameState } from './types.ts';
 
 // The Fight and End phases move on by themselves once there's nothing left to do in them, so nobody has to click
@@ -24,6 +25,6 @@ export function phaseFinished(state: GameState): boolean {
     // So may anyone still able to strike at a gate or swing a ram.
     return !Object.values(state.models).some(m => fightsAgain(state, m)) && !breachesLeft(state);
   }
-  if (state.phase === 'end') return !endRollDue(state) && !recoveryDue(state) && !gameEnded(state);
+  if (state.phase === 'end') return !endRollDue(state) && !recoveryDue(state) && !webDue(state) && !gameEnded(state);
   return false;
 }
