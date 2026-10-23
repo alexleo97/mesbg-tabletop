@@ -1,6 +1,6 @@
 import { fortressNotes } from './fortress.ts';
 import { formatInches } from './geometry.ts';
-import { blocksSight, hasFloors, heightOf, isDifficult, slowsShots } from './sight.ts';
+import { blocksSight, hasFloors, heightOf, isDifficult, isPit, slowsShots } from './sight.ts';
 import type { Terrain, TerrainKind } from './types.ts';
 
 /** What each kind of terrain is called, the group it belongs to and a note on how it plays, in this site's own words. */
@@ -32,8 +32,8 @@ export const isMarker = (t: Terrain) => t.kind === 'objective' || !!t.vines;
 export function drawLayer(t: Terrain): number {
   if (t.carrier) return 5;
   if (isMarker(t)) return 4;
-  // (A trapdoor in Balin's Tomb lies on its ledge, so it goes on top of it.)
-  if (t.kind === 'bridge' || t.look === 'trapdoor') return 3;
+  // (A trapdoor in Balin's Tomb lies on its ledge, and a ladder against a scaffold leans on it, so they go on top.)
+  if (t.kind === 'bridge' || t.look === 'trapdoor' || t.look === 'ladder') return 3;
   if (t.kind === 'road') return t.look === 'stone' && t.shape === 'rect' ? 2 : 0;
   return t.kind === 'water' ? 1 : 2;
 }
@@ -54,6 +54,10 @@ export function terrainRules(t: Terrain): string[] {
   if (slowsShots(t)) out.push('In the Way: shots through it need an In the Way roll.');
   if (t.kind === 'gate' || t.kind === 'tower' || t.barricade) out.push(...fortressNotes(t));
   if (t.sheer) out.push('Sheer: too tall and smooth to climb without a Siege Ladder (Swift Movement aside).');
+  if (isPit(t)) {
+    out.push(`A pit ${formatInches(Math.min(t.w, t.h))} across: models leap it (a Leap test) or scramble through it as difficult ground. A model at least twice as tall as it is wide (an Ent) steps straight over.`);
+    return out;
+  }
   out.push(TERRAIN_INFO[t.kind].note);
   return out;
 }

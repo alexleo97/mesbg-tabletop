@@ -247,6 +247,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
         </>
       );
     case 'water':
+      if (t.look === 'pit') return <IsengardPiece t={t} />;
       if (t.path && t.path.length > 1) {
         const hw = t.path.reduce((a, p) => a + p[2], 0) / t.path.length;
         return (
@@ -268,6 +269,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
         </>
       );
     case 'building':
+      if (t.look === 'orthanc') return <IsengardPiece t={t} />;
       if (t.look === 'stone') return <StoneTower t={t} tex={tex} />;
       if (t.look === 'pillar' || t.look === 'tomb' || t.look === 'well') return <MoriaPiece t={t} />;
       if (t.shape === 'circle')
@@ -310,6 +312,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
         </>
       );
     case 'wall':
+      if (t.look === 'scaffold') return <IsengardPiece t={t} />;
       if (t.barricade) {
         // A wooden barricade: a row of logs, with stakes poking out both ways if it is spiked. Broken, only splinters.
         const logs = Math.max(3, Math.round(t.w / 0.5));
@@ -426,6 +429,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
           </>
         );
       if (t.look === 'trapdoor' || t.look === 'doorway') return <MoriaPiece t={t} />;
+      if (t.look === 'ladder') return <IsengardPiece t={t} />;
       if (t.stairs) {
         // A flight of steps up to a wall's walkway: treads running along the wall, rising towards it (local -y).
         const n = Math.max(4, Math.round(t.h / 0.3));
@@ -467,6 +471,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
       );
     }
     case 'gate': {
+      if (t.door === 'dam') return <IsengardPiece t={t} />;
       // Long side runs along w: two leaves of planks with iron bands, a stone post at each end. Broken down, only
       // splinters and the posts are left.
       const post = Math.min(0.5, t.w * 0.12);
@@ -552,6 +557,100 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
 }
 
 /** The pieces of Balin's Tomb: a dwarf-hewn pillar, the tomb on its plinth, the well, a trapdoor, the doorway. */
+/**
+ * Isengard (Last March of the Ents): the black rock of Orthanc, timber scaffolds and their ladders, the pits torn in
+ * the ground, and the dam holding back the Isen.
+ */
+function IsengardPiece({ t }: { t: Terrain }) {
+  const { w, h } = t;
+  if (t.look === 'orthanc') {
+    // Sheer black rock, ribbed along its length; the core drawn as a stepped square.
+    const ribs = t.w > t.h * 1.5 ? Math.max(2, Math.round(h / 0.6)) : 0;
+    return (
+      <>
+        <rect className="ground orthanc-rock" x={-w / 2} y={-h / 2} width={w} height={h} filter="url(#hard-shadow)" />
+        {ribs > 0 && Array.from({ length: ribs - 1 }, (_, i) => <line key={i} className="tint orthanc-rib" x1={-w / 2 + 0.3} x2={w / 2 - 0.3} y1={-h / 2 + ((i + 1) * h) / ribs} y2={-h / 2 + ((i + 1) * h) / ribs} />)}
+        {ribs > 0 && [-1, 1].map(k => <path key={k} className="tint orthanc-rib" d={`M ${(k * w) / 2} ${-h / 2} l ${-k * 0.45} 0.45 l 0 ${h - 0.9} l ${k * 0.45} 0.45`} />)}
+        {!ribs && [0.12, 0.26, 0.4].map(f => <rect key={f} className="tint orthanc-rib" x={-w / 2 + w * f * 0.5} y={-h / 2 + h * f * 0.5} width={w * (1 - f)} height={h * (1 - f)} />)}
+        <rect className="tint" x={-w / 2} y={-h / 2} width={w} height={h} fill="url(#g-dome)" />
+        {!ribs && <text className="orthanc-height" x={0} y={0.35}>{`${t.height ?? 0}″`}</text>}
+      </>
+    );
+  }
+  if (t.look === 'scaffold') {
+    // A timber deck: planks laid across it, a beam down each long side, and the ends of the uprights at the corners.
+    const n = Math.max(4, Math.round(w / 0.32));
+    return (
+      <>
+        <rect className="ground scaffold-deck" x={-w / 2} y={-h / 2} width={w} height={h} filter="url(#hard-shadow)" />
+        {Array.from({ length: n - 1 }, (_, i) => {
+          const x = -w / 2 + ((i + 1) * w) / n;
+          return <line key={i} className="tint scaffold-plank" x1={x} x2={x} y1={-h / 2} y2={h / 2} />;
+        })}
+        <rect className="tint scaffold-beam" x={-w / 2} y={-h / 2} width={w} height={0.16} />
+        <rect className="tint scaffold-beam" x={-w / 2} y={h / 2 - 0.16} width={w} height={0.16} />
+        {[-1, 1].flatMap(a => [-1, 1].map(b => <rect key={`${a}${b}`} className="tint scaffold-post" x={(a * w) / 2 - (a > 0 ? 0.3 : 0)} y={(b * h) / 2 - (b > 0 ? 0.3 : 0)} width={0.3} height={0.3} />))}
+        {Array.from({ length: 3 }, (_, i) => <circle key={i} className="tint scaffold-nail" cx={-w / 2 + (0.2 + rand(t.id, i) * 0.6) * w} cy={(rand(t.id, i + 5) - 0.5) * h * 0.6} r={0.07} />)}
+      </>
+    );
+  }
+  if (t.look === 'ladder') {
+    // Two rails and their rungs, running the long way (local y).
+    const rungs = Math.max(3, Math.round(h / 0.22));
+    return (
+      <>
+        {Array.from({ length: rungs }, (_, i) => {
+          const y = -h / 2 + ((i + 0.5) * h) / rungs;
+          return <line key={i} className="ladder-rung" x1={-w * 0.32} x2={w * 0.32} y1={y} y2={y} />;
+        })}
+        <line className="ladder-rail" x1={-w * 0.32} x2={-w * 0.32} y1={-h / 2} y2={h / 2} filter="url(#hard-shadow)" />
+        <line className="ladder-rail" x1={w * 0.32} x2={w * 0.32} y1={-h / 2} y2={h / 2} filter="url(#hard-shadow)" />
+      </>
+    );
+  }
+  if (t.look === 'pit') {
+    // A jagged crevice: crumbling pale edges round a dark gash, narrowing at its ends.
+    const n = Math.max(4, Math.round(w / 0.5));
+    const edge = (side: 1 | -1, k: number) =>
+      Array.from({ length: n + 1 }, (_, i) => {
+        const x = -w / 2 + (i * w) / n;
+        const taper = Math.min(1, (Math.min(i, n - i) + 0.6) / 2);
+        const y = side * (h / 2) * k * taper * (0.75 + rand(t.id, i * 2 + (side > 0 ? 1 : 0)) * 0.25);
+        return `${x.toFixed(3)},${y.toFixed(3)}`;
+      });
+    const shape = (k: number) => [...edge(-1, k), ...edge(1, k).reverse()].join(' ');
+    return (
+      <>
+        <polygon className="ground pit-rim" points={shape(1)} />
+        <polygon className="tint pit-gash" points={shape(0.62)} />
+      </>
+    );
+  }
+  // The dam: courses of dressed stone, a walk along its top, and sluices; broken, a breach the river pours through.
+  const courses = Math.max(4, Math.round(h / 0.8));
+  if (t.gone)
+    return (
+      <>
+        <rect className="ground dam-flood" x={-w / 2} y={-h / 2} width={w + 1.5} height={h} />
+        {Array.from({ length: 10 }, (_, i) => (
+          <rect key={i} className="dam-rubble" x={-w / 2 + rand(t.id, i) * w} y={-h / 2 + rand(t.id, i + 11) * (h - 0.6)} width={0.5 + rand(t.id, i + 3) * 0.4} height={0.4} transform={`rotate(${rand(t.id, i + 20) * 90 - 45} ${-w / 2 + rand(t.id, i) * w} ${-h / 2 + rand(t.id, i + 11) * (h - 0.6)})`} />
+        ))}
+      </>
+    );
+  return (
+    <>
+      <rect className="ground dam-stone" x={-w / 2} y={-h / 2} width={w} height={h} fill="url(#tex-wall)" filter="url(#hard-shadow)" />
+      {Array.from({ length: courses - 1 }, (_, i) => {
+        const y = -h / 2 + ((i + 1) * h) / courses;
+        return <line key={i} className="tint dam-course" x1={-w / 2} x2={w / 2} y1={y} y2={y} />;
+      })}
+      <rect className="tint dam-walk" x={w / 2 - 0.45} y={-h / 2} width={0.45} height={h} />
+      {[-0.3, 0, 0.3].map(f => <rect key={f} className="tint dam-sluice" x={-w / 2 + 0.15} y={f * h - 0.5} width={w - 0.75} height={1} />)}
+      <rect className="tint dam-water" x={-w / 2} y={-h / 2} width={0.22} height={h} />
+    </>
+  );
+}
+
 function MoriaPiece({ t }: { t: Terrain }) {
   const octagon = (r: number) =>
     Array.from({ length: 8 }, (_, i) => {
@@ -685,7 +784,9 @@ function hull(pts: Point[]): Point[] {
 }
 
 /** Whether a piece is part of a fortress that stands tall (its walls, gates, keep, towers and the rock under them), or a stone piece of Balin's Tomb. */
-const tall = (t: Terrain) => !t.gone && (t.sheer || t.kind === 'gate' || (t.look === 'stone' && t.kind !== 'road') || t.look === 'pillar' || t.look === 'tomb' || t.look === 'well');
+const tall = (t: Terrain) => !t.gone && (t.sheer || t.kind === 'gate' || (t.look === 'stone' && t.kind !== 'road') || t.look === 'pillar' || t.look === 'tomb' || t.look === 'well' || t.look === 'scaffold');
+/** Orthanc's faces are cut short, so the tower doesn't hide the table round it (its height is written on top). */
+const FACE_CAP = 5.5;
 
 /** The ground a piece's faces cover, from its top down to its foot; a causeway slopes from the gate to the ground. */
 function face(t: Terrain, lean: Point): Point[] {
@@ -696,7 +797,7 @@ function face(t: Terrain, lean: Point): Point[] {
     const along = (p: Point) => ((p.x - t.x) * Math.cos(a) + (p.y - t.y) * Math.sin(a)) / t.w + 0.5;
     return hull([...top, ...top.map(p => ({ x: p.x + lean.x * 2.2 * (1 - along(p)), y: p.y + lean.y * 2.2 * (1 - along(p)) }))]);
   }
-  const h = heightOf(t);
+  const h = t.look === 'orthanc' ? Math.min(heightOf(t), FACE_CAP) : heightOf(t);
   return hull([...top, ...top.map(p => ({ x: p.x + lean.x * h, y: p.y + lean.y * h }))]);
 }
 
@@ -711,7 +812,7 @@ export function TerrainFaces({ terrain, turn = 0 }: { terrain: Terrain[]; /** Ho
         return (
           <g key={t.id}>
             <polygon className="face-shadow" points={pts} transform="translate(0.35 0.45)" filter="url(#bank-blur)" />
-            <polygon className="face" points={pts} fill={t.kind === 'rock' ? 'url(#tex-cliff)' : 'url(#tex-wall)'} />
+            <polygon className="face" points={pts} fill={t.look === 'orthanc' ? '#1d1e23' : t.look === 'scaffold' ? '#5a3d1f' : t.kind === 'rock' ? 'url(#tex-cliff)' : 'url(#tex-wall)'} />
             <polygon className="face-shade" points={pts} />
           </g>
         );

@@ -2,7 +2,7 @@ import { pushBack } from './backAway.ts';
 import { modelStats, type Catalog } from './catalog.ts';
 import { formatNeed, woundNeed } from './rules.ts';
 import { hasRule } from './wargear.ts';
-import { insidePolygon, outline } from './sight.ts';
+import { insidePolygon, isPit, outline } from './sight.ts';
 import { isRingwraith } from './narrative.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
@@ -41,7 +41,7 @@ export function burns(state: GameState, catalog: Catalog | null, d6: () => numbe
 export function putOut(state: GameState, m: Model): boolean {
   if (!m.ablaze) return false;
   if (m.prone && state.flow.crawling?.includes(m.id) && (state.flow.walked?.[m.id] ?? 0) >= 0.95) return true;
-  return Object.values(state.terrain).some(t => t.kind === 'water' && insidePolygon(outline(t), m));
+  return Object.values(state.terrain).some(t => t.kind === 'water' && !isPit(t) && insidePolygon(outline(t), m));
 }
 
 /**

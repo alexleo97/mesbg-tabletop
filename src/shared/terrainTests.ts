@@ -8,7 +8,7 @@ import { canActivate } from './heroics.ts';
 import { onTable } from './objects.ts';
 import { crowded, engaged, moveLeft, settleMove, testsTerrain } from './movement.ts';
 import { formatNeed, woundNeed } from './rules.ts';
-import { climbedLevel, distanceToTerrain, heightOf, heightOfModel, insidePolygon, outline, walkway } from './sight.ts';
+import { climbedLevel, distanceToTerrain, heightOf, heightOfModel, insidePolygon, isPit, outline, stepsOver, walkway } from './sight.ts';
 import type { Action, DiceRoll, GameState, Model, Seat, Terrain } from './types.ts';
 
 export type CrossTest = 'Jump' | 'Climb' | 'Climb down' | 'Leap';
@@ -67,7 +67,7 @@ export function crossingAhead(state: GameState, m: Model, from: Point, to: Point
   if (!pieces.length) return null;
   // (A rampart's walkway is climbed onto, like a rock, rather than crossed.)
   const walls = pieces.filter(t => t.kind === 'wall' && !walkway(t) && testFor(heightOf(t), tall)).map(t => ({ t, poly: outline(t) }));
-  const water = pieces.filter(t => t.kind === 'water').map(t => ({ t, poly: outline(t) }));
+  const water = pieces.filter(t => t.kind === 'water' && !stepsOver(t, tall)).map(t => ({ t, poly: outline(t) }));
   const climbed = pieces.filter(t => (t.kind === 'rock' || t.kind === 'cliff' || (t.kind === 'building' && !t.floors) || walkway(t)) && heightOf(t) > 0).map(t => ({ t, poly: outline(t), top: heightOf(t) }));
   // Steps or a ladder take a model up onto a piece, or down off it, without a test.
   const free = (piece: Terrain, p: Point) => ladderAt(state, piece.id, p, r) || (walkway(piece) && stairsAt(state, p, r));
@@ -154,7 +154,7 @@ export function crossBlocked(state: GameState, m: Model, c: Crossing): string | 
 }
 
 const NAMES: Record<string, string> = { wall: 'wall', rock: 'rocks', cliff: 'cliff', building: 'building', water: 'stream' };
-export const terrainName = (t: Terrain | undefined) => (t ? (NAMES[t.kind] ?? t.kind) : 'obstacle');
+export const terrainName = (t: Terrain | undefined) => (t ? (isPit(t) ? 'pit' : t.look === 'scaffold' ? 'scaffold' : t.look === 'orthanc' ? 'tower' : (NAMES[t.kind] ?? t.kind)) : 'obstacle');
 
 /** S3 hits for a fall further than the model's own height: one, and another for each full inch beyond it. */
 export const fallingHits = (m: Model, drop: number) => (drop > heightOfModel(m) + 1e-6 ? 1 + Math.floor(drop - heightOfModel(m) + 1e-6) : 0);

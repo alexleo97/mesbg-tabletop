@@ -1244,3 +1244,20 @@ select.ready-made {
 .terrain .moria-trapdoor-frame { fill: none; stroke: #2b2118; stroke-width: 0.1; }
 .terrain .moria-ring { fill: none; stroke: #8a8578; stroke-width: 0.07; }
 .terrain .moria-dark { fill: #0a0908; }
+.terrain .orthanc-rock { fill: #17181c; stroke: #050506; stroke-width: 0.08; }
+.terrain .orthanc-rib { fill: none; stroke: #3a3d46; stroke-width: 0.07; }
+.terrain .orthanc-height { fill: #c9ccd6; font-size: 1.1px; font-weight: 700; text-anchor: middle; pointer-events: none; }
+.terrain .scaffold-deck { fill: #8a6438; stroke: #3b2814; stroke-width: 0.06; }
+.terrain .scaffold-plank { stroke: #4a3219aa; stroke-width: 0.04; }
+.terrain .scaffold-beam, .terrain .scaffold-post { fill: #4f3519; }
+.terrain .scaffold-nail { fill: #1f1610; }
+.terrain .ladder-rail { stroke: #b88a52; stroke-width: 0.13; stroke-linecap: round; }
+.terrain .ladder-rung { stroke: #d9b27a; stroke-width: 0.08; }
+.terrain .pit-rim { fill: #a8987e; stroke: #6e604b; stroke-width: 0.05; }
+.terrain .pit-gash { fill: #19130e; }
+.terrain .dam-course { stroke: #00000040; stroke-width: 0.05; }
+.terrain .dam-walk { fill: #ffffff22; }
+.terrain .dam-sluice { fill: #2a2f33; stroke: #11161a; stroke-width: 0.05; }
+.terrain .dam-water { fill: #3d6a86; }
+.terrain .dam-flood { fill: #4f7f9c; opacity: 0.85; }
+.terrain .dam-rubble { fill: #8f877a; stroke: #4c463d; stroke-width: 0.04; }

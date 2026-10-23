@@ -18,6 +18,7 @@ import { mountLabel, mountOf } from '../shared/cavalry.ts';
 import { hasMorgulBlade } from '../shared/morgul.ts';
 import { hasFryingPan, pannable } from '../shared/sam.ts';
 import { brutalOptions, chargeEffects } from '../shared/monsters.ts';
+import { bringDownTarget } from '../shared/ents.ts';
 import { BOT_NAME, FIGHT_TARGETS, type Action, type GameState, type Model, type Role, type Seat } from '../shared/types.ts';
 import { useCatalog } from './ListBuilder.tsx';
 import { RollRow } from './Panels.tsx';
@@ -149,7 +150,7 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
     // The loser's model struck first; with more than one, the winner aims each strike after the duel.
     const target = (s: Seat) => sides[s][0].id;
     const [kind, victim] = brutal.split(':');
-    const brute = brutalBy();
+    const brute = kind === 'topple' ? toppleBy()?.by : brutalBy();
     return {
       sides: [side('p1'), side('p2')] as [Fighter[], Fighter[]],
       targets: [target('p2'), target('p1')] as [string, string],
@@ -186,6 +187,14 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
     if (!leader || role === 'spectator') return undefined;
     const seat: Seat = leader.winner === 0 ? 'p1' : 'p2';
     return seat === role ? sides[seat].find(m => brutalOptions(state, catalog, m).length && !noStrikes(state, m)) : undefined;
+  }
+  /** "Bring them down!" (Last March of the Ents): the Orcs winning this fight may pull the Ent down instead of striking. */
+  function toppleBy(): { by: Model; ent: string } | undefined {
+    if (!leader || role === 'spectator' || brutalBy()) return undefined;
+    const seat: Seat = leader.winner === 0 ? 'p1' : 'p2';
+    if (seat !== role || !sides.p1.length || !sides.p2.length) return undefined;
+    const ent = bringDownTarget(state, { sides: [side('p1'), side('p2')], targets: [sides.p2[0].id, sides.p1[0].id] }, leader.winner);
+    return ent ? { by: sides[seat][0], ent } : undefined;
   }
   /** The winning side's other monsters, which may make a Brutal Power Attack of their own (but not Barge or Hurl). */
   function moreBrutes(): Model[] {
@@ -351,6 +360,19 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
                   </label>
                 );
               })()}
+              {toppleBy()?.by.owner === seat && (() => {
+                const { ent } = toppleBy()!;
+                const name = state.models[ent]?.name ?? 'the Ent';
+                return (
+                  <label className="strike-at">
+                    The Orcs win:
+                    <select value={brutal} onChange={e => setBrutal(e.target.value)} aria-label="Bring them down">
+                      <option value="">Strike as normal</option>
+                      <option value={`topple:${ent}`}>Bring them down! A D6 each for those touching {name}: any 6 knocks it Prone, and nobody strikes</option>
+                    </select>
+                  </label>
+                );
+              })()}
               {brutalBy()?.owner === seat &&
                 moreBrutes().map(m => {
                   const kinds = brutalOptions(state, catalog, m).filter(k => k !== 'barge' && k !== 'hurl');
@@ -365,7 +387,7 @@ export function FightPanel({ state, dispatch, role, ids, combat, title = 'Fight'
                     </label>
                   );
                 })}
-              {strikable(foe).length > 1 && leader?.winner === (seat === 'p1' ? 0 : 1) && !(brutal && brutalBy()?.owner === seat) &&
+              {strikable(foe).length > 1 && leader?.winner === (seat === 'p1' ? 0 : 1) && !(brutal && (brutalBy() ?? toppleBy()?.by)?.owner === seat) &&
                 [...sides[seat], ...helping(seat)]
                   .filter(m => !noStrikes(state, m))
                   .map(m => {

@@ -422,7 +422,7 @@ function cleanTerrain(t: Partial<Terrain>, prev?: Terrain): Terrain | null {
     rot: num(t.rot, -360, 720, base.rot) % 360,
     locked: typeof t.locked === 'boolean' ? t.locked : base.locked,
   };
-  const height = 'height' in t ? (t.height === undefined || t.height === null ? undefined : num(t.height, 0, 12, 0)) : base.height;
+  const height = 'height' in t ? (t.height === undefined || t.height === null ? undefined : num(t.height, 0, 20, 0)) : base.height;
   if (height !== undefined) out.height = height;
   const floors = 'floors' in t ? int(t.floors, 0, 6, 0) : base.floors;
   if (floors && FLOORED.has(out.kind)) out.floors = floors;
@@ -436,7 +436,7 @@ function cleanTerrain(t: Partial<Terrain>, prev?: Terrain): Terrain | null {
   if (('walk' in t ? t.walk : base.walk) === true && out.kind === 'wall') out.walk = true;
   if (('stairs' in t ? t.stairs : base.stairs) === true && out.kind === 'road') out.stairs = true;
   const look = 'look' in t ? t.look : base.look;
-  if (look === 'stone' || look === 'culvert' || look === 'grass' || look === 'pillar' || look === 'tomb' || look === 'well' || look === 'trapdoor' || look === 'doorway' || look === 'brush') out.look = look;
+  if (look === 'stone' || look === 'culvert' || look === 'grass' || look === 'pillar' || look === 'tomb' || look === 'well' || look === 'trapdoor' || look === 'doorway' || look === 'brush' || look === 'orthanc' || look === 'scaffold' || look === 'ladder' || look === 'pit') out.look = look;
   cleanObject(t, base, out);
   if ('vines' in t ? t.vines === true : base.vines) {
     const side = 'side' in t ? t.side : base.side;
