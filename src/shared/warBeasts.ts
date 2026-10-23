@@ -351,7 +351,7 @@ export function ridersFall(state: GameState, catalog: Catalog | null, beast: Mod
       continue;
     }
     push(`${r.name} falls from ${beast.name} (${why})`, []);
-    actions.push({ type: 'affect', id: r.id, patch: { aboard: undefined, prone: true } }, ...fallDamage(catalog, r, drop, d6, push, `${group}-${r.id}`));
+    actions.push({ type: 'affect', id: r.id, patch: { aboard: '', prone: true } }, ...fallDamage(catalog, r, drop, d6, push, `${group}-${r.id}`));
   }
   return { rolls, actions };
 }
