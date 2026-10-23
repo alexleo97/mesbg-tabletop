@@ -108,7 +108,7 @@ describe('Last March of the Ents: the table', () => {
     expect(crossingAhead(s, ent, onDeck('scaffold-ne', 0, 4), mid)?.test).toBe('Jump');
     expect(crossingAhead(s, orc, onDeck('scaffold-ne', 5.4), onDeck('scaffold-ne', 2.4))).toBeNull();
     // And from the lower deck up to the upper one by the ladder between them.
-    expect(crossingAhead(s, orc, onDeck('scaffold-nw-low', -2.4), onDeck('scaffold-nw-high', 1))).toBeNull();
+    expect(crossingAhead(s, orc, onDeck('scaffold-nw-low', -1.35), onDeck('scaffold-nw-high', 1))).toBeNull();
     // (There's no ladder up to it from the ground: that's a climb of 4.5".)
     expect(crossingAhead(s, orc, onDeck('scaffold-nw-high', -4.2), onDeck('scaffold-nw-high', -1))).toMatchObject({ test: 'Climb', terrain: 'n-scaffold-nw-high' });
   });

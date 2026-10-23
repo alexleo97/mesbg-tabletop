@@ -573,6 +573,7 @@ function IsengardPiece({ t }: { t: Terrain }) {
         {ribs > 0 && [-1, 1].map(k => <path key={k} className="tint orthanc-rib" d={`M ${(k * w) / 2} ${-h / 2} l ${-k * 0.45} 0.45 l 0 ${h - 0.9} l ${k * 0.45} 0.45`} />)}
         {!ribs && [0.12, 0.26, 0.4].map(f => <rect key={f} className="tint orthanc-rib" x={-w / 2 + w * f * 0.5} y={-h / 2 + h * f * 0.5} width={w * (1 - f)} height={h * (1 - f)} />)}
         <rect className="tint" x={-w / 2} y={-h / 2} width={w} height={h} fill="url(#g-dome)" />
+        {!ribs && <text className="orthanc-height" x={0} y={0.35}>{`${t.height ?? 0}″`}</text>}
       </>
     );
   }
@@ -784,8 +785,8 @@ function hull(pts: Point[]): Point[] {
 
 /** Whether a piece is part of a fortress that stands tall (its walls, gates, keep, towers and the rock under them), or a stone piece of Balin's Tomb. */
 const tall = (t: Terrain) => !t.gone && (t.sheer || t.kind === 'gate' || (t.look === 'stone' && t.kind !== 'road') || t.look === 'pillar' || t.look === 'tomb' || t.look === 'well' || t.look === 'scaffold');
-/** Orthanc's faces are cut short, so the tower doesn't hide the table round it. */
-const FACE_CAP = 3.5;
+/** Orthanc's faces are cut short, so the tower doesn't hide the table round it (its height is written on top). */
+const FACE_CAP = 5.5;
 
 /** The ground a piece's faces cover, from its top down to its foot; a causeway slopes from the gate to the ground. */
 function face(t: Terrain, lean: Point): Point[] {

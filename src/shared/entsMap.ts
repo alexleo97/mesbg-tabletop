@@ -19,7 +19,7 @@ const piece = (t: Partial<Terrain> & Pick<Terrain, 'id' | 'kind' | 'x' | 'y' | '
 
 /** A scaffold's deck: middle, length along its planks, width, which way it runs (degrees) and how high it is. */
 export const SCAFFOLDS: { id: string; x: number; y: number; long: number; wide: number; rot: number; height: number }[] = [
-  { id: 'scaffold-nw-low', x: 15.35, y: 16.8, long: 7.7, wide: 2.4, rot: 26, height: DECK.low },
+  { id: 'scaffold-nw-low', x: 14.41, y: 16.34, long: 5.6, wide: 2.4, rot: 26, height: DECK.low },
   { id: 'scaffold-nw-high', x: 14.6, y: 12.7, long: 5.2, wide: 2.4, rot: 121, height: DECK.high },
   { id: 'scaffold-ne', x: 38.15, y: 12.9, long: 7.3, wide: 2.3, rot: 41, height: DECK.low },
   { id: 'scaffold-sw-low', x: 14.2, y: 34.3, long: 4.8, wide: 2.4, rot: 30, height: DECK.low },
@@ -40,8 +40,8 @@ export const onDeck = (id: string, k: number, side = 0): Point => {
  * lower deck to the upper one on it.
  */
 const LADDERS: { id: string; on: string; k: number; side?: number }[] = [
-  { id: 'ladder-nw-e', on: 'scaffold-nw-low', k: 4.25 },
-  { id: 'ladder-nw-w', on: 'scaffold-nw-low', k: -4.25 },
+  { id: 'ladder-nw-e', on: 'scaffold-nw-low', k: 3.2 },
+  { id: 'ladder-nw-w', on: 'scaffold-nw-low', k: -3.2 },
   { id: 'ladder-nw-up', on: 'scaffold-nw-high', k: 2.6 },
   { id: 'ladder-ne-sw', on: 'scaffold-ne', k: -4.05 },
   { id: 'ladder-ne-se', on: 'scaffold-ne', k: 4.05 },
@@ -156,8 +156,8 @@ export function entsCast(): CastMember[] {
     ['scaffold-ne', -1.6],
     ['scaffold-ne', 0],
     ['scaffold-ne', 1.6],
-    ['scaffold-nw-low', 1.4],
-    ['scaffold-nw-low', 2.6],
+    ['scaffold-nw-low', 0.4],
+    ['scaffold-nw-low', 1.6],
     ['scaffold-nw-high', 0.6],
     ['scaffold-sw-low', 0.4],
     ['scaffold-sw-high', 0.9],

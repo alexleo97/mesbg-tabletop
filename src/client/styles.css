@@ -1246,6 +1246,7 @@ select.ready-made {
 .terrain .moria-dark { fill: #0a0908; }
 .terrain .orthanc-rock { fill: #17181c; stroke: #050506; stroke-width: 0.08; }
 .terrain .orthanc-rib { fill: none; stroke: #3a3d46; stroke-width: 0.07; }
+.terrain .orthanc-height { fill: #c9ccd6; font-size: 1.1px; font-weight: 700; text-anchor: middle; pointer-events: none; }
 .terrain .scaffold-deck { fill: #8a6438; stroke: #3b2814; stroke-width: 0.06; }
 .terrain .scaffold-plank { stroke: #4a3219aa; stroke-width: 0.04; }
 .terrain .scaffold-beam, .terrain .scaffold-post { fill: #4f3519; }
