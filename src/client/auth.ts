@@ -95,7 +95,10 @@ async function loadProfile(sb: SupabaseClient, session: Session | null) {
   void checkMembership(session);
   const { data, error } = await sb.from('profiles').select('id, username, avatar_url, created_at').eq('id', session.user.id).maybeSingle();
   if (error || !data) return set({ loading: false, signedIn: true, profile: null, error: "You're signed in, but your profile couldn't be loaded. The database may not be set up yet." });
-  set({ loading: false, signedIn: true, profile: data, error: undefined });
+  // The stored picture is the one from the first sign-in; Discord retires it when the player changes
+  // theirs, so prefer the one Discord gave at this sign-in.
+  const live: unknown = session.user.user_metadata?.avatar_url;
+  set({ loading: false, signedIn: true, profile: { ...data, avatar_url: typeof live === 'string' && live ? live : data.avatar_url }, error: undefined });
 }
 
 let started = false;

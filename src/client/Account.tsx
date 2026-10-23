@@ -2,12 +2,15 @@ import { useEffect, useState } from 'react';
 import { rename, signIn, signOut, statsFor, useAuth, type Profile, type Stats } from './auth.ts';
 import { armySummaries, listMaps, updateMap, type ArmySummary, type SavedMap } from './cloud.ts';
 
-function Avatar({ profile, size = 28 }: { profile: Profile; size?: number }) {
-  return profile.avatar_url ? (
-    <img className="avatar" src={profile.avatar_url} alt="" width={size} height={size} referrerPolicy="no-referrer" />
+/** A player's Discord picture, or the first letter of their name when there is none or it won't load. */
+export function Avatar({ profile, size = 28 }: { profile: Pick<Profile, 'username' | 'avatar_url'>; size?: number }) {
+  const [failed, setFailed] = useState<string | null>(null);
+  const url = profile.avatar_url;
+  return url && failed !== url ? (
+    <img className="avatar" src={url} alt="" width={size} height={size} referrerPolicy="no-referrer" onError={() => setFailed(url)} />
   ) : (
-    <span className="avatar blank" style={{ width: size, height: size }}>
-      {profile.username.slice(0, 1).toUpperCase()}
+    <span className="avatar blank" style={{ width: size, height: size, fontSize: Math.round(size * 0.5) }}>
+      {(profile.username.trim().slice(0, 1) || '?').toUpperCase()}
     </span>
   );
 }
@@ -21,7 +24,7 @@ export function AccountButton() {
   if (signedIn)
     return (
       <div className="account">
-        <button className="account-me" onClick={() => (location.search = '?profile')}>
+        <button className="account-me" title="Your profile" onClick={() => (location.search = '?profile')}>
           {profile && <Avatar profile={profile} />}
           <span>{profile?.username ?? 'Your profile'}</span>
         </button>

@@ -34,6 +34,17 @@ end $$;
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created after insert on auth.users for each row execute function public.handle_new_user();
 
+-- Discord retires a picture's link when the player changes it, so take the new one at each sign-in.
+create or replace function public.handle_user_updated() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  update public.profiles set avatar_url = new.raw_user_meta_data ->> 'avatar_url'
+  where id = new.id and avatar_url is distinct from new.raw_user_meta_data ->> 'avatar_url';
+  return new;
+end $$;
+drop trigger if exists on_auth_user_updated on auth.users;
+create trigger on_auth_user_updated after update of raw_user_meta_data on auth.users for each row execute function public.handle_user_updated();
+
 -- Saved armies and player-made maps. Armies are private unless shared; maps are shared unless hidden.
 create table if not exists public.armies (
   id uuid primary key default gen_random_uuid(),

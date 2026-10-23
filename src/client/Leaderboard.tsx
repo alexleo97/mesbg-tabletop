@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Avatar } from './Account.tsx';
 import { leaderboard, useAuth, type Standing } from './auth.ts';
 
 /** Players ranked by wins in games both sides agreed on. */
@@ -37,13 +38,7 @@ export function LeaderboardPage() {
                 <td>{i + 1}</td>
                 <td className="who">
                   <span className="who-cell">
-                    {r.avatar_url ? (
-                      <img className="avatar" src={r.avatar_url} alt="" width={24} height={24} referrerPolicy="no-referrer" />
-                    ) : (
-                      <span className="avatar blank" style={{ width: 24, height: 24 }}>
-                        {r.username.slice(0, 1).toUpperCase()}
-                      </span>
-                    )}
+                    <Avatar profile={r} size={24} />
                     <span>{r.username}</span>
                   </span>
                 </td>
