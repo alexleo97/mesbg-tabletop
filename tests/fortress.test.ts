@@ -39,7 +39,8 @@ const uid = () => `u${n++}`;
 const ask = (s: GameState, seat: Seat, a: Action, dice: number[]) => {
   const seq = [...dice];
   const out = resolveRequest(s, seat, a, () => seq.shift() ?? 1, uid, Date.now(), catalog);
-  return out && run(s, ...out.apply);
+  // Through JSON, as the server sends them to the browsers (where a field set to undefined goes missing).
+  return out && run(s, ...out.apply.map(x => JSON.parse(JSON.stringify(x)) as Action));
 };
 const breach = (s: GameState, how: 'strike' | 'ram' | 'shoot' | 'push', model: string, target: string, dice: number[], seat: Seat = 'p2') => ask(s, seat, { type: 'breach', how, model, target }, dice);
 

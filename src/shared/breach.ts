@@ -221,8 +221,9 @@ function pushLadder(state: GameState, catalog: Catalog | null, m: Model, ladder:
   if (!pushed) return done();
   const wall = ladder.raised ? state.terrain[ladder.raised] : undefined;
   const fall = wall ? heightOf(wall) : 2;
-  // The ladder topples away from the wall, and those climbing it fall.
-  out.push({ type: 'updateTerrain', id: ladder.id, patch: { raised: undefined } });
+  // The ladder topples away from the wall, and those climbing it fall. (Cleared with '': undefined wouldn't survive
+  // the trip to the browsers as JSON, and their tables would still show it raised.)
+  out.push({ type: 'updateTerrain', id: ladder.id, patch: { raised: '' } });
   for (const e of climbers) out.push(...fallDamage(catalog, e, fall, d6, push, group));
   return done();
 }

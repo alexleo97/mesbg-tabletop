@@ -288,7 +288,7 @@ export function explode(state: GameState, catalog: Catalog | null, t: Terrain, s
   if (done.has(t.id)) return;
   done.add(t.id);
   const table = d6();
-  out.push({ type: 'updateTerrain', id: t.id, patch: { gone: 'destroyed', by: seat, carrier: undefined } });
+  out.push({ type: 'updateTerrain', id: t.id, patch: { gone: 'destroyed', by: seat, carrier: '' } });
   if (table === 1) {
     push('Detonation Table', [table], { note: 'A dud: the charge is faulty and is removed.' });
     return;
@@ -310,7 +310,7 @@ export function explode(state: GameState, catalog: Catalog | null, t: Terrain, s
       const off = rolls.some(x => x >= 4);
       push('The next charge: a 4+ for each Wound sets it off', rolls, { target: 4, note: off ? 'It goes off too!' : 'It breaks without going off.' });
       if (off) explode(state, catalog, p, seat, d6, push, out, group, done);
-      else out.push({ type: 'updateTerrain', id: p.id, patch: { gone: 'destroyed', by: seat, carrier: undefined } });
+      else out.push({ type: 'updateTerrain', id: p.id, patch: { gone: 'destroyed', by: seat, carrier: '' } });
       continue;
     }
     const b = breakable(p);
@@ -373,7 +373,7 @@ export function chargeSabotage(state: GameState, uid: () => string, now = Date.n
     if (!by) continue;
     out.push(
       { type: 'rolled', roll: { id: `dis-${uid()}`, by: by.owner, label: `${by.name} disables a Demolition Charge`.slice(0, 80), dice: [], model: by.id, at: now, note: 'The charge is made safe and removed.' } },
-      { type: 'updateTerrain', id: t.id, patch: { gone: 'destroyed', by: by.owner, carrier: undefined } },
+      { type: 'updateTerrain', id: t.id, patch: { gone: 'destroyed', by: by.owner, carrier: '' } },
     );
   }
   return out;
