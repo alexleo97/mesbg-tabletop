@@ -809,8 +809,15 @@ details.finish summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
 .site-nav nav a:hover { color: var(--text); background: var(--panel-2); }
 .site-nav nav a.on { color: var(--gold); background: var(--panel-2); }
 .site-nav .account { margin: 0; min-height: 0; }
-.nav-discord { padding: 7px 14px; border-radius: 8px; background: #5865f2; color: #fff; text-decoration: none; font-weight: 600; white-space: nowrap; }
-.nav-discord:hover { background: #4752c4; }
+/* The two Discord buttons share a size: joining is the outlined one, signing in the filled one. */
+.nav-discord, .site-nav .discord-signin {
+  display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; height: 36px; min-height: 0; padding: 0 14px;
+  border-radius: 8px; border: 1px solid #5865f2; font-size: 0.95rem; font-weight: 600; line-height: 1; white-space: nowrap; text-decoration: none;
+}
+.site-nav .discord-signin { gap: 0; }
+.nav-discord { gap: 6px; background: transparent; color: #c9cdfb; }
+.nav-discord:hover { background: #5865f22e; color: #fff; }
+.nav-discord svg { flex: 0 0 auto; }
 .nav-settings { position: relative; }
 .nav-settings .icon-btn { width: 38px; min-height: 38px; padding: 0; font-size: 1.1rem; }
 .nav-settings-panel { position: absolute; right: 0; top: calc(100% + 8px); z-index: 30; width: min(380px, calc(100vw - 32px)); max-height: 75vh; overflow-y: auto; text-align: left; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 30px #000a; }
@@ -971,6 +978,8 @@ details.finish summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
   .site-nav nav a span { font-size: 1.25rem; }
   .site-nav .brand { flex: 1; }
   .site-nav .account-me span:not(.avatar) { display: none; }
+  .site-nav .nav-long { display: none; }
+  .nav-discord, .site-nav .discord-signin { height: 34px; padding: 0 10px; font-size: 0.85rem; }
   .site-main { padding-top: 20px; }
   .armies-builder { padding: 10px; }
 }
@@ -1052,6 +1061,7 @@ details.finish summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
   .dash-grid { grid-template-columns: 1fr; }
   .hero-actions { grid-template-columns: 1fr; }
   .home-foot .fine { margin: 0; }
+  .open-games.dash-card.empty { flex-direction: column; align-items: flex-start; gap: 6px; padding: 14px 18px; }
 }
 .model-name { fill: #fff; font-weight: 600; font-size: 0.8em; paint-order: stroke; stroke: #000c; stroke-width: 0.09; }
 
