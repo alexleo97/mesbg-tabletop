@@ -21,7 +21,7 @@ export const DOORS: Record<DoorType, { name: string; d: number; w: number }> = {
 /** A Siege Ladder or battering ram lying on the ground can be broken too. */
 const GEAR: Partial<Record<string, { d: number; w: number }>> = { ladder: { d: 8, w: 2 }, ram: { d: 8, w: 3 }, charge: { d: 7, w: 3 } };
 
-export const HEAVY = new Set(['ally', 'ladder', 'ram', 'oil', 'charge']);
+export const HEAVY = new Set(['ally', 'ladder', 'ram', 'oil', 'charge', 'hobbit']);
 
 /** A siege tower: Defence 10 and 4 Wounds, pushed 6" by six models on foot (and one more for each model aboard). */
 export const TOWER = { d: 10, w: 4, move: 6, crew: 6 };

@@ -32,6 +32,7 @@ import { chargeAim, chargesDue, straightOn } from './trample.ts';
 import { arrivalAuto, arrivalDue, castModel, mayCry } from './narrative.ts';
 import { isAmbush, isGrishnakh, isHobbit } from './ambush.ts';
 import { isBalin } from './balin.ts';
+import { atBoats, boats, carriesHobbit, isAmon, isHalfling } from './amon.ts';
 import { courageOf, willOfEvil } from './courage.ts';
 import { hasMorgulBlade } from './morgul.ts';
 import { AXE_FREED, canHeadbutt, hasMattock, longbeardFor, mayAxeTest, mayTend, rerollFor, spentPoints, swapPair, trumpetDue } from './company.ts';
@@ -148,7 +149,7 @@ function profile(ctx: Ctx, m: Model): Profile {
     heroics: unit?.heroics ?? [],
     terror: !!unit?.rules.some(r => /^Terror\b/.test(r)),
     // In Weathertop and Balin's Tomb, Frodo is the whole game.
-    value: worth(m) * (m.cast === 'frodo' && (ctx.state.narrative?.id === 'weathertop' || isBalin(ctx.state)) ? 6 : 1),
+    value: worth(m) * (m.cast === 'frodo' && (ctx.state.narrative?.id === 'weathertop' || isBalin(ctx.state) || isAmon(ctx.state)) ? 6 : 1),
   };
   ctx.profiles.set(m.id, p);
   return p;
@@ -574,7 +575,7 @@ function markerStep(ctx: Ctx, m: Model): BotStep | null {
     if (a.kind === 'pickUp' && (object?.object === 'rocks' || object?.object === 'oil')) continue;
     if (a.kind === 'escape') {
       // Leave the table with something worth carrying off, or in a scenario that scores getting models away.
-      if (carriedBy(state, m).length || state.scenario === 'reconnoitre' || (isAmbush(state) && isHobbit(m))) return { action: { type: 'escape', model: m.id }, delay: MOVE_PAUSE };
+      if (carriedBy(state, m).length || state.scenario === 'reconnoitre' || (isAmbush(state) && isHobbit(m)) || atBoats(state, m)) return { action: { type: 'escape', model: m.id }, delay: MOVE_PAUSE };
       continue;
     }
     if (a.kind === 'uncover') return { action: { type: 'uncover', model: m.id, marker: a.marker!, intelligence: profile(ctx, m).i }, delay: DICE_PAUSE };
@@ -684,11 +685,14 @@ function assignGoals(ctx: Ctx): Map<string, Goal> {
       continue;
     }
     const edges = exitEdges(state, m);
-    const spots: Point[] = edges.map(e => (e === 'top' ? { x: m.x, y: 0 } : e === 'bottom' ? { x: m.x, y: h } : e === 'left' ? { x: 0, y: m.y } : { x: w, y: m.y }));
+    // (With its base touching the edge, as far as it can go, so it can step off.)
+    const r = radius(m) + 0.02;
+    const spots: Point[] = edges.map(e => (e === 'top' ? { x: m.x, y: r } : e === 'bottom' ? { x: m.x, y: h - r } : e === 'left' ? { x: r, y: m.y } : { x: w - r, y: m.y }));
     if (carried.some(t => t.object === 'ally')) spots.push(...sanctuary(state, seat).map(z => (z.shape === 'quarter-circle' ? { x: z.cx === 0 ? 3 : w - 3, y: z.cy === 0 ? 3 : h - 3 } : { x: w / 2, y: h / 2 })));
     if (!spots.length) spots.push({ x: m.x, y: seat === 'p1' ? h - 2 : 2 });
     const at = spots.sort((a, b) => centre(m, a) - centre(m, b))[0];
-    out.set(m.id, { at, pull: 1.2 });
+    // (Amon Hen: an Uruk-hai with a Hobbit makes straight for the edge, whoever is in the way.)
+    out.set(m.id, isAmon(state) ? { at, pull: 3, bold: true } : { at, pull: 1.2 });
   }
 
   const wants: { at: Point; need: number; pull: number; near?: number; infantry?: boolean; team?: boolean }[] = [];
@@ -788,6 +792,38 @@ function assignGoals(ctx: Ctx): Map<string, Goal> {
         else if (m.id === frodo.id) out.set(m.id, { at: { x: 12, y: 9.6 }, pull: 0.4 });
         else out.set(m.id, { at: { x: frodo.x, y: frodo.y }, pull: 0.6, near: 2.5 });
       }
+    }
+  }
+
+  // Amon Hen: Frodo makes for the boats with the others round him, and Boromir keeps by Merry and Pippin; a friend goes
+  // to bring round each Hobbit knocked out. The Uruk-hai hunt the Hobbits, Frodo first, carry off any knocked out by
+  // the nearest edge they may use, and go after anyone who has stolen one back.
+  if (isAmon(state)) {
+    const good = seat === state.narrative?.good;
+    const frodo = castModel(state, 'frodo');
+    const lying = Object.values(state.terrain).filter(t => t.object === 'hobbit' && !t.gone);
+    for (const t of lying) {
+      if (t.carrier && state.models[t.carrier]?.owner === seat) continue;
+      const by = ours.filter(m => !out.has(m.id) && isUp(m) && !isHalfling(m)).sort((a, b) => centre(a, t) - centre(b, t))[0];
+      if (by) out.set(by.id, { at: { x: t.x, y: t.y }, pull: 1.4, bold: true });
+    }
+    const boat = boats(state);
+    for (const m of ours) {
+      if (out.has(m.id) || !isUp(m)) continue;
+      if (!good) {
+        // (Those carrying a Hobbit already make for the edge: see above.)
+        const prey = Object.values(state.models)
+          .filter(x => isHalfling(x) && isUp(x) && x.owner !== seat)
+          .sort((a, b) => centre(m, a) - (a.cast === 'frodo' ? 6 : 0) - (centre(m, b) - (b.cast === 'frodo' ? 6 : 0)))[0];
+        // (With no Hobbit on his feet, after the rest of the Fellowship.)
+        const foe = prey ?? [...side(state, other(seat))].sort((a, b) => centre(m, a) - centre(m, b))[0];
+        if (foe) out.set(m.id, { at: { x: foe.x, y: foe.y }, pull: prey ? 1 : 0.6 });
+      } else if (m.cast === 'frodo' && boat) out.set(m.id, { at: { x: boat.x + boat.w / 2 + 0.9, y: boat.y }, pull: 2, bold: true });
+      else if (m.cast === 'boromir') {
+        const pair = ours.filter(x => (x.cast === 'merry' || x.cast === 'pippin') && isUp(x));
+        if (pair.length) out.set(m.id, { at: { x: pair[0].x, y: pair[0].y }, pull: 0.8, near: 1.5 });
+      } else if (isHalfling(m) && boat) out.set(m.id, { at: { x: boat.x + boat.w / 2 + 2, y: boat.y + (m.cast === 'sam' ? -1.5 : 1.5) }, pull: 1 });
+      else if (frodo && isUp(frodo)) out.set(m.id, { at: { x: frodo.x, y: frodo.y }, pull: 0.8, near: 2.5 });
     }
   }
 
@@ -963,6 +999,8 @@ function scoreFor(ctx: Ctx, m: Model, at: Point, goal?: Goal, vpBefore?: number)
     const withUs = fightOdds(fighterSide(ctx, [here, ...helpers]), fighterSide(ctx, their));
     const without = helpers.length ? fightOdds(fighterSide(ctx, helpers), fighterSide(ctx, their)).score : 0;
     score += (withUs.score - without) * 3 + (aggressive(ctx) ? 1.2 : 0.4);
+    // Amon Hen: an Uruk-hai carrying off a Hobbit, and Frodo making for the boats, keep out of fights.
+    if (isAmon(state) && (carriesHobbit(state, m) || m.cast === 'frodo')) score -= 6;
   } else {
     // Danger: enemies that could charge it here next turn, eased by friends close enough to help.
     let danger = 0;

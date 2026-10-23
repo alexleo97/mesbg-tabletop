@@ -120,7 +120,8 @@ function trees(t: Terrain, mat: Mat): ReactElement[] {
   const target = Math.max(4, Math.round((t.w * t.h) / 4.5));
   const placed: { x: number; y: number; r: number }[] = [];
   for (let i = 0; placed.length < target && i < target * 12; i++) {
-    const r = 0.55 + rand(t.id, i * 3) * 0.55;
+    // (Undergrowth is a thicket of low bushes.)
+    const r = t.look === 'brush' ? 0.35 + rand(t.id, i * 3) * 0.3 : 0.55 + rand(t.id, i * 3) * 0.55;
     const x = (rand(t.id, i * 3 + 1) - 0.5) * (t.w - 2 * r);
     const y = (rand(t.id, i * 3 + 2) - 0.5) * (t.h - 2 * r);
     if (t.shape === 'circle' && (x / (t.w / 2 - r * 0.6)) ** 2 + (y / (t.h / 2 - r * 0.6)) ** 2 > 1) continue;
@@ -132,7 +133,7 @@ function trees(t: Terrain, mat: Mat): ReactElement[] {
     const sprite = mat === 'snow' || pick > 0.8 ? TREES.pine : pick > 0.45 ? TREES.birch : TREES.oak;
     const s = p.r * 3.1;
     return (
-      <g key={i} transform={`translate(${p.x.toFixed(3)} ${p.y.toFixed(3)})`}>
+      <g key={i} className={t.look === 'brush' ? 'brush' : undefined} transform={`translate(${p.x.toFixed(3)} ${p.y.toFixed(3)})`}>
         <circle className="tree-shadow" cx={0.2} cy={0.28} r={p.r * 0.95} />
         <circle className="tree-base" r={p.r * 0.8} />
         <image href={sprite} x={-s / 2} y={-s / 2} width={s} height={s} transform={`rotate(${(rand(t.id, i + 700) * 360).toFixed(1)})`} />
@@ -510,6 +511,19 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
             ))}
           </g>
         );
+      if (t.object === 'boat')
+        // Two Elven boats drawn up side by side at the water's edge, bows downstream.
+        return (
+          <g className="boats" filter="url(#hard-shadow)">
+            {[-0.25, 0.25].map(k => (
+              <g key={k} transform={`translate(${k * t.w} 0)`}>
+                <path className="boat-hull" d={`M 0 ${-t.h / 2} Q ${t.w * 0.26} ${-t.h * 0.2} ${t.w * 0.22} ${t.h * 0.3} Q ${t.w * 0.12} ${t.h / 2} 0 ${t.h / 2} Q ${-t.w * 0.12} ${t.h / 2} ${-t.w * 0.22} ${t.h * 0.3} Q ${-t.w * 0.26} ${-t.h * 0.2} 0 ${-t.h / 2} Z`} />
+                <path className="boat-inside" d={`M 0 ${-t.h * 0.38} Q ${t.w * 0.16} ${-t.h * 0.1} ${t.w * 0.13} ${t.h * 0.28} L ${-t.w * 0.13} ${t.h * 0.28} Q ${-t.w * 0.16} ${-t.h * 0.1} 0 ${-t.h * 0.38} Z`} />
+                <line className="boat-thwart" x1={-t.w * 0.17} x2={t.w * 0.17} y1={0} y2={0} />
+              </g>
+            ))}
+          </g>
+        );
       if (t.object === 'ram')
         return (
           <g className="ram" filter="url(#hard-shadow)">
@@ -628,7 +642,7 @@ function StoneTower({ t, tex }: { t: Terrain; tex: string }) {
 }
 
 /** A letter on each kind of scenario marker, so you can tell them apart at a glance. */
-const GLYPHS: Record<NonNullable<Terrain['object']>, string> = { artefact: 'A', relic: 'R', heirloom: 'H', decoy: '✕', supply: 'S', ally: '+', ladder: 'L', ram: 'B', rocks: '●', oil: '♨', rally: '⚑', campfire: '♨', charge: '✸' };
+const GLYPHS: Record<NonNullable<Terrain['object']>, string> = { artefact: 'A', relic: 'R', heirloom: 'H', decoy: '✕', supply: 'S', ally: '+', ladder: 'L', ram: 'B', rocks: '●', oil: '♨', rally: '⚑', campfire: '♨', charge: '✸', hobbit: 'z', boat: '⛵' };
 
 function star(r: number) {
   const pts: string[] = [];
