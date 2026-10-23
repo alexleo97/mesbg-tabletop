@@ -1,6 +1,7 @@
 import { bandName, bandsOf, currentBand, deployProblems, mayPutDown, procedureOf, rollDue, rollMeans } from '../shared/deploy.ts';
 import { narrativeOf } from '../shared/narrative.ts';
 import { bundles, isUnseen } from '../shared/unseen.ts';
+import { ElvesEdge } from './ElvesEdge.tsx';
 import { objectivesMissing } from '../shared/scenarios.ts';
 import { BOT_NAME, type Action, type GameState, type Role, type Seat } from '../shared/types.ts';
 
@@ -204,6 +205,7 @@ export function DeployTurns({ state, dispatch, role }: { state: GameState; dispa
               </select>
             </label>
           )}
+          {me && <ElvesEdge state={state} dispatch={dispatch} role={me} />}
           <button className="primary go" disabled={webs.length > 0 && !decoy} onClick={() => dispatch({ type: 'warbandDone', seat: me })}>
             Done setting up
           </button>
