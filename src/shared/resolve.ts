@@ -3,6 +3,7 @@ import { beside, mounted, mountLabel, mountOf, onFoot, separatedMount } from './
 import { resolveBreach } from './breach.ts';
 import { onLadder, resolveHurl } from './defenders.ts';
 import { brutalOptions, chargeEffects, hurl, knockedDown } from './monsters.ts';
+import { bringDownTarget, flamingArrows } from './ents.ts';
 import { trample } from './trample.ts';
 import { biggerHolds, commanderOf, howdahFor, immovable } from './warBeasts.ts';
 import { acrossCable, boltCount, fireEngine, rapidFire } from './siege.ts';
@@ -307,7 +308,11 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       const bm = brute && state.models[brute.id];
       const foeSide = brute && req.sides.findIndex(side => !side.includes(brute)) as 0 | 1;
       const hurled = b?.kind === 'hurl' && brute ? req.sides[foeSide as 0 | 1].find(f => f.id === b.target && !f.support && f.s < brute.s && !!state.models[f.id] && !immovable(catalog, state.models[f.id])) : undefined;
-      if (!b || !bm || !brutalOptions(state, catalog, bm).includes(b.kind) || (b.kind === 'hurl' && !hurled)) delete req.brutal;
+      // ("Bring them down!": three or more Orcs touching an Ent may pull it down instead; see ents.ts.)
+      const toppling = b?.kind === 'topple' ? req.sides.findIndex(side => side.some(f => f.id === b.by && !f.support)) : -1;
+      const toppled = toppling >= 0 ? bringDownTarget(state, req, toppling as 0 | 1) : undefined;
+      if (toppled) req.brutal = { by: b!.by, kind: 'topple', target: toppled };
+      else if (!b || !bm || !brutalOptions(state, catalog, bm).includes(b.kind) || (b.kind === 'hurl' && !hurled)) delete req.brutal;
       // Other monsters on the brute's side making theirs first: each one once, and only one it may make.
       const winSide = (x: BrutalAttack) => req.sides.findIndex(side => side.some(f => f.id === x.by && !f.support && f.monster));
       if (req.more) req.more = req.more.filter((x, k, all) => x.by !== req.brutal?.by && all.findIndex(y => y.by === x.by) === k && !!state.models[x.by] && brutalOptions(state, catalog, state.models[x.by]).includes(x.kind) && (!req.brutal || winSide(x) === winSide(req.brutal)));
@@ -612,6 +617,9 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       if (plan.rerolls) req.rerolls = true;
       // Ori's Deadeye with his sling.
       if (deadeye(catalog, shooter, req.shooter.weapon)) req.deadeye = true;
+      // An Orc's arrows at an Ent are lit (Last March of the Ents).
+      if (flamingArrows(state, shooter, target)) req.flaming = true;
+      else delete req.flaming;
       // Thrown as it charges: the model first closes to 1" of its target (unless it set off that close).
       const before: Action[] = [];
       if (req.charge) {
@@ -864,8 +872,11 @@ function shotActions(state: GameState, req: ShotRequest, shooter: Model, d6: () 
   const all = [...logged, ...shot.rolls];
   // A thrown brand Sets Ablaze whatever it hit, and is gone from the thrower's wargear, hit or miss.
   if (req.brand) return [...rolled, { type: 'affect', id: shooter.id, patch: { brand: false } }, ...(shot.ablaze ?? []).map((id): Action => ({ type: 'affect', id: id.replace(/#(mount|howdah)$/, ''), patch: { ablaze: true } }))];
+  // A flaming arrow that wounds an Ent Sets it Ablaze.
+  const lit = (shot.ablaze ?? []).filter(id => state.models[id] && !state.models[id].ablaze).map((id): Action => ({ type: 'affect', id, patch: { ablaze: true } }));
   return [
     ...rolled,
+    ...lit,
     ...shot.hits.flatMap(h =>
       // A shot that hit a rider's mount wounds the mount.
       h.id.endsWith('#mount') ? woundAction(state, all.filter(r => r.against === h.id), h.id.slice(0, -6), h.wounds, [shooter.id], 'shoot', group).map(a => ({ ...a, mount: true }) as Action)

@@ -16,6 +16,8 @@ export const DOORS: Record<DoorType, { name: string; d: number; w: number }> = {
   heavy: { name: 'Heavy door', d: 7, w: 2 },
   external: { name: 'Outer door', d: 6, w: 2 },
   internal: { name: 'Inner door', d: 5, w: 1 },
+  // The dam holding back the River Isen (Last March of the Ents): it can only be harmed in combat.
+  dam: { name: 'Dam', d: 10, w: 5 },
 };
 
 /** A Siege Ladder or battering ram lying on the ground can be broken too. */
@@ -270,7 +272,7 @@ export function fortressNotes(t: Terrain): string[] {
     if (!b) return ['Broken down: models from either side can go through.'];
     return [
       `Defence ${b.d}, ${b.left} of ${b.w} Wounds left. ${t.side ? 'Its own side goes through freely; it keeps the enemy out' : 'It keeps everyone out'} until it is broken down.`,
-      'Models touching it in the Fight phase that have not fought may strike at it: no Duel roll, and two To Wound rolls a strike. Shots need Strength 5 or more to hurt it.',
+      `Models touching it in the Fight phase that have not fought may strike at it: no Duel roll, and two To Wound rolls a strike. ${t.door === 'dam' ? 'It can only be harmed in combat: shooting does nothing to it.' : 'Shots need Strength 5 or more to hurt it.'}`,
     ];
   }
   if (t.object === 'ladder')

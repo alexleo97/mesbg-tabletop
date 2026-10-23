@@ -10,6 +10,9 @@ import { balinWinner } from './balin.ts';
 import { balinCast, balinTerrain } from './balinMap.ts';
 import { amonWinner } from './amon.ts';
 import { amonCast, amonTerrain } from './amonMap.ts';
+import { entsWinner } from './ents.ts';
+import { entsCast, entsTerrain } from './entsMap.ts';
+import { insidePolygon, outline } from './sight.ts';
 import { BALLISTA_BASE, deepingSlots, evilSlots, GATE_ANGLE, HELMS_TEAMS, helmsTerrain, hornburgSlots, inHelmsZone, onArc, OUTER, type HelmsZone } from './helmsMap.ts';
 import type { Action, Base, DiceRoll, GameState, Mat, Model, Seat, Terrain } from './types.ts';
 
@@ -61,7 +64,11 @@ export type Area =
   | { box: [number, number, number, number] }
   | { ring: [number, number, number, number] }
   | { piece: string; within: number }
-  | { around: string; from: number; to: number };
+  | { around: string; from: number; to: number }
+  /** Wholly on top of one of these pieces (Last March of the Ents: any of the scaffolds). */
+  | { on: string[] }
+  /** Wholly within any one of these areas. */
+  | { any: Area[] };
 
 /** What an area can be measured from: the scenario's pieces (by id, as on the table) and the cast on the table. */
 export interface AreaFrom {
@@ -69,11 +76,30 @@ export interface AreaFrom {
   models?: Record<string, Model> | Model[];
 }
 
+/** How far a point is from the segment a to b. */
+function segmentGap(p: Point, a: Point, b: Point): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const k = dx || dy ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy))) : 0;
+  return Math.hypot(p.x - a.x - k * dx, p.y - a.y - k * dy);
+}
+
 /** How far a point is from a rectangular piece (0 on or inside it). */
 export const toPiece = (t: Pick<Terrain, 'x' | 'y' | 'w' | 'h'>, p: Point) => Math.hypot(Math.max(t.x - t.w / 2 - p.x, 0, p.x - t.x - t.w / 2), Math.max(t.y - t.h / 2 - p.y, 0, p.y - t.y - t.h / 2));
 
 /** Whether a model this far across (from its middle) stands wholly within an area. */
 export function whollyInArea(a: Area, p: Point, r: number, from: AreaFrom = {}): boolean {
+  if ('any' in a) return a.any.some(x => whollyInArea(x, p, r, from));
+  if ('on' in a) {
+    const all = Object.values(from.terrain ?? {});
+    if (!all.length) return true;
+    return a.on.some(id => {
+      const t = all.find(x => x.id === `n-${id}`);
+      if (!t) return false;
+      const poly = outline(t);
+      return insidePolygon(poly, p) && poly.every((q, j) => segmentGap(p, poly[(j || poly.length) - 1], q) >= r - 0.01);
+    });
+  }
   if ('circle' in a) return Math.hypot(p.x - a.circle[0], p.y - a.circle[1]) + r <= a.circle[2] + 0.01;
   if ('ring' in a) {
     const d = Math.hypot(p.x - a.ring[0], p.y - a.ring[1]);
@@ -374,6 +400,39 @@ export const NARRATIVES: Narrative[] = [
       },
     ],
     cast: amonCast(),
+  },
+  {
+    id: 'last-march-of-the-ents',
+    name: 'Last March of the Ents',
+    from: 'The Two Towers',
+    saga: 'lotr',
+    blurb: "The Ents come down on Isengard: Treebeard and his kin must break Saruman's dam and loose the River Isen, through the Orcs swarming over the scaffolds round Orthanc.",
+    board: { w: 48, h: 48, mat: 'dirt' },
+    terrain: entsTerrain(),
+    sides: {
+      good: { name: 'The Ents', cast: 'Treebeard with Merry and Pippin, Birchseed, Beechbone and three Ents' },
+      evil: { name: 'The Orcs of Isengard', cast: '4 Isengard Orc Captains and 48 Isengard Orc Warriors' },
+    },
+    layout:
+      "A 4' by 4' table round the tower of Orthanc, which stands sheer in the middle. Timber scaffolds stand about it, two of them built two decks high, with ladders up; pits and rubble scar the ground, and the dam holding back the River Isen fills the middle of the west edge.",
+    setupOrder: ['good', 'evil'],
+    deployment: 'The Ents set up wholly within 6" of the east edge. Then the Orcs set up wholly within the western half of the table, or on top of any of the scaffolds.',
+    objectives: 'The battle goes on until one side has done what it came to do. The Ents win if the dam is destroyed (or if every Orc is slain, with nobody left to stop them); the Orcs win if every Ent is slain.',
+    rules: [
+      {
+        name: 'Flaming Arrows',
+        text: 'An Orc shooting an Ent whose roll To Hit is a natural 6, and who then wounds it, does 2 Wounds rather than 1, and Sets the Ent Ablaze.',
+      },
+      {
+        name: '"Bring them down!"',
+        text: 'When an Ent loses a fight against three or more Orcs, the Orcs may try to pull it down instead of striking: no strikes are made, and the Evil player rolls a D6 for each Orc in base contact with the Ent. Any natural 6 knocks the Ent Prone.',
+      },
+      {
+        name: '"Release the River!"',
+        text: 'The dam has Defence 10 and 5 Wounds. It can only be harmed in combat: an Ent touching it in the Fight phase, and not in a fight, can strike at it.',
+      },
+    ],
+    cast: entsCast(),
   },
   {
     id: 'helms-deep',
@@ -796,6 +855,7 @@ export function narrativeWinner(state: GameState): Seat | 'draw' | null {
   if (n.id === 'ambush-at-night') return ambushWinner(state);
   if (n.id === 'balins-tomb') return balinWinner(state);
   if (n.id === 'amon-hen') return amonWinner(state);
+  if (n.id === 'last-march-of-the-ents') return entsWinner(state);
   if (n.id === 'weathertop') {
     // The Nazgûl win as soon as Frodo falls; the Hobbits when every one of them is gone.
     if (castModel(state, 'frodo')?.dead) return seatOf(state, 'evil') ?? null;

@@ -15,7 +15,7 @@ import { heroicBlocked, mightBlocked } from './mightUse.ts';
 import { canActivate, canDeclare, declared, heroicInfo, heroicTurn, heroicsSettled, mayActivate, orderRollLabel, orderRollNeeded, phaseHeroics } from './heroics.ts';
 import { canCast, castTargets, pendingSpell, powersOf, untargeted, type KnownPower } from './magic.ts';
 import { brutalOptions } from './monsters.ts';
-import { fightDone, limitMove, moveAllowance, moveLeft } from './movement.ts';
+import { fightDone, limitMove, moveAllowance, moveLeft, testsTerrain } from './movement.ts';
 import { affected, basePower, cannotAct, effectsOn, isCavalry, isLinePower, under } from './powers.ts';
 import { carriedBy, exitEdges, markerActions, onTable, sanctuary, touching as touchingMarker } from './objects.ts';
 import { reaches as reachesFoe, touching as touchingFoe } from './barriers.ts';
@@ -23,9 +23,9 @@ import { chance, fightOdds, woundChance, type Side } from './odds.ts';
 import { PICKS, pickOptions } from './picks.ts';
 import { scoreLines } from './scoring.ts';
 import { seekTargets } from './ring.ts';
-import { climbedLevel, flooredAt, floorHeight, heightOf } from './sight.ts';
+import { climbedLevel, flooredAt, floorHeight, heightOf, insidePolygon, outline } from './sight.ts';
 import { planShot, weaponFor } from './shooting.ts';
-import { atCrossing, crossBlocked, fallingHits } from './terrainTests.ts';
+import { atCrossing, crossBlocked, crossingAhead, fallingHits } from './terrainTests.ts';
 import { armyStatus } from './status.ts';
 import { pushers } from './siege.ts';
 import { chargeAim, chargesDue, straightOn } from './trample.ts';
@@ -33,6 +33,7 @@ import { arrivalAuto, arrivalDue, castModel, mayCry } from './narrative.ts';
 import { isAmbush, isGrishnakh, isHobbit } from './ambush.ts';
 import { isBalin } from './balin.ts';
 import { atBoats, boats, carriesHobbit, isAmon, isHalfling } from './amon.ts';
+import { bringDownTarget, dam, isEnt, isEnts } from './ents.ts';
 import { courageOf, willOfEvil } from './courage.ts';
 import { hasMorgulBlade } from './morgul.ts';
 import { AXE_FREED, canHeadbutt, hasMattock, longbeardFor, mayAxeTest, mayTend, rerollFor, spentPoints, swapPair, trumpetDue } from './company.ts';
@@ -646,6 +647,25 @@ function towerAim(state: GameState, t: Terrain): Point | undefined {
   return walls.map(w => nearestEdge(w, t)).sort((a, b) => centre(t, a) - centre(t, b))[0];
 }
 
+/**
+ * Last March of the Ents: where to head for `to` without walking into Orthanc, whose piers would trap a model in the
+ * notches between them. With the tower in the way, first out to its side, the side the model is already on (and out
+ * of a notch it's caught in, first).
+ */
+function roundOrthanc(state: GameState, m: Model, to: Point): Point {
+  const t = state.terrain['n-orthanc'];
+  if (!t) return to;
+  const reach = 7 + radius(m) + 0.3;
+  if (lineGap(t, m, to) >= reach) return to;
+  // (Caught in a notch between two piers: straight back out first.)
+  const out = centre(m, t);
+  if (out < reach - 0.2) return { x: t.x + ((m.x - t.x) / (out || 1)) * (reach + 1.5), y: t.y + ((m.y - t.y) / (out || 1)) * (reach + 1.5) };
+  const d = centre(to, t) || 1;
+  const [ux, uy] = [(to.x - t.x) / d, (to.y - t.y) / d];
+  const side = (m.x - t.x) * -uy + (m.y - t.y) * ux >= 0 ? 1 : -1;
+  return { x: t.x - uy * side * (reach + 1.5), y: t.y + ux * side * (reach + 1.5) };
+}
+
 function assignGoals(ctx: Ctx): Map<string, Goal> {
   const { state, seat } = ctx;
   const out = new Map<string, Goal>();
@@ -827,6 +847,47 @@ function assignGoals(ctx: Ctx): Map<string, Goal> {
     }
   }
 
+  // Last March of the Ents: the Ents make for the dam, each to its own stretch of it. The Orcs throw themselves at the
+  // Ent nearest the dam in gangs (three can pull one down); the shields and spears hold in front of the dam until an
+  // Ent comes near it, and the archers keep to the scaffolds.
+  if (isEnts(state)) {
+    const d = dam(state);
+    const good = seat === state.narrative?.good;
+    if (d && good) {
+      const ents = ours.filter(m => !out.has(m.id) && isUp(m));
+      const x = d.x + d.w / 2;
+      const spots = Array.from({ length: Math.max(1, ents.length) }, (_, i) => d.y - d.h / 2 + ((i + 0.5) * d.h) / Math.max(1, ents.length));
+      const taken = new Set<number>();
+      for (const m of [...ents].sort((a, b) => a.x - b.x)) {
+        const k = spots.map((y, i) => [i, Math.abs(y - m.y)] as const).filter(([i]) => !taken.has(i)).sort((a, b) => a[1] - b[1])[0]?.[0] ?? 0;
+        taken.add(k);
+        out.set(m.id, { at: roundOrthanc(state, m, { x: x + radius(m) + 0.05, y: spots[k] }), pull: 1.5, bold: true });
+      }
+    } else if (d) {
+      const ents = side(state, other(seat)).filter(e => isEnt(e) && isUp(e));
+      const threat = [...ents].sort((a, b) => centre(a, d) - centre(b, d))[0];
+      const gang = new Map<string, number>();
+      for (const m of ours) {
+        if (out.has(m.id) || !isUp(m) || !threat) continue;
+        const kit = m.options ?? [];
+        const onScaffold = Object.values(state.terrain).some(t => t.look === 'scaffold' && insidePolygon(outline(t), m));
+        if (kit.includes('Orc bow') && onScaffold) {
+          out.set(m.id, { at: { x: m.x, y: m.y }, pull: 0.3, near: 0.5 });
+          continue;
+        }
+        const guard = kit.includes('Shield') || kit.includes('Spear');
+        if (guard && centre(threat, d) > 10) {
+          out.set(m.id, { at: { x: d.x + d.w / 2 + 6, y: Math.max(d.y - d.h / 2 + 1, Math.min(d.y + d.h / 2 - 1, m.y)) }, pull: 0.8, near: 1.5 });
+          continue;
+        }
+        // (Into a gang round one Ent, or the next nearest once that one has enough.)
+        const prey = [...ents].sort((a, b) => centre(m, a) + 6 * Math.max(0, (gang.get(a.id) ?? 0) - 5) - (centre(m, b) + 6 * Math.max(0, (gang.get(b.id) ?? 0) - 5)))[0];
+        gang.set(prey.id, (gang.get(prey.id) ?? 0) + 1);
+        out.set(m.id, { at: { x: prey.x, y: prey.y }, pull: 1 });
+      }
+    }
+  }
+
   // Ambush at Night: Merry and Pippin make for the nearest edge (away from Grishnákh), and Grishnákh crawls after them.
   if (isAmbush(state)) {
     const hobbits = Object.values(state.models).filter(x => isHobbit(x) && isUp(x));
@@ -945,7 +1006,18 @@ function planMove(ctx: Ctx, m: Model, goal: Goal | undefined): Plan | null {
     const pick = far.sort((a, b) => b.score - a.score)[0];
     if (pick) best = pick;
   }
-  if (centre(best.at, from) < 0.05) return null;
+  if (centre(best.at, from) < 0.05) {
+    // Stopped at a wall, rock or deck on its way: asking to go on over records the crossing, so the test can be taken.
+    const aim = goal && centre(from, goal.at) > 0.5 ? { x: from.x + ((goal.at.x - from.x) / centre(from, goal.at)) * Math.min(mv, centre(from, goal.at)), y: from.y + ((goal.at.y - from.y) / centre(from, goal.at)) * Math.min(mv, centre(from, goal.at)) } : undefined;
+    const c = aim && state.flow.started && testsTerrain(state, m) && !atCrossing(state, m) ? crossingAhead(state, m, from, aim) : null;
+    // (Once a phase each, in case the table won't have it.)
+    const tried = (ctx.memo.tested ??= []);
+    if (c && centre(c.stop, from) < 0.05 && !crossBlocked(state, m, c) && c.test !== 'Climb down' && !engagedWith(state, m).length && !tried.includes(`n:${m.id}`)) {
+      tried.push(`n:${m.id}`);
+      return { at: aim!, rot: m.rot };
+    }
+    return null;
+  }
   const look = best.charge ?? [...enemies].sort((a, b) => centre(best.at, a) - centre(best.at, b))[0];
   return { at: best.at, rot: look ? facing(best.at, look) : m.rot };
 }
@@ -1467,7 +1539,11 @@ function fightRequest(ctx: Ctx, c: Combat, duel?: DiceRoll[]): FightRequest {
     aims[ours[0].id] = list;
   }
   // A winning monster's Brutal Power Attack, when it beats striking as normal.
-  const brutal = duel ? brutalPick(ctx, ours, theirs) : undefined;
+  const picked = duel ? brutalPick(ctx, ours, theirs) : undefined;
+  // "Bring them down!" (Last March of the Ents): three or more Orcs pull a standing Ent down rather than strike it,
+  // since their blows barely scratch it and, once it is down, it is trapped.
+  const ent = duel && !picked ? bringDownTarget(state, { sides: [side('p1'), side('p2')], targets: [targets.p1, targets.p2] }, seat === 'p1' ? 0 : 1) : undefined;
+  const brutal: BrutalAttack | undefined = picked ?? (ent && !state.models[ent]?.prone ? { by: ours[0].id, kind: 'topple', target: ent } : undefined);
   return { sides: [side('p1'), side('p2')], targets: [targets.p1, targets.p2], trapped: false, combat: c.key, ...(Object.keys(aims).length ? { aims } : {}), ...(brutal ? { brutal } : {}) };
 }
 

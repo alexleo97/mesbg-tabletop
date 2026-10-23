@@ -98,18 +98,21 @@ export interface Fighter {
 /** A Brutal Power Attack a winning monster makes instead of its strikes (see monsters.ts). */
 export interface BrutalAttack {
   by: string;
-  /** The usual three, and the Trolls' own (see trolls.ts): Mince 'em Fine, Roast 'em Slowly, Squash 'em into Jelly. */
+  /**
+   * The usual three, and the Trolls' own (see trolls.ts): Mince 'em Fine, Roast 'em Slowly, Squash 'em into Jelly.
+   * 'topple' is no monster's: the Orcs pulling an Ent down instead of striking it (Last March of the Ents, see ents.ts).
+   */
   kind: BrutalKind;
   /** The enemy it rends or hurls; for a hurl, `at` is the enemy it would like to throw it at. */
   target?: string;
   at?: string;
 }
 
-export const BRUTAL_KINDS = ['rend', 'barge', 'hurl', 'mince', 'roast', 'squash'] as const;
+export const BRUTAL_KINDS = ['rend', 'barge', 'hurl', 'mince', 'roast', 'squash', 'topple'] as const;
 export type BrutalKind = (typeof BRUTAL_KINDS)[number];
 /** The Trolls' own Brutal Power Attacks (see trolls.ts). */
 export const TROLL_BRUTALS = new Set<BrutalKind>(['mince', 'roast', 'squash']);
-export const BPA_NAMES: Record<BrutalKind, string> = { rend: 'Rend', barge: 'Barge', hurl: 'Hurl', mince: "Mince 'em Fine", roast: "Roast 'em Slowly", squash: "Squash 'em into Jelly" };
+export const BPA_NAMES: Record<BrutalKind, string> = { rend: 'Rend', barge: 'Barge', hurl: 'Hurl', mince: "Mince 'em Fine", roast: "Roast 'em Slowly", squash: "Squash 'em into Jelly", topple: 'Bring them down!' };
 
 /** How a fight tied on dice and Fight is settled: which side is Good, and which sides fight with Elven weapons. */
 export interface DrawRule {
@@ -172,6 +175,8 @@ export interface ShotRequest {
   lucky?: boolean;
   /** Legolas's Pinpoint Shot: his one Shooting Attack this phase (asked for by the player). */
   pinpoint?: boolean;
+  /** Flaming Arrows (Last March of the Ents): a natural 6 To Hit that wounds does 2 Wounds and Sets the target Ablaze. */
+  flaming?: boolean;
 }
 
 export interface FightOutcome {
@@ -183,8 +188,8 @@ export interface FightOutcome {
   wounds: number;
   /** Every model struck and the wounds each takes (a rider's mount as `<id>#mount`). */
   hits: { target: Fighter; wounds: number }[];
-  /** The winning monster barged or hurled, so the fight ended without strikes. */
-  ended?: 'barge' | 'hurl';
+  /** The winning monster barged or hurled, or the Orcs tried to pull an Ent down, so the fight ended without strikes. */
+  ended?: 'barge' | 'hurl' | 'topple';
   /** Enemies a Mattock knocked down before the strikes. */
   knocked?: string[];
   /** Enemies Tom sat on (Squash 'em into Jelly): those that live are knocked down. */
@@ -376,7 +381,9 @@ export function resolveStrikes(req: FightRequest, duel: DiceRoll[], d6: D6, by: 
   const idle: string[] = [];
   // A winning monster's Barge or Hurl ends the fight there: nobody strikes.
   const brute = req.brutal && req.sides[winner].find(f => f.id === req.brutal!.by && f.monster && !f.support);
-  const ended = brute && (req.brutal!.kind === 'barge' || req.brutal!.kind === 'hurl') ? req.brutal!.kind : undefined;
+  // ("Bring them down!": the Orcs pull at the Ent instead of striking. The game checks they may.)
+  const toppler = req.brutal?.kind === 'topple' ? req.sides[winner].find(f => f.id === req.brutal!.by && !f.support) : undefined;
+  const ended = brute && (req.brutal!.kind === 'barge' || req.brutal!.kind === 'hurl') ? req.brutal!.kind : toppler ? 'topple' : undefined;
   /** One batch of strikes by `f` at `target`, rolled and logged; the wounds they do. */
   const strike = (f: Fighter, target: Fighter, n: number, free = false, opt: { s?: number; single?: boolean; label?: string; loyal?: boolean } = {}) => {
     const trapped = !opt.single && isTrapped(target);
@@ -464,6 +471,15 @@ export function resolveStrikes(req: FightRequest, duel: DiceRoll[], d6: D6, by: 
   // A Mattock swung to knock a foe down comes before anyone strikes: each rolls a D6 and adds its Strength, and the
   // wielder knocks the foe down if it scores as high. (A foe knocked down is then trapped.)
   const knocked: string[] = [];
+  if (toppler) {
+    // A D6 for each of them touching the Ent: any natural 6 and it goes down.
+    const ent = pool.find(t => t.id === req.brutal!.target && !t.id.endsWith('#mount')) ?? main;
+    const pulling = req.sides[winner].filter(f => !f.support);
+    const dice = pulling.map(() => d6());
+    const down = dice.includes(6);
+    push(`Bring them down! ${pulling.length} pull at ${ent.name} (a 6 knocks it Prone)`, dice, { model: toppler.id, note: down ? `${ent.name} crashes to the ground, Prone.` : `${ent.name} stays on its feet.` });
+    if (down) knocked.push(ent.id);
+  }
   for (const f of ended ? [] : req.sides[winner]) {
     const foe = f.knock && !f.noStrike && !f.support ? pool.find(t => t.id === f.knock && !t.id.endsWith('#mount')) : undefined;
     if (!foe) continue;
@@ -721,6 +737,16 @@ export function resolveShot(req: ShotRequest, d6: D6, by: Role, group: string, n
     else hits.push({ id: target.id, wounds: strikeWounds([r]) });
     if (!struck.some(v => v.id === target.id)) struck.push({ id: target.id, name: target.name, d: target.d, count: 0 });
   }
+  // Flaming Arrows: each natural 6 To Hit that wounds the target does a second Wound, and sets it alight.
+  let ablaze: string[] | undefined;
+  const burning = req.flaming ? hits.find(h => h.id === target.id && h.wounds > 0) : undefined;
+  if (burning) {
+    const extra = Math.min(toHit.filter(d => d === 6).length, burning.wounds);
+    if (extra) {
+      burning.wounds += extra;
+      ablaze = [target.id];
+    }
+  }
   const onTarget = hits.find(h => h.id === target.id)?.wounds ?? 0;
   const others = struck.filter(v => v.id !== target.id).map(v => v.name);
   // A shot carried on after a pause may have nothing left to roll: its outcome goes on a line of its own.
@@ -734,6 +760,7 @@ export function resolveShot(req: ShotRequest, d6: D6, by: Role, group: string, n
     : stoppedBy
       ? `The shot hits the ${stoppedBy}`
       : `${shooter.name} misses ${target.name}`;
-  return { rolls, wounds: onTarget, hits };
+  if (ablaze) rolls[rolls.length - 1].note += `. A flaming arrow: ${onTarget} Wounds, and ${target.name} is Set Ablaze`;
+  return { rolls, wounds: onTarget, hits, ...(ablaze ? { ablaze } : {}) };
   }
 }

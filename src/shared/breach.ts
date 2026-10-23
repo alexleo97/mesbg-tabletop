@@ -64,6 +64,7 @@ export function breachBlocked(state: GameState, catalog: Catalog | null, how: Br
     return undefined;
   }
   // Shooting.
+  if (t.door === 'dam') return 'The dam can only be harmed in combat';
   if (state.phase !== 'shoot' || !canActivate(state, m.owner)) return 'Only in your Shoot phase';
   const w = weaponFor(catalog, m);
   if (!w) return 'Has nothing to shoot';
