@@ -5,7 +5,8 @@ import { castModel, holdNarrative, narrativeById, narrativeWinner } from '../src
 import { initialState, reduce } from '../src/shared/reducer.ts';
 import { moveAllowance } from '../src/shared/movement.ts';
 import { cannotAct } from '../src/shared/powers.ts';
-import { distanceBetween } from '../src/shared/geometry.ts';
+import { basePerimeter, distanceBetween } from '../src/shared/geometry.ts';
+import { insidePolygon, outline } from '../src/shared/sight.ts';
 import { company, elvesArrive, elvesDue, elvesEdge, elvesWinner, hazeDue, hazeRolls, nestDue, nestFits, nestReturn } from '../src/shared/elves.ts';
 import { DWARVES, MIDDLE, NEST_GAP } from '../src/shared/elvesMap.ts';
 import { placingNow } from '../src/shared/placing.ts';
@@ -18,6 +19,9 @@ let n = 0;
 const uid = () => `u${n++}`;
 const spiders = (s: GameState) => Object.values(s.models).filter(m => m.cast === 'spider');
 const elves = (s: GameState) => Object.values(s.models).filter(m => m.cast === 'legolas' || m.cast === 'tauriel' || m.cast === 'ranger');
+/** Whether a model stands on (or its base reaches onto) a tree: a great trunk, its mound of roots, or a lesser stand. */
+const onTree = (s: GameState, m: Model) =>
+  Object.values(s.terrain).some(t => (t.kind === 'wood' || t.sheer || t.id.startsWith('roots-')) && [m, ...basePerimeter(m, 8)].some(p => insidePolygon(outline(t), p)));
 const r = (m: Model) => Math.max(m.base.w, m.base.h) / 50.8;
 const put = (s: GameState, m: Model, patch: Partial<Model>): GameState => ({ ...s, models: { ...s.models, [m.id]: { ...s.models[m.id], ...patch } } });
 const dice = (...list: number[]) => {
@@ -54,9 +58,10 @@ describe('The Elves of Mirkwood: setting up', () => {
     expect(s.flow.deploy).toMatchObject({ step: 'sides', turn: 'p1' });
   });
 
-  it('puts nobody on a great trunk or another model', () => {
+  it('puts nobody on a tree or another model', () => {
     const s = setup();
     const on = Object.values(s.models).filter(m => !m.waiting);
+    for (const m of on) expect(onTree(s, m), m.name).toBe(false);
     const trunks = Object.values(s.terrain).filter(t => t.look === 'trunk');
     expect(trunks.length).toBeGreaterThan(10);
     for (const m of on) {
@@ -159,6 +164,7 @@ describe("The Elves of Mirkwood: the Spider's Nest", () => {
       expect(m.dead).toBeFalsy();
       expect(m.wounds).toBe(m.maxWounds);
       for (const o of company(s)) expect(distanceBetween(m, o)).toBeGreaterThanOrEqual(NEST_GAP - 0.01);
+      expect(onTree(s, m)).toBe(false);
     }
     // The Evil player places them, one at a time, before Priority is rolled.
     const p = placingNow(s)!;
@@ -167,6 +173,9 @@ describe("The Elves of Mirkwood: the Spider's Nest", () => {
     const thorin = castModel(s, 'thorin')!;
     const m = s.models[p.model];
     expect(reduce(s, { type: 'moveModels', moves: [{ id: m.id, x: thorin.x + 5, y: thorin.y }] }).models[m.id]).toMatchObject({ x: m.x, y: m.y });
+    // Not out onto a tree.
+    const tree = Object.values(s.terrain).find(t => t.kind === 'wood' && t.x > 38 && t.y > 26 && t.y < 28)!;
+    expect(nestFits(s, m, { x: tree.x, y: tree.y })).toBe(false);
     const far = { x: 46, y: 46 };
     expect(nestFits(s, m, far)).toBe(true);
     s = reduce(s, { type: 'moveModels', moves: [{ id: m.id, ...far }] });

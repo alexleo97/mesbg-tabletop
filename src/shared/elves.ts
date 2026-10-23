@@ -1,4 +1,5 @@
-import { distanceBetween, halfExtents, type Point } from './geometry.ts';
+import { basePerimeter, distanceBetween, halfExtents, type Point } from './geometry.ts';
+import { insidePolygon, outline } from './sight.ts';
 import { castModel, seatOf } from './narrative.ts';
 import { BOARD, DWARVES, NEST_GAP } from './elvesMap.ts';
 import type { Action, DiceRoll, GameState, Model, Seat, Terrain } from './types.ts';
@@ -115,7 +116,10 @@ export function elvesArrive(state: GameState, uid: () => string, now = Date.now(
 /** As each Priority phase begins (from the second turn), the Spiders slain so far come back out of the nest. */
 export const nestDue = (state: GameState) => isElves(state) && state.flow.started && state.phase === 'priority' && !state.result && state.turn >= 2 && state.narrative?.nested !== state.turn;
 
-/** Where a Spider coming back may be put: on the table, on nobody, off the great trunks, and 10" from every Good model. */
+/** The trees: the great trunks, the mounds of roots round them, and the lesser stands. Nobody comes out of the nest onto one. */
+const isTree = (t: Terrain) => !t.gone && (t.kind === 'wood' || !!t.sheer || t.id.startsWith('roots-'));
+
+/** Where a Spider coming back may be put: on the table, on nobody, off the trees, and 10" from every Good model. */
 export function nestFits(state: GameState, m: Model, p: Point, others: Point[] = []): boolean {
   const r = radius(m);
   if (p.x < r || p.y < r || p.x > state.board.w - r || p.y > state.board.h - r) return false;
@@ -125,7 +129,12 @@ export function nestFits(state: GameState, m: Model, p: Point, others: Point[] =
     if (o.owner !== m.owner ? distanceBetween(at, o) < NEST_GAP - 0.01 : Math.hypot(o.x - p.x, o.y - p.y) < radius(o) + r - 0.02) return false;
   }
   if (others.some(o => Math.hypot(o.x - p.x, o.y - p.y) < 2 * r)) return false;
-  return !Object.values(state.terrain).some((t: Terrain) => !t.gone && t.sheer && Math.hypot(t.x - p.x, t.y - p.y) < t.w / 2 + r);
+  const edge = basePerimeter(at, 8);
+  return !Object.values(state.terrain).some((t: Terrain) => {
+    if (!isTree(t) || Math.hypot(t.x - p.x, t.y - p.y) > Math.max(t.w, t.h) / 2 + r) return false;
+    const poly = outline(t);
+    return insidePolygon(poly, p) || edge.some(q => insidePolygon(poly, q));
+  });
 }
 
 /** The best spot for a Spider coming back: as near the Dwarves as it may be, clear of the others coming back. */

@@ -105,10 +105,23 @@ export const DWARVES = ['thorin', 'kili', 'fili', 'balin', 'dwalin', 'bifur', 'b
 
 /** Where the cast starts: the Dwarves round the middle, the Spiders out among the trees, the Elves kept aside. */
 export function elvesCast(): CastMember[] {
-  const ring = (i: number, n: number, r: number, turn: number): [number, number] => {
-    const a = (i / n) * Math.PI * 2 + turn;
-    return [+(MIDDLE.x + Math.cos(a) * r).toFixed(2), +(MIDDLE.y + Math.sin(a) * r).toFixed(2)];
-  };
+  // The Dwarves and Bilbo, huddled round the middle, clear of the tangle there.
+  const company: [number, number][] = [
+    [23, 23.5],
+    [24.5, 22.5],
+    [22, 25],
+    [26.5, 23.5],
+    [23, 21.5],
+    [21.5, 22.5],
+    [26, 21.5],
+    [20.5, 24],
+    [24.5, 20.5],
+    [22, 27],
+    [27.5, 25],
+    [20.5, 26],
+    [28, 22.5],
+    [21.5, 20.5],
+  ];
   const spiders: [number, number][] = [
     [8, 7.5],
     [24, 4.5],
@@ -127,10 +140,10 @@ export function elvesCast(): CastMember[] {
       side: 'good',
       unit: `[thorin's-company] ${k === 'thorin' ? 'thorin-oakenshield' : `${k}-the-dwarf`}`,
       ...(k === 'thorin' ? { options: ['Orcrist'] } : {}),
-      place: { area: { circle: [MIDDLE.x, MIDDLE.y, MIDDLE.r] }, at: i < 5 ? ring(i, 5, 2.4, 0.3) : ring(i - 5, 9, 4.4, 0) },
+      place: { area: { circle: [MIDDLE.x, MIDDLE.y, MIDDLE.r] }, at: company[i] },
     })),
     // Bilbo, there with them in the story (and on the map), with Sting and the Ring.
-    { key: 'bilbo', side: 'good', unit: "[thorin's-company] bilbo-baggins", options: ['Sting', 'The One Ring'], place: { area: { circle: [MIDDLE.x, MIDDLE.y, MIDDLE.r] }, at: ring(8, 9, 4.4, 0) } },
+    { key: 'bilbo', side: 'good', unit: "[thorin's-company] bilbo-baggins", options: ['Sting', 'The One Ring'], place: { area: { circle: [MIDDLE.x, MIDDLE.y, MIDDLE.r] }, at: company[13] } },
     ...spiders.map(([x, y]): CastMember => ({ key: 'spider', side: 'evil', unit: '[fell-beings-of-mirkwood] mirkwood-giant-spider', place: { clear: NEST_GAP, at: [x, y] } })),
     { key: 'legolas', side: 'good', unit: '[rangers-of-mirkwood] legolas-greenleaf-prince-of-mirkwood', options: ['Elven cloak'], place: { aside: true } },
     { key: 'tauriel', side: 'good', unit: '[rangers-of-mirkwood] tauriel-ranger-of-mirkwood', options: ['Elf bow'], place: { aside: true } },
