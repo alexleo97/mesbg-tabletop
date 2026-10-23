@@ -31,7 +31,7 @@ export function AccountButton() {
   return (
     <div className="account">
       <button className="discord-signin" onClick={() => void signIn()}>
-        Sign in with Discord
+        Sign in<span className="nav-long">&nbsp;with Discord</span>
       </button>
       {problem}
     </div>
