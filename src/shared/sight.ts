@@ -92,7 +92,37 @@ export function bandOutline(path: [number, number, number][]): Point[] {
 }
 
 /** A terrain piece's outline in board inches. */
+// (Pieces only change by being replaced, so each one's outline is worked out once.)
+const outlines = new WeakMap<Terrain, Map<number, Point[]>>();
+
 export function outline(t: Terrain, sides = 20): Point[] {
+  let known = outlines.get(t);
+  const hit = known?.get(sides);
+  if (hit) return hit;
+  const out = outlineOf(t, sides);
+  if (!known) outlines.set(t, (known = new Map()));
+  known.set(sides, out);
+  return out;
+}
+
+/** The box round an outline, to rule it out of a search quickly. */
+const boxes = new WeakMap<Point[], [number, number, number, number]>();
+function boxOf(poly: Point[]): [number, number, number, number] {
+  let b = boxes.get(poly);
+  if (!b) {
+    b = [Infinity, Infinity, -Infinity, -Infinity];
+    for (const p of poly) b = [Math.min(b[0], p.x), Math.min(b[1], p.y), Math.max(b[2], p.x), Math.max(b[3], p.y)];
+    boxes.set(poly, b);
+  }
+  return b;
+}
+/** Whether an outline's box comes within `pad` of the box round the line from a to b. */
+const nearLine = (poly: Point[], a: Point, b: Point, pad = 0) => {
+  const [x0, y0, x1, y1] = boxOf(poly);
+  return x1 >= Math.min(a.x, b.x) - pad && x0 <= Math.max(a.x, b.x) + pad && y1 >= Math.min(a.y, b.y) - pad && y0 <= Math.max(a.y, b.y) + pad;
+};
+
+function outlineOf(t: Terrain, sides: number): Point[] {
   const a = (t.rot * Math.PI) / 180;
   const c = Math.cos(a);
   const s = Math.sin(a);
@@ -152,9 +182,11 @@ export type Sight = 'clear' | 'partial' | 'hidden';
 
 /** Whether `from` can see `to` past sight-blocking terrain, judged from the centre of its base to points around the target's base. */
 export function sightTo(state: GameState, from: Model, to: Model): Sight {
+  const reach = Math.max(halfExtents(to.base).rx, halfExtents(to.base).ry) + 0.1;
   const blockers = Object.values(state.terrain)
     .filter(blocksSight)
     .map(t => ({ poly: outline(t), top: heightOf(t) }))
+    .filter(({ poly }) => nearLine(poly, from, to, reach))
     // A model standing on or in a piece isn't hidden by it, nor is its target.
     .filter(({ poly }) => !insidePolygon(poly, from) && !insidePolygon(poly, to));
   // Height matters: a model up high sees over lower terrain, and a hill hides what's behind it from below.
@@ -179,6 +211,7 @@ export function obstructions(state: GameState, from: Model, to: Model): Obstruct
   for (const t of Object.values(state.terrain)) {
     if (!IN_THE_WAY.has(t.kind) || t.gone) continue;
     const poly = outline(t);
+    if (!nearLine(poly, from, to)) continue;
     // Cover the shooter stands in doesn't get in its own way, and a shot from well above low cover passes over it.
     if (insidePolygon(poly, from)) continue;
     if (lineCrosses(poly, from, to) && !(insidePolygon(poly, to) ? false : clears(poly, heightOf(t), from, ha, to, hb, 0.5))) out.push({ name: t.kind === 'field' ? 'crops' : t.kind, terrain: t.id, at: entersAt(poly, from, to) });
@@ -253,7 +286,7 @@ function slowGround(state: GameState, seat?: Seat, ground: string[] = [], tall =
 export function moveCost(state: GameState, a: Point, b: Point, seat?: Seat, r = 0, tall = 1.1, ground?: string[], times = 2): { cost: number; difficult: boolean } {
   const d = Math.hypot(b.x - a.x, b.y - a.y);
   const climb = climbCost(state, a, b, tall);
-  const slow = slowGround(state, seat, ground, tall);
+  const slow = slowGround(state, seat, ground, tall).filter(poly => nearLine(poly, a, b, r));
   if (!slow.length || d === 0) return { cost: d + climb, difficult: false };
   // Bridges carry models over rivers at full speed.
   const bridges = Object.values(state.terrain).filter(t => t.kind === 'bridge').map(t => outline(t));
@@ -281,7 +314,7 @@ function climbCost(state: GameState, a: Point, b: Point, tall: number): number {
   const d = Math.hypot(b.x - a.x, b.y - a.y);
   if (!pieces.length || d === 0) return 0;
   // Steps and ladders up to a walkway are climbed at the height itself; anything else counts as difficult terrain.
-  const polys = pieces.map(t => ({ poly: outline(t), top: heightOf(t), rate: walkway(t) ? 1 : 2 }));
+  const polys = pieces.map(t => ({ poly: outline(t), top: heightOf(t), rate: walkway(t) ? 1 : 2 })).filter(({ poly }) => nearLine(poly, a, b));
   if (polys.every(({ poly }) => !lineCrosses(poly, a, b))) return 0;
   const level = (p: Point) => polys.reduce((h, c) => (c.top > h.top && insidePolygon(c.poly, p) ? c : h), { top: 0, rate: 2 });
   const steps = Math.max(8, Math.ceil(d * 4));

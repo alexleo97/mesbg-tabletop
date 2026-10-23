@@ -176,6 +176,8 @@ export function adjustFight(state: GameState, req: FightRequest, catalog: Catalo
     if (under(state, m, 'Bladewrath')) out.s = 6;
     if (under(state, m, 'Enchant Blades')) out.reroll = true;
     if (under(state, m, 'Paralyse')) out.still = true;
+    // Dazed by the Haze of Mirkwood: a single die in the duel (and no strikes, below).
+    if (m.hazed === state.turn) out.a = 1;
     const why = noStrikes(state, m);
     if (why) out.noStrike = why;
     // A Heroic Challenge: +1 Attack while fighting the rival hero (who gets the same if it took the challenge up).
@@ -832,6 +834,8 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
     case 'rollPriority': {
       // Once per turn: whoever asks first rolls for both players.
       if (state.phase !== 'priority' || (state.flow.chooserTurn === state.turn && state.flow.chooser)) return null;
+      // (Not while a model is being placed first: The Elves of Mirkwood's Spiders back from their nest.)
+      if (placingNow(state)) return null;
       // Roll off; a first-turn tie is simply rolled again.
       const apply: Action[] = [];
       let roll: [number, number];

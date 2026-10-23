@@ -14,6 +14,8 @@ import { entsWinner } from './ents.ts';
 import { entsCast, entsTerrain } from './entsMap.ts';
 import { unseenWinner } from './unseen.ts';
 import { unseenCast, unseenTerrain } from './unseenMap.ts';
+import { elvesWinner } from './elves.ts';
+import { elvesCast, elvesTerrain } from './elvesMap.ts';
 import { insidePolygon, outline } from './sight.ts';
 import { BALLISTA_BASE, deepingSlots, evilSlots, GATE_ANGLE, HELMS_TEAMS, helmsTerrain, hornburgSlots, inHelmsZone, onArc, OUTER, type HelmsZone } from './helmsMap.ts';
 import type { Action, Base, DiceRoll, GameState, Mat, Model, Seat, Terrain } from './types.ts';
@@ -56,7 +58,9 @@ export type Placement =
   /** Starting at `at`, and kept at least so far from every friend (Amon Hen: Sam, 12" from the rest of the Fellowship). */
   | { apart: number; at: [number, number] }
   /** Starting at `at`, touching whichever table edge it is dragged nearest (The Unseen Hero: Bilbo). */
-  | { anyEdge: true; at: [number, number] };
+  | { anyEdge: true; at: [number, number] }
+  /** Starting at `at`, and kept at least so far from every enemy (The Elves of Mirkwood: the Spiders, 10" from the Dwarves). */
+  | { clear: number; at: [number, number] };
 
 /**
  * A deployment zone: a circle round a point (x, y, radius), a box (x0, y0, x1, y1), a ring round a point (x, y, from,
@@ -321,7 +325,7 @@ export const NARRATIVES: Narrative[] = [
       evil: { name: 'The Spiders', cast: '6 Mirkwood Giant Spiders, and three webbed bundles: two hold Dwarves, one is a decoy' },
     },
     layout:
-      "A 4' by 4' stretch of Mirkwood, thick with trees: great gnarled trees on mounds of roots and stones, lesser trees in tangles of undergrowth between them, boulders, and a low rocky bank across the south-west.",
+      "A 4' by 4' stretch of Mirkwood, thick with trees: great gnarled trees on mounds of roots and stones, crooked lesser trees in tangles of undergrowth between them, and boulders.",
     setupOrder: ['evil', 'good'],
     deployment:
       'The Evil player places the three webbed bundles at least 6" apart and secretly picks which one is the decoy; then sets up the Spiders at least 6" from one another. Then Bilbo starts touching any table edge, wearing the Ring.',
@@ -342,6 +346,38 @@ export const NARRATIVES: Narrative[] = [
       },
     ],
     cast: unseenCast(),
+  },
+  {
+    id: 'the-elves-of-mirkwood',
+    name: 'The Elves of Mirkwood',
+    from: 'The Hobbit: The Desolation of Smaug',
+    saga: 'hobbit',
+    blurb: 'Freed from the webs, the Dwarves stagger about the forest floor in the choking air of Mirkwood, and the Spiders keep coming. Hold on until the Elves of the Woodland Realm arrive.',
+    board: { w: 48, h: 48, mat: 'forest' },
+    terrain: elvesTerrain(),
+    sides: {
+      good: { name: "Thorin's Company and the Elves", cast: 'Thorin Oakenshield with Orcrist, the twelve other Dwarves, and Bilbo Baggins with Sting and the One Ring; Legolas with an Elven cloak, Tauriel with an Elf bow and 10 Mirkwood Rangers, who arrive later' },
+      evil: { name: 'The Spiders', cast: '10 Mirkwood Giant Spiders' },
+    },
+    layout: "A 4' by 4' stretch of Mirkwood's overgrown floor: great gnarled trees on mounds of roots and stones, crooked lesser trees in tangles of undergrowth, boulders, and a long rocky ridge running down from the north-east of the middle.",
+    setupOrder: ['good', 'evil'],
+    deployment: 'The Good player sets up the Dwarves and Bilbo within 6" of the middle of the table. Then the Evil player sets up the Spiders anywhere at least 10" from every Good model. Legolas, Tauriel and the Rangers are kept aside: they arrive later.',
+    objectives: 'The battle lasts 12 turns. The Spiders win as soon as they have slain six of Thorin\'s Company. Otherwise, if ten or more of the company are alive at the end, the Good side wins; anything else is a draw.',
+    rules: [
+      {
+        name: 'The Haze of Mirkwood',
+        text: "At the start of each Dwarf's activation, roll a D6. On a 4+ it acts as normal. On a 1-3 it can't act that turn: it rolls a single die in a fight, and makes no strikes if it wins. (The game rolls for all the Dwarves at once, as each Move phase begins. Bilbo isn't affected.)",
+      },
+      {
+        name: 'The Rangers',
+        text: "As the Good side's fourth Move phase ends, Legolas, Tauriel and the Mirkwood Rangers move onto the table as reinforcements from any table edge. (The Good player picks the edge, and can change it until they arrive.)",
+      },
+      {
+        name: "The Spider's Nest",
+        text: 'Slain Spiders are set aside. At the start of each Priority phase, before Priority is rolled, the Evil player may put any of them back on the table at least 10" from every Good model, to fight on as normal.',
+      },
+    ],
+    cast: elvesCast(),
   },
   {
     id: 'ambush-at-night',
@@ -889,6 +925,13 @@ export function holdNarrative(state: GameState, mv: { id: string; x: number; y: 
     const spot = { x: k === 0 ? r : k === 1 ? w - r : x, y: k === 2 ? r : k === 3 ? h - r : y };
     return onTable.some(o => Math.hypot(o.x - spot.x, o.y - spot.y) < radius(o) + r - 0.02) ? { ...mv, x: m.x, y: m.y } : { ...mv, ...spot };
   }
+  if ('clear' in p) {
+    // Anywhere at least so far from every enemy, and on no one else.
+    const r = radius(m);
+    const near = onTable.some(o => (o.owner !== m.owner ? distanceBetween(here, o) < p.clear - 0.01 : Math.hypot(o.x - mv.x, o.y - mv.y) < radius(o) + r - 0.02));
+    const inside = mv.x >= r && mv.y >= r && mv.x <= state.board.w - r && mv.y <= state.board.h - r;
+    return !near && inside ? mv : { ...mv, x: m.x, y: m.y };
+  }
   if ('apart' in p) {
     // Anywhere at least so far from every friend.
     const near = onTable.some(o => o.owner === m.owner && distanceBetween(here, o) < p.apart - 0.01);
@@ -910,6 +953,7 @@ export function narrativeWinner(state: GameState): Seat | 'draw' | null {
   if (n.id === 'amon-hen') return amonWinner(state);
   if (n.id === 'last-march-of-the-ents') return entsWinner(state);
   if (n.id === 'the-unseen-hero') return unseenWinner(state);
+  if (n.id === 'the-elves-of-mirkwood') return elvesWinner(state);
   if (n.id === 'weathertop') {
     // The Nazgûl win as soon as Frodo falls; the Hobbits when every one of them is gone.
     if (castModel(state, 'frodo')?.dead) return seatOf(state, 'evil') ?? null;

@@ -1,11 +1,12 @@
 import { limitMove } from './movement.ts';
 import { along, angleOf, radius, rimPiece } from './narrative.ts';
 import { joinSpot } from './sam.ts';
+import { nestFits } from './elves.ts';
 import type { Point } from './geometry.ts';
 import type { GameState, Model, Placing, Seat } from './types.ts';
 
 // Models a player puts down where they choose, within the scenario's limits, before play goes on: Aragorn arriving
-// at Weathertop (anywhere touching the ruin's edge), or a Ringwraith driven off by a flaming brand (its full D6", any
+// at Weathertop (anywhere touching the ruin's edge), a Spider back from its nest, or a Ringwraith driven off by a flaming brand (its full D6", any
 // way that takes it away from the brand). The game puts each one somewhere sensible first, so the player only drags
 // it if they want it elsewhere, then says they're done.
 
@@ -18,6 +19,8 @@ export const placingFor = (state: GameState, seat: Seat) => placingNow(state)?.s
 /** Where a model being placed ends up when its player drags it towards `asked`, or null if it can't go there. */
 export function placeSpot(state: GameState, p: Placing, m: Model, asked: Point): Point | null {
   if (p.kind === 'join') return joinSpot(state, p, m, asked);
+  // A Spider back from its nest (The Elves of Mirkwood): anywhere 10" from every Good model.
+  if (p.kind === 'nest') return nestFits(state, m, asked) ? asked : null;
   if (p.kind === 'arrive') {
     const t = p.rim ? rimPiece(state, p.rim) : undefined;
     if (!t) return null;

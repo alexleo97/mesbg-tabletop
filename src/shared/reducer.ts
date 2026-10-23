@@ -22,6 +22,7 @@ import { arrivalDue, mayCry, narrativeById, narrativeTerrain, radius } from './n
 import { bondsPending } from './ambush.ts';
 import { isCaveTroll, tidePending } from './balin.ts';
 import { findTheHalflings, isAmon, legionsPending, reviveHobbits } from './amon.ts';
+import { EDGES, elvesPending, elvesWaiting, isElves } from './elves.ts';
 import { entering, enteringNoCharge, entryEdge, isMutton, isTroll, nextEntering, onEdge, reinforcementsPending, stillEntering } from './mutton.ts';
 import { isHelms, mayChooseRelief, reliefPending, RELIEF_SPAN } from './helms.ts';
 import { putOut } from './fire.ts';
@@ -153,7 +154,7 @@ const int = (v: unknown, min: number, max: number, fallback: number) => Math.rou
 const str = (v: unknown, max: number, fallback = '') => (typeof v === 'string' ? v.slice(0, max) : fallback);
 /** A model waiting to be placed, kept to sensible values (null if its model is gone). */
 function cleanPlacing(p: Partial<Placing> | undefined, state: Pick<GameState, 'models'>): Placing | null {
-  if (!p || typeof p !== 'object' || typeof p.model !== 'string' || !state.models[p.model] || !isSeat(p.seat) || (p.kind !== 'arrive' && p.kind !== 'retreat' && p.kind !== 'join') || !Array.isArray(p.from)) return null;
+  if (!p || typeof p !== 'object' || typeof p.model !== 'string' || !state.models[p.model] || !isSeat(p.seat) || (p.kind !== 'arrive' && p.kind !== 'retreat' && p.kind !== 'join' && p.kind !== 'nest') || !Array.isArray(p.from)) return null;
   const m = state.models[p.model];
   return {
     model: p.model,
@@ -295,7 +296,7 @@ export function cleanModel(m: Partial<Model>, prev?: Model): Model | null {
   for (const k of ['ablaze', 'ringOn', 'slay'] as const) if ((k in m ? m[k] === true : base[k]) && !out.dead) out[k] = true;
   const used = 'used' in m ? (Array.isArray(m.used) ? [...new Set(m.used.slice(0, 8).map(u => str(u, 40)))] : undefined) : base.used;
   if (used?.length) out.used = used;
-  for (const k of ['panned', 'noMove', 'chilled'] as const) {
+  for (const k of ['panned', 'noMove', 'chilled', 'hazed'] as const) {
     const turn = k in m ? (m[k] === undefined ? undefined : int(m[k], 0, 99, 0)) : base[k];
     if (turn) out[k] = turn;
   }
@@ -1122,7 +1123,7 @@ function step(state: GameState, action: Action): GameState {
       return { ...state, flow: { ...state.flow, deploy } };
     }
     case 'choosePriority':
-      if (!isSeat(action.seat)) return state;
+      if (!isSeat(action.seat) || (state.flow.started && waitingOn(state))) return state;
       return { ...goTo(state, state.phase === 'priority' ? 'move' : state.phase, state.turn), priority: action.seat };
     case 'endActivation': {
       if (!isSeat(action.seat) || state.flow.done.includes(action.seat) || state.flow.shotPause || (state.flow.started && waitingOn(state))) return state;
@@ -1141,7 +1142,7 @@ function step(state: GameState, action: Action): GameState {
       }
       // Roast Mutton: the Company still to come rolls (or comes) first, and moves on before the side is done (and the
       // same for Helm's Deep's Relief Force and Balin's Tomb's Goblin Tide).
-      if (state.flow.started && (reinforcementsPending(state, action.seat) || reliefPending(state, action.seat) || tidePending(state, action.seat) || legionsPending(state, action.seat))) return state.flow.reinforce === action.seat ? state : { ...state, flow: { ...state.flow, reinforce: action.seat } };
+      if (state.flow.started && (reinforcementsPending(state, action.seat) || reliefPending(state, action.seat) || tidePending(state, action.seat) || legionsPending(state, action.seat) || elvesPending(state, action.seat))) return state.flow.reinforce === action.seat ? state : { ...state, flow: { ...state.flow, reinforce: action.seat } };
       // Ambush at Night: the bound Hobbits roll to cut their bonds as the Good side finishes its move.
       if (bondsPending(state, action.seat)) return state.flow.bonds === action.seat ? state : { ...state, flow: { ...state.flow, bonds: action.seat } };
       // Ending it with a newcomer still at the edge lets it stay there, and the next one comes on.
@@ -1325,7 +1326,9 @@ function step(state: GameState, action: Action): GameState {
       const crushed = Array.isArray(action.crushed) ? [...new Set([...(state.narrative.crushed ?? []), ...action.crushed.slice(0, 60).map(x => str(x, 80))])].slice(-60) : state.narrative.crushed;
       const woke = action.woke === undefined ? state.narrative.woke : int(action.woke, 0, 99, 0);
       const webbed = action.webbed === undefined ? state.narrative.webbed : int(action.webbed, 0, 99, 0);
-      const next = { ...state, narrative: { ...state.narrative, ...(rolled ? { rolled } : {}), ...(dawn ? { dawn } : {}), ...(breach ? { breach } : {}), ...(crushed ? { crushed } : {}), ...(woke ? { woke } : {}), ...(webbed ? { webbed } : {}) } };
+      const hazed = action.hazed === undefined ? state.narrative.hazed : int(action.hazed, 0, 99, 0);
+      const nested = action.nested === undefined ? state.narrative.nested : int(action.nested, 0, 99, 0);
+      const next = { ...state, narrative: { ...state.narrative, ...(rolled ? { rolled } : {}), ...(dawn ? { dawn } : {}), ...(breach ? { breach } : {}), ...(crushed ? { crushed } : {}), ...(woke ? { woke } : {}), ...(webbed ? { webbed } : {}), ...(hazed ? { hazed } : {}), ...(nested ? { nested } : {}) } };
       // Balin's Tomb: the Cave Troll has stepped in at the doorway, its move counted from just outside it.
       if (action.troll !== undefined && !state.narrative.troll) {
         const troll = Object.values(state.models).find(isCaveTroll);
@@ -1601,7 +1604,9 @@ function step(state: GameState, action: Action): GameState {
       if (!isSeat(action.seat) || !PICK_KEYS.includes(action.key)) return state;
       // The decoy is a webbed bundle, chosen by the Spiders' player before the battle and kept to.
       if (action.key === 'decoy' && (state.flow.started || !isUnseen(state) || action.seat === state.narrative!.good || state.terrain[String(action.value)]?.object !== 'cocoon')) return state;
-      const value = typeof action.value === 'string' && (state.models[action.value] || state.terrain[action.value]) ? action.value : undefined;
+      // The Elves of Mirkwood: the Good player chooses the edge the Elves come on from, any time before they do.
+      if (action.key === 'edge' && (!isElves(state) || action.seat !== state.narrative!.good || !(EDGES as readonly unknown[]).includes(action.value) || elvesWaiting(state).length === 0)) return state;
+      const value = typeof action.value === 'string' && (state.models[action.value] || state.terrain[action.value] || action.key === 'edge') ? action.value : undefined;
       const mine: Picks = { ...state.flow.picks?.[action.seat] };
       if (value) mine[action.key] = value;
       else delete mine[action.key];
@@ -1831,7 +1836,7 @@ export function loadState(raw: unknown): GameState {
   if (o.advance === 'click') out = { ...out, advance: 'click' };
   const n = o.narrative;
   if (n && typeof n === 'object' && narrativeById(n.id) && isSeat(n.good))
-    out = { ...out, narrative: { id: n.id, good: n.good, ...(Number.isFinite(n.cry) ? { cry: int(n.cry, 0, 99, 0) } : {}), ...(Array.isArray(n.rolled) ? { rolled: n.rolled.slice(0, 40).map(t => int(t, 0, 99, 0)) } : {}), ...(Number.isFinite(n.dawn) ? { dawn: int(n.dawn, 1, 99, 1) } : {}), ...(n.bilbo === true ? { bilbo: true } : {}), ...(Number.isFinite(n.turns) ? { turns: int(n.turns, 1, 40, 15) } : {}), ...(Number.isFinite(n.relief) ? { relief: num(n.relief, 0, 200, 36) } : {}), ...(Number.isFinite(n.breach) ? { breach: int(n.breach, 0, 99, 0) } : {}), ...(Number.isFinite(n.troll) ? { troll: int(n.troll, 1, 99, 1) } : {}), ...(Array.isArray(n.crushed) ? { crushed: n.crushed.slice(0, 60).map(x => str(x, 80)) } : {}), ...(Number.isFinite(n.woke) ? { woke: int(n.woke, 0, 99, 0) } : {}), ...(Number.isFinite(n.webbed) ? { webbed: int(n.webbed, 0, 99, 0) } : {}) } };
+    out = { ...out, narrative: { id: n.id, good: n.good, ...(Number.isFinite(n.cry) ? { cry: int(n.cry, 0, 99, 0) } : {}), ...(Array.isArray(n.rolled) ? { rolled: n.rolled.slice(0, 40).map(t => int(t, 0, 99, 0)) } : {}), ...(Number.isFinite(n.dawn) ? { dawn: int(n.dawn, 1, 99, 1) } : {}), ...(n.bilbo === true ? { bilbo: true } : {}), ...(Number.isFinite(n.turns) ? { turns: int(n.turns, 1, 40, 15) } : {}), ...(Number.isFinite(n.relief) ? { relief: num(n.relief, 0, 200, 36) } : {}), ...(Number.isFinite(n.breach) ? { breach: int(n.breach, 0, 99, 0) } : {}), ...(Number.isFinite(n.troll) ? { troll: int(n.troll, 1, 99, 1) } : {}), ...(Array.isArray(n.crushed) ? { crushed: n.crushed.slice(0, 60).map(x => str(x, 80)) } : {}), ...(Number.isFinite(n.woke) ? { woke: int(n.woke, 0, 99, 0) } : {}), ...(Number.isFinite(n.webbed) ? { webbed: int(n.webbed, 0, 99, 0) } : {}), ...(Number.isFinite(n.hazed) ? { hazed: int(n.hazed, 0, 99, 0) } : {}), ...(Number.isFinite(n.nested) ? { nested: int(n.nested, 0, 99, 0) } : {}) } };
   if (o.flow && typeof o.flow === 'object') {
     const f = o.flow as Partial<Flow>;
     const seats = (v: unknown) => (Array.isArray(v) ? [...new Set(v.filter(isSeat))] : []);

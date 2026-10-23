@@ -72,6 +72,8 @@ export interface Model {
   prone?: boolean;
   /** The turn it was thrown from its mount (Knocked Flying), so it can do nothing more that turn. */
   stunned?: number;
+  /** The turn it is dazed by the Haze of Mirkwood (The Elves of Mirkwood): it can't act, and fights with one die and no strikes. */
+  hazed?: number;
   /** How many times Drain Courage has worsened its Courage, and Wither its Strength. */
   drained?: number;
   withered?: number;
@@ -232,8 +234,10 @@ export interface Picks {
   terrain?: string;
   /** The Unseen Hero: the web marker that holds no Dwarves. */
   decoy?: string;
+  /** The Elves of Mirkwood: the table edge Legolas, Tauriel and the Rangers come on from. */
+  edge?: string;
 }
-export const PICK_KEYS = ['target', 'assassin', 'champion', 'protect', 'hunt', 'terrain', 'decoy'] as const;
+export const PICK_KEYS = ['target', 'assassin', 'champion', 'protect', 'hunt', 'terrain', 'decoy', 'edge'] as const;
 
 export interface DiceRoll {
   id: string;
@@ -351,6 +355,9 @@ export interface NarrativeState {
   woke?: number;
   /** The turn Bilbo last rolled to cut open the webs he was touching in the End phase (The Unseen Hero). */
   webbed?: number;
+  /** The Elves of Mirkwood: the turns the Haze has been rolled for, and the Spiders brought back from the nest. */
+  hazed?: number;
+  nested?: number;
 }
 
 export type BotSpeed = 'normal' | 'fast' | 'instant';
@@ -397,7 +404,7 @@ export interface SpellPending {
 export interface Placing {
   model: string;
   seat: Seat;
-  kind: 'arrive' | 'retreat' | 'join';
+  kind: 'arrive' | 'retreat' | 'join' | 'nest';
   from: [number, number];
   rim?: string;
   dist?: number;
@@ -730,7 +737,7 @@ export type Action =
   /** Request: the Good player at Weathertop rolls for Aragorn this turn, or doesn't. */
   | { type: 'aragorn'; roll: boolean }
   /** Server only: bookkeeping for a narrative scenario's rules. */
-  | { type: 'narrativeNote'; rolled?: number; dawn?: number; bilbo?: boolean; breach?: number; troll?: number; crushed?: string[]; woke?: number; revive?: string[]; webbed?: number }
+  | { type: 'narrativeNote'; rolled?: number; dawn?: number; bilbo?: boolean; breach?: number; troll?: number; crushed?: string[]; woke?: number; revive?: string[]; webbed?: number; hazed?: number; nested?: number }
   /** Helm's Deep: the Good player picks where on the south edge the Relief Force will ride on. */
   | { type: 'reliefPoint'; seat: Seat; x: number }
   /** Helm's Deep: a Good hero by the gate mounts up (resolved with the profiles). */
