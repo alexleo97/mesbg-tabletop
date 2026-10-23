@@ -278,7 +278,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
       if (t.look === 'trunk') return <MirkwoodPiece t={t} />;
       if (t.look === 'stone') return <StoneTower t={t} tex={tex} />;
       if (t.look === 'pillar' || t.look === 'tomb' || t.look === 'well') return <MoriaPiece t={t} />;
-      if (t.look === 'lakehouse') return <LakePiece t={t} />;
+      if (t.look === 'lakehouse' || t.look === 'laketower' || t.look === 'lakewing') return <LakePiece t={t} />;
       if (t.shape === 'circle')
         return (
           <>
@@ -753,47 +753,129 @@ function LakePiece({ t }: { t: Terrain }) {
       </>
     );
   }
-  // A house: square ones have four roof slopes meeting at a point, long ones two meeting at a ridge.
-  const square = Math.min(w, h) / Math.max(w, h) > 0.8;
-  const [hw, hh] = [w / 2, h / 2];
-  const along = w >= h;
-  const ridge = along ? Math.max(0, hw - hh) : Math.max(0, hh - hw);
-  const faces = square
-    ? [`M ${-hw} ${-hh} L ${hw} ${-hh} L 0 0 Z`, `M ${hw} ${-hh} L ${hw} ${hh} L 0 0 Z`, `M ${hw} ${hh} L ${-hw} ${hh} L 0 0 Z`, `M ${-hw} ${hh} L ${-hw} ${-hh} L 0 0 Z`]
-    : along
-      ? [`M ${-hw} ${-hh} L ${hw} ${-hh} L ${hw} 0 L ${-hw} 0 Z`, `M ${-hw} ${hh} L ${hw} ${hh} L ${hw} 0 L ${-hw} 0 Z`]
-      : [`M ${-hw} ${-hh} L 0 ${-hh} L 0 ${hh} L ${-hw} ${hh} Z`, `M ${hw} ${-hh} L 0 ${-hh} L 0 ${hh} L ${hw} ${hh} Z`];
-  const shade = square ? ['#ffffff1f', '#00000024', '#0000004a', '#00000010'] : ['#ffffff1c', '#00000045'];
-  const rows = Math.max(3, Math.round(Math.max(w, h) / 0.45));
+  // The buildings, after Games Workshop's Lake-town House: a tower's pyramid roof over a plank gallery; a house's steep
+  // gabled roof (its ridge along its length, a wing's across it) on its plank platform.
+  if (t.look === 'laketower') return <LakeTower w={w} h={h} />;
+  if (t.look === 'lakewing') {
+    return (
+      <g transform="rotate(90)">
+        <GableRoof id={t.id} w={h} h={w} porch={0} />
+      </g>
+    );
+  }
+  // (Its ridge along its longer side.)
+  if (h > w) {
+    return (
+      <g transform="rotate(90)">
+        <GableRoof id={t.id} w={h} h={w} porch={Math.min(0.5, w * 0.14)} dormer={h >= 4} />
+      </g>
+    );
+  }
+  return <GableRoof id={t.id} w={w} h={h} porch={Math.min(0.5, h * 0.14)} dormer={w >= 4} />;
+}
+
+/** Planks across a platform (running along y), with a post at each corner. */
+function Deck({ w, h }: { w: number; h: number }) {
+  const boards = Math.max(2, Math.round(w / 0.42));
   return (
     <>
-      <rect className="ground house-eaves" x={-hw - 0.12} y={-hh - 0.12} width={w + 0.24} height={h + 0.24} filter="url(#hard-shadow)" />
-      {faces.map((f, i) => (
-        <g key={i}>
-          <path className="house-roof" d={f} />
-          <path className="tint" d={f} fill={shade[i]} />
-        </g>
-      ))}
-      {/* Rows of shingles running along the eaves. */}
-      {Array.from({ length: rows - 1 }, (_, i) => {
-        const k = (i + 1) / rows;
-        return along || square ? (
-          <line key={i} className="house-shingle" x1={-hw} x2={hw} y1={-hh + k * h} y2={-hh + k * h} />
-        ) : (
-          <line key={i} className="house-shingle" x1={-hw + k * w} x2={-hw + k * w} y1={-hh} y2={hh} />
-        );
+      <rect className="ground walk-deck" x={-w / 2} y={-h / 2} width={w} height={h} filter="url(#hard-shadow)" />
+      {Array.from({ length: boards - 1 }, (_, i) => {
+        const x = -w / 2 + ((i + 1) * w) / boards;
+        return <line key={i} className="walk-seam" x1={x} x2={x} y1={-h / 2} y2={h / 2} />;
       })}
-      {square ? (
-        <>
-          <line className="house-ridge" x1={-hw} y1={-hh} x2={hw} y2={hh} />
-          <line className="house-ridge" x1={hw} y1={-hh} x2={-hw} y2={hh} />
-          <rect className="house-chimney" x={-0.3} y={-0.3} width={0.6} height={0.6} />
-        </>
-      ) : along ? (
-        <line className="house-ridge" x1={-hw + (ridge ? 0 : 0)} x2={hw} y1={0} y2={0} />
-      ) : (
-        <line className="house-ridge" x1={0} x2={0} y1={-hh} y2={hh} />
+      {[-1, 1].flatMap(i => [-1, 1].map(j => <circle key={`${i}${j}`} className="walk-post" cx={i * (w / 2 - 0.14)} cy={j * (h / 2 - 0.14)} r={0.15} />))}
+    </>
+  );
+}
+
+/**
+ * A steep gabled roof seen from above, its ridge along x: two shingled slopes (the north one catching the light), a
+ * ridge cap, barge boards along the gable ends, a stovepipe, and on the bigger houses a dormer on the south slope. A
+ * strip of the platform shows along the south side, where the door is.
+ */
+function GableRoof({ id, w, h, porch, dormer }: { id: string; w: number; h: number; porch: number; dormer?: boolean }) {
+  const e = 0.08;
+  const [x0, x1, y0, y1] = [-w / 2 + e, w / 2 - e, -h / 2 + e, h / 2 - e - porch];
+  const mid = (y0 + y1) / 2;
+  const north = `M ${x0} ${y0} H ${x1} V ${mid} H ${x0} Z`;
+  const south = `M ${x0} ${mid} H ${x1} V ${y1} H ${x0} Z`;
+  // (The dormer and the stovepipe at the same spots on every copy of a house, but not on every house.)
+  const dx = (seeded(id, 1) - 0.5) * w * 0.3;
+  const px = (seeded(id, 2) > 0.5 ? 1 : -1) * w * 0.3;
+  const dw = 0.9;
+  const dTop = mid + 0.2;
+  const dBot = y1 - 0.15;
+  return (
+    <>
+      {porch ? <Deck w={w} h={h} /> : <rect className="ground house-eaves" x={-w / 2} y={-h / 2} width={w} height={h} filter="url(#hard-shadow)" />}
+      <g filter={porch ? 'url(#soft-shadow)' : undefined}>
+        <path className="house-roof" d={north} />
+        <path d={north} fill="url(#shingles-x)" />
+        <path d={north} fill="#ffffff" opacity={0.1} />
+        <path className="house-roof" d={south} />
+        <path d={south} fill="url(#shingles-x)" />
+        <path d={south} fill="#000" opacity={0.22} />
+      </g>
+      {dormer && dBot - dTop > 0.5 && (
+        <g filter="url(#soft-shadow)">
+          <path className="house-roof" d={`M ${dx - dw / 2} ${dTop} H ${dx} V ${dBot} H ${dx - dw / 2} Z`} />
+          <path d={`M ${dx - dw / 2} ${dTop} H ${dx} V ${dBot} H ${dx - dw / 2} Z`} fill="url(#shingles-y)" />
+          <path className="house-roof" d={`M ${dx} ${dTop} H ${dx + dw / 2} V ${dBot} H ${dx} Z`} />
+          <path d={`M ${dx} ${dTop} H ${dx + dw / 2} V ${dBot} H ${dx} Z`} fill="#000" opacity={0.3} />
+          <line className="house-ridge-thin" x1={dx} x2={dx} y1={dTop} y2={dBot} />
+          <rect className="dormer-edge" x={dx - dw / 2} y={dTop} width={dw} height={dBot - dTop} />
+          <rect className="dormer-window" x={dx - dw * 0.3} y={dBot - 0.02} width={dw * 0.6} height={0.14} />
+        </g>
       )}
+      <rect className="house-ridge-cap" x={x0} y={mid - 0.09} width={x1 - x0} height={0.18} />
+      <line className="house-ridge-light" x1={x0} x2={x1} y1={mid - 0.05} y2={mid - 0.05} />
+      <rect className="house-trim" x={x0 - 0.02} y={y0} width={0.13} height={y1 - y0} />
+      <rect className="house-trim" x={x1 - 0.11} y={y0} width={0.13} height={y1 - y0} />
+      <rect className="house-eave-line" x={x0} y={y0} width={x1 - x0} height={y1 - y0} />
+      {w >= 3 && (
+        <>
+          <circle className="house-stovepipe" cx={px} cy={mid - 0.45} r={0.16} />
+          <circle className="house-stovepipe-hole" cx={px} cy={mid - 0.45} r={0.08} />
+        </>
+      )}
+    </>
+  );
+}
+
+/** A tower: a pyramid roof of shingles over a gallery of planks with a rail round it, and a finial at the top. */
+function LakeTower({ w, h }: { w: number; h: number }) {
+  const g = Math.min(0.55, Math.min(w, h) * 0.14);
+  const [x0, x1, y0, y1] = [-w / 2 + g, w / 2 - g, -h / 2 + g, h / 2 - g];
+  const faces: [string, string, number][] = [
+    [`M ${x0} ${y0} L ${x1} ${y0} L 0 0 Z`, 'url(#shingles-x)', 0.12],
+    [`M ${x1} ${y0} L ${x1} ${y1} L 0 0 Z`, 'url(#shingles-y)', -0.18],
+    [`M ${x1} ${y1} L ${x0} ${y1} L 0 0 Z`, 'url(#shingles-x)', -0.3],
+    [`M ${x0} ${y1} L ${x0} ${y0} L 0 0 Z`, 'url(#shingles-y)', 0.02],
+  ];
+  return (
+    <>
+      <Deck w={w} h={h} />
+      <rect className="tower-rail" x={-w / 2 + 0.06} y={-h / 2 + 0.06} width={w - 0.12} height={h - 0.12} />
+      <g filter="url(#soft-shadow)">
+        {faces.map(([d, fill, light], i) => (
+          <g key={i}>
+            <path className="house-roof" d={d} />
+            <path d={d} fill={fill} />
+            <path d={d} fill={light > 0 ? '#fff' : '#000'} opacity={Math.abs(light)} />
+          </g>
+        ))}
+      </g>
+      {[
+        [x0, y0],
+        [x1, y0],
+        [x1, y1],
+        [x0, y1],
+      ].map(([x, y], i) => (
+        <line key={i} className="house-hip" x1={x} y1={y} x2={0} y2={0} />
+      ))}
+      <rect className="house-eave-line" x={x0} y={y0} width={x1 - x0} height={y1 - y0} />
+      <circle className="house-finial" r={0.2} />
     </>
   );
 }
@@ -1072,6 +1154,15 @@ export function TerrainDefs() {
       <filter id="bank-blur" x="-10%" y="-10%" width="120%" height="120%">
         <feGaussianBlur stdDeviation="0.25" />
       </filter>
+      {/* Lake-town's roof shingles: courses along x (or y), each shingle's edge staggered from the course above. */}
+      {[0, 90].map(r => (
+        <pattern key={r} id={r ? 'shingles-y' : 'shingles-x'} patternUnits="userSpaceOnUse" width={0.36} height={0.5} patternTransform={r ? 'rotate(90)' : undefined}>
+          <line className="shingle-course" x1={0} x2={0.36} y1={0.25} y2={0.25} />
+          <line className="shingle-course" x1={0} x2={0.36} y1={0.5} y2={0.5} />
+          <line className="shingle-edge" x1={0.02} x2={0.02} y1={0} y2={0.25} />
+          <line className="shingle-edge" x1={0.2} x2={0.2} y1={0.25} y2={0.5} />
+        </pattern>
+      ))}
       <filter id="hard-shadow" x="-20%" y="-20%" width="140%" height="140%">
         <feDropShadow dx="0.16" dy="0.24" stdDeviation="0.08" floodColor="#000" floodOpacity="0.55" />
       </filter>

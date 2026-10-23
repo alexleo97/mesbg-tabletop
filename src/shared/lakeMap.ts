@@ -68,33 +68,58 @@ export const WALKWAYS: [number, number, number, number][] = [
   [37.4, 28.8, 48, 28.8],
 ];
 
-/** The houses and towers: middle, size, turn. */
-export const HOUSES: [number, number, number, number, number][] = [
-  // North of section B: a long house with a wing.
-  [16.6, 4.6, 5.6, 3.2, 25],
-  [13.6, 5, 2.4, 3.8, 25],
-  [9.3, 10, 4.3, 4],
-  [16.2, 15.6, 6, 5.2, 0],
-  [28.3, 5.5, 5.4, 3, 35],
-  [26.5, 11.6, 6, 4.2, 0],
-  [25, 13.6, 2.2, 3.4, -10],
-  [36.7, 11.1, 3.8, 3.8, 0],
-  [38.8, 2.2, 4.8, 2.6, -20],
-  [37.3, 4.2, 2.4, 3, 30],
-  [28.2, 17.9, 5.4, 3, 30],
-  [23.2, 24.3, 4.3, 4, 0],
-  [9.8, 28.6, 4.8, 2.6, 30],
-  [12.3, 28.6, 2.4, 5, 15],
-  [9.4, 38.6, 4.6, 4, 0],
-  [26.6, 31.1, 3.3, 4.4, 10],
-  [26.9, 38.9, 3.3, 4, -15],
-  [24.8, 41.1, 3.6, 2.2, 25],
-  [38.6, 38.6, 4.4, 4.2, 0],
-  [43.3, 42.1, 6.2, 5, 0],
-].map(([x, y, w, h, rot]) => [x, y, w, h, rot ?? 0]) as [number, number, number, number, number][];
+/**
+ * The buildings, after Games Workshop's Lake-town House: tall timber houses with steep shingled roofs, and square towers
+ * with a pyramid roof over a plank gallery. Middle, size (the roof's ridge runs along the first), and turn; a house may
+ * have a cross-wing, a lower gabled wing butting onto one long side: where along that side its middle is, which side
+ * (1 the side towards +y, -1 the other), how wide it is and how far it reaches out.
+ */
+export interface Building {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  rot: number;
+  tower?: boolean;
+  wing?: { at: number; side: 1 | -1; across: number; out: number };
+}
 
-/** Bard's House, touching the east edge. */
+export const BUILDINGS: Building[] = [
+  // Section A and B, north: a long house with a wing to the south, a tower, and the big house by the boats.
+  { x: 16.6, y: 4.6, w: 5.6, h: 3.2, rot: 25, wing: { at: -1.6, side: 1, across: 2.4, out: 1.9 } },
+  { x: 9.6, y: 10.1, w: 4.2, h: 4, rot: 0, tower: true },
+  { x: 16.2, y: 15.6, w: 6, h: 5.2, rot: 0 },
+  // Section C, north.
+  { x: 28.3, y: 5.5, w: 5.4, h: 3, rot: 35 },
+  { x: 26.5, y: 11.6, w: 6, h: 4.2, rot: 0, wing: { at: -1.9, side: 1, across: 2.2, out: 2.4 } },
+  { x: 28.2, y: 17.9, w: 5.4, h: 3, rot: 30 },
+  // Section D, north.
+  { x: 36.7, y: 11.1, w: 3.8, h: 3.8, rot: 0, tower: true },
+  { x: 38.8, y: 2.2, w: 4.8, h: 2.6, rot: -20, wing: { at: -1.3, side: 1, across: 2.2, out: 2.2 } },
+  // The middle.
+  { x: 23.2, y: 24.3, w: 4.3, h: 4, rot: 0, tower: true },
+  { x: 9.8, y: 28.6, w: 4.8, h: 2.6, rot: 30, wing: { at: 1.4, side: -1, across: 2.4, out: 2.4 } },
+  { x: 26.6, y: 31.1, w: 4.4, h: 3.3, rot: 100 },
+  // The south.
+  { x: 9.4, y: 38.6, w: 4.6, h: 4, rot: 0, tower: true },
+  { x: 26.9, y: 38.9, w: 4, h: 3.3, rot: 75, wing: { at: 1.2, side: 1, across: 2.2, out: 2 } },
+  { x: 38.6, y: 38.6, w: 4.4, h: 4.2, rot: 0, tower: true },
+  { x: 43.3, y: 42.1, w: 6.2, h: 5, rot: 0 },
+];
+
+/** Where a building's wing stands. */
+export function wingOf(b: Building): Pick<Building, 'x' | 'y' | 'w' | 'h' | 'rot'> | null {
+  if (!b.wing) return null;
+  const { at, side, across, out } = b.wing;
+  const a = (b.rot * Math.PI) / 180;
+  const ly = side * (b.h / 2 + out / 2);
+  return { x: b.x + at * Math.cos(a) - ly * Math.sin(a), y: b.y + at * Math.sin(a) + ly * Math.cos(a), w: across, h: out, rot: b.rot };
+}
+
+/** Bard's House, touching the east edge: a big house with its ridge running north and south. */
 export const BARDS_HOUSE: [number, number, number, number] = [45.5, 21.2, 5, 5.4];
+/** The wings stand lower than the houses. */
+export const WING_HEIGHT = 4;
 
 /** The boats tied up in pairs: middle, and whether it lies across the table (east-west) or along it. */
 export const BOATS: [number, number, boolean][] = [
@@ -154,7 +179,12 @@ export function lakeTerrain(): NarrativeTerrain[] {
     ),
     ...BOATS.map(([x, y, across], i) => piece({ id: `boat-${i + 1}`, kind: 'road', x, y, w: 1.9, h: 0.7, rot: across ? 0 : 90, look: 'boat' })),
     ...FLOES.map(([x, y, w, h], i) => piece({ id: `floe-${i + 1}`, kind: 'rock', shape: 'circle', x, y, w, h, height: FLOE_HEIGHT, look: 'floe' })),
-    ...HOUSES.map(([x, y, w, h, rot], i) => piece({ id: `house-${i + 1}`, kind: 'building', x, y, w, h, rot, height: HOUSE_HEIGHT, floors: 1, look: 'lakehouse' })),
+    ...BUILDINGS.flatMap((b, i) => {
+      const wing = wingOf(b);
+      const house = piece({ id: `house-${i + 1}`, kind: 'building', x: b.x, y: b.y, w: b.w, h: b.h, rot: b.rot, height: HOUSE_HEIGHT, floors: 1, look: b.tower ? 'laketower' : 'lakehouse' });
+      // (The wing first, so the house's eaves overhang it.)
+      return wing ? [piece({ id: `house-${i + 1}-wing`, kind: 'building', ...wing, height: WING_HEIGHT, floors: 1, look: 'lakewing' }), house] : [house];
+    }),
     piece({ id: 'bards-house', kind: 'building', x: bx, y: by, w: bw, h: bh, height: HOUSE_HEIGHT, floors: 1, look: 'lakehouse' }),
   ];
 }

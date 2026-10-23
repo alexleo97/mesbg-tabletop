@@ -1295,10 +1295,21 @@ select.ready-made {
 .terrain .ice-floe { fill: #dfeaf2; stroke: #9db5c6; stroke-width: 0.06; }
 .terrain .ice-crack { fill: none; stroke: #9db5c6; stroke-width: 0.05; }
 .terrain .house-eaves { fill: #3b2a1b; }
-.terrain .house-roof { fill: #7d6a55; stroke: #3b2a1b; stroke-width: 0.05; }
-.terrain .house-shingle { stroke: #00000030; stroke-width: 0.04; }
-.terrain .house-ridge { stroke: #2d2015; stroke-width: 0.1; }
-.terrain .house-chimney { fill: #4a3a2c; stroke: #20160d; stroke-width: 0.05; }
+.terrain .house-roof { fill: #8a7259; }
+.terrain .dormer-edge { fill: none; stroke: #24180e; stroke-width: 0.05; }
+.terrain .dormer-window { fill: #1a120b; stroke: #c9a46a; stroke-width: 0.03; }
+.shingle-course { stroke: #2a1d12; stroke-opacity: 0.7; stroke-width: 0.045; }
+.shingle-edge { stroke: #2a1d12; stroke-opacity: 0.55; stroke-width: 0.035; }
+.terrain .house-ridge-cap { fill: #3a2818; }
+.terrain .house-ridge-light { stroke: #a08460; stroke-width: 0.03; }
+.terrain .house-ridge-thin { stroke: #2d2015; stroke-width: 0.06; }
+.terrain .house-hip { stroke: #3a2818; stroke-width: 0.1; }
+.terrain .house-trim { fill: #4a3220; }
+.terrain .house-eave-line { fill: none; stroke: #24180e; stroke-width: 0.06; }
+.terrain .house-stovepipe { fill: #2b2b2b; stroke: #111; stroke-width: 0.04; }
+.terrain .house-stovepipe-hole { fill: #0a0a0a; }
+.terrain .house-finial { fill: #3a2818; stroke: #a08460; stroke-width: 0.04; }
+.terrain .tower-rail { fill: none; stroke: #4a3018; stroke-width: 0.1; }
 .terrain .dam-course { stroke: #00000040; stroke-width: 0.05; }
 .terrain .dam-walk { fill: #ffffff22; }
 .terrain .dam-sluice { fill: #2a2f33; stroke: #11161a; stroke-width: 0.05; }

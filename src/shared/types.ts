@@ -217,7 +217,7 @@ export interface Terrain {
    */
   deep?: boolean;
   /** Drawn in dressed stone (a fortress's courtyard, causeway, keep or tower), a wall with a culvert through it, a field of long grass, or a piece of Balin's Tomb (a pillar, the tomb, the well, a trapdoor, the doorway: the well and trapdoors are where its Goblins come back), undergrowth, or a piece of Isengard (the tower of Orthanc, a timber scaffold, a ladder up one, a pit). */
-  look?: 'stone' | 'culvert' | 'grass' | 'pillar' | 'tomb' | 'well' | 'trapdoor' | 'doorway' | 'brush' | 'orthanc' | 'scaffold' | 'ladder' | 'pit' | 'roots' | 'trunk' | 'gnarled' | 'planks' | 'boat' | 'floe' | 'lakehouse';
+  look?: 'stone' | 'culvert' | 'grass' | 'pillar' | 'tomb' | 'well' | 'trapdoor' | 'doorway' | 'brush' | 'orthanc' | 'scaffold' | 'ladder' | 'pit' | 'roots' | 'trunk' | 'gnarled' | 'planks' | 'boat' | 'floe' | 'lakehouse' | 'laketower' | 'lakewing';
 }
 
 export const DOOR_TYPES = ['castle', 'dwarven', 'heavyArmoured', 'armoured', 'heavy', 'external', 'internal', 'dam'] as const;
