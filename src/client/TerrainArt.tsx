@@ -237,6 +237,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
       );
     case 'rock':
     case 'cliff':
+      if (t.look === 'roots') return <MirkwoodPiece t={t} />;
       return (
         <>
           <path className={`ground ${t.kind}-face`} d={d} fill={tex} filter="url(#hard-shadow)" />
@@ -270,6 +271,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
       );
     case 'building':
       if (t.look === 'orthanc') return <IsengardPiece t={t} />;
+      if (t.look === 'trunk') return <MirkwoodPiece t={t} />;
       if (t.look === 'stone') return <StoneTower t={t} tex={tex} />;
       if (t.look === 'pillar' || t.look === 'tomb' || t.look === 'well') return <MoriaPiece t={t} />;
       if (t.shape === 'circle')
@@ -557,6 +559,56 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
 }
 
 /** The pieces of Balin's Tomb: a dwarf-hewn pillar, the tomb on its plinth, the well, a trapdoor, the doorway. */
+/** A number from 0 to 1 that stays the same for a piece, so its roots and stones lie the same way every time. */
+function seeded(id: string, k: number) {
+  let h = 2166136261;
+  for (const c of `${id}:${k}`) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
+  return ((h >>> 0) % 1000) / 1000;
+}
+
+/** Mirkwood (The Unseen Hero): a mound of roots and stones under a great tree, and the great trunk itself. */
+function MirkwoodPiece({ t }: { t: Terrain }) {
+  const rx = t.w / 2;
+  const ry = t.h / 2;
+  if (t.look === 'trunk') {
+    // Gnarled bark seen from above, the rings of the old wood showing where it has split.
+    return (
+      <>
+        <ellipse className="ground trunk-bark" rx={rx} ry={ry} filter="url(#hard-shadow)" />
+        {[0.72, 0.48, 0.24].map(k => (
+          <ellipse key={k} className="tint trunk-ring" rx={rx * k} ry={ry * k} />
+        ))}
+        <ellipse className="tint" rx={rx} ry={ry} fill="url(#g-dome)" />
+      </>
+    );
+  }
+  // Roots snaking out from the middle to the edge of the mound, and stones lying among them.
+  const roots = Array.from({ length: 9 }, (_, i) => {
+    const a = ((i + seeded(t.id, i) * 0.6) / 9) * Math.PI * 2;
+    const bend = (seeded(t.id, i + 20) - 0.5) * 0.9;
+    const [ex, ey] = [Math.cos(a) * rx * 0.92, Math.sin(a) * ry * 0.92];
+    const [mx, my] = [Math.cos(a + bend) * rx * 0.5, Math.sin(a + bend) * ry * 0.5];
+    return `M 0 0 Q ${mx.toFixed(2)} ${my.toFixed(2)} ${ex.toFixed(2)} ${ey.toFixed(2)}`;
+  });
+  const stones = Array.from({ length: 6 }, (_, i) => {
+    const a = seeded(t.id, i + 40) * Math.PI * 2;
+    const d = 0.55 + seeded(t.id, i + 60) * 0.35;
+    return { x: Math.cos(a) * rx * d, y: Math.sin(a) * ry * d, r: 0.25 + seeded(t.id, i + 80) * 0.35 };
+  });
+  return (
+    <>
+      <ellipse className="ground roots-mound" rx={rx} ry={ry} filter="url(#soft-shadow)" />
+      {roots.map((d, i) => (
+        <path key={i} className="tint root" d={d} strokeWidth={0.55 - (i % 3) * 0.12} />
+      ))}
+      {stones.map((p, i) => (
+        <ellipse key={i} className="tint roots-stone" cx={p.x} cy={p.y} rx={p.r} ry={p.r * 0.8} />
+      ))}
+      <ellipse className="tint" rx={rx} ry={ry} fill="url(#g-dome)" />
+    </>
+  );
+}
+
 /**
  * Isengard (Last March of the Ents): the black rock of Orthanc, timber scaffolds and their ladders, the pits torn in
  * the ground, and the dam holding back the Isen.
@@ -741,7 +793,7 @@ function StoneTower({ t, tex }: { t: Terrain; tex: string }) {
 }
 
 /** A letter on each kind of scenario marker, so you can tell them apart at a glance. */
-const GLYPHS: Record<NonNullable<Terrain['object']>, string> = { artefact: 'A', relic: 'R', heirloom: 'H', decoy: '✕', supply: 'S', ally: '+', ladder: 'L', ram: 'B', rocks: '●', oil: '♨', rally: '⚑', campfire: '♨', charge: '✸', hobbit: 'z', boat: '⛵' };
+const GLYPHS: Record<NonNullable<Terrain['object']>, string> = { artefact: 'A', relic: 'R', heirloom: 'H', decoy: '✕', supply: 'S', ally: '+', ladder: 'L', ram: 'B', rocks: '●', oil: '♨', rally: '⚑', campfire: '♨', charge: '✸', hobbit: 'z', boat: '⛵', cocoon: '❋' };
 
 function star(r: number) {
   const pts: string[] = [];
@@ -787,6 +839,8 @@ function hull(pts: Point[]): Point[] {
 const tall = (t: Terrain) => !t.gone && (t.sheer || t.kind === 'gate' || (t.look === 'stone' && t.kind !== 'road') || t.look === 'pillar' || t.look === 'tomb' || t.look === 'well' || t.look === 'scaffold');
 /** Orthanc's faces are cut short, so the tower doesn't hide the table round it (its height is written on top). */
 const FACE_CAP = 5.5;
+/** So are the great trunks of Mirkwood, which would otherwise lie across half the table. */
+const TRUNK_CAP = 2.5;
 
 /** The ground a piece's faces cover, from its top down to its foot; a causeway slopes from the gate to the ground. */
 function face(t: Terrain, lean: Point): Point[] {
@@ -797,7 +851,7 @@ function face(t: Terrain, lean: Point): Point[] {
     const along = (p: Point) => ((p.x - t.x) * Math.cos(a) + (p.y - t.y) * Math.sin(a)) / t.w + 0.5;
     return hull([...top, ...top.map(p => ({ x: p.x + lean.x * 2.2 * (1 - along(p)), y: p.y + lean.y * 2.2 * (1 - along(p)) }))]);
   }
-  const h = t.look === 'orthanc' ? Math.min(heightOf(t), FACE_CAP) : heightOf(t);
+  const h = t.look === 'orthanc' ? Math.min(heightOf(t), FACE_CAP) : t.look === 'trunk' ? Math.min(heightOf(t), TRUNK_CAP) : heightOf(t);
   return hull([...top, ...top.map(p => ({ x: p.x + lean.x * h, y: p.y + lean.y * h }))]);
 }
 
@@ -812,7 +866,7 @@ export function TerrainFaces({ terrain, turn = 0 }: { terrain: Terrain[]; /** Ho
         return (
           <g key={t.id}>
             <polygon className="face-shadow" points={pts} transform="translate(0.35 0.45)" filter="url(#bank-blur)" />
-            <polygon className="face" points={pts} fill={t.look === 'orthanc' ? '#1d1e23' : t.look === 'scaffold' ? '#5a3d1f' : t.kind === 'rock' ? 'url(#tex-cliff)' : 'url(#tex-wall)'} />
+            <polygon className="face" points={pts} fill={t.look === 'orthanc' ? '#1d1e23' : t.look === 'trunk' ? '#3b2c1d' : t.look === 'scaffold' ? '#5a3d1f' : t.kind === 'rock' ? 'url(#tex-cliff)' : 'url(#tex-wall)'} />
             <polygon className="face-shade" points={pts} />
           </g>
         );

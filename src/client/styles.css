@@ -1255,6 +1255,11 @@ select.ready-made {
 .terrain .ladder-rung { stroke: #d9b27a; stroke-width: 0.08; }
 .terrain .pit-rim { fill: #a8987e; stroke: #6e604b; stroke-width: 0.05; }
 .terrain .pit-gash { fill: #19130e; }
+.terrain .roots-mound { fill: #4d3e2a; stroke: #2e2418; stroke-width: 0.08; }
+.terrain .root { fill: none; stroke: #2b1f13; stroke-linecap: round; opacity: 0.85; }
+.terrain .roots-stone { fill: #8a8577; stroke: #4c4840; stroke-width: 0.05; }
+.terrain .trunk-bark { fill: #4a3624; stroke: #22180e; stroke-width: 0.1; }
+.terrain .trunk-ring { fill: none; stroke: #2a1d11; stroke-width: 0.08; }
 .terrain .dam-course { stroke: #00000040; stroke-width: 0.05; }
 .terrain .dam-walk { fill: #ffffff22; }
 .terrain .dam-sluice { fill: #2a2f33; stroke: #11161a; stroke-width: 0.05; }

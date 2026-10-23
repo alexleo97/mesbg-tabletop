@@ -12,6 +12,8 @@ import { amonWinner } from './amon.ts';
 import { amonCast, amonTerrain } from './amonMap.ts';
 import { entsWinner } from './ents.ts';
 import { entsCast, entsTerrain } from './entsMap.ts';
+import { unseenWinner } from './unseen.ts';
+import { unseenCast, unseenTerrain } from './unseenMap.ts';
 import { insidePolygon, outline } from './sight.ts';
 import { BALLISTA_BASE, deepingSlots, evilSlots, GATE_ANGLE, HELMS_TEAMS, helmsTerrain, hornburgSlots, inHelmsZone, onArc, OUTER, type HelmsZone } from './helmsMap.ts';
 import type { Action, Base, DiceRoll, GameState, Mat, Model, Seat, Terrain } from './types.ts';
@@ -52,7 +54,9 @@ export type Placement =
   /** Starting at `at`, in base contact with the edge of a piece of terrain (Amon Hen: the Seeing Seat). */
   | { against: string; at: [number, number] }
   /** Starting at `at`, and kept at least so far from every friend (Amon Hen: Sam, 12" from the rest of the Fellowship). */
-  | { apart: number; at: [number, number] };
+  | { apart: number; at: [number, number] }
+  /** Starting at `at`, touching whichever table edge it is dragged nearest (The Unseen Hero: Bilbo). */
+  | { anyEdge: true; at: [number, number] };
 
 /**
  * A deployment zone: a circle round a point (x, y, radius), a box (x0, y0, x1, y1), a ring round a point (x, y, from,
@@ -138,6 +142,8 @@ export interface CastMember {
   brand?: boolean;
   /** A lit torch, to set off a Demolition Charge (Helm's Deep). */
   torch?: boolean;
+  /** Starts the game wearing the One Ring (The Unseen Hero). */
+  ring?: boolean;
   /** A name of its own, where the scenario's model uses another's profile (an Uruk-hai Engineer). */
   name?: string;
   /** Its base, where the book gives one the data doesn't. */
@@ -301,6 +307,41 @@ export const NARRATIVES: Narrative[] = [
       { key: 'thorin', side: 'good', unit: "[thorin's-company] thorin-oakenshield", options: ['The Oakenshield'], place: { aside: true } },
       ...(['fili', 'balin', 'dwalin', 'bifur', 'bofur', 'bombur', 'ori', 'nori', 'dori', 'oin', 'gloin'] as const).map((k): CastMember => ({ key: k, side: 'good', unit: `[thorin's-company] ${k}-the-dwarf`, place: { aside: true } })),
     ],
+  },
+  {
+    id: 'the-unseen-hero',
+    name: 'The Unseen Hero',
+    from: 'The Hobbit: The Desolation of Smaug',
+    saga: 'hobbit',
+    blurb: 'Deep in Mirkwood the Spiders have the Dwarves trussed up for supper. Only Bilbo is left, invisible with his new ring and Sting in his hand, to find them and cut them free.',
+    board: { w: 48, h: 48, mat: 'forest' },
+    terrain: unseenTerrain(),
+    sides: {
+      good: { name: 'Bilbo', cast: 'Bilbo Baggins, with the One Ring and Sting' },
+      evil: { name: 'The Spiders', cast: '6 Mirkwood Giant Spiders, and three webbed bundles: two hold Dwarves, one is a decoy' },
+    },
+    layout:
+      "A 4' by 4' stretch of Mirkwood, thick with trees: great gnarled trees on mounds of roots and stones, lesser trees in tangles of undergrowth between them, boulders, and a low rocky bank across the south-west.",
+    setupOrder: ['evil', 'good'],
+    deployment:
+      'The Evil player places the three webbed bundles at least 6" apart and secretly picks which one is the decoy; then sets up the Spiders at least 6" from one another. Then Bilbo starts touching any table edge, wearing the Ring.',
+    objectives:
+      'The battle goes on until the end of a turn in which one side has done what it came to do. Bilbo wins if he has freed both lots of Dwarves (cut open the two right bundles), or if every Spider is slain. The Spiders win if Bilbo is slain.',
+    rules: [
+      {
+        name: 'Brave Master Baggins',
+        text: 'In a turn in which Bilbo charges, he has +1 Fight and +1 Attack until the End phase. His stones are a throwing weapon (Strength 1, 8"), rather than Throw Stones.',
+      },
+      {
+        name: 'The Power of the Ring',
+        text: 'While Bilbo wears the Ring, each Spider starts its activation with an Intelligence test. Passed, the Evil player moves it D6"; failed, the Good player does. It must go the whole way, may not leave the table, and stops only if it touches Bilbo, which counts as charging him. Once a Spider has charged Bilbo, the rest of the Spiders pass their tests that turn.',
+      },
+      {
+        name: 'Caught in a Web',
+        text: 'If Bilbo is touching a bundle in the End phase, roll a D6: on a 3+ he cuts it open, and the Evil player reveals whether it held Dwarves.',
+      },
+    ],
+    cast: unseenCast(),
   },
   {
     id: 'ambush-at-night',
@@ -725,6 +766,7 @@ export function narrativeSetup(n: Narrative, good: Seat, catalog: Catalog, newId
       ...(c.stats ? { stats: c.stats } : {}),
       ...(c.brand ? { brand: true } : {}),
       ...(c.torch ? { torch: true } : {}),
+      ...(c.ring ? { ringOn: true } : {}),
       ...('aside' in c.place ? { waiting: true } : {}),
       ...(c.prone ? { prone: true } : {}),
       ...(c.bound ? { bound: true } : {}),
@@ -836,6 +878,17 @@ export function holdNarrative(state: GameState, mv: { id: string; x: number; y: 
       return onTable.some(o => Math.hypot(o.x - x, o.y - y) < radius(o) + radius(m) - 0.02) ? { ...mv, x: m.x, y: m.y } : spot;
     }
   }
+  if ('anyEdge' in p) {
+    // Touching the nearest edge, wherever along it.
+    const r = radius(m);
+    const { w, h } = state.board;
+    const x = Math.max(r, Math.min(w - r, mv.x));
+    const y = Math.max(r, Math.min(h - r, mv.y));
+    const gaps = [x - r, w - r - x, y - r, h - r - y];
+    const k = gaps.indexOf(Math.min(...gaps));
+    const spot = { x: k === 0 ? r : k === 1 ? w - r : x, y: k === 2 ? r : k === 3 ? h - r : y };
+    return onTable.some(o => Math.hypot(o.x - spot.x, o.y - spot.y) < radius(o) + r - 0.02) ? { ...mv, x: m.x, y: m.y } : { ...mv, ...spot };
+  }
   if ('apart' in p) {
     // Anywhere at least so far from every friend.
     const near = onTable.some(o => o.owner === m.owner && distanceBetween(here, o) < p.apart - 0.01);
@@ -856,6 +909,7 @@ export function narrativeWinner(state: GameState): Seat | 'draw' | null {
   if (n.id === 'balins-tomb') return balinWinner(state);
   if (n.id === 'amon-hen') return amonWinner(state);
   if (n.id === 'last-march-of-the-ents') return entsWinner(state);
+  if (n.id === 'the-unseen-hero') return unseenWinner(state);
   if (n.id === 'weathertop') {
     // The Nazgûl win as soon as Frodo falls; the Hobbits when every one of them is gone.
     if (castModel(state, 'frodo')?.dead) return seatOf(state, 'evil') ?? null;

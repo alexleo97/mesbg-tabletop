@@ -9,6 +9,7 @@ import { engaged } from './movement.ts';
 import { isRingwraith } from './narrative.ts';
 import { ambushMayCharge } from './ambush.ts';
 import { intelligenceWorse } from './powers.ts';
+import { hasRule } from './wargear.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
 // The One Ring. Its bearer may put it on during its activation and is then Invisible (the Nine see it all the same).
@@ -86,10 +87,11 @@ export function cantRemove(state: GameState, m: Model): string | undefined {
 }
 
 /** A Ringbearer that has just begun its side's move wearing the Ring and must roll for Sauron's Will. */
-export function sauronDue(state: GameState): Model | undefined {
+export function sauronDue(state: GameState, catalog?: Catalog | null): Model | undefined {
   if (!state.flow.started || state.phase !== 'move' || !heroicsSettled(state) || state.result) return undefined;
   const seat = activeSeat(state);
-  return Object.values(state.models).find(m => m.owner === seat && m.ringOn && !m.dead && !m.waiting && !state.flow.sauron?.includes(m.id));
+  // (Bilbo, the Ring not yet awake, ignores Sauron's Will.)
+  return Object.values(state.models).find(m => m.owner === seat && m.ringOn && !m.dead && !m.waiting && !state.flow.sauron?.includes(m.id) && !hasRule(catalog, m, 'It has not yet Awoken'));
 }
 
 /**

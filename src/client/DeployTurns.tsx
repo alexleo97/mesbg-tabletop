@@ -1,5 +1,6 @@
 import { bandName, bandsOf, currentBand, deployProblems, mayPutDown, procedureOf, rollDue, rollMeans } from '../shared/deploy.ts';
 import { narrativeOf } from '../shared/narrative.ts';
+import { bundles, isUnseen } from '../shared/unseen.ts';
 import { objectivesMissing } from '../shared/scenarios.ts';
 import { BOT_NAME, type Action, type GameState, type Role, type Seat } from '../shared/types.ts';
 
@@ -182,10 +183,28 @@ export function DeployTurns({ state, dispatch, role }: { state: GameState; dispa
       const n = narrativeOf(state);
       const turn = d.turn!;
       const side = state.narrative?.good === turn ? 'good' : 'evil';
+      // The Unseen Hero: the Spiders' player sets out the webbed bundles too, and secretly picks the decoy.
+      const webs = isUnseen(state) && side === 'evil' ? bundles(state).sort((a, b) => (a.id < b.id ? -1 : 1)) : [];
+      const decoy = me ? state.flow.picks?.[me]?.decoy : undefined;
       return turn === me ? (
         <>
           <p className="hint">Your turn to set up {n?.sides[side].name ?? 'your side'}: drag them where the scenario lets them stand, then you're done.</p>
-          <button className="primary go" onClick={() => dispatch({ type: 'warbandDone', seat: me })}>
+          {webs.length > 0 && (
+            <label className="decoy-pick">
+              <span className="hint">Drag the webbed bundles where you like, 6" apart. Which one is the decoy? (Only you see this.)</span>
+              <select value={decoy ?? ''} onChange={e => dispatch({ type: 'setPick', seat: me, key: 'decoy', value: e.target.value })}>
+                <option value="" disabled>
+                  Pick the decoy…
+                </option>
+                {webs.map((t, i) => (
+                  <option key={t.id} value={t.id}>
+                    Bundle {i + 1} ({t.x < state.board.w / 3 ? 'west' : t.x > (state.board.w * 2) / 3 ? 'east' : 'middle'}, {t.y < state.board.h / 3 ? 'north' : t.y > (state.board.h * 2) / 3 ? 'south' : 'centre'})
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <button className="primary go" disabled={webs.length > 0 && !decoy} onClick={() => dispatch({ type: 'warbandDone', seat: me })}>
             Done setting up
           </button>
         </>

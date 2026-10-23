@@ -15,13 +15,18 @@ import { howdahFor } from './warBeasts.ts';
 import { acrossCable, engineBlocked, engineCantHit, firingCrew, siegeWeapon } from './siege.ts';
 import { cloaked, hasRule, poisonedShot, shotDefence, stalks, stones } from './wargear.ts';
 import { invisibleTo } from './ring.ts';
+import { bilboStones } from './unseen.ts';
 import { deadlyShot, finalCount, luckyShot, shotsPerPhase, shotsTaken, steadyOnTheMove, unsteady } from './towers.ts';
 import type { GameState, Model } from './types.ts';
 
 export type Weapon = (typeof MISSILE_WEAPONS)[number];
 
 /** The missile weapon a model carries, from its profile and options. */
-export const weaponFor = (catalog: Catalog | null | undefined, m: Model): Weapon | undefined => (m.siege ? siegeWeapon(catalog, m) : howdahArchers(m) ? MISSILE_WEAPONS.find(w => w.name === 'Orc Bow') : missileWeapon(gearOf(catalog, m)));
+export const weaponFor = (catalog: Catalog | null | undefined, m: Model): Weapon | undefined =>
+  m.siege ? siegeWeapon(catalog, m) : howdahArchers(m) ? MISSILE_WEAPONS.find(w => w.name === 'Orc Bow') : (missileWeapon(gearOf(catalog, m)) ?? (hasRule(catalog, m, 'Spider Webs') ? SPIDER_WEBS : undefined));
+/** A Mirkwood Giant Spider's webs: a throwing weapon whose hit Paralyses rather than wounds (see resolveShot). */
+export const SPIDER_WEBS: Weapon = { name: 'Throwing webs', range: 8, s: 1 };
+export const isWebs = (w: Weapon | undefined) => w?.name === SPIDER_WEBS.name;
 /** A Great Beast's Howdah full of Orc archers: as many shots as it has Wounds left, at its own Shoot Value, however far the beast moved. */
 export const howdahArchers = (m: Model) => (m.beast === 'war' && (m.howdahWounds ?? 0) > 0 ? howdahFor(m.name)?.sv : undefined);
 export const isThrowing = (w: Weapon) => /^throwing|brand/i.test(w.name);
@@ -139,7 +144,8 @@ export function planShot(
   const moved = started && !opts.charge && !!state.flow.moved?.includes(shooter.id) && shooter.beast !== 'chariot' && !archers && !(mounted(shooter) && mountOf(shooter)?.chariot) && !steadyOnTheMove(catalog, shooter);
   // Thrown stones, for a model that has nothing better and didn't move.
   const rocks = !opts.charge ? stones(catalog, shooter) : undefined;
-  const weapon = opts.brand ? (canThrowBrand(shooter) ? FLAMING_BRAND : undefined) : (weaponFor(catalog, shooter) ?? (rocks && !moved ? rocks : undefined) ?? opts.fallback?.weapon);
+  // (The Unseen Hero: Bilbo's stones are a throwing weapon, thrown however far he moved, or as he charges.)
+  const weapon = opts.brand ? (canThrowBrand(shooter) ? FLAMING_BRAND : undefined) : (weaponFor(catalog, shooter) ?? bilboStones(state, shooter) ?? (rocks && !moved ? rocks : undefined) ?? opts.fallback?.weapon);
   const printed = archers ?? modelStats(catalog, shooter)?.Sv ?? opts.fallback?.shoot ?? 4;
   const dist = distanceBetween(shooter, target);
   const plan: ShotPlan = { weapon, printed, need: printed, moved, shots: 1, dist, inWay: [], rerolls: false };

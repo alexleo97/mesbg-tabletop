@@ -1,3 +1,4 @@
+import { skitterDone, skitterLeft } from '../shared/unseen.ts';
 import { useState } from 'react';
 import { ResultReport } from './ResultReport.tsx';
 import { activeSeat, other, type Combat } from '../shared/flow.ts';
@@ -145,6 +146,31 @@ function CompelStep({ state, dispatch, role }: { state: GameState; dispatch: Dis
       {caster.owner === role && (
         <button className="primary" {...locked({ type: 'compel', compel: null })} onClick={() => dispatch({ type: 'compel', compel: null })}>
           Done moving {t.name}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** The Unseen Hero: a Spider moving its D6" under the Power of the Ring, by whichever player won its test. */
+function SkitterStep({ state, dispatch, role }: { state: GameState; dispatch: Dispatch; role: Role }) {
+  const locked = useLocked();
+  const sk = state.flow.skitter;
+  const m = sk && state.models[sk.model];
+  if (!sk || !m) return null;
+  const mine = sk.by === role;
+  const left = skitterLeft(state);
+  const done = skitterDone(state);
+  return (
+    <div className="spell-step">
+      <p>
+        {mine
+          ? `Drag ${m.name} ${formatInches(sk.dist)} in all: it must go the whole way (it can turn as it goes), stopping only if it touches Bilbo. ${done ? '' : `${formatInches(left)} to go.`}`
+          : `The other player moves ${m.name} ${formatInches(sk.dist)} (the Power of the Ring).`}
+      </p>
+      {mine && (
+        <button className="primary" disabled={!done} {...locked({ type: 'skitterDone', seat: sk.by })} onClick={() => dispatch({ type: 'skitterDone', seat: sk.by })}>
+          Done moving {m.name}
         </button>
       )}
     </div>
@@ -714,6 +740,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openFight
         <div className="coach-body">
           {flow.started && <SpellStep state={state} dispatch={dispatch} role={role} name={name} />}
           {flow.started && <CompelStep state={state} dispatch={dispatch} role={role} />}
+          {flow.started && <SkitterStep state={state} dispatch={dispatch} role={role} />}
           {flow.started && <PlacingStep state={state} dispatch={dispatch} role={role} name={name} />}
           {flow.started && role !== 'spectator' && mayCry(state, role) && (
             <div className="spell-step">

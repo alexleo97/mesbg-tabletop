@@ -25,6 +25,7 @@ export const OBJECT_NAMES: Record<MarkerObject, string> = {
   rally: 'Rallying Point',
   hobbit: 'Knocked-out Hobbit',
   boat: 'Boats',
+  cocoon: 'Webbed bundle',
 };
 
 /** How far a model's base is from a marker's edge. */
@@ -158,7 +159,7 @@ export function markerActions(state: GameState, m: Model): MarkerAction[] {
 
 export function canPickUp(state: GameState, m: Model, t: Terrain): boolean {
   if (!t.object || t.gone || t.carrier || t.hidden || !touching(m, t) || m.dead || m.escaped) return false;
-  if (t.object === 'supply' || t.object === 'decoy' || t.object === 'rally' || t.object === 'campfire' || t.object === 'boat') return false;
+  if (t.object === 'supply' || t.object === 'decoy' || t.object === 'rally' || t.object === 'campfire' || t.object === 'boat' || t.object === 'cocoon') return false;
   // A knocked-out Hobbit is carried off by the Uruk-hai, one apiece.
   if (t.object === 'hobbit') return !isCavalry(m) && mayCarryHobbit(state, m, t);
   // Rocks and oil are only for the defenders who brought them.
@@ -252,6 +253,7 @@ const seatName = (state: GameState, s: Seat) => state.names[s] || (s === 'p1' ? 
 export function markerName(state: GameState, t: Terrain): string {
   if (!t.object) return '';
   if (t.hidden && (t.object === 'heirloom' || t.object === 'decoy')) return 'Face-down marker';
+  if (t.object === 'cocoon') return t.gone === 'rescued' ? 'Bundle cut open: Dwarves freed' : t.gone ? 'Bundle cut open: a decoy' : 'Webbed bundle';
   if (t.hidden) return 'Buried Artefact';
   const name = OBJECT_NAMES[t.object];
   const owner = t.side ? `${seatName(state, t.side)}'s ${name}` : name;
@@ -288,6 +290,8 @@ export function markerNotes(t: Terrain): string[] {
       return ['A Hobbit knocked out (as if Paralysed). The Uruk-hai carry him as a Heavy Object, and capture him by carrying him off the north, south or east edge. A friend ending the Good move touching him brings him round, Prone; otherwise he comes round on a 6 in the End phase.'];
     case 'boat':
       return ['The boats on the Anduin. Frodo, touching them, can get away in one.'];
+    case 'cocoon':
+      return ['Spun up tight by the Spiders: two of the three bundles hold Dwarves, one is a decoy. Bilbo touching it in the End phase cuts it open on a 3+.'];
     case 'campfire':
       return ["The Trolls' fire. Bert can roast a foe he beats within 6\" of it: it is put beside the fire and Set Ablaze."];
     case 'rally':

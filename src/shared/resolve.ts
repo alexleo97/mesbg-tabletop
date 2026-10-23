@@ -14,7 +14,7 @@ import { bannerFor, cantShield, fighterOf, hasRule, strikeAgainst } from './warg
 import { canActivate, heroicNow, mayActivate, orderRoll, orderRollLabel, orderRollNeeded } from './heroics.ts';
 import { modelStats, type Catalog } from './catalog.ts';
 import { missileWeapon, woundNeed } from './rules.ts';
-import { planShot, throwingPoint } from './shooting.ts';
+import { isWebs, planShot, throwingPoint } from './shooting.ts';
 import { fallDamage, resolveCross } from './terrainTests.ts';
 import { heightOf } from './sight.ts';
 import { BPA_NAMES, TROLL_BRUTALS, cleanFight, cleanShot, duelSettled, mightCouldHelp, resolveDuel, resolveShot, resolveStrikes, strikeWounds, type BrutalAttack, type DrawRule, type Fighter, type FightRequest, type ShotRequest } from './fight.ts';
@@ -33,6 +33,7 @@ import { resolveDetonate, resolveRaiseLadder, rideOut } from './helms.ts';
 import { arrivalAuto, arrivalDue, mayCry, narrativeById, narrativeSetup, radius, rollArrival, skipArrival } from './narrative.ts';
 import { terrorAhead, terrorTest } from './courage.ts';
 import { invisibleTo, ringRequest, seekRequest } from './ring.ts';
+import { skitterRequest } from './unseen.ts';
 import { isTroll, spareFor } from './mutton.ts';
 import { bag, roast, sneeze, steadyAgainst, trollSacks } from './trolls.ts';
 import { AXE_FREED, axeMastery, axeTest, canHeadbutt, deadeye, goodSort, hasMattock, hasOakenshield, longbeard, loyalTo, mayAxeTest, mayLongbeard, maySwap, mayTend, rerollFor, spentPoints, tend, trumpet, trumpetDue } from './company.ts';
@@ -43,7 +44,7 @@ import { bandName, bandsOf, mayPutDown, procedureOf, rollDue, rollMeans } from '
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
 /** Dice requests a player sends, which only whoever holds the dice (the server, or the browser in practice games) can answer. */
-export const DICE_REQUESTS = new Set<Action['type']>(['setNarrative', 'ring', 'cry', 'aragorn', 'seek', 'roll', 'fight', 'strikes', 'shoot', 'shotOn', 'banner', 'dismount', 'trample', 'cross', 'rollFate', 'rollPriority', 'rollDeploy', 'deployWarband', 'uncover', 'cast', 'resist', 'breach', 'hurl', 'swap', 'reroll', 'tend', 'longbeard', 'trumpet', 'axeTest', 'chronicled', 'detonate', 'rideOut', 'raiseLadder']);
+export const DICE_REQUESTS = new Set<Action['type']>(['setNarrative', 'ring', 'cry', 'aragorn', 'seek', 'skitter', 'roll', 'fight', 'strikes', 'shoot', 'shotOn', 'banner', 'dismount', 'trample', 'cross', 'rollFate', 'rollPriority', 'rollDeploy', 'deployWarband', 'uncover', 'cast', 'resist', 'breach', 'hurl', 'swap', 'reroll', 'tend', 'longbeard', 'trumpet', 'axeTest', 'chronicled', 'detonate', 'rideOut', 'raiseLadder']);
 
 export interface Resolved {
   /** Results everyone applies, in order. */
@@ -232,6 +233,10 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
     }
     case 'seek': {
       const out = seekRequest(state, catalog, seat, String(action.id), String(action.target), d6, uid, now);
+      return out && { apply: out };
+    }
+    case 'skitter': {
+      const out = skitterRequest(state, catalog, seat, String(action.id), d6, uid, now);
       return out && { apply: out };
     }
     case 'cry': {
@@ -596,6 +601,7 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       if (plan.bane) req.bane = true;
       if (plan.woundBonus) req.woundBonus = plan.woundBonus;
       if (plan.lucky) req.lucky = true;
+      if (isWebs(plan.weapon)) req.webs = true;
       if (!plan.pinpoint) delete req.pinpoint;
       // A rider can be hit, or its mount; a Sharpshooter picks which.
       const steed = mountOf(target);
@@ -872,6 +878,19 @@ function shotActions(state: GameState, req: ShotRequest, shooter: Model, d6: () 
   const all = [...logged, ...shot.rolls];
   // A thrown brand Sets Ablaze whatever it hit, and is gone from the thrower's wargear, hit or miss.
   if (req.brand) return [...rolled, { type: 'affect', id: shooter.id, patch: { brand: false } }, ...(shot.ablaze ?? []).map((id): Action => ({ type: 'affect', id: id.replace(/#(mount|howdah)$/, ''), patch: { ablaze: true } }))];
+  // A Spider's webs Paralyse whoever they catch, as the power does, and for as long: a hero may spend a Fate point to
+  // shrug them off (the game spends it for him).
+  if (req.webs) {
+    const caught = [...new Set((shot.webbed ?? []).map(id => id.replace(/#(mount|howdah)$/, '')))].map(id => state.models[id]).filter(m => m && !m.dead);
+    return [
+      ...rolled,
+      ...caught.flatMap((m): Action[] => {
+        if (m.hero && m.fate > 0) return [{ type: 'rolled', roll: { id: `${group}-fate-${m.id}`.slice(0, 80), by: m.owner, label: `${m.name} spends a Fate point to shake off the webs`.slice(0, 80), dice: [], model: m.id, at: now } }, { type: 'affect', id: m.id, patch: { fate: m.fate - 1 } }];
+        const web = { power: 'Paralyse', by: shooter.id, turn: state.turn, duration: 'Exhaustion' as const, web: true };
+        return [{ type: 'affect', id: m.id, patch: { prone: true, effects: [...(m.effects ?? []).filter(e => !(e.web && e.power === 'Paralyse')), web] } }];
+      }),
+    ];
+  }
   // A flaming arrow that wounds an Ent Sets it Ablaze.
   const lit = (shot.ablaze ?? []).filter(id => state.models[id] && !state.models[id].ablaze).map((id): Action => ({ type: 'affect', id, patch: { ablaze: true } }));
   return [
