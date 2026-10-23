@@ -839,10 +839,11 @@ details.finish summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
 .menu-card b { display: block; font-size: 1.15rem; color: var(--accent); font-family: var(--font-head); }
 .menu-card small { color: var(--muted); font-size: 0.85rem; line-height: 1.35; }
 .menu-card .menu-go { margin-left: auto; font-size: 1.5rem; color: var(--accent); }
-.menu-card.start { background: linear-gradient(120deg, color-mix(in srgb, var(--accent) 55%, var(--panel)), color-mix(in srgb, var(--accent) 12%, var(--panel)) 80%) var(--panel); border-color: var(--accent); }
+/* The main call to action looks the same in every theme: the classic gold on the classic panel. */
+.menu-card.start { --accent: #c9a227; --start-panel: #26231f; background: linear-gradient(120deg, color-mix(in srgb, var(--accent) 55%, var(--start-panel)), color-mix(in srgb, var(--accent) 12%, var(--start-panel)) 80%) var(--start-panel); border-color: var(--accent); }
 .hero-actions .menu-card { padding: 12px 18px; }
 .hero-actions .menu-card b { white-space: nowrap; }
-.menu-card.start b, .menu-card.start .menu-go { color: var(--text); }
+.menu-card.start b, .menu-card.start .menu-go, .menu-card.start .menu-icon { color: #ece6da; }
 .menu-card.solo { --accent: var(--p1); }
 .menu-card.learn-card { --accent: #4fae6a; animation: learn-glow 2.6s ease-in-out 3; }
 .menu-card.story-link { --accent: #c9864a; }
