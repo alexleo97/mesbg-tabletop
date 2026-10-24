@@ -1,5 +1,6 @@
 import { cutWebs, webDue } from '../src/shared/unseen.ts';
 import { elvesArrive, elvesDue, hazeDue, hazeRolls, nestDue, nestReturn } from '../src/shared/elves.ts';
+import { alarmDue, alarmRaised } from '../src/shared/lake.ts';
 import catalogJson from '../src/data/mesbg-data.json';
 import { botStep, newMemo, type BotMemo } from '../src/shared/bot.ts';
 import { botRoster } from '../src/shared/botList.ts';
@@ -112,7 +113,7 @@ export function play(state: GameState, rand: () => number, maxSteps = 20000, wat
     if (state.narrative) {
       for (let k = 0; k < 4; k++) {
         const bearer = sauronDue(state, catalog);
-        const out = arrivalAuto(state) ? rollArrival(state, d6, uid, now) : reinforceDue(state) ? rollReinforcements(state, d6, uid, now) : bondsDue(state) ? rollBonds(state, d6, uid, now) : trollDue(state) ? trollEnters(state, uid, now) : trampleDue(state) ? trample(state, catalog, d6, uid, now) : tideDue(state) ? goblinTide(state, uid, now) : legionsDue(state) ? legionsArrive(state, d6, uid, now) : wakeDue(state) ? wakeUp(state, d6, uid, now) : reliefDue(state) ? reliefArrives(state, uid, now) : listenDue(state, catalog) ? listenFor(state, catalog) : dawnDue(state) ? rollDawn(state, d6, uid, now) : webDue(state) ? cutWebs(state, d6, uid, now) : nestDue(state) ? nestReturn(state, uid, now) : hazeDue(state) ? hazeRolls(state, d6, uid, now) : elvesDue(state) ? elvesArrive(state, uid, now) : bearer ? sauronRoll(state, bearer, d6, uid, now) : burnDue(state) ? burns(state, catalog, d6, uid, now) : willOfEvilDue(state) ? willOfEvilToll(state, catalog, uid, now) : [];
+        const out = arrivalAuto(state) ? rollArrival(state, d6, uid, now) : reinforceDue(state) ? rollReinforcements(state, d6, uid, now) : bondsDue(state) ? rollBonds(state, d6, uid, now) : trollDue(state) ? trollEnters(state, uid, now) : trampleDue(state) ? trample(state, catalog, d6, uid, now) : tideDue(state) ? goblinTide(state, uid, now) : legionsDue(state) ? legionsArrive(state, d6, uid, now) : wakeDue(state) ? wakeUp(state, d6, uid, now) : reliefDue(state) ? reliefArrives(state, uid, now) : listenDue(state, catalog) ? listenFor(state, catalog) : dawnDue(state) ? rollDawn(state, d6, uid, now) : webDue(state) ? cutWebs(state, d6, uid, now) : nestDue(state) ? nestReturn(state, uid, now) : hazeDue(state) ? hazeRolls(state, d6, uid, now) : elvesDue(state) ? elvesArrive(state, uid, now) : alarmDue(state) ? alarmRaised(state, uid, now) : bearer ? sauronRoll(state, bearer, d6, uid, now) : burnDue(state) ? burns(state, catalog, d6, uid, now) : willOfEvilDue(state) ? willOfEvilToll(state, catalog, uid, now) : [];
         for (const a of out) state = reduce(state, a);
         if (!out.length) break;
       }

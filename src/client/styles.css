@@ -1283,6 +1283,37 @@ select.ready-made {
 .terrain .limb-bark { fill: none; stroke: #6b5d4c; stroke-linecap: round; }
 .terrain .limb-ridge { fill: none; stroke: #a39480; stroke-linecap: round; opacity: 0.55; }
 .terrain .limb-knot { fill: #140e09; }
+/* Lake-town: the lake, plank walkways, rowing boats, ice floes and shingled houses. */
+.terrain .lake-depth { fill: #0b1c2a; opacity: 0.28; }
+.terrain .walk-deck { fill: #9c7444; stroke: #4a3018; stroke-width: 0.06; }
+.terrain .walk-seam { stroke: #5c3d1f; stroke-width: 0.05; }
+.terrain .walk-rail { fill: #6b4824; }
+.terrain .walk-post { fill: #3e2913; stroke: #20150a; stroke-width: 0.04; }
+.terrain .boat-hull { fill: #6e4a28; stroke: #2e1e0e; stroke-width: 0.06; }
+.terrain .boat-inside { fill: #3d2814; }
+.terrain .boat-thwart { stroke: #8a6236; stroke-width: 0.12; }
+.terrain .ice-floe { fill: #dfeaf2; stroke: #9db5c6; stroke-width: 0.06; }
+.terrain .ice-crack { fill: none; stroke: #9db5c6; stroke-width: 0.05; }
+/* Lake-town roofs are blue-grey slate; the walls below show as warm timber at the eaves. */
+.terrain .house-eaves { fill: #6b4f34; }
+.terrain .house-wall { fill: #7c5c3a; }
+.terrain .house-beam { stroke: #3c2a19; stroke-width: 0.08; }
+.terrain .house-window { fill: #241a10; stroke: #b98f52; stroke-width: 0.04; }
+.terrain .house-roof { fill: #4c6373; }
+.terrain .dormer-edge { fill: none; stroke: #223038; stroke-width: 0.05; }
+.terrain .dormer-window { fill: #15202a; stroke: #c9a46a; stroke-width: 0.03; }
+.shingle-course { stroke: #2a3942; stroke-opacity: 0.75; stroke-width: 0.05; }
+.shingle-edge { stroke: #2a3942; stroke-opacity: 0.5; stroke-width: 0.035; }
+.terrain .house-ridge-cap { fill: #33434d; }
+.terrain .house-ridge-light { stroke: #8fa6b4; stroke-width: 0.035; }
+.terrain .house-ridge-thin { stroke: #223038; stroke-width: 0.06; }
+.terrain .house-hip { stroke: #33434d; stroke-width: 0.1; }
+.terrain .house-trim { fill: #4a3220; }
+.terrain .house-eave-line { fill: none; stroke: #1c262c; stroke-width: 0.06; }
+.terrain .house-stovepipe { fill: #2b2b2b; stroke: #111; stroke-width: 0.04; }
+.terrain .house-stovepipe-hole { fill: #0a0a0a; }
+.terrain .house-finial { fill: #33434d; stroke: #8fa6b4; stroke-width: 0.04; }
+.terrain .tower-rail { fill: none; stroke: #4a3018; stroke-width: 0.1; }
 .terrain .dam-course { stroke: #00000040; stroke-width: 0.05; }
 .terrain .dam-walk { fill: #ffffff22; }
 .terrain .dam-sluice { fill: #2a2f33; stroke: #11161a; stroke-width: 0.05; }

@@ -151,7 +151,7 @@ export const TERRAIN_KINDS = ['wood', 'rock', 'building', 'water', 'hill', 'wall
 export type TerrainKind = (typeof TERRAIN_KINDS)[number];
 
 /** Battle mat surfaces. */
-export const MATS = ['grass', 'plains', 'forest', 'mud', 'dirt', 'stone', 'snow', 'sand'] as const;
+export const MATS = ['grass', 'plains', 'forest', 'mud', 'dirt', 'stone', 'snow', 'sand', 'water'] as const;
 export type Mat = (typeof MATS)[number];
 
 export interface Terrain {
@@ -211,8 +211,13 @@ export interface Terrain {
   walk?: boolean;
   /** A flight of steps up onto a rampart's walkway: models go up and down there without a test. */
   stairs?: boolean;
+  /**
+   * Water too deep to wade (Lake-town's Long Lake): a model going into it, or starting its move in it, takes a Swim
+   * test, and can't shoot while in it. Anything standing on it (a walkway, a house, a boat, a floe) is dry.
+   */
+  deep?: boolean;
   /** Drawn in dressed stone (a fortress's courtyard, causeway, keep or tower), a wall with a culvert through it, a field of long grass, or a piece of Balin's Tomb (a pillar, the tomb, the well, a trapdoor, the doorway: the well and trapdoors are where its Goblins come back), undergrowth, or a piece of Isengard (the tower of Orthanc, a timber scaffold, a ladder up one, a pit). */
-  look?: 'stone' | 'culvert' | 'grass' | 'pillar' | 'tomb' | 'well' | 'trapdoor' | 'doorway' | 'brush' | 'orthanc' | 'scaffold' | 'ladder' | 'pit' | 'roots' | 'trunk' | 'gnarled';
+  look?: 'stone' | 'culvert' | 'grass' | 'pillar' | 'tomb' | 'well' | 'trapdoor' | 'doorway' | 'brush' | 'orthanc' | 'scaffold' | 'ladder' | 'pit' | 'roots' | 'trunk' | 'gnarled' | 'planks' | 'boat' | 'floe' | 'lakehouse' | 'laketower' | 'lakewing';
 }
 
 export const DOOR_TYPES = ['castle', 'dwarven', 'heavyArmoured', 'armoured', 'heavy', 'external', 'internal', 'dam'] as const;
@@ -358,6 +363,10 @@ export interface NarrativeState {
   /** The Elves of Mirkwood: the turns the Haze has been rolled for, and the Spiders brought back from the nest. */
   hazed?: number;
   nested?: number;
+  /** Lake-town Escape: the sections whose Orcs know Legolas is about (besides D), the Sentries he charged or shot at and on which turn, and the turn the End phase last checked for the alarm. */
+  alarm?: string[];
+  disturbed?: { id: string; turn: number }[];
+  alarmed?: number;
 }
 
 export type BotSpeed = 'normal' | 'fast' | 'instant';
@@ -474,7 +483,7 @@ export interface Flow {
   /** Terrain each model has passed a Jump, Climb or Leap test for this Move phase (or waded into), so may cross. */
   crossed?: Record<string, string[]>;
   /** A model stopped at terrain it needs a test to cross: what test, where it stands and where it would land. */
-  blocked?: Record<string, { terrain: string; test: 'Jump' | 'Climb' | 'Climb down' | 'Leap'; stop: [number, number]; landing: [number, number]; drop: number }>;
+  blocked?: Record<string, { terrain: string; test: 'Jump' | 'Climb' | 'Climb down' | 'Leap' | 'Swim'; stop: [number, number]; landing: [number, number]; drop: number }>;
   /** Models whose move has ended this phase (a failed test, or a test passed on 2-5). */
   stopped?: string[];
   /** Prone models crawling this Move phase (up to 1", staying Prone) instead of standing up. */
@@ -529,10 +538,13 @@ export interface Flow {
   held?: string[];
   /**
    * The Unseen Hero: a Mirkwood Giant Spider moving its D6" under the Power of the Ring, by the player who won its
-   * Intelligence test (`by`), who must take it the whole way; and the Spiders that have tested this turn.
+   * Intelligence test (`by`), who must take it the whole way; and the Spiders that have tested this turn. Lake-town
+   * Escape uses it too for a Sentry moved up to half its Move (`upTo`), by whichever player the Sentry Chart says.
    */
-  skitter?: { model: string; by: Seat; dist: number };
+  skitter?: { model: string; by: Seat; dist: number; upTo?: boolean };
   skittered?: string[];
+  /** Lake-town Escape: the Sentries that have rolled on the Sentry Chart this turn. */
+  sentried?: string[];
   /** Models that stood up from Prone this turn, which costs half their Move. */
   stood?: string[];
   /** Inches each model has spent climbing between floors this Move phase. */
@@ -665,7 +677,8 @@ export type Action =
   /** Take the Jump, Climb or Leap test for the terrain a model was stopped at. */
   | { type: 'cross'; id: string }
   /** The result of a test (the server's), or wading into a stream rather than leaping it: may cross `terrain`; `stop` ends its move. */
-  | { type: 'crossed'; id: string; terrain?: string; stop?: boolean }
+  /** `slowed`: Move it loses, swimming on with half what it had left (a Swim test of 2-5). */
+  | { type: 'crossed'; id: string; terrain?: string; stop?: boolean; slowed?: number }
   /** A Prone model crawls (up to 1", staying Prone) instead of standing up. */
   | { type: 'crawl'; id: string }
   /** A standing model lies down, for half its Move. */
@@ -737,7 +750,7 @@ export type Action =
   /** Request: the Good player at Weathertop rolls for Aragorn this turn, or doesn't. */
   | { type: 'aragorn'; roll: boolean }
   /** Server only: bookkeeping for a narrative scenario's rules. */
-  | { type: 'narrativeNote'; rolled?: number; dawn?: number; bilbo?: boolean; breach?: number; troll?: number; crushed?: string[]; woke?: number; revive?: string[]; webbed?: number; hazed?: number; nested?: number }
+  | { type: 'narrativeNote'; rolled?: number; dawn?: number; bilbo?: boolean; breach?: number; troll?: number; crushed?: string[]; woke?: number; revive?: string[]; webbed?: number; hazed?: number; nested?: number; alarm?: string[]; alarmed?: number }
   /** Helm's Deep: the Good player picks where on the south edge the Relief Force will ride on. */
   | { type: 'reliefPoint'; seat: Seat; x: number }
   /** Helm's Deep: a Good hero by the gate mounts up (resolved with the profiles). */
@@ -784,7 +797,11 @@ export type Action =
   /** Request: a Mirkwood Giant Spider's Intelligence test and D6" move under the Power of the Ring (The Unseen Hero). */
   | { type: 'skitter'; id: string }
   /** Server only: the Spider `skitter.model` now moves `skitter.dist`, by `skitter.by`'s hand. */
-  | { type: 'skittering'; skitter: { model: string; by: Seat; dist: number } }
+  | { type: 'skittering'; skitter: { model: string; by: Seat; dist: number; upTo?: boolean } }
+  /** Request: a Sentry's roll on the Sentry Chart as it activates (Lake-town Escape). */
+  | { type: 'sentry'; id: string }
+  /** Server only: the Sentry `id` has rolled on the Sentry Chart this turn. */
+  | { type: 'sentried'; id: string }
   /** The player moving a Spider's D6" has taken it the whole way (or into Bilbo). */
   | { type: 'skitterDone'; seat: Seat }
   /** A model for a player to place (the game's). */
