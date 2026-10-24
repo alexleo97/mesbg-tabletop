@@ -14,7 +14,7 @@ export type Section = (typeof SECTIONS)[number];
 export const SECTION_WIDTH = 12;
 /** How tall the houses and towers stand, the walkways' width, and the ice floes' height. */
 export const HOUSE_HEIGHT = 5;
-export const WALK_WIDTH = 1.5;
+export const WALK_WIDTH = 2;
 export const FLOE_HEIGHT = 0.25;
 /** The Orcs set up in their own section, not within 3" of another; those in section D within 3" of Bard's House. */
 export const SECTION_GAP = 3;
@@ -86,23 +86,23 @@ export interface Building {
 
 export const BUILDINGS: Building[] = [
   // Section A and B, north: a long house with a wing to the south, a tower, and the big house by the boats.
-  { x: 16.6, y: 4.6, w: 5.6, h: 3.2, rot: 25, wing: { at: -1.6, side: 1, across: 2.4, out: 1.9 } },
+  { x: 16.6, y: 4.6, w: 5.6, h: 3.2, rot: 12, wing: { at: -1.6, side: 1, across: 2.4, out: 1.9 } },
   { x: 9.6, y: 10.1, w: 4.2, h: 4, rot: 0, tower: true },
   { x: 16.2, y: 15.6, w: 6, h: 5.2, rot: 0 },
   // Section C, north.
-  { x: 28.3, y: 5.5, w: 5.4, h: 3, rot: 35 },
+  { x: 28.3, y: 5.5, w: 5.4, h: 3, rot: 14 },
   { x: 26.5, y: 11.6, w: 6, h: 4.2, rot: 0, wing: { at: -1.9, side: 1, across: 2.2, out: 2.4 } },
-  { x: 28.2, y: 17.9, w: 5.4, h: 3, rot: 30 },
+  { x: 28.2, y: 17.9, w: 5.4, h: 3, rot: 12 },
   // Section D, north.
   { x: 36.7, y: 11.1, w: 3.8, h: 3.8, rot: 0, tower: true },
-  { x: 38.8, y: 2.2, w: 4.8, h: 2.6, rot: -20, wing: { at: -1.3, side: 1, across: 2.2, out: 2.2 } },
+  { x: 38.8, y: 2.2, w: 4.8, h: 2.6, rot: -12, wing: { at: -1.3, side: 1, across: 2.2, out: 2.2 } },
   // The middle.
   { x: 23.2, y: 24.3, w: 4.3, h: 4, rot: 0, tower: true },
-  { x: 9.8, y: 28.6, w: 4.8, h: 2.6, rot: 30, wing: { at: 1.4, side: -1, across: 2.4, out: 2.4 } },
-  { x: 26.6, y: 31.1, w: 4.4, h: 3.3, rot: 100 },
+  { x: 9.8, y: 28.6, w: 4.8, h: 2.6, rot: 14, wing: { at: 1.4, side: -1, across: 2.4, out: 2.4 } },
+  { x: 26.6, y: 31.1, w: 4.4, h: 3.3, rot: 90 },
   // The south.
   { x: 9.4, y: 38.6, w: 4.6, h: 4, rot: 0, tower: true },
-  { x: 26.9, y: 38.9, w: 4, h: 3.3, rot: 75, wing: { at: 1.2, side: 1, across: 2.2, out: 2 } },
+  { x: 26.9, y: 38.9, w: 4, h: 3.3, rot: 90, wing: { at: 1.2, side: 1, across: 2.2, out: 2 } },
   { x: 38.6, y: 38.6, w: 4.4, h: 4.2, rot: 0, tower: true },
   { x: 43.3, y: 42.1, w: 6.2, h: 5, rot: 0 },
 ];
