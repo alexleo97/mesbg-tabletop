@@ -1349,3 +1349,32 @@ select.ready-made {
 .tree-numbers .tree-number.open { cursor: pointer; }
 .tree-numbers .tree-number.open circle { stroke: #c8902e; stroke-width: 0.12; }
 .tree-numbers .tree-number.taken circle { fill: #c8902e; }
+
+/* Goblin-town: plank walkways and ladders over a bottomless chasm. */
+.terrain .chasm-void { fill: #070504; }
+.terrain .chasm-ledge { fill: #2a221c; opacity: 0.35; }
+.terrain .chasm-glow { fill: #7a3a12; opacity: 0.16; }
+.terrain .gob-under { fill: #1d140c; }
+.terrain .gob-board { stroke: #1e140a; stroke-width: 0.04; }
+.terrain .gob-board-0 { fill: #6e5032; }
+.terrain .gob-board-1 { fill: #5d432a; }
+.terrain .gob-board-2 { fill: #7b5c3a; }
+.terrain .gob-nail { fill: #2a221c; }
+.terrain .gob-bone { opacity: 0.6; }
+.terrain .gob-bone line { stroke: #d8cfb4; stroke-width: 0.09; stroke-linecap: round; }
+.terrain .gob-bone circle { fill: #d8cfb4; }
+.terrain .gob-post { fill: #33220f; stroke: #140c05; stroke-width: 0.04; }
+.terrain .gob-rung { stroke: #6a4c2c; stroke-width: 0.12; stroke-linecap: round; }
+.terrain .gob-pole { fill: #4f381f; stroke: #1e140a; stroke-width: 0.03; }
+.terrain .throne-base { fill: #4a423a; stroke: #1a1612; stroke-width: 0.05; }
+.terrain .throne-back { fill: #37302a; }
+.terrain .throne-arm { fill: #3f3730; }
+.terrain .throne-seat { fill: #5a4632; }
+.terrain .throne-skull { fill: #d8cfb4; stroke: #3a3228; stroke-width: 0.03; }
+.terrain .cave-wall { fill: #1c1814; stroke: #0a0806; stroke-width: 0.06; }
+.terrain .gob-crag { fill: #262019; stroke: #0a0806; stroke-width: 0.06; }
+.terrain .gob-stone { stroke: #0d0a08; stroke-width: 0.05; stroke-linejoin: round; }
+.terrain .gob-stone-0 { fill: #4b4540; }
+.terrain .gob-stone-1 { fill: #3d3833; }
+.terrain .gob-stone-2 { fill: #57504a; }
+.terrain .gob-stone-lit { fill: #ffffff; opacity: 0.08; }

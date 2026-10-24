@@ -20,6 +20,7 @@ import { lakeWinner } from './lake.ts';
 import { lakeCast, lakeTerrain } from './lakeMap.ts';
 import { fireWinner } from './eagles.ts';
 import { eaglesCast, eaglesTerrain } from './eaglesMap.ts';
+import { goblinCast, goblinTerrain } from './goblinMap.ts';
 import { insidePolygon, outline } from './sight.ts';
 import { BALLISTA_BASE, deepingSlots, evilSlots, GATE_ANGLE, HELMS_TEAMS, helmsTerrain, hornburgSlots, inHelmsZone, onArc, OUTER, type HelmsZone } from './helmsMap.ts';
 import type { Action, Base, DiceRoll, GameState, Mat, Model, Seat, Terrain } from './types.ts';
@@ -464,6 +465,46 @@ export const NARRATIVES: Narrative[] = [
       },
     ],
     cast: eaglesCast(),
+  },
+  {
+    id: 'escape-from-goblin-town',
+    name: 'Escape from Goblin-town',
+    from: 'The Hobbit: An Unexpected Journey',
+    saga: 'hobbit',
+    blurb: "Gandalf's light breaks over the Goblin King's court, and the Company snatches up its weapons and runs for it along the rickety walkways, with every Goblin in the mountain on their heels and a bottomless drop on every side.",
+    board: { w: 48, h: 48, mat: 'stone' },
+    terrain: goblinTerrain(),
+    sides: {
+      good: { name: "Thorin's Company", cast: 'Thorin Oakenshield with Orcrist and the Oakenshield; Kíli, Fíli, Balin, Dwalin, Bifur, Bofur, Bombur, Ori, Nori, Dori, Óin and Glóin; Gandalf the Grey, who arrives later' },
+      evil: { name: 'Goblin-town', cast: 'The Goblin King; Grinnah, Goblin Jailer; 30 Goblin Warriors' },
+    },
+    layout: "A 4' by 4' cavern in Goblin-town: ramshackle plank walkways and platforms over bottomless chasms, with the Goblin King's throne on the great platform in the middle under a crag, the pile of the Dwarves' weapons in front of it, and walkways running out to every table edge.",
+    setupOrder: ['good', 'evil'],
+    deployment: 'The Good player sets up the Dwarves wholly within 3" of the middle of the table (Gandalf comes later). The Evil player then sets up the Goblin King touching his throne, and the rest of the Goblins anywhere at least 3" from every Dwarf. Before the battle starts the Evil player nominates the table edge the Good side must escape from.',
+    objectives: 'The game lasts 10 turns. The Good side wins if nine or more of its models escape off the nominated edge; if eight do, it is a draw; fewer than eight, and the Evil side wins.',
+    rules: [
+      {
+        name: 'Take Up Arms',
+        text: "The Dwarves start the game Unarmed (-1 to their Duel rolls and To Wound rolls). A Dwarf that moves into base contact with the Weapon Pile at any point in its move takes back the weapons on its profile. (Dwalin and Nori, Weapon Masters, are never Unarmed.)",
+      },
+      {
+        name: 'A Wizard is Never Late',
+        text: "As the Good side's second Move phase ends, roll a D6: on a 1-3 the Evil player places Gandalf, on a 4-6 the Good player does. He goes on a walkway, touching any table edge.",
+      },
+      {
+        name: 'Kill Them All!',
+        text: 'As each Evil Move phase ends, the Evil player rolls a D6 and may bring back up to that many slain Goblin Warriors. They move onto the table as reinforcements from a table edge of the Evil player\'s choice, along a walkway that reaches it.',
+      },
+      {
+        name: 'Bottomless Pits',
+        text: 'A model pushed off a platform or rocky outcrop, or that fails a leap from one platform to another, with nothing to land on, falls into the chasm and is removed as a casualty. Nobody can walk off into the chasm on purpose; a gap no wider than twice a model\'s height can be leapt.',
+      },
+      {
+        name: 'I Know That Sword!',
+        text: 'In the first turn the Goblin King may not move or declare Heroic Actions.',
+      },
+    ],
+    cast: goblinCast(),
   },
   {
     id: 'ambush-at-night',
