@@ -260,16 +260,19 @@ function gap(t: Terrain, x: number, y: number): number {
 }
 
 /**
- * Spots for `count` models on 25mm bases, packed in rows as near a point as they'll go: wholly within `reach` of it
+ * Spots for `count` models on 25mm bases, in staggered rows `pitch` apart (1.1" packs them shoulder to shoulder), as near a point as they'll go: wholly within `reach` of it
  * (when given) or wholly inside a box, and clear of every wall, building and pile of rubble.
  */
-export function packSpots(count: number, at: { x: number; y: number }, keep: { reach?: number; box?: [number, number, number, number] }, taken: [number, number][] = []): [number, number][] {
+export function packSpots(count: number, at: { x: number; y: number }, keep: { reach?: number; box?: [number, number, number, number]; pitch?: number; tall?: number }, taken: [number, number][] = []): [number, number][] {
   const terrain = osgiliathTerrain();
   const r = 0.5;
+  const pitch = keep.pitch ?? 1.1;
   const out: [number, number][] = [];
   const grid: [number, number][] = [];
-  for (let j = -30; j <= 30; j++) for (let i = -30; i <= 30; i++) grid.push([+(at.x + i * 1.1 + (j % 2 ? 0.55 : 0)).toFixed(2), +(at.y + j * 1).toFixed(2)]);
-  grid.sort((p, q) => Math.hypot(p[0] - at.x, p[1] - at.y) - Math.hypot(q[0] - at.x, q[1] - at.y));
+  for (let j = -40; j <= 40; j++) for (let i = -40; i <= 40; i++) grid.push([+(at.x + i * pitch + (j % 2 ? pitch / 2 : 0)).toFixed(2), +(at.y + j * pitch * 0.9).toFixed(2)]);
+  // (Nearest first; a `tall` group spreads that much further north and south than east and west.)
+  const far = (p: [number, number]) => Math.hypot((p[0] - at.x) * (keep.tall ?? 1), p[1] - at.y);
+  grid.sort((p, q) => far(p) - far(q));
   for (const [x, y] of grid) {
     if (out.length >= count) break;
     if (keep.reach !== undefined && Math.hypot(x - at.x, y - at.y) + r > keep.reach - 0.05) continue;
@@ -298,7 +301,7 @@ const orcs = (): Omit<CastMember, 'place'>[] => ORC_KITS.flatMap(o => Array.from
 /** Where the cast starts: the Good side in the middle, Gothmog's half to the east and Guritz's to the west. */
 export function osgiliathCast(): CastMember[] {
   const good = { circle: [MIDDLE.x, MIDDLE.y, GOOD_REACH] as [number, number, number] };
-  const goodSpots = packSpots(GOOD.length, MIDDLE, { reach: GOOD_REACH });
+  const goodSpots = packSpots(GOOD.length, MIDDLE, { reach: GOOD_REACH, pitch: 1.75 });
   const east: Omit<CastMember, 'place'>[] = [
     { key: 'gothmog', side: 'evil', unit: '[army-of-gothmog] gothmog' },
     { key: 'enforcer', side: 'evil', unit: "[army-of-gothmog] gothmog's-enforcer" },
@@ -311,8 +314,8 @@ export function osgiliathCast(): CastMember[] {
   ];
   // Each half across the ruins in front of the Good side: the east half along the zone's west side, the west half
   // along its east side (the Troll, on a bigger base, at the back of it).
-  const eastSpots = packSpots(east.length, { x: 38.5, y: 24 }, { box: EAST_ZONE });
-  const westSpots = packSpots(west.length - 1, { x: 9.5, y: 23 }, { box: WEST_ZONE });
+  const eastSpots = packSpots(east.length, { x: 38.5, y: 24 }, { box: EAST_ZONE, pitch: 2.1, tall: 2 });
+  const westSpots = packSpots(west.length - 1, { x: 9.5, y: 23 }, { box: WEST_ZONE, pitch: 2.1, tall: 2 });
   const trollSpot = packSpots(1, { x: 5.5, y: 24 }, { box: WEST_ZONE }, westSpots);
   return [
     ...GOOD.map((c, i): CastMember => ({ ...c, place: { area: good, at: goodSpots[i] } })),
