@@ -42,6 +42,7 @@ import { sauronDue, sauronRoll } from '../src/shared/ring.ts';
 import { cutWebs, webDue } from '../src/shared/unseen.ts';
 import { elvesArrive, elvesDue, hazeDue, hazeRolls, nestDue, nestReturn } from '../src/shared/elves.ts';
 import { alarmDue, alarmRaised } from '../src/shared/lake.ts';
+import { eaglesArrive, eaglesDue, wrathDue, wrathMove } from '../src/shared/eagles.ts';
 import { mightyBonus, mightyDue } from '../src/shared/mighty.ts';
 import { longshanksDue, longshanksMove } from '../src/shared/sam.ts';
 import { burnDue, burns } from '../src/shared/fire.ts';
@@ -412,7 +413,11 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
     }
     case 'setPick':
     case 'reliefPoint':
+    case 'nominate':
+    case 'bilboJoins':
       return action.seat === client.role ? action : null;
+    case 'walkInstead':
+      return mine(action.id) ? action : null;
     case 'pairOff':
       // Only the player with Priority pairs off the fights.
       return state.priority === client.role ? action : null;
@@ -743,12 +748,12 @@ function narrativeUpkeep(room: Room) {
     const s = room.state;
     const bearer = sauronDue(s, CATALOG);
     const sam = longshanksDue(s);
-    const out = mightyDue(s, CATALOG) ? mightyBonus(s, CATALOG, serverId) : sam ? longshanksMove(s, sam) : arrivalAuto(s) ? rollArrival(s, serverDice, serverId) : reinforceDue(s) ? companyArrives(s, serverDice, serverId) : bondsDue(s) ? rollBonds(s, serverDice, serverId) : trollDue(s) ? trollEnters(s, serverId) : trampleDue(s) ? trollTramples(s, CATALOG, serverDice, serverId) : tideDue(s) ? goblinTide(s, serverId) : legionsDue(s) ? legionsArrive(s, serverDice, serverId) : wakeDue(s) ? wakeUp(s, serverDice, serverId) : reliefDue(s) ? reliefArrives(s, serverId) : listenDue(s, CATALOG) ? listenFor(s, CATALOG) : dawnDue(s) ? rollDawn(s, serverDice, serverId) : webDue(s) ? cutWebs(s, serverDice, serverId) : nestDue(s) ? nestReturn(s, serverId) : hazeDue(s) ? hazeRolls(s, serverDice, serverId) : elvesDue(s) ? elvesArrive(s, serverId) : alarmDue(s) ? alarmRaised(s, serverId) : bearer ? sauronRoll(s, bearer, serverDice, serverId) : burnDue(s) ? burns(s, CATALOG, serverDice, serverId) : [];
+    const out = mightyDue(s, CATALOG) ? mightyBonus(s, CATALOG, serverId) : sam ? longshanksMove(s, sam) : arrivalAuto(s) ? rollArrival(s, serverDice, serverId) : reinforceDue(s) ? companyArrives(s, serverDice, serverId) : bondsDue(s) ? rollBonds(s, serverDice, serverId) : trollDue(s) ? trollEnters(s, serverId) : trampleDue(s) ? trollTramples(s, CATALOG, serverDice, serverId) : tideDue(s) ? goblinTide(s, serverId) : legionsDue(s) ? legionsArrive(s, serverDice, serverId) : wakeDue(s) ? wakeUp(s, serverDice, serverId) : reliefDue(s) ? reliefArrives(s, serverId) : listenDue(s, CATALOG) ? listenFor(s, CATALOG) : dawnDue(s) ? rollDawn(s, serverDice, serverId) : webDue(s) ? cutWebs(s, serverDice, serverId) : nestDue(s) ? nestReturn(s, serverId) : hazeDue(s) ? hazeRolls(s, serverDice, serverId) : elvesDue(s) ? elvesArrive(s, serverId) : eaglesDue(s) ? eaglesArrive(s, serverId) : wrathDue(s) ? wrathMove(s, serverId) : alarmDue(s) ? alarmRaised(s, serverId) : bearer ? sauronRoll(s, bearer, serverDice, serverId) : burnDue(s) ? burns(s, CATALOG, serverDice, serverId) : [];
     for (const a of out) apply(room, a);
   } finally {
     upkeeping = false;
   }
-  if (mightyDue(room.state, CATALOG) || longshanksDue(room.state) || arrivalAuto(room.state) || reinforceDue(room.state) || bondsDue(room.state) || trollDue(room.state) || trampleDue(room.state) || tideDue(room.state) || legionsDue(room.state) || wakeDue(room.state) || reliefDue(room.state) || listenDue(room.state, CATALOG) || dawnDue(room.state) || webDue(room.state) || nestDue(room.state) || hazeDue(room.state) || elvesDue(room.state) || alarmDue(room.state) || sauronDue(room.state, CATALOG) || burnDue(room.state)) narrativeUpkeep(room);
+  if (mightyDue(room.state, CATALOG) || longshanksDue(room.state) || arrivalAuto(room.state) || reinforceDue(room.state) || bondsDue(room.state) || trollDue(room.state) || trampleDue(room.state) || tideDue(room.state) || legionsDue(room.state) || wakeDue(room.state) || reliefDue(room.state) || listenDue(room.state, CATALOG) || dawnDue(room.state) || webDue(room.state) || nestDue(room.state) || hazeDue(room.state) || elvesDue(room.state) || eaglesDue(room.state) || wrathDue(room.state) || alarmDue(room.state) || sauronDue(room.state, CATALOG) || burnDue(room.state)) narrativeUpkeep(room);
 }
 
 /** In the End phase, Paralysed models roll to recover. */

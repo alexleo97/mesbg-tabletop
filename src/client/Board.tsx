@@ -1,3 +1,4 @@
+import { nominationTurn, pines } from '../shared/eagles.ts';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { placeSpot, placingNow } from '../shared/placing.ts';
 import { distanceBetween, distanceToBase, formatInches, halfExtents, type Point } from '../shared/geometry.ts';
@@ -757,6 +758,21 @@ export function Board({ state, tool, selected, setSelected, selectedTerrain, set
               ),
             )}
           </g>
+          {/* And Into the Fire: while the trees the Dwarves hide in are nominated, each tree shows its number (tap one to nominate it). */}
+          {nominationTurn(state) && (
+            <g className="tree-numbers">
+              {pines(state).map(t => {
+                const n = t.id.replace(/\D/g, '');
+                const mine = nominationTurn(state) === role && !state.narrative?.hiding?.includes(t.id);
+                return (
+                  <g key={`tn-${t.id}`} transform={`translate(${t.x} ${t.y}) rotate(${-turn})`} className={`tree-number ${mine ? 'open' : ''} ${state.narrative?.hiding?.includes(t.id) ? 'taken' : ''}`} onClick={mine ? () => dispatch({ type: 'nominate', seat: role as Seat, tree: t.id }) : undefined}>
+                    <circle r={0.62} />
+                    <text y={0.24}>{n}</text>
+                  </g>
+                );
+              })}
+            </g>
+          )}
           {sight && (
             <g clipPath="url(#board-clip)" pointerEvents="none">
               <path className="los-shadow" d={sight.path} />

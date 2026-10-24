@@ -218,6 +218,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
   switch (t.kind) {
     case 'wood':
       if (t.look === 'gnarled') return <MirkwoodPiece t={t} />;
+      if (t.look === 'pinewood') return <PinePiece t={t} />;
       return (
         <>
           <path className="ground wood-floor" d={d} fill={tex} filter="url(#soft-shadow)" />
@@ -239,6 +240,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
     case 'rock':
     case 'cliff':
       if (t.look === 'roots') return <MirkwoodPiece t={t} />;
+      if (t.kind === 'cliff' && t.path && t.path.length > 1) return <CliffEdge t={t} d={d} tex={tex} />;
       if (t.look === 'floe') return <LakePiece t={t} />;
       return (
         <>
@@ -276,6 +278,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
     case 'building':
       if (t.look === 'orthanc') return <IsengardPiece t={t} />;
       if (t.look === 'trunk') return <MirkwoodPiece t={t} />;
+      if (t.look === 'pine') return <PinePiece t={t} />;
       if (t.look === 'stone') return <StoneTower t={t} tex={tex} />;
       if (t.look === 'pillar' || t.look === 'tomb' || t.look === 'well') return <MoriaPiece t={t} />;
       if (t.look === 'lakehouse' || t.look === 'laketower' || t.look === 'lakewing') return <LakePiece t={t} />;
@@ -701,6 +704,137 @@ function MirkwoodPiece({ t }: { t: Terrain }) {
   );
 }
 
+/** A spiky ring of needles round a pine's crown: `n` points out at `r`, the notches between them further in. */
+function needles(id: string, k: number, r: number, n: number, notch: number): string {
+  const pts: string[] = [];
+  const turn = seeded(id, k) * Math.PI * 2;
+  for (let i = 0; i < n * 2; i++) {
+    const a = turn + (i / (n * 2)) * Math.PI * 2 + (seeded(id, k * 41 + i) - 0.5) * (Math.PI / n) * 0.5;
+    const d = i % 2 ? r * notch * (0.9 + seeded(id, k * 31 + i) * 0.2) : r * (0.82 + seeded(id, k * 37 + i) * 0.26);
+    pts.push(`${(Math.cos(a) * d).toFixed(3)} ${(Math.sin(a) * d).toFixed(3)}`);
+  }
+  return `M ${pts.join(' L ')} Z`;
+}
+
+/** One bough seen from above: a tapering spray of needles from the trunk out along `a`, ragged down both sides. */
+function bough(id: string, k: number, a: number, from: number, len: number, w: number): string {
+  const ux = Math.cos(a);
+  const uy = Math.sin(a);
+  const side: string[] = [];
+  const other: string[] = [];
+  const n = 7;
+  for (let i = 0; i <= n; i++) {
+    const f = i / n;
+    const along = from + len * f;
+    // (Wider partway out, tapering to a point, and jagged: every other step sticks out further.)
+    const half = w * Math.sin(Math.PI * Math.min(1, f * 1.15)) * (i % 2 ? 1.25 : 0.7) * (0.85 + seeded(id, k * 13 + i) * 0.3);
+    side.push(`${(ux * along - uy * half).toFixed(3)} ${(uy * along + ux * half).toFixed(3)}`);
+    other.unshift(`${(ux * along + uy * half).toFixed(3)} ${(uy * along - ux * half).toFixed(3)}`);
+  }
+  return `M ${side.join(' L ')} L ${other.join(' L ')} Z`;
+}
+
+/**
+ * The pines (And Into the Fire), seen from above as on the book's map: each tree's crown a round mass of needled
+ * boughs in tiers, dark underneath and lit from the north-west on top, casting its shadow on the ground; and the
+ * woodland base it stands on, a patch of needle-litter, cones and stones.
+ */
+function PinePiece({ t }: { t: Terrain }) {
+  const rx = t.w / 2;
+  const ry = t.h / 2;
+  if (t.look === 'pine') {
+    // The trunk is the piece; the crown spreads well beyond it.
+    const r = rx / 0.4;
+    const tiers = [
+      { k: 10, n: 11, from: 0.1, len: 0.9, w: 0.2, cls: 'low' },
+      { k: 20, n: 9, from: 0.05, len: 0.7, w: 0.19, cls: 'mid' },
+      { k: 30, n: 7, from: 0, len: 0.46, w: 0.17, cls: 'high' },
+    ];
+    return (
+      <g pointerEvents="none">
+        <ellipse className="pine-shadow" cx={r * 0.38} cy={r * 0.5} rx={r * 0.92} ry={r * 0.86} filter="url(#bank-blur)" />
+        <path className="pine-bough under" d={needles(t.id, 1, r * 0.98, 24, 0.74)} />
+        {tiers.map(tier =>
+          Array.from({ length: tier.n }, (_, i) => {
+            const a = ((i + seeded(t.id, tier.k + i) * 0.5) / tier.n) * Math.PI * 2 + seeded(t.id, tier.k) * 6;
+            return <path key={`${tier.k}-${i}`} className={`pine-bough ${tier.cls}`} d={bough(t.id, tier.k + i, a, r * tier.from, r * tier.len * (0.9 + seeded(t.id, tier.k + i + 50) * 0.2), r * tier.w)} />;
+          }),
+        )}
+        <path className="pine-bough top" d={needles(t.id, 4, r * 0.2, 8, 0.55)} />
+        <circle className="pine-light" r={r} fill="url(#g-pine-light)" />
+        <circle className="pine-tip" r={r * 0.06} />
+      </g>
+    );
+  }
+  // The woodland base: litter of needles and cones, a few stones.
+  const bits = Math.round(t.w * t.h * 3);
+  return (
+    <>
+      <ellipse className="ground pinewood-floor" rx={rx} ry={ry} filter="url(#soft-shadow)" />
+      <ellipse className="tint pinewood-shade" rx={rx * 0.86} ry={ry * 0.86} filter="url(#bank-blur)" />
+      <g className="tint" pointerEvents="none">
+        {Array.from({ length: bits }, (_, i) => {
+          const a = seeded(t.id, i + 100) * Math.PI * 2;
+          const d = Math.sqrt(seeded(t.id, i + 300));
+          const x = Math.cos(a) * rx * d * 0.9;
+          const y = Math.sin(a) * ry * d * 0.9;
+          const kind = seeded(t.id, i + 500);
+          if (kind > 0.95) return <ellipse key={i} className="pinewood-stone" cx={x} cy={y} rx={0.1 + seeded(t.id, i + 700) * 0.12} ry={0.08 + seeded(t.id, i + 800) * 0.08} />;
+          if (kind > 0.85) return <ellipse key={i} className="pinewood-cone" cx={x} cy={y} rx={0.07} ry={0.045} transform={`rotate(${(seeded(t.id, i + 900) * 180).toFixed(0)} ${x.toFixed(2)} ${y.toFixed(2)})`} />;
+          const l = 0.1 + seeded(t.id, i + 600) * 0.12;
+          const b = seeded(t.id, i + 650) * Math.PI;
+          return <line key={i} className="pinewood-needle" x1={x} y1={y} x2={x + Math.cos(b) * l} y2={y + Math.sin(b) * l} />;
+        })}
+      </g>
+    </>
+  );
+}
+
+/**
+ * The rocky edge of the cliff (And Into the Fire): a band of broken rock and boulders winding down the table along
+ * the drop, its boulders lit from the north-west.
+ */
+function CliffEdge({ t, d, tex }: { t: Terrain; d: string; tex: string }) {
+  const path = t.path!;
+  const rocks: ReactElement[] = [];
+  let k = 0;
+  for (let i = 0; i < path.length - 1; i++) {
+    const [x0, y0, w0] = path[i];
+    const [x1, y1] = path[i + 1];
+    const len = Math.hypot(x1 - x0, y1 - y0);
+    const nx = -(y1 - y0) / len;
+    const ny = (x1 - x0) / len;
+    for (let s = 0; s < len; s += 0.55) {
+      const f = s / len;
+      const across = (seeded(t.id, k * 3) - 0.5) * w0 * 1.5;
+      const x = x0 + (x1 - x0) * f + nx * across;
+      const y = y0 + (y1 - y0) * f + ny * across;
+      const r = 0.22 + seeded(t.id, k * 3 + 1) ** 2 * 0.55;
+      const sides = 5 + Math.floor(seeded(t.id, k * 3 + 2) * 3);
+      const pts = Array.from({ length: sides }, (_, j) => {
+        const a = (j / sides) * Math.PI * 2 + seeded(t.id, k * 7 + j);
+        const q = r * (0.7 + seeded(t.id, k * 11 + j) * 0.45);
+        return `${(x + Math.cos(a) * q).toFixed(3)},${(y + Math.sin(a) * q * 0.85).toFixed(3)}`;
+      }).join(' ');
+      rocks.push(<polygon key={k} className="cliff-boulder" points={pts} fill={tex} />);
+      k++;
+    }
+  }
+  const line = (off: number) => `M ${path.map(([x, y]) => `${(x + off).toFixed(2)} ${y.toFixed(2)}`).join(' L ')}`;
+  return (
+    <>
+      <path className="ground cliff-scree" d={d} fill={tex} filter="url(#soft-shadow)" />
+      <path className="tint cliff-shade" d={d} />
+      {/* Where the rock falls away, along the table edge: a dark drop beyond a pale lip. */}
+      <path className="tint cliff-drop" d={line(0.75)} />
+      <path className="tint cliff-lip" d={line(0.25)} />
+      <g className="tint" filter="url(#hard-shadow)" pointerEvents="none">
+        {rocks}
+      </g>
+    </>
+  );
+}
+
 /**
  * Lake-town (Lake-town Escape): plank walkways on posts over the lake, rowing boats tied up, ice floes, and timber
  * houses with shingled roofs: a ridge along a long house, four slopes meeting at a point on a square one.
@@ -1064,7 +1198,7 @@ function StoneTower({ t, tex }: { t: Terrain; tex: string }) {
 }
 
 /** A letter on each kind of scenario marker, so you can tell them apart at a glance. */
-const GLYPHS: Record<NonNullable<Terrain['object']>, string> = { artefact: 'A', relic: 'R', heirloom: 'H', decoy: '✕', supply: 'S', ally: '+', ladder: 'L', ram: 'B', rocks: '●', oil: '♨', rally: '⚑', campfire: '♨', charge: '✸', hobbit: 'z', boat: '⛵', cocoon: '❋' };
+const GLYPHS: Record<NonNullable<Terrain['object']>, string> = { artefact: 'A', relic: 'R', heirloom: 'H', decoy: '✕', supply: 'S', ally: '+', ladder: 'L', ram: 'B', rocks: '●', oil: '♨', rally: '⚑', campfire: '♨', charge: '✸', hobbit: 'z', boat: '⛵', cocoon: '❋', dwarf: 'D' };
 
 function star(r: number) {
   const pts: string[] = [];
@@ -1107,7 +1241,7 @@ function hull(pts: Point[]): Point[] {
 }
 
 /** Whether a piece is part of a fortress that stands tall (its walls, gates, keep, towers and the rock under them), or a stone piece of Balin's Tomb. */
-const tall = (t: Terrain) => !t.gone && ((t.sheer && t.look !== 'trunk') || t.kind === 'gate' || (t.look === 'stone' && t.kind !== 'road') || t.look === 'pillar' || t.look === 'tomb' || t.look === 'well' || t.look === 'scaffold');
+const tall = (t: Terrain) => !t.gone && ((t.sheer && t.look !== 'trunk' && t.look !== 'pine') || t.kind === 'gate' || (t.look === 'stone' && t.kind !== 'road') || t.look === 'pillar' || t.look === 'tomb' || t.look === 'well' || t.look === 'scaffold');
 /** Orthanc's faces are cut short, so the tower doesn't hide the table round it (its height is written on top). */
 const FACE_CAP = 5.5;
 
@@ -1170,6 +1304,12 @@ export function TerrainDefs() {
         <stop offset="0%" stopColor="#fff" stopOpacity="0.32" />
         <stop offset="55%" stopColor="#fff" stopOpacity="0" />
         <stop offset="100%" stopColor="#000" stopOpacity="0.38" />
+      </radialGradient>
+      <radialGradient id="g-pine-light" cx="32%" cy="28%" r="78%">
+        <stop offset="0%" stopColor="#e8f0b0" stopOpacity="0.32" />
+        <stop offset="45%" stopColor="#e8f0b0" stopOpacity="0.04" />
+        <stop offset="80%" stopColor="#000" stopOpacity="0.18" />
+        <stop offset="100%" stopColor="#000" stopOpacity="0.34" />
       </radialGradient>
       <radialGradient id="g-canopy" cx="35%" cy="30%" r="80%">
         <stop offset="0%" stopColor="#5f8f3e" />

@@ -1,12 +1,29 @@
 import { EDGES, elvesEdge, elvesWaiting, isElves } from '../shared/elves.ts';
+import { EDGES as EAGLE_EDGES, EAGLES_TURN, eaglesComing, eaglesEdge, isFire } from '../shared/eagles.ts';
 import type { Action, GameState, Role } from '../shared/types.ts';
 
 /**
- * The Elves of Mirkwood: the Good player chooses the table edge Legolas, Tauriel and the Rangers come on from. It can
+ * The Elves of Mirkwood (and And Into the Fire's Eagles): the Good player chooses the table edge Legolas, Tauriel and the Rangers come on from. It can
  * be changed any time before they arrive (as the Good side's fourth Move phase ends).
  */
 export function ElvesEdge({ state, dispatch, role }: { state: GameState; dispatch: (a: Action) => void; role: Role }) {
   const good = state.narrative?.good;
+  // And Into the Fire: the Eagles (and those coming back) fly on from the north or the south edge.
+  if (isFire(state) && role === good && (eaglesComing(state).length || state.turn < EAGLES_TURN)) {
+    const edge = eaglesEdge(state);
+    return (
+      <label className="decoy-pick">
+        <span className="hint">{state.turn < EAGLES_TURN ? 'The Eagles arrive as your second Move phase ends.' : 'The Eagles come on as your Move phase ends.'} They fly in from the</span>
+        <select value={edge} onChange={e => dispatch({ type: 'setPick', seat: good, key: 'edge', value: e.target.value })}>
+          {EAGLE_EDGES.map(x => (
+            <option key={x} value={x}>
+              {x} edge
+            </option>
+          ))}
+        </select>
+      </label>
+    );
+  }
   if (!isElves(state) || role !== good || !elvesWaiting(state).length) return null;
   const edge = elvesEdge(state);
   return (

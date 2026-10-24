@@ -532,6 +532,9 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       for (const id of outcome.squashed ?? []) if (!slain(id)) trolled.push({ type: 'affect', id, patch: { prone: true } });
       // Bofur's Mattock knocked its foe down before the strikes.
       for (const id of outcome.knocked ?? []) if (!slain(id)) trolled.push({ type: 'affect', id, patch: { prone: true } });
+      // Azog's Stone flail knocks down anyone it struck and didn't slay, once the fight is over.
+      for (const f of outcome.ended ? [] : req.sides[outcome.winner].filter(f => f.flail && !f.noStrike))
+        for (const id of new Set(strikes.filter(r => r.model === f.id && r.against).map(r => r.against!.replace(/#mount$/, '')))) if (!slain(id) && state.models[id] && !state.models[id].prone) trolled.push({ type: 'affect', id, patch: { prone: true } });
       // Bifur's headbutt that wounds frees the axe from his head.
       for (const f of outcome.ended ? [] : req.sides[outcome.winner].filter(f => f.headbutt)) {
         const m = state.models[f.id];

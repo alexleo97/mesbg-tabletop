@@ -5,7 +5,7 @@ import { laden } from '../shared/fortress.ts';
 import { loadRulesText, modelStats, rulesFor, pictureUrl, startingPoints, statsWithOptions, STAT_NAMES, type Catalog } from '../shared/catalog.ts';
 import { strikeWounds, woundsTaken } from '../shared/fight.ts';
 import { CONTACT_SLACK, type Combat } from '../shared/flow.ts';
-import { engaged, fightDone, moveLeft, moveStart } from '../shared/movement.ts';
+import { engaged, fightDone, flying, inWoods, moveLeft, moveStart, WALK_INSTEAD } from '../shared/movement.ts';
 import { atCrossing, crossBlocked, fallingHits, terrainName, type CrossTest } from '../shared/terrainTests.ts';
 import { canActivate, heroicInfo, mayActivate, phaseAllows } from '../shared/heroics.ts';
 import { carriedBy, markerActions, OBJECT_NAMES } from '../shared/objects.ts';
@@ -166,6 +166,20 @@ function TerrainMoves({ state, dispatch, m, lesson }: { state: GameState; dispat
   if (m.prone && state.flow.crawling?.includes(m.id)) return <p className="hint">{m.name} is crawling: up to 1", staying Prone.</p>;
   // A lesson keeps to what it teaches: no lesson is about dismounting or lying down.
   if (lesson) return null;
+  // A flying model may walk 4" instead this phase, before it moves (into a wood, say); it flies again next turn.
+  if (m.fly && state.flow.started && state.phase === 'move' && left !== null && left > 0)
+    return flying(state, m) ? (
+      <div className="row wrap terrain-test">
+        <p className="muted small">Flying: it passes over models and terrain, and only where it lands matters.</p>
+        {!moved && (
+          <button className="small" title={`It walks ${WALK_INSTEAD}" this turn instead of flying, and can go into woods.`} {...locked({ type: 'walkInstead', id: m.id })} onClick={() => dispatch({ type: 'walkInstead', id: m.id })}>
+            Walk {WALK_INSTEAD}" instead
+          </button>
+        )}
+      </div>
+    ) : (
+      <p className="hint">{m.name} is walking this turn ({WALK_INSTEAD}"), {inWoods(state, moveStart(state, m)) ? 'having begun in a wood' : 'not flying'}.</p>
+    );
   // A rider can get down at any point in its move, and go on on foot with what's left of its foot Move.
   if (mounted(m) && left !== null)
     return (

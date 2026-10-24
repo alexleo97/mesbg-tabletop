@@ -74,8 +74,15 @@ export interface Fighter {
   ancient?: string[];
   /** Its Courage, for an enemy with Blades of the Dead. */
   c?: number;
-  /** Per enemy: the Defence its strikes roll against, the bonus to wound and whether 1s are re-rolled (see resolve.adjustFight). */
-  vs?: Record<string, { d: number; wound: number; ones: boolean }>;
+  /** Per enemy: the Defence its strikes roll against, the bonus to wound, whether 1s are re-rolled, whether its Bane
+   * Weapon does D3 Wounds a strike, and the natural roll that always wounds (see resolve.adjustFight). */
+  vs?: Record<string, { d: number; wound: number; ones: boolean; bane?: boolean; cap?: number }>;
+  /** The kinds its Bane Weapon does D3 Wounds a strike against (Orcrist: Orcs, Goblins and Uruk-hai). */
+  banes?: string[];
+  /** I am the Master (Azog): against an enemy hero any natural 3+ To Wound succeeds. */
+  master?: boolean;
+  /** Azog's Stone flail: anyone it strikes and doesn't slay is knocked Prone when the fight is over. */
+  flail?: boolean;
   /** What its wargear and rules do, for the fight card. */
   notes?: string[];
   // Cavalry and monsters (see cavalry.ts and monsters.ts):
@@ -273,7 +280,10 @@ export function strikeWounds(rolls: DiceRoll[]): number {
     .reduce((n, r) => {
       // (Wounds worked out without a roll To Wound: Mince 'em Fine.)
       if (r.fixed !== undefined) return n + r.fixed;
-      const hits = r.then && r.follow ? r.follow.filter(d => d >= r.then!) : r.dice.filter(d => d >= r.target!);
+      const src = r.then && r.follow ? r.follow : r.dice;
+      const hits = src.filter(d => d >= (r.then && r.follow ? r.then : r.target!));
+      // (A Bane Weapon: each that wounds does the D3 rolled for it.)
+      if (r.d3) return n + src.reduce((k, d, i) => k + (d >= (r.then && r.follow ? r.then : r.target!) ? (r.d3![i] ?? 1) : 0), 0);
       // (Grasper & Keeper: a natural 6 does 2.)
       return n + hits.length * (r.per ?? 1) + (r.sixes ? hits.filter(d => d === 6).length : 0);
     }, 0);
@@ -395,7 +405,9 @@ export function resolveStrikes(req: FightRequest, duel: DiceRoll[], d6: D6, by: 
     const printed = woundNeed(opt.s ?? f.s, vs.d);
     const plain = f.woundCap && !opt.s && (!printed || printed.then || printed.target > f.woundCap) ? { target: f.woundCap } : printed;
     const bonus = opt.s ? 0 : vs.wound + (f.rival === target.id ? 1 : 0) + (f.backstab && trapped ? 1 : 0);
-    const base = plain && shiftNeed(plain, bonus);
+    const shifted = plain && shiftNeed(plain, bonus);
+    // I am the Master: a natural 3+ wounds an enemy hero, whatever its Defence.
+    const base = vs.cap && !opt.s && (!shifted || shifted.then || shifted.target > vs.cap) ? { target: vs.cap } : shifted;
     // Heroic Defence: only natural 6s wound (both dice for 6/4+ style results).
     const need = base && target.defence ? { target: 6, ...(base.then ? { then: 6 } : {}) } : base;
     if (!need) return 0;
@@ -415,9 +427,11 @@ export function resolveStrikes(req: FightRequest, duel: DiceRoll[], d6: D6, by: 
     const follow = need.then ? dice.filter(d => d >= need.target).map(d6).map(d => again(d, need.then!)) : undefined;
     const plain2 = !opt.s;
     const sixes = plain2 && f.sixes;
-    const what = [free && 'a free strike', trapped && 'trapped', plain2 && (f.reroll ? 're-rolling misses' : vs.ones && 're-rolling 1s'), bonus > 0 && `+${bonus} to wound`, bonus < 0 && `${bonus} to wound`, plain2 && f.mighty && '2 wounds each', sixes && '6s do 2 wounds'].filter(Boolean).join(', ');
+    // A Bane Weapon's strike that wounds does D3 Wounds: one D3 rolled for each die now, used if it wounds.
+    const d3 = plain2 && vs.bane ? (need.then ? follow! : dice).map(() => Math.ceil(d6() / 2)) : undefined;
+    const what = [free && 'a free strike', trapped && 'trapped', plain2 && (f.reroll ? 're-rolling misses' : vs.ones && 're-rolling 1s'), bonus > 0 && `+${bonus} to wound`, bonus < 0 && `${bonus} to wound`, plain2 && f.mighty && '2 wounds each', sixes && '6s do 2 wounds', d3 && 'D3 wounds each (Bane)'].filter(Boolean).join(', ');
     const label = opt.label ? `${opt.label} (${formatNeed(need)})` : `${f.name} strikes ${target.name}${what ? `, ${what},` : ''} (${formatNeed(need)})`;
-    push(label, dice, { target: need.target, against: target.id, model: f.id, ...(need.then ? { then: need.then, follow } : {}), ...(plain2 && f.mighty ? { per: 2 } : {}), ...(sixes ? { sixes: true } : {}) });
+    push(label, dice, { target: need.target, against: target.id, model: f.id, ...(need.then ? { then: need.then, follow } : {}), ...(plain2 && f.mighty ? { per: 2 } : {}), ...(sixes ? { sixes: true } : {}), ...(d3 ? { d3 } : {}) });
     let wounds = strikeWounds([rolls[rolls.length - 1]]);
     // Gúthwinë: each natural 6 earns one more roll To Wound at the same foe (and a 6 on that earns nothing more).
     const more = plain2 && f.sixesAgain ? dice.filter(d => d === 6).length : 0;

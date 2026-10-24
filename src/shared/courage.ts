@@ -9,7 +9,7 @@ import { cannotAct, courageAuto, courageWorse, madeFearful, terrifying } from '.
 import { engaged } from './movement.ts';
 import { sightTo } from './sight.ts';
 import { armyStatus } from './status.ts';
-import { courageBonus } from './wargear.ts';
+import { courageBonus, hasOrcrist, hasRule, isKind } from './wargear.ts';
 import { isChariot } from './warBeasts.ts';
 import { mounted } from './cavalry.ts';
 import { cryPenalty } from './narrative.ts';
@@ -19,13 +19,28 @@ import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 export const STAND_FAST_RANGE = 6;
 
 /** Théoden's "Forth, and Fear no Darkness!" carries his Stand Fast! twice as far. */
-export const standFastRange = (catalog: Catalog | null, h: Model) => (h.profileId && catalog?.units[h.profileId]?.rules.includes('Forth, and Fear no Darkness') ? 12 : STAND_FAST_RANGE);
+export const standFastRange = (catalog: Catalog | null, h: Model) => (h.profileId && catalog?.units[h.profileId]?.rules.some(r => r === 'Forth, and Fear no Darkness' || r === 'General of the North') ? 12 : STAND_FAST_RANGE);
+
+/** Whose Stand Fast! a model may take: Gwaihir's (The Windlord) only reaches Eagles and Wizards. */
+const heeds = (catalog: Catalog | null, h: Model, m: Model) => !hasRule(catalog, h, 'The Windlord') || /eagle|gwaihir|gandalf|saruman|radagast|wizard/i.test(m.name);
+
+/** Azog's Stand Fast! (General of the North) steadies friendly Orc heroes too, out to 12". */
+const generalOfTheNorth = (catalog: Catalog | null, h: Model, m: Model) => hasRule(catalog, h, 'General of the North') && isKind(catalog, m, 'Orc');
 
 /** The 2D6 total a model needs to pass a Courage test, after powers such as Drain Courage and Aura of Dismay, war horns and Harbingers of Evil. */
 export const courageOf = (state: GameState, catalog: Catalog | null, m: Model) => Math.max(2, Math.min(13, (modelStats(catalog, m)?.C ?? 7) + courageWorse(state, m) + cryPenalty(state, m) - courageBonus(state, catalog, m)));
 const isHero = (m: Model) => m.hero;
 export const causesTerror = (catalog: Catalog | null, m: Model, state?: GameState) =>
-  !!(m.profileId && catalog?.units[m.profileId]?.rules.some(r => /^Terror\b/.test(r))) || (!!state && terrifying(state, m));
+  !!(m.profileId && catalog?.units[m.profileId]?.rules.some(r => /^Terror\b(?! \()/.test(r))) || (!!state && terrifying(state, m));
+/**
+ * Whether a model must test its Courage to charge this enemy for Terror: the enemy has Terror, or Terror over its
+ * kind (Terror (Orc)), as Orcrist gives its wielder over Orcs, Goblins and Uruk-hai.
+ */
+export function terrifies(catalog: Catalog | null, e: Model, m: Model, state?: GameState): boolean {
+  if (causesTerror(catalog, e, state)) return true;
+  const kinds = [...(e.profileId ? (catalog?.units[e.profileId]?.rules ?? []) : []).flatMap(r => r.match(/^Terror \((.+)\)$/)?.[1].split(/,\s*/) ?? []), ...(hasOrcrist(catalog, e) ? ['Orc', 'Goblin', 'Uruk-hai'] : [])];
+  return kinds.some(k => isKind(catalog, m, k));
+}
 /** Fearful models test their Courage to charge any enemy. */
 const isFearful = (state: GameState, catalog: Catalog | null, m: Model) =>
   !!(m.profileId && catalog?.units[m.profileId]?.rules.some(r => /^Fearful\b/.test(r))) || madeFearful(state, m);
@@ -82,7 +97,8 @@ export function brokenTests(state: GameState, seat: Seat, catalog: Catalog | nul
   const heroes = models.filter(isHero).sort((a, b) => Number(thorinsCall(catalog, b)) - Number(thorinsCall(catalog, a)) || courageOf(state, catalog, b) - courageOf(state, catalog, a));
   for (const h of heroes) {
     const thorin = inCompany(catalog, h) && anchors.find(a => a.id !== h.id && !a.ringOn && thorinsCall(catalog, a) && distanceBetween(a, h) <= STAND_FAST_RANGE && sightTo(state, h, a) !== 'hidden');
-    if (thorin) {
+    const azog = anchors.find(a => a.id !== h.id && generalOfTheNorth(catalog, a, h) && distanceBetween(a, h) <= standFastRange(catalog, a) && sightTo(state, h, a) !== 'hidden');
+    if (thorin || azog) {
       results[h.id] = true;
       continue;
     }
@@ -106,7 +122,7 @@ export function brokenTests(state: GameState, seat: Seat, catalog: Catalog | nul
   for (const m of models) {
     if (m.id in results) continue;
     // An Invisible hero can't give a Stand Fast!.
-    if (anchors.some(h => !h.ringOn && distanceBetween(h, m) <= standFastRange(catalog, h) && sightTo(state, m, h) !== 'hidden') || courageAuto(state, catalog, m)) {
+    if (anchors.some(h => !h.ringOn && heeds(catalog, h, m) && distanceBetween(h, m) <= standFastRange(catalog, h) && sightTo(state, m, h) !== 'hidden') || courageAuto(state, catalog, m)) {
       results[m.id] = true;
       continue;
     }
@@ -135,14 +151,14 @@ export function terrorAhead(state: GameState, m: Model, to: { x: number; y: numb
   const fearful = isFearful(state, catalog, m);
   if (!fearful && causesTerror(catalog, m, state)) return null;
   const here = { ...m, ...to };
-  return Object.values(state.models).find(e => e.owner !== m.owner && !e.dead && distanceBetween(here, e) <= CONTACT_SLACK && (fearful || causesTerror(catalog, e, state))) ?? null;
+  return Object.values(state.models).find(e => e.owner !== m.owner && !e.dead && distanceBetween(here, e) <= CONTACT_SLACK && (fearful || terrifies(catalog, e, m, state))) ?? null;
 }
 
 /** The Courage test to charge a terrifying enemy (or any, when Fearful). A model that fails stays where it is for the rest of the turn. */
 export function terrorTest(m: Model, enemy: Model, catalog: Catalog | null, d6: () => number, uid: () => string, now = Date.now(), state?: GameState): { actions: Action[]; pass: boolean } {
   const fearful = !!state && isFearful(state, catalog, m);
   // A Fearful model charging a terrifying one tests once for each rule (Rulebook FAQ).
-  const whys = fearful && state && !causesTerror(catalog, m, state) && causesTerror(catalog, enemy, state) ? ['Fearful', 'Terror'] : [fearful ? 'Fearful' : 'Terror'];
+  const whys = fearful && state && !causesTerror(catalog, m, state) && terrifies(catalog, enemy, m, state) ? ['Fearful', 'Terror'] : [fearful ? 'Fearful' : 'Terror'];
   const auto = state && courageAuto(state, catalog, m);
   if (auto) {
     const note: DiceRoll = { id: `c-${uid()}`, by: m.owner, label: `Courage to charge ${enemy.name} (${whys.join(' and ')}): ${m.name}`.slice(0, 80), dice: [], note: `Passes without a roll (${auto}).`, model: m.id, at: now };

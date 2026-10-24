@@ -1324,3 +1324,28 @@ select.ready-made {
 .terrain .dam-water { fill: #3d6a86; }
 .terrain .dam-flood { fill: #4f7f9c; opacity: 0.85; }
 .terrain .dam-rubble { fill: #8f877a; stroke: #4c463d; stroke-width: 0.04; }
+
+/* And Into the Fire: the pines and their woodland bases, the cliff edge, and the trees' numbers while the hiding places are picked. */
+.terrain .pinewood-floor { fill: #3f3a26; stroke: none; }
+.terrain .pinewood-shade { fill: #2b2a1a; opacity: 0.55; }
+.terrain .pinewood-needle { stroke: #8c7044; stroke-width: 0.03; stroke-linecap: round; opacity: 0.75; }
+.terrain .pinewood-cone { fill: #5e3d1d; }
+.terrain .pinewood-stone { fill: #8c877b; stroke: #4d4a42; stroke-width: 0.03; }
+.terrain .pine-shadow { fill: #0a1007; opacity: 0.5; }
+.terrain .pine-bough { stroke-linejoin: round; }
+.terrain .pine-bough.under { fill: #16261a; stroke: #0f1a11; stroke-width: 0.04; }
+.terrain .pine-bough.low { fill: #213a24; stroke: #142417; stroke-width: 0.035; }
+.terrain .pine-bough.mid { fill: #2f5130; stroke: #1c331d; stroke-width: 0.03; }
+.terrain .pine-bough.high { fill: #44703d; stroke: #2c4a28; stroke-width: 0.025; }
+.terrain .pine-bough.top { fill: #5f8c48; }
+.terrain .pine-light { mix-blend-mode: soft-light; }
+.terrain .pine-tip { fill: #6b4a2a; }
+.terrain .cliff-shade { fill: #00000030; }
+.terrain .cliff-boulder { stroke: #2d2a26; stroke-width: 0.035; }
+.terrain .cliff-drop { fill: none; stroke: #15130f; stroke-width: 0.9; stroke-linejoin: round; opacity: 0.55; }
+.terrain .cliff-lip { fill: none; stroke: #d8d2c4; stroke-width: 0.07; stroke-linejoin: round; opacity: 0.5; }
+.tree-numbers .tree-number circle { fill: #f4ead2e8; stroke: #3b2a16; stroke-width: 0.06; }
+.tree-numbers .tree-number text { font-size: 0.66px; font-weight: 700; text-anchor: middle; fill: #2a1d0e; pointer-events: none; }
+.tree-numbers .tree-number.open { cursor: pointer; }
+.tree-numbers .tree-number.open circle { stroke: #c8902e; stroke-width: 0.12; }
+.tree-numbers .tree-number.taken circle { fill: #c8902e; }

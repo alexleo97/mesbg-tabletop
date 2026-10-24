@@ -62,7 +62,7 @@ export function isKind(catalog: Catalog | null | undefined, m: Model, kind: stri
 
 const TWO_HANDED = /two-handed|two handed|great ?axe|mattock|halberd|war ?hammer|great ?sword|\bmaul\b|scythe/;
 // (A Berserker blade is wielded in one hand or two, like a hand-and-a-half sword.)
-const HAND_AND_A_HALF = /hand-and-a-half|hand and a half|berserker blade|glamdring/;
+const HAND_AND_A_HALF = /hand-and-a-half|hand and a half|berserker blade|glamdring|orcrist/;
 /** Melee weapons other than two-handed ones: anything that isn't missile, armour or equipment. */
 const MELEE = /weapon|sword|blade|axe|spear|pike|dagger|knife|club|mace|hammer|whip|lance|staff|claws?|fangs?|teeth|beak|tusks?|glaive|flail|cleaver|scimitar|sting|glamdring|orcrist|grasper|and[uú]ril|herugrim|guthwin[eë]|narsil|grond|hand weapons?/;
 const NOT_MELEE = /\bbow\b|bows\b|crossbow|throwing|sling|blowpipe|javelin|armour|amour|shield|cloak|war horn|banner|drum|\bring\b|horse|warg\b|pony|goat|steed|camel|mount|chariot/;
@@ -75,6 +75,8 @@ export function twoHandedChoice(catalog: Catalog | null | undefined, m: Model): 
   const big = weapons.filter(g => TWO_HANDED.test(g));
   const other = weapons.filter(g => !TWO_HANDED.test(g));
   if (big.length && !other.length) return 'must';
+  // (Azog swings his Stone flail two-handed, or fights with his hand weapons.)
+  if (hasRule(catalog, m, 'Stone flail')) return 'may';
   // (Bifur's Boar Spear is a spear or a two-handed weapon, as he likes.)
   if (big.length || other.some(g => HAND_AND_A_HALF.test(g) || /boar spear/.test(g))) return 'may';
   return 'no';
@@ -89,6 +91,11 @@ export const carriesBanner = (catalog: Catalog | null | undefined, m: Model) => 
 /** Gamling's Royal Standard of Rohan: a banner whose sway reaches 6", which he fights with no penalty. */
 const royalStandard = (catalog: Catalog | null | undefined, m: Model) => hasGear(catalog, m, /royal standard/);
 const missile = (catalog: Catalog | null | undefined, m: Model) => hasGear(catalog, m, /\bbows?\b|crossbow|sling|blowpipe/);
+
+/** Whether a model carries Orcrist: an Elven hand-and-a-half sword with Orcbane, Goblinbane and Uruk-haibane, that gives its wielder Terror over them. */
+export const hasOrcrist = (catalog: Catalog | null | undefined, m: Model) => !!m.options?.some(o => /^Orcrist\b/i.test(o)) || !!unitOf(catalog, m)?.wargear.some(g => /^Orcrist\b/i.test(g));
+/** The kinds Orcrist's Bane Weapon rules name: a strike that wounds one of them does D3 Wounds. */
+export const ORCRIST_BANES = ['Orc', 'Goblin', 'Uruk-hai'];
 
 /** Whether a model carries Andúril: as wargear (King Elessar), or as the option taken (Strider). */
 export const hasAnduril = (catalog: Catalog | null | undefined, m: Model) =>
@@ -174,6 +181,15 @@ export function fighterOf(state: GameState, catalog: Catalog | null | undefined,
     f.twoHanded = true;
     notes.push(hasRule(catalog, m, 'Burly') ? 'Two-handed: +1 to wound (Burly: no duel penalty)' : 'Two-handed: -1 duel (not on a 6), +1 to wound');
   }
+  // Azog's Stone flail, swung two-handed: Mighty Blow, but Fight 6 whatever else (a Heroic Strike included), and anyone
+  // it strikes and doesn't slay is knocked Prone when the fight is over.
+  if (twoHanded && hasRule(catalog, m, 'Stone flail')) {
+    f.f = 6;
+    delete f.strike;
+    f.mighty = true;
+    f.flail = true;
+    notes.push('Stone flail: Fight 6, 2 wounds each, knocks down those it strikes');
+  }
   // Dwalin's Grasper & Keeper, when he fights with them rather than his two-handed axe: +1 Attack, and 6s to wound do 2.
   if (!twoHanded && hasGear(catalog, m, /grasper/)) {
     f.a = Math.min(10, f.a + (shielding ? 2 : 1));
@@ -210,6 +226,15 @@ export function fighterOf(state: GameState, catalog: Catalog | null | undefined,
     f.a = Math.min(10, f.a + 1);
     notes.push('Brave Master Baggins: +1 Fight, +1 Attack (he charged)');
   }
+  // Azog's Hunters: Savage Hunters strike harder, and Fimbul (Hunt Master) fights harder on his Warg, in a turn they charged.
+  if (state.flow.charges?.[m.id] && hasRule(catalog, m, 'Savage Hunters')) {
+    f.a = Math.min(10, f.a + 1);
+    notes.push('Savage Hunters: +1 Attack (it charged)');
+  }
+  if (state.flow.charges?.[m.id] && hasRule(catalog, m, 'Hunt Master') && isCavalry(catalog ?? null, m)) {
+    f.f = Math.min(10, f.f + 1);
+    notes.push('Hunt Master: +1 Fight (he charged)');
+  }
   if (duel) f.duelMod = duel;
   if (wound) f.woundMod = wound;
   if (inShieldwall(state, catalog, m)) {
@@ -227,6 +252,12 @@ export function fighterOf(state: GameState, catalog: Catalog | null | undefined,
     if (hates.length) f.hates = hates;
     const ancient = ruleArgs(catalog, m, 'Ancient Enemies');
     if (ancient.length) f.ancient = ancient;
+    if (hasOrcrist(catalog, m)) {
+      f.banes = ORCRIST_BANES;
+      notes.push('Orcrist: D3 Wounds a strike on Orcs, Goblins and Uruk-hai');
+    }
+    // Azog's I am the Master: against an enemy hero, any natural 3+ To Wound succeeds.
+    if (hasRule(catalog, m, 'I am the Master')) f.master = true;
   }
   if (st.C !== undefined) f.c = st.C;
   if (notes.length) f.notes = notes;
@@ -237,11 +268,11 @@ export function fighterOf(state: GameState, catalog: Catalog | null | undefined,
  * What one fighter's strikes need against another, after the rules that depend on who is struck: Hatred, Ancient
  * Enemies and Blades of the Dead. Returns the Defence to roll against and the bonus to wound.
  */
-export function strikeAgainst(catalog: Catalog | null | undefined, state: GameState, f: Fighter, t: Fighter): { d: number; wound: number; ones: boolean } {
+export function strikeAgainst(catalog: Catalog | null | undefined, state: GameState, f: Fighter, t: Fighter): { d: number; wound: number; ones: boolean; bane?: boolean; cap?: number } {
   const victim = state.models[t.id];
   const kind = (k: string) => !!victim && isKind(catalog, victim, k);
   const d = f.blades && t.c !== undefined ? Math.max(1, Math.min(10, 10 - t.c)) : t.d;
-  return { d, wound: (f.woundMod ?? 0) + (f.hates?.some(kind) ? 1 : 0), ones: !!f.ones || !!f.ancient?.some(kind) };
+  return { d, wound: (f.woundMod ?? 0) + (f.hates?.some(kind) ? 1 : 0), ones: !!f.ones || !!f.ancient?.some(kind), ...(f.banes?.some(kind) ? { bane: true } : {}), ...(f.master && victim?.hero ? { cap: 3 } : {}) };
 }
 
 // ——— Shooting ———
@@ -317,6 +348,8 @@ export function terrainRules(catalog: Catalog | null | undefined, m: Model): str
   if (hasRule(catalog, m, 'Cave Dweller')) out.push('cave');
   if (hasRule(catalog, m, 'Spectral Walk')) out.push('spectral');
   if (hasRule(catalog, m, 'Swift Movement')) out.push('swift');
+  // (Fimbul's Hunt Master: on his Warg he pays no heed to difficult terrain.)
+  if (hasRule(catalog, m, 'Hunt Master') && isCavalry(catalog ?? null, m)) out.push('swift');
   // (Bombur's Lumbering: a natural 6 on one of these tests must be rolled again.)
   if (hasRule(catalog, m, 'Lumbering')) out.push('lumbering');
   // (Not terrain, but carried the same way: a Burly model or a monster carries a Heavy Object at full speed.)

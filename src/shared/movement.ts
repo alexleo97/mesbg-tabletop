@@ -1,6 +1,6 @@
 import { difficultTimes, mounted } from './cavalry.ts';
-import { distanceBetween, halfExtents, MM_PER_INCH, mmToIn, type Point } from './geometry.ts';
-import { flooredAt, heightOfModel, moveCost, sightTo } from './sight.ts';
+import { basePerimeter, distanceBetween, halfExtents, MM_PER_INCH, mmToIn, type Point } from './geometry.ts';
+import { flooredAt, heightOfModel, insidePolygon, moveCost, outline, sightTo } from './sight.ts';
 import { overWallSpot, reaches, secondAttacker, touching, wallBetween } from './barriers.ts';
 import { combatFromKey, CONTACT_SLACK, type Combat } from './flow.ts';
 import { canActivate, phaseHeroics, shoutedFor, SHOUT_RANGE } from './heroics.ts';
@@ -39,7 +39,9 @@ export function moveAllowance(state: GameState, m: Model): number | null {
     const climbed = state.flow.climbed?.[m.id] ?? 0;
     // So does carrying a Heavy Object alone.
     const halved = m.prone || state.flow.stood?.includes(m.id) || laden(state, m);
-    return Math.max(0, (halved ? m.move / 2 : m.move) + marchBonus(state, m) - climbed);
+    // A model that could fly but walks instead goes only 4".
+    const move = m.fly && !flying(state, m) ? WALK_INSTEAD : m.move;
+    return Math.max(0, (halved ? move / 2 : move) + marchBonus(state, m) - climbed);
   }
   if (state.phase === 'fight') return heroicCombatWon(state, m) ? m.move : (bargeMove(state, m) ?? 1);
   return 0;
@@ -50,6 +52,78 @@ export function engaged(state: GameState, m: Model, except?: string): boolean {
   // A siege engine is never in a fight, and nobody fights one.
   if (m.siege) return false;
   return Object.values(state.models).some(e => e.owner !== m.owner && e.id !== except && !e.siege && !e.dead && !e.waiting && !e.escaped && Math.abs(e.x - m.x) < 5 && Math.abs(e.y - m.y) < 5 && touching(state, m, e));
+}
+
+// ——— Fly ———
+
+/** How far a model that could fly goes when it walks instead. */
+export const WALK_INSTEAD = 4;
+
+/** Whether a point is in a wood. */
+export const inWoods = (state: GameState, p: Point) => Object.values(state.terrain).some(t => t.kind === 'wood' && !t.gone && Math.hypot(t.x - p.x, t.y - p.y) <= Math.max(t.w, t.h) / 2 + 0.01 && insidePolygon(outline(t), p));
+
+/**
+ * Whether a model flies as it moves now: one with Fly, moving in the Move phase (or after a Heroic Combat), that hasn't
+ * chosen to walk this phase, nor began it in a wood (it walks until it has left the wood).
+ */
+export function flying(state: GameState, m: Model): boolean {
+  if (!m.fly || !state.flow.started || m.dead) return false;
+  if (state.phase !== 'move' && !heroicCombatWon(state, m)) return false;
+  if (state.flow.grounded?.includes(m.id)) return false;
+  return !inWoods(state, moveStart(state, m));
+}
+
+/**
+ * Where a flying model may land: on the table, not on another model nor an objective marker, not in a wood (by the
+ * middle of its base), and not on a building, a tree or anything sheer, where it couldn't keep its balance or the enemy
+ * could never reach it.
+ */
+export function landsAt(state: GameState, m: Model, p: Point, skip?: ReadonlySet<string>): boolean {
+  const here = { ...m, x: p.x, y: p.y };
+  const { rx, ry } = halfExtents(m.base);
+  if (p.x < rx - 0.01 || p.y < ry - 0.01 || p.x > state.board.w - rx + 0.01 || p.y > state.board.h - ry + 0.01) return false;
+  if (inWoods(state, p)) return false;
+  const edge = basePerimeter(here, 16);
+  for (const t of Object.values(state.terrain)) {
+    if (t.gone || Math.hypot(t.x - p.x, t.y - p.y) > Math.max(t.w, t.h) / 2 + Math.max(rx, ry) + 0.05) continue;
+    if (t.kind === 'objective' && !t.carrier && keptOffMarkers(m) && Math.hypot(t.x - p.x, t.y - p.y) < t.w / 2 + rx - 0.05) return false;
+    if (t.kind === 'building' || t.kind === 'tower' || t.sheer) {
+      const poly = outline(t);
+      if (insidePolygon(poly, p) || edge.some(q => insidePolygon(poly, q))) return false;
+    }
+  }
+  return !Object.values(state.models).some(e => e.id !== m.id && !e.dead && !e.waiting && !e.escaped && !e.aboard && !skip?.has(e.id) && basesOverlap(here, e));
+}
+
+/**
+ * Where a flying model's move from `from` towards `to` ends. It passes over models and terrain and ignores control
+ * zones on the way, so only where it lands matters: somewhere it may land, and outside every enemy's control zone
+ * unless it is charging that enemy (it may charge any enemy whose zone it lands in, seen or not; one already in a fight
+ * only if it lands clear of every other enemy's zone). Short of that, it lands at the last spot back along the way that
+ * will do.
+ */
+function flyTo(state: GameState, m: Model, from: Point, to: Point, skip?: ReadonlySet<string>, charge = true): Point {
+  const foes = Object.values(state.models).filter(e => e.owner !== m.owner && !e.dead && !e.waiting && !e.escaped && !e.aboard && !e.siege && !passesThrough(m, e));
+  const zoned = foes.filter(e => !e.prone && !engaged(state, e, m.id));
+  const mayCharge = charge && !marchBonus(state, m);
+  const ok = (p: Point) => {
+    if (!landsAt(state, m, p, skip)) return false;
+    const here = { ...m, x: p.x, y: p.y };
+    const near = zoned.filter(e => distanceBetween(here, e) < 1 - 1e-3);
+    if (near.length && !mayCharge) return false;
+    // Touching an enemy already in a fight: clear of every other enemy's zone.
+    const fought = foes.filter(e => !zoned.includes(e) && distanceBetween(here, e) <= CONTACT_SLACK);
+    if (fought.length && (!mayCharge || near.length)) return false;
+    return true;
+  };
+  const d = Math.hypot(to.x - from.x, to.y - from.y);
+  const steps = Math.max(1, Math.ceil(d / 0.05));
+  for (let i = steps; i >= 1; i--) {
+    const f = i / steps;
+    const p = { x: from.x + (to.x - from.x) * f, y: from.y + (to.y - from.y) * f };
+    if (ok(p)) return p;
+  }
+  return from;
 }
 
 /** Two enemies in base contact, and the spot between their bases where they meet. */
@@ -240,6 +314,7 @@ export const passesThrough = (a: Model, b: Model) => invisibleTo(a, b) || invisi
 
 export function blockMove(state: GameState, m: Model, from: Point, to: Point, skip?: ReadonlySet<string>, charge = true): Point {
   if (Math.hypot(to.x - from.x, to.y - from.y) < 1e-6) return to;
+  if (flying(state, m)) return flyTo(state, m, from, to, skip, charge);
   // Terrain that needs a Jump, Climb or Leap test stops the model at it, to take the test (see terrainTests.ts).
   const ahead = state.flow.started && testsTerrain(state, m) ? crossingAhead(state, m, from, to) : null;
   if (ahead) to = ahead.stop;
@@ -351,7 +426,7 @@ export function bargeMove(state: GameState, m: Model): number | undefined {
 
 /** Whether a model may move and fight again this Fight phase: it won a Heroic Combat, or barged its foes aside. */
 /** Whether a move now takes Jump, Climb and Leap tests: in the Move phase, and in a Heroic Combat's move (Rulebook FAQ). */
-export const testsTerrain = (state: GameState, m: Model) => state.phase === 'move' || heroicCombatWon(state, m);
+export const testsTerrain = (state: GameState, m: Model) => (state.phase === 'move' || heroicCombatWon(state, m)) && !flying(state, m);
 export const fightsAgain = (state: GameState, m: Model) => heroicCombatWon(state, m) || bargeMove(state, m) !== undefined;
 
 /**
@@ -404,7 +479,7 @@ export function movedTooFar(state: GameState): string[] {
 }
 
 /** What a model's move from a to b costs: difficult ground under any of its base counts double (four times for cavalry), and climbing double. */
-export const costOf = (state: GameState, m: Model, a: Point, b: Point) => moveCost(state, a, b, m.owner, Math.max(halfExtents(m.base).rx, halfExtents(m.base).ry), heightOfModel(m), m.ground, difficultTimes(m)).cost;
+export const costOf = (state: GameState, m: Model, a: Point, b: Point) => (flying(state, m) ? Math.hypot(b.x - a.x, b.y - a.y) : moveCost(state, a, b, m.owner, Math.max(halfExtents(m.base).rx, halfExtents(m.base).ry), heightOfModel(m), m.ground, difficultTimes(m)).cost);
 
 /** Models that moved at all this Move phase, even a little or only between floors, so shoot 1 worse. */
 export function movedAtAll(state: GameState): string[] {
@@ -533,7 +608,8 @@ export function settleMove(state: GameState, m: Model, at: Point): Point {
   }
   if (!best || best.d < 0.02) return at;
   // Only an enemy it could see when it set off can be charged; nor can a marching model charge.
-  if (marchBonus(state, m) || sightTo(state, { ...m, ...moveStart(state, m) }, best.e) === 'hidden') return at;
+  // (A flying model charges any enemy whose zone it lands in.)
+  if (marchBonus(state, m) || (!flying(state, m) && sightTo(state, { ...m, ...moveStart(state, m) }, best.e) === 'hidden')) return at;
   // Across a wall it goes up to the wall, as close to the enemy as it can get (unless it's touching the wall already).
   if (wallBetween(state, here, best.e)) return at;
   const over = overWallSpot(state, m, best.e, at);
