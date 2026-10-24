@@ -74,6 +74,8 @@ export interface Model {
   stunned?: number;
   /** The turn it is dazed by the Haze of Mirkwood (The Elves of Mirkwood): it can't act, and fights with one die and no strikes. */
   hazed?: number;
+  /** The turn it is frozen with fear by the Nazgûl overhead (Escape from Osgiliath): it can't act, and fights with Fight 1. */
+  dread?: number;
   /** How many times Drain Courage has worsened its Courage, and Wither its Strength. */
   drained?: number;
   withered?: number;
@@ -151,7 +153,7 @@ export const TERRAIN_KINDS = ['wood', 'rock', 'building', 'water', 'hill', 'wall
 export type TerrainKind = (typeof TERRAIN_KINDS)[number];
 
 /** Battle mat surfaces. */
-export const MATS = ['grass', 'plains', 'forest', 'mud', 'dirt', 'stone', 'snow', 'sand', 'water'] as const;
+export const MATS = ['grass', 'plains', 'forest', 'mud', 'dirt', 'stone', 'ruin', 'snow', 'sand', 'water'] as const;
 export type Mat = (typeof MATS)[number];
 
 export interface Terrain {
@@ -217,7 +219,7 @@ export interface Terrain {
    */
   deep?: boolean;
   /** Drawn in dressed stone (a fortress's courtyard, causeway, keep or tower), a wall with a culvert through it, a field of long grass, or a piece of Balin's Tomb (a pillar, the tomb, the well, a trapdoor, the doorway: the well and trapdoors are where its Goblins come back), undergrowth, or a piece of Isengard (the tower of Orthanc, a timber scaffold, a ladder up one, a pit). */
-  look?: 'stone' | 'culvert' | 'grass' | 'pillar' | 'tomb' | 'well' | 'trapdoor' | 'doorway' | 'brush' | 'orthanc' | 'scaffold' | 'ladder' | 'pit' | 'roots' | 'trunk' | 'gnarled' | 'planks' | 'boat' | 'floe' | 'lakehouse' | 'laketower' | 'lakewing' | 'pinewood' | 'pine' | 'chasm' | 'cavewall' | 'crag' | 'gobplanks' | 'rungs' | 'throne';
+  look?: 'stone' | 'culvert' | 'grass' | 'pillar' | 'tomb' | 'well' | 'trapdoor' | 'doorway' | 'brush' | 'orthanc' | 'scaffold' | 'ladder' | 'pit' | 'roots' | 'trunk' | 'gnarled' | 'planks' | 'boat' | 'floe' | 'lakehouse' | 'laketower' | 'lakewing' | 'pinewood' | 'pine' | 'chasm' | 'cavewall' | 'crag' | 'gobplanks' | 'rungs' | 'throne' | 'osgwall' | 'rubble';
 }
 
 export const DOOR_TYPES = ['castle', 'dwarven', 'heavyArmoured', 'armoured', 'heavy', 'external', 'internal', 'dam'] as const;
@@ -380,6 +382,8 @@ export interface NarrativeState {
   /** Escape from Goblin-town: the turn Gandalf's arrival was rolled for, and the turn the slain Goblins last came back. */
   gandalf?: number;
   horde?: number;
+  /** Escape from Osgiliath: the turn the Evil player last picked a Warrior for the Nazgûl to freeze. */
+  dread?: number;
 }
 
 export type BotSpeed = 'normal' | 'fast' | 'instant';
@@ -765,7 +769,7 @@ export type Action =
   /** Request: the Good player at Weathertop rolls for Aragorn this turn, or doesn't. */
   | { type: 'aragorn'; roll: boolean }
   /** Server only: bookkeeping for a narrative scenario's rules. */
-  | { type: 'narrativeNote'; rolled?: number; dawn?: number; bilbo?: boolean; breach?: number; troll?: number; crushed?: string[]; woke?: number; revive?: string[]; webbed?: number; hazed?: number; nested?: number; alarm?: string[]; alarmed?: number; wrath?: number; flown?: Record<string, number>; gandalf?: number; horde?: number }
+  | { type: 'narrativeNote'; rolled?: number; dawn?: number; bilbo?: boolean; breach?: number; troll?: number; crushed?: string[]; woke?: number; revive?: string[]; webbed?: number; hazed?: number; nested?: number; alarm?: string[]; alarmed?: number; wrath?: number; flown?: Record<string, number>; gandalf?: number; horde?: number; dread?: number }
   /** And Into the Fire: a player nominates a tree for the Dwarves to hide in, before the battle. */
   | { type: 'nominate'; seat: Seat; tree: string }
   /** A flying model walks this Move phase instead of flying (see movement.ts flying). */
@@ -801,6 +805,10 @@ export type Action =
   | { type: 'longbeard'; model: string; skip?: boolean }
   /** Request: Óin's Hearing Trumpet, listening (or not) for the enemy heroic action it caught (see company.ts). */
   | { type: 'trumpet'; listen: boolean }
+  /** Request: Escape from Osgiliath's "Nazgûl!": the Evil player picks a Good Warrior to freeze with fear (none: nobody this turn). */
+  | { type: 'nazgul'; target?: string }
+  /** Request: Gothmog calls "The time of the Orc has come", once a game, as a Fight phase begins. */
+  | { type: 'orcTime'; id: string }
   /** Request: Bifur, his axe freed, tests his Intelligence for a free Heroic Move this turn. */
   | { type: 'axeTest'; model: string }
   /** Server only: Ori has seen a deed for his chronicle (see company.chronicled); `done` clears the first one. */

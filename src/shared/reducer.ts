@@ -11,7 +11,7 @@ import { basePower, cannotAct, effectActive } from './powers.ts';
 import { basesOverlap, costOf, crowded, engaged as engagedNow, finishCharge, fightsAgain, frontFirst, leashed, limitMove, dropMove, moveAllowance, movedAtAll, movedTooFar, moveLeft, moveStart, retrace, RETRACE, spent, testsTerrain } from './movement.ts';
 import { FLOORED, floorHeight, flooredAt, insidePolygon, isDifficult, outline } from './sight.ts';
 import { cleanPausedShot, woundsTaken } from './fight.ts';
-import { pairOff } from './flow.ts';
+import { dreadDue, pairOff } from './flow.ts';
 import { crossingAhead } from './terrainTests.ts';
 import { distanceBetween, halfExtents } from './geometry.ts';
 import { touching as inContact, touchingEnemies } from './barriers.ts';
@@ -34,6 +34,7 @@ import { bundleFits, isUnseen, keepOnTable, skitterDone, spidersDue } from './un
 import { bolgOwesCharge, contactAlarms, disturbs, isLake, isSentry, keepInSection, sentriesDue, sentryDue } from './lake.ts';
 import { SECTIONS, type Section } from './lakeMap.ts';
 import { EDGES as GOBLIN_EDGES, exitPickDue, gandalfPending, goblinSync, hordePending, isGoblin } from './goblin.ts';
+import { faramirsChance, hordePending as orcsPending, isOsgiliath, POINT_NAMES, pupilNow, rightHand, RIGHT_HAND_ACTIONS } from './osgiliath.ts';
 import { bilboSpot, bilboTargets, eaglesPending, eaglesSync, isFire, mayNominate, nominate, nominationTurn, pickUps, wrathDue } from './eagles.ts';
 import { BOT_NAME, BOT_SPEEDS, type Deploying, DOOR_TYPES, FIGHT_TARGETS, MARKER_OBJECTS, MATS, PHASES, PICK_KEYS, TERRAIN_KINDS, type Action, type FightPicks, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type ModelEffect, type Phase, type Picks, type Placing, type Seat, type SpellPending, type Terrain } from './types.ts';
 
@@ -60,7 +61,7 @@ export function initialState(): GameState {
 }
 
 /** The terrain rules a model can carry (see wargear.terrainRules). */
-const GROUND = ['wood', 'rock', 'cave', 'spectral', 'swift', 'burly', 'lumbering', 'relentless', 'goblin'];
+const GROUND = ['wood', 'rock', 'cave', 'spectral', 'swift', 'burly', 'lumbering', 'relentless', 'goblin', 'chance', 'pupil', 'righthand', 'gothmog'];
 const newFlow = (): Flow => ({ started: false, chooser: null, chooserTurn: 0, roll: null, done: [], resolved: [], heroics: [], passed: [], lastHeroic: null });
 
 /** Moves to a phase (and turn), clearing who has finished; a new turn also clears fights and priority. */
@@ -92,7 +93,7 @@ function comeOn(state: GameState): GameState {
 }
 
 /** Play is held for a model being placed, or for the Good player at Weathertop to say whether they roll for Aragorn. */
-const waitingOn = (state: GameState) => !!placingNow(state) || arrivalDue(state);
+const waitingOn = (state: GameState) => !!placingNow(state) || arrivalDue(state) || dreadDue(state);
 
 /** Once nothing holds it, a Move phase both sides have finished goes on to shooting (unless the players move it on). */
 function moveOn(state: GameState): GameState {
@@ -300,7 +301,7 @@ export function cleanModel(m: Partial<Model>, prev?: Model): Model | null {
   for (const k of ['ablaze', 'ringOn', 'slay'] as const) if ((k in m ? m[k] === true : base[k]) && !out.dead) out[k] = true;
   const used = 'used' in m ? (Array.isArray(m.used) ? [...new Set(m.used.slice(0, 8).map(u => str(u, 40)))] : undefined) : base.used;
   if (used?.length) out.used = used;
-  for (const k of ['panned', 'noMove', 'chilled', 'hazed'] as const) {
+  for (const k of ['panned', 'noMove', 'chilled', 'hazed', 'dread'] as const) {
     const turn = k in m ? (m[k] === undefined ? undefined : int(m[k], 0, 99, 0)) : base[k];
     if (turn) out[k] = turn;
   }
@@ -443,7 +444,7 @@ function cleanTerrain(t: Partial<Terrain>, prev?: Terrain): Terrain | null {
   if (('walk' in t ? t.walk : base.walk) === true && out.kind === 'wall') out.walk = true;
   if (('stairs' in t ? t.stairs : base.stairs) === true && out.kind === 'road') out.stairs = true;
   const look = 'look' in t ? t.look : base.look;
-  if (look === 'stone' || look === 'culvert' || look === 'grass' || look === 'pillar' || look === 'tomb' || look === 'well' || look === 'trapdoor' || look === 'doorway' || look === 'brush' || look === 'orthanc' || look === 'scaffold' || look === 'ladder' || look === 'pit' || look === 'roots' || look === 'trunk' || look === 'gnarled' || look === 'planks' || look === 'boat' || look === 'floe' || look === 'lakehouse' || look === 'laketower' || look === 'lakewing' || look === 'pinewood' || look === 'pine' || look === 'chasm' || look === 'cavewall' || look === 'crag' || look === 'gobplanks' || look === 'rungs' || look === 'throne') out.look = look;
+  if (look === 'stone' || look === 'culvert' || look === 'grass' || look === 'pillar' || look === 'tomb' || look === 'well' || look === 'trapdoor' || look === 'doorway' || look === 'brush' || look === 'orthanc' || look === 'scaffold' || look === 'ladder' || look === 'pit' || look === 'roots' || look === 'trunk' || look === 'gnarled' || look === 'planks' || look === 'boat' || look === 'floe' || look === 'lakehouse' || look === 'laketower' || look === 'lakewing' || look === 'pinewood' || look === 'pine' || look === 'chasm' || look === 'cavewall' || look === 'crag' || look === 'gobplanks' || look === 'rungs' || look === 'throne' || look === 'osgwall' || look === 'rubble') out.look = look;
   cleanObject(t, base, out);
   if ('vines' in t ? t.vines === true : base.vines) {
     const side = 'side' in t ? t.side : base.side;
@@ -701,7 +702,7 @@ function step(state: GameState, action: Action): GameState {
       // While a model waits to be placed, only it moves, and only where its placing allows.
       const placing = state.flow.started ? placingNow(state) : undefined;
       // Nothing moves while the Good player decides whether to roll for Aragorn.
-      if (state.flow.started && !placing && arrivalDue(state)) return state;
+      if (state.flow.started && !placing && (arrivalDue(state) || dreadDue(state))) return state;
       for (const mv of moves) {
         const prev = mv && models[mv.id];
         if (!prev || prev.escaped || prev.waiting) continue;
@@ -1178,7 +1179,7 @@ function step(state: GameState, action: Action): GameState {
       }
       // Roast Mutton: the Company still to come rolls (or comes) first, and moves on before the side is done (and the
       // same for Helm's Deep's Relief Force and Balin's Tomb's Goblin Tide).
-      if (state.flow.started && (reinforcementsPending(state, action.seat) || reliefPending(state, action.seat) || tidePending(state, action.seat) || legionsPending(state, action.seat) || elvesPending(state, action.seat) || eaglesPending(state, action.seat) || gandalfPending(state, action.seat) || hordePending(state, action.seat))) return state.flow.reinforce === action.seat ? state : { ...state, flow: { ...state.flow, reinforce: action.seat } };
+      if (state.flow.started && (reinforcementsPending(state, action.seat) || reliefPending(state, action.seat) || tidePending(state, action.seat) || legionsPending(state, action.seat) || elvesPending(state, action.seat) || eaglesPending(state, action.seat) || gandalfPending(state, action.seat) || hordePending(state, action.seat) || orcsPending(state, action.seat))) return state.flow.reinforce === action.seat ? state : { ...state, flow: { ...state.flow, reinforce: action.seat } };
       // Ambush at Night: the bound Hobbits roll to cut their bonds as the Good side finishes its move.
       if (bondsPending(state, action.seat)) return state.flow.bonds === action.seat ? state : { ...state, flow: { ...state.flow, bonds: action.seat } };
       // Ending it with a newcomer still at the edge lets it stay there, and the next one comes on.
@@ -1217,8 +1218,11 @@ function step(state: GameState, action: Action): GameState {
       const drum = !!m?.drum && info?.name === 'Heroic March';
       // Sam's Heroic Combat to get to Frodo costs nothing.
       // (So is Bifur's Heroic Move, once his axe is out and he has passed the test for it this turn.)
-      const free = !!m && ((info?.name === 'Heroic Combat' && longshanksFree(state, m)) || (info?.name === 'Heroic Move' && !!state.flow.freeMove?.includes(m.id)));
-      if (!m || (!m.hero && !drum) || m.dead || (m.might < 1 && !drum && !free) || !info || info.phase !== state.phase || cannotAct(state, m)) return state;
+      // (Faramir, his army Broken, has a free Heroic Resolve every turn.)
+      const free = !!m && ((info?.name === 'Heroic Combat' && longshanksFree(state, m)) || (info?.name === 'Heroic Move' && !!state.flow.freeMove?.includes(m.id)) || (info?.name === 'Heroic Resolve' && faramirsChance(state, m)));
+      // Gothmog, beside his Enforcer, pays for a Heroic Move or March with the Enforcer's Will.
+      const hand = info && RIGHT_HAND_ACTIONS.includes(info.name) && !free && !drum ? rightHand(state, m) : undefined;
+      if (!m || (!m.hero && !drum) || m.dead || (m.might < 1 && !drum && !free && !hand) || !info || info.phase !== state.phase || cannotAct(state, m)) return state;
       if (state.flow.heroics.some(h => h.model === m.id && h.phase === state.phase)) return state;
       if ((info.name === 'Heroic Shoot' || info.name === 'Heroic Accuracy') && state.flow.started && engagedNow(state, m)) return state;
       const other: Seat = m.owner === 'p1' ? 'p2' : 'p1';
@@ -1233,7 +1237,7 @@ function step(state: GameState, action: Action): GameState {
       }
       return {
         ...state,
-        models: drum || free ? state.models : { ...state.models, [m.id]: { ...m, might: m.might - 1 } },
+        models: drum || free ? state.models : hand ? { ...state.models, [hand.id]: { ...hand, will: hand.will - 1 } } : { ...state.models, [m.id]: { ...m, might: m.might - 1 } },
         flow: {
           ...state.flow,
           heroics: [...state.flow.heroics, { model: m.id, action: info.name, phase: state.phase, ...(free ? { free: true } : {}) }],
@@ -1372,7 +1376,8 @@ function step(state: GameState, action: Action): GameState {
       const flown = action.flown && typeof action.flown === 'object' ? Object.fromEntries(Object.entries(action.flown).filter(([k]) => state.models[k]).map(([k, v]) => [k, int(v, 0, 99, 0)])) : state.narrative.flown;
       const gandalf = action.gandalf === undefined ? state.narrative.gandalf : int(action.gandalf, 0, 99, 0);
       const horde = action.horde === undefined ? state.narrative.horde : int(action.horde, 0, 99, 0);
-      const next = { ...state, narrative: { ...state.narrative, ...(rolled ? { rolled } : {}), ...(dawn ? { dawn } : {}), ...(breach ? { breach } : {}), ...(crushed ? { crushed } : {}), ...(woke ? { woke } : {}), ...(webbed ? { webbed } : {}), ...(hazed ? { hazed } : {}), ...(nested ? { nested } : {}), ...(alarm ? { alarm } : {}), ...(alarmed ? { alarmed } : {}), ...(wrath ? { wrath } : {}), ...(flown ? { flown } : {}), ...(gandalf ? { gandalf } : {}), ...(horde ? { horde } : {}) } };
+      const dread = action.dread === undefined ? state.narrative.dread : int(action.dread, 0, 99, 0);
+      const next = { ...state, narrative: { ...state.narrative, ...(rolled ? { rolled } : {}), ...(dawn ? { dawn } : {}), ...(breach ? { breach } : {}), ...(crushed ? { crushed } : {}), ...(woke ? { woke } : {}), ...(webbed ? { webbed } : {}), ...(hazed ? { hazed } : {}), ...(nested ? { nested } : {}), ...(alarm ? { alarm } : {}), ...(alarmed ? { alarmed } : {}), ...(wrath ? { wrath } : {}), ...(flown ? { flown } : {}), ...(gandalf ? { gandalf } : {}), ...(horde ? { horde } : {}), ...(dread ? { dread } : {}) } };
       // Balin's Tomb: the Cave Troll has stepped in at the doorway, its move counted from just outside it.
       if (action.troll !== undefined && !state.narrative.troll) {
         const troll = Object.values(state.models).find(isCaveTroll);
@@ -1657,7 +1662,9 @@ function step(state: GameState, action: Action): GameState {
     case 'escape': {
       const m = state.models[action.model];
       if (!m || !canEscape(state, m)) return state;
-      return { ...state, models: { ...state.models, [m.id]: { ...m, escaped: true } } };
+      // (Escape from Osgiliath: Faramir, Dominant (2) under Wizard's Pupil this turn, counts as two as he gets away.)
+      const worth = isOsgiliath(state) && pupilNow(state, m) ? { dominant: Math.max(2, m.dominant ?? 1) } : {};
+      return { ...state, models: { ...state.models, [m.id]: { ...m, escaped: true, ...worth } } };
     }
     case 'nominate': {
       // And Into the Fire: the players take turns nominating the trees the Dwarves hide in, the Good player first.
@@ -1691,11 +1698,13 @@ function step(state: GameState, action: Action): GameState {
       // The decoy is a webbed bundle, chosen by the Spiders' player before the battle and kept to.
       if (action.key === 'decoy' && (state.flow.started || !isUnseen(state) || action.seat === state.narrative!.good || state.terrain[String(action.value)]?.object !== 'cocoon')) return state;
       // The Elves of Mirkwood: the Good player chooses the edge the Elves come on from, any time before they do.
-      if (action.key === 'edge' && !isFire(state) && !isGoblin(state) && (!isElves(state) || action.seat !== state.narrative!.good || !(EDGES as readonly unknown[]).includes(action.value) || elvesWaiting(state).length === 0)) return state;
+      if (action.key === 'edge' && !isFire(state) && !isGoblin(state) && !isOsgiliath(state) && (!isElves(state) || action.seat !== state.narrative!.good || !(EDGES as readonly unknown[]).includes(action.value) || elvesWaiting(state).length === 0)) return state;
       // Escape from Goblin-town: the Evil player names the escape edge before the battle, and may choose the edge the
       // slain Goblins come back from whenever they like.
       if (action.key === 'exit' && (!isGoblin(state) || state.flow.started || action.seat === state.narrative!.good || !(GOBLIN_EDGES as readonly unknown[]).includes(action.value))) return state;
       if (action.key === 'edge' && isGoblin(state) && (action.seat === state.narrative!.good || !(GOBLIN_EDGES as readonly unknown[]).includes(action.value))) return state;
+      // Escape from Osgiliath: the Evil player chooses the Reinforcement Point the slain Orcs come back from, any time.
+      if (action.key === 'edge' && isOsgiliath(state) && (action.seat === state.narrative!.good || !(POINT_NAMES as readonly unknown[]).includes(action.value))) return state;
       // And Into the Fire: the Good player chooses whether the Eagles come on from the north or the south edge.
       if (action.key === 'edge' && isFire(state) && (action.seat !== state.narrative!.good || (action.value !== 'north' && action.value !== 'south'))) return state;
       const value = typeof action.value === 'string' && (state.models[action.value] || state.terrain[action.value] || action.key === 'edge' || action.key === 'exit') ? action.value : undefined;
@@ -1930,7 +1939,7 @@ export function loadState(raw: unknown): GameState {
   if (o.advance === 'click') out = { ...out, advance: 'click' };
   const n = o.narrative;
   if (n && typeof n === 'object' && narrativeById(n.id) && isSeat(n.good))
-    out = { ...out, narrative: { id: n.id, good: n.good, ...(Number.isFinite(n.cry) ? { cry: int(n.cry, 0, 99, 0) } : {}), ...(Array.isArray(n.rolled) ? { rolled: n.rolled.slice(0, 40).map(t => int(t, 0, 99, 0)) } : {}), ...(Number.isFinite(n.dawn) ? { dawn: int(n.dawn, 1, 99, 1) } : {}), ...(n.bilbo === true ? { bilbo: true } : {}), ...(Number.isFinite(n.turns) ? { turns: int(n.turns, 1, 40, 15) } : {}), ...(Number.isFinite(n.relief) ? { relief: num(n.relief, 0, 200, 36) } : {}), ...(Number.isFinite(n.breach) ? { breach: int(n.breach, 0, 99, 0) } : {}), ...(Number.isFinite(n.troll) ? { troll: int(n.troll, 1, 99, 1) } : {}), ...(Array.isArray(n.crushed) ? { crushed: n.crushed.slice(0, 60).map(x => str(x, 80)) } : {}), ...(Number.isFinite(n.woke) ? { woke: int(n.woke, 0, 99, 0) } : {}), ...(Number.isFinite(n.webbed) ? { webbed: int(n.webbed, 0, 99, 0) } : {}), ...(Number.isFinite(n.hazed) ? { hazed: int(n.hazed, 0, 99, 0) } : {}), ...(Number.isFinite(n.nested) ? { nested: int(n.nested, 0, 99, 0) } : {}), ...(Array.isArray(n.alarm) ? { alarm: n.alarm.filter((x: unknown) => SECTIONS.includes(x as Section)) } : {}), ...(Array.isArray(n.disturbed) ? { disturbed: n.disturbed.slice(0, 40).filter((d: unknown) => d && typeof d === 'object').map((d: { id: unknown; turn: unknown }) => ({ id: str(d.id, 80), turn: int(d.turn, 0, 99, 0) })) } : {}), ...(Number.isFinite(n.alarmed) ? { alarmed: int(n.alarmed, 0, 99, 0) } : {}), ...(Array.isArray(n.hiding) ? { hiding: n.hiding.slice(0, 5).map((x: unknown) => str(x, 80)) } : {}), ...(Number.isFinite(n.wrath) ? { wrath: int(n.wrath, 0, 99, 0) } : {}), ...(n.flown && typeof n.flown === 'object' && !Array.isArray(n.flown) ? { flown: Object.fromEntries(Object.entries(n.flown as Record<string, unknown>).slice(0, 10).map(([k, v]) => [str(k, 80), int(v, 0, 99, 0)])) } : {}), ...(Number.isFinite(n.gandalf) ? { gandalf: int(n.gandalf, 0, 99, 0) } : {}), ...(Number.isFinite(n.horde) ? { horde: int(n.horde, 0, 99, 0) } : {}) } };
+    out = { ...out, narrative: { id: n.id, good: n.good, ...(Number.isFinite(n.cry) ? { cry: int(n.cry, 0, 99, 0) } : {}), ...(Array.isArray(n.rolled) ? { rolled: n.rolled.slice(0, 40).map(t => int(t, 0, 99, 0)) } : {}), ...(Number.isFinite(n.dawn) ? { dawn: int(n.dawn, 1, 99, 1) } : {}), ...(n.bilbo === true ? { bilbo: true } : {}), ...(Number.isFinite(n.turns) ? { turns: int(n.turns, 1, 40, 15) } : {}), ...(Number.isFinite(n.relief) ? { relief: num(n.relief, 0, 200, 36) } : {}), ...(Number.isFinite(n.breach) ? { breach: int(n.breach, 0, 99, 0) } : {}), ...(Number.isFinite(n.troll) ? { troll: int(n.troll, 1, 99, 1) } : {}), ...(Array.isArray(n.crushed) ? { crushed: n.crushed.slice(0, 60).map(x => str(x, 80)) } : {}), ...(Number.isFinite(n.woke) ? { woke: int(n.woke, 0, 99, 0) } : {}), ...(Number.isFinite(n.webbed) ? { webbed: int(n.webbed, 0, 99, 0) } : {}), ...(Number.isFinite(n.hazed) ? { hazed: int(n.hazed, 0, 99, 0) } : {}), ...(Number.isFinite(n.nested) ? { nested: int(n.nested, 0, 99, 0) } : {}), ...(Array.isArray(n.alarm) ? { alarm: n.alarm.filter((x: unknown) => SECTIONS.includes(x as Section)) } : {}), ...(Array.isArray(n.disturbed) ? { disturbed: n.disturbed.slice(0, 40).filter((d: unknown) => d && typeof d === 'object').map((d: { id: unknown; turn: unknown }) => ({ id: str(d.id, 80), turn: int(d.turn, 0, 99, 0) })) } : {}), ...(Number.isFinite(n.alarmed) ? { alarmed: int(n.alarmed, 0, 99, 0) } : {}), ...(Array.isArray(n.hiding) ? { hiding: n.hiding.slice(0, 5).map((x: unknown) => str(x, 80)) } : {}), ...(Number.isFinite(n.wrath) ? { wrath: int(n.wrath, 0, 99, 0) } : {}), ...(n.flown && typeof n.flown === 'object' && !Array.isArray(n.flown) ? { flown: Object.fromEntries(Object.entries(n.flown as Record<string, unknown>).slice(0, 10).map(([k, v]) => [str(k, 80), int(v, 0, 99, 0)])) } : {}), ...(Number.isFinite(n.gandalf) ? { gandalf: int(n.gandalf, 0, 99, 0) } : {}), ...(Number.isFinite(n.horde) ? { horde: int(n.horde, 0, 99, 0) } : {}), ...(Number.isFinite(n.dread) ? { dread: int(n.dread, 0, 99, 0) } : {}) } };
   if (o.flow && typeof o.flow === 'object') {
     const f = o.flow as Partial<Flow>;
     const seats = (v: unknown) => (Array.isArray(v) ? [...new Set(v.filter(isSeat))] : []);

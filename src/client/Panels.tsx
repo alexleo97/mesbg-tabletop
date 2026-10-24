@@ -550,6 +550,7 @@ const MAT_NAMES: Record<Mat, string> = {
   mud: 'Mud',
   dirt: 'Rocky wasteland',
   stone: 'Flagstones',
+  ruin: 'Paved streets',
   snow: 'Snow',
   sand: 'Sand',
   water: 'Open water',

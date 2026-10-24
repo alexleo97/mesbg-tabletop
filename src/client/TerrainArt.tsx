@@ -243,6 +243,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
       if (t.kind === 'cliff' && t.path && t.path.length > 1) return <CliffEdge t={t} d={d} tex={tex} />;
       if (t.look === 'floe') return <LakePiece t={t} />;
       if (t.look === 'crag' || t.look === 'cavewall') return <GoblinPiece t={t} />;
+      if (t.look === 'rubble') return <OsgiliathPiece t={t} />;
       return (
         <>
           <path className={`ground ${t.kind}-face`} d={d} fill={tex} filter="url(#hard-shadow)" />
@@ -326,6 +327,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
       );
     case 'wall':
       if (t.look === 'scaffold') return <IsengardPiece t={t} />;
+      if (t.look === 'osgwall') return <OsgiliathPiece t={t} />;
       if (t.barricade) {
         // A wooden barricade: a row of logs, with stakes poking out both ways if it is spiked. Broken, only splinters.
         const logs = Math.max(3, Math.round(t.w / 0.5));
@@ -968,6 +970,85 @@ function GoblinPiece({ t }: { t: Terrain }) {
 }
 
 /**
+ * Osgiliath (Escape from Osgiliath): the white stone of Gondor, broken. Walls of pale ashlar in staggered courses with
+ * pilasters along them and their tops ragged where they fell (the stretches still standing whole, and the thick walls
+ * of the great roofless ruins, keep a coping); and heaps of fallen masonry, toppled column drums among them.
+ */
+function OsgiliathPiece({ t }: { t: Terrain }) {
+  const { w, h } = t;
+  if (t.look === 'osgwall') {
+    const whole = (t.height ?? 0) >= 3;
+    // Two courses of blocks, the joints of one falling between those of the other.
+    const bw = 0.62;
+    const courses = [-h / 4, h / 4].map((y, row) => {
+      const out: number[] = [];
+      for (let x = -w / 2 + (row ? bw / 2 : bw) + (seeded(t.id, row + 90) - 0.5) * 0.2; x < w / 2 - 0.15; x += bw * (0.8 + seeded(t.id, out.length + row * 40) * 0.4)) out.push(x);
+      return { y, out, row };
+    });
+    // A broken wall's top is jagged where blocks came away; a whole one keeps a straight coping.
+    const n = Math.max(2, Math.round(w / 0.45));
+    const top = Array.from({ length: n + 1 }, (_, i) => `${(-w / 2 + (i * w) / n).toFixed(3)},${(-h / 2 + seeded(t.id, i) * h * 0.45).toFixed(3)}`).join(' ');
+    // Pilasters every few inches along a long wall, standing out a little either side.
+    const pil = w > 3.2 ? Math.floor(w / 2.8) : 0;
+    return (
+      <>
+        <rect className={`ground osg-wall${whole ? ' osg-whole' : ''}`} x={-w / 2} y={-h / 2} width={w} height={h} filter="url(#hard-shadow)" />
+        <line className="osg-seam" x1={-w / 2} x2={w / 2} y1={0} y2={0} />
+        {courses.flatMap(({ y, out, row }) => out.map((x, k) => <line key={`${row}-${k}`} className="osg-seam" x1={x} x2={x} y1={y - h / 4} y2={y + h / 4} />))}
+        {Array.from({ length: pil }, (_, k) => {
+          const x = -w / 2 + ((k + 1) * w) / (pil + 1);
+          return <rect key={k} className={`osg-pilaster${whole ? ' osg-whole' : ''}`} x={x - 0.22} y={-h / 2 - 0.1} width={0.44} height={h + 0.2} />;
+        })}
+        {whole ? <rect className="osg-coping" x={-w / 2 + 0.05} y={-h / 2 + 0.05} width={w - 0.1} height={h - 0.1} /> : <polyline className="osg-break" points={top} />}
+      </>
+    );
+  }
+  // Rubble: a heap of broken blocks and chips, with a toppled column in the bigger heaps.
+  const n = Math.max(3, Math.round(w * h * 3));
+  const stones = Array.from({ length: n }, (_, i) => {
+    const a = seeded(t.id, i) * Math.PI * 2;
+    const q = Math.sqrt(seeded(t.id, i + 50)) * 0.75;
+    const r = Math.min(w, h) * (0.1 + seeded(t.id, i + 100) ** 1.5 * 0.25) + 0.06;
+    return { x: (Math.cos(a) * q * w) / 2, y: (Math.sin(a) * q * h) / 2, r, k: i };
+  }).sort((p, q) => p.y - q.y);
+  const shape = (x: number, y: number, r: number, k: number) => {
+    const sides = 4 + Math.floor(seeded(t.id, k + 200) * 3);
+    return Array.from({ length: sides }, (_, j) => {
+      const a = (j / sides) * Math.PI * 2 + seeded(t.id, k * 7 + j + 300);
+      const m = r * (0.7 + seeded(t.id, k * 11 + j + 400) * 0.45);
+      return `${(x + Math.cos(a) * m).toFixed(3)},${(y + Math.sin(a) * m).toFixed(3)}`;
+    }).join(' ');
+  };
+  const column = Math.max(w, h) >= 1.4;
+  const len = Math.max(w, h) * 0.7;
+  const drums = Math.max(2, Math.round(len / 0.45));
+  const tilt = seeded(t.id, 900) * 160 - 80;
+  return (
+    <>
+      {/* Dust and grit spread round the heap over the paving. */}
+      <path className="osg-dust" d={blob(t, 1.9, 0.3, 9)} pointerEvents="none" />
+      <path className="ground osg-heap" d={blob(t, 1, 0.18, 5)} filter="url(#soft-shadow)" />
+      <g className="tint" pointerEvents="none">
+        {stones.map(({ x, y, r, k }) => (
+          <polygon key={k} className={`osg-block osg-block-${k % 3}`} points={shape(x, y, r, k)} />
+        ))}
+        {column && (
+          <g transform={`rotate(${tilt.toFixed(1)})`}>
+            {Array.from({ length: drums }, (_, k) => {
+              const x0 = -len / 2 + (k * len) / drums + (k ? 0.04 : 0);
+              return <rect key={k} className="osg-column" x={x0} y={-0.22} width={len / drums - 0.04} height={0.44} rx={0.05} />;
+            })}
+            {[-0.1, 0.1].map(y => (
+              <line key={y} className="osg-flute-line" x1={-len / 2} x2={len / 2 - 0.04} y1={y} y2={y} />
+            ))}
+          </g>
+        )}
+      </g>
+    </>
+  );
+}
+
+/**
  * Lake-town (Lake-town Escape): plank walkways on posts over the lake, rowing boats tied up, ice floes, and timber
  * houses with shingled roofs: a ridge along a long house, four slopes meeting at a point on a square one.
  */
@@ -1373,7 +1454,7 @@ function hull(pts: Point[]): Point[] {
 }
 
 /** Whether a piece is part of a fortress that stands tall (its walls, gates, keep, towers and the rock under them), or a stone piece of Balin's Tomb. */
-const tall = (t: Terrain) => !t.gone && ((t.sheer && t.look !== 'trunk' && t.look !== 'pine') || t.kind === 'gate' || (t.look === 'stone' && t.kind !== 'road') || t.look === 'pillar' || t.look === 'tomb' || t.look === 'well' || t.look === 'scaffold');
+const tall = (t: Terrain) => !t.gone && ((t.sheer && t.look !== 'trunk' && t.look !== 'pine') || t.look === 'osgwall' || t.kind === 'gate' || (t.look === 'stone' && t.kind !== 'road') || t.look === 'pillar' || t.look === 'tomb' || t.look === 'well' || t.look === 'scaffold');
 /** Orthanc's faces are cut short, so the tower doesn't hide the table round it (its height is written on top). */
 const FACE_CAP = 5.5;
 
@@ -1399,9 +1480,9 @@ export function TerrainFaces({ terrain, turn = 0 }: { terrain: Terrain[]; /** Ho
       {pieces.map(t => {
         const pts = face(t, lean).map(p => `${p.x.toFixed(3)},${p.y.toFixed(3)}`).join(' ');
         return (
-          <g key={t.id}>
+          <g key={t.id} className={t.look === 'osgwall' ? 'osg-face' : undefined}>
             <polygon className="face-shadow" points={pts} transform="translate(0.35 0.45)" filter="url(#bank-blur)" />
-            <polygon className="face" points={pts} fill={t.look === 'orthanc' ? '#1d1e23' : t.look === 'scaffold' ? '#5a3d1f' : t.kind === 'rock' ? 'url(#tex-cliff)' : 'url(#tex-wall)'} />
+            <polygon className="face" points={pts} fill={t.look === 'orthanc' ? '#1d1e23' : t.look === 'scaffold' ? '#5a3d1f' : t.look === 'osgwall' ? '#b9b5ab' : t.kind === 'rock' ? 'url(#tex-cliff)' : 'url(#tex-wall)'} />
             <polygon className="face-shade" points={pts} />
           </g>
         );

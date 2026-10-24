@@ -361,6 +361,11 @@ export function terrainRules(catalog: Catalog | null | undefined, m: Model): str
   // (Nor these: the Goblin King's Relentless Advance takes him through his own Goblins, so the game marks who they are.)
   if (hasRule(catalog, m, 'Relentless Advance')) out.push('relentless');
   if (isKind(catalog, m, 'goblin')) out.push('goblin');
+  // (Escape from Osgiliath: heroes whose rules the heroic actions need to know about, outside any fight.)
+  if (hasRule(catalog, m, '"A Chance for Faramir, Captain of Gondor to show his Quality"')) out.push('chance');
+  if (hasRule(catalog, m, "Wizard's Pupil")) out.push('pupil');
+  if (hasRule(catalog, m, "Gothmog's Right Hand")) out.push('righthand');
+  if (hasRule(catalog, m, '"The Age of Men is Over"')) out.push('gothmog');
   return out;
 }
 

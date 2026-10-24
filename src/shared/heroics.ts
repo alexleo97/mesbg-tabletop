@@ -1,6 +1,7 @@
 import { distanceBetween } from './geometry.ts';
 import { longshanksFree } from './sam.ts';
 import { swordStill } from './goblin.ts';
+import { faramirsChance, rightHand, shoutsFrom } from './osgiliath.ts';
 import { activeSeat, other } from './flow.ts';
 import { engaged, moveStart } from './movement.ts';
 import { cannotAct } from './powers.ts';
@@ -47,7 +48,7 @@ export function canDeclare(state: GameState, seat: Seat): Model[] {
   const fighting = state.phase === 'fight' && state.flow.started && state.flow.pairs ? new Set(state.flow.pairs.flatMap(k => k.split(','))) : null;
   // A hero held by a power (Transfix, Paralyse) can't call one.
   // A model with a war drum can call a free Heroic March in the Move phase.
-  return Object.values(state.models).filter(m => m.owner === seat && !m.dead && !done.has(m.id) && !cannotAct(state, m) && !swordStill(state, m) && (!fighting || fighting.has(m.id)) && ((m.hero && (m.might > 0 || longshanksFree(state, m))) || (m.drum && state.phase === 'move')));
+  return Object.values(state.models).filter(m => m.owner === seat && !m.dead && !done.has(m.id) && !cannotAct(state, m) && !swordStill(state, m) && (!fighting || fighting.has(m.id)) && ((m.hero && (m.might > 0 || longshanksFree(state, m) || (state.phase === 'move' && (faramirsChance(state, m) || !!rightHand(state, m))))) || (m.drum && state.phase === 'move')));
 }
 
 /** Both players have declared what they want (or have no one who could), so models can activate. */
@@ -126,7 +127,10 @@ export function shoutedFor(state: GameState, hero: Model): Model[] {
   if (hero.ringOn) return [];
   const at = { ...hero, ...moveStart(state, hero) };
   const others = new Set(heroicQueue(state).map(m => m.id));
-  return Object.values(state.models).filter(f => f.owner === hero.owner && f.id !== hero.id && !f.dead && !f.escaped && !f.waiting && !others.has(f.id) && distanceBetween(at, { ...f, ...moveStart(state, f) }) <= SHOUT_RANGE);
+  // (Gothmog's With Me may be measured from his Enforcer, standing within 3" of him.)
+  const hand = shoutsFrom(state, hero);
+  const from = hand ? [at, { ...hand, ...moveStart(state, hand) }] : [at];
+  return Object.values(state.models).filter(f => f.owner === hero.owner && f.id !== hero.id && !f.dead && !f.escaped && !f.waiting && !others.has(f.id) && from.some(p => distanceBetween(p, { ...f, ...moveStart(state, f) }) <= SHOUT_RANGE));
 }
 
 /**
@@ -172,6 +176,9 @@ export function mayDeclare(state: GameState, m: Model, action: string, heroics: 
   if (m.hero && action === 'Heroic Move' && state.flow.freeMove?.includes(m.id)) return true;
   // Sam calls a Heroic Combat for free to get to Frodo.
   if (m.hero && action === 'Heroic Combat' && longshanksFree(state, m)) return true;
+  // Faramir, his army Broken, has a free Heroic Resolve; Gothmog, beside his Enforcer, may spend the Enforcer's Will.
+  if (m.hero && action === 'Heroic Resolve' && faramirsChance(state, m) && (!heroics || heroics.includes(action))) return true;
+  if (m.hero && m.might < 1 && (action === 'Heroic Move' || action === 'Heroic March') && rightHand(state, m) && (info.universal || !heroics || heroics.includes(action))) return true;
   if (!m.hero || m.might < 1) return !!m.drum && action === 'Heroic March';
   if (!info.universal && heroics && !heroics.includes(action)) return false;
   if ((action === 'Heroic Shoot' || action === 'Heroic Accuracy') && engaged(state, m)) return false;

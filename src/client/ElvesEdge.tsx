@@ -1,6 +1,7 @@
 import { EDGES, elvesEdge, elvesWaiting, isElves } from '../shared/elves.ts';
 import { EDGES as EAGLE_EDGES, EAGLES_TURN, eaglesComing, eaglesEdge, isFire } from '../shared/eagles.ts';
 import { EDGES as GOBLIN_EDGES, hordeEdge, isGoblin } from '../shared/goblin.ts';
+import { hordePoint, isOsgiliath, POINT_NAMES } from '../shared/osgiliath.ts';
 import type { Action, GameState, Role } from '../shared/types.ts';
 
 /**
@@ -18,6 +19,21 @@ export function ElvesEdge({ state, dispatch, role }: { state: GameState; dispatc
           {GOBLIN_EDGES.map(x => (
             <option key={x} value={x}>
               {x} edge
+            </option>
+          ))}
+        </select>
+      </label>
+    );
+  }
+  // Escape from Osgiliath: the Evil player chooses the Reinforcement Point the slain Orcs come back from (and can change it).
+  if (isOsgiliath(state) && role !== good && (role === 'p1' || role === 'p2')) {
+    return (
+      <label className="decoy-pick">
+        <span className="hint">Slain Orcs that come back move on as your Move phase ends, from the</span>
+        <select value={hordePoint(state)} onChange={e => dispatch({ type: 'setPick', seat: role, key: 'edge', value: e.target.value })}>
+          {POINT_NAMES.map(x => (
+            <option key={x} value={x}>
+              {x} Reinforcement Point
             </option>
           ))}
         </select>

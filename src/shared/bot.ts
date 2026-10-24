@@ -9,7 +9,7 @@ import { modelStats, rulesFor, type Catalog } from './catalog.ts';
 import { fighterOf } from './wargear.ts';
 import { duelLeader, duelSettled, fightDuel, strikeWounds, woundsTaken, type BrutalAttack, type Fighter, type FightRequest } from './fight.ts';
 import { supporters } from './support.ts';
-import { activeSeat, combats, CONTACT_SLACK, other, type Combat } from './flow.ts';
+import { activeSeat, combats, CONTACT_SLACK, dreadDue, other, type Combat } from './flow.ts';
 import { distanceBetween, halfExtents, mmToIn, type Point } from './geometry.ts';
 import { heroicBlocked, mightBlocked } from './mightUse.ts';
 import { canActivate, canDeclare, declared, heroicInfo, heroicTurn, heroicsSettled, mayActivate, orderRollLabel, orderRollNeeded, phaseHeroics } from './heroics.ts';
@@ -39,6 +39,7 @@ import { courageOf, willOfEvil } from './courage.ts';
 import { bolgChargeAt, isLake, isSentry, legolasOf, sentriesDue } from './lake.ts';
 import { bilboTargets, carrying, eagleExits, isEagle, isFire, landingBeside, nominationTurn, pines, stillToCarry } from './eagles.ts';
 import { walkDistance, waypoint } from './lakeNav.ts';
+import { dreadPick, isOsgiliath, mayOrcTime, mordorOrc, osgiliathExits, westSpot } from './osgiliath.ts';
 import { bestExit, escapeEdge, exitPickDue, goblinExits, isDwarf as goblinDwarf, isGoblin, mouths, noFooting, swapCandidates, weaponPile } from './goblin.ts';
 import { hasMorgulBlade } from './morgul.ts';
 import { AXE_FREED, canHeadbutt, hasMattock, longbeardFor, mayAxeTest, mayTend, rerollFor, spentPoints, swapPair, trumpetDue } from './company.ts';
@@ -225,6 +226,8 @@ export function botStep(state: GameState, seat: Seat, catalog: Catalog | null, m
   if (place) return place.seat === seat ? { action: { type: 'placed', seat }, delay: THINK_PAUSE } : null;
   // Playing the Hobbits at Weathertop, the computer always rolls for Aragorn when it may.
   if (arrivalDue(state)) return seat === state.narrative?.good && !arrivalAuto(state) ? { action: { type: 'aragorn', roll: true }, delay: DICE_PAUSE } : null;
+  // Escape from Osgiliath: the Nazgûl freeze the Warrior nearest getting away.
+  if (dreadDue(state)) return seat !== state.narrative?.good ? { action: { type: 'nazgul', ...(dreadPick(state) ? { target: dreadPick(state)!.id } : {}) }, delay: DICE_PAUSE } : null;
   const spell = spellStep(ctx) ?? compelStep(ctx) ?? skitterStep(ctx);
   if (spell) return spell;
   if (++memo.steps > MAX_STEPS) return finish(ctx);
@@ -243,6 +246,9 @@ function phaseStep(ctx: Ctx): BotStep | null {
     case 'fight': {
       // The Cry of the Nazgûl comes as the Move phase begins, whichever side moves first.
       if (state.phase === 'move' && wantsCry(ctx)) return { action: { type: 'cry', seat }, delay: THINK_PAUSE };
+      // Gothmog calls the time of the Orc in the first Fight phase with a few of his Orcs fighting near him.
+      const gothmog = state.phase === 'fight' ? side(state, seat).find(m => mayOrcTime(state, ctx.catalog, m)) : undefined;
+      if (gothmog && side(state, seat).filter(m => mordorOrc(ctx.catalog, m) && engagedWith(state, m).length && distanceBetween(m, gothmog) <= 12).length >= 3) return { action: { type: 'orcTime', id: gothmog.id }, delay: THINK_PAUSE };
       if (heroicTurn(state) === seat) return heroicStep(ctx);
       if (!heroicsSettled(state)) return null;
       if (orderRollNeeded(state) && state.priority === seat && !state.log.some(r => r.label === orderRollLabel(state))) {
@@ -640,7 +646,7 @@ function markerStep(ctx: Ctx, m: Model): BotStep | null {
     if (a.kind === 'pickUp' && (object?.object === 'rocks' || object?.object === 'oil')) continue;
     if (a.kind === 'escape') {
       // Leave the table with something worth carrying off, or in a scenario that scores getting models away.
-      if (carriedBy(state, m).length || state.scenario === 'reconnoitre' || (isAmbush(state) && isHobbit(m)) || atBoats(state, m) || (isLake(state) && m.cast === 'bolg') || eagleExits(state, m) || goblinExits(state, m).length > 0) return { action: { type: 'escape', model: m.id }, delay: MOVE_PAUSE };
+      if (carriedBy(state, m).length || state.scenario === 'reconnoitre' || (isAmbush(state) && isHobbit(m)) || atBoats(state, m) || (isLake(state) && m.cast === 'bolg') || eagleExits(state, m) || goblinExits(state, m).length > 0 || osgiliathExits(state, m).length > 0) return { action: { type: 'escape', model: m.id }, delay: MOVE_PAUSE };
       continue;
     }
     if (a.kind === 'uncover') return { action: { type: 'uncover', model: m.id, marker: a.marker!, intelligence: profile(ctx, m).i }, delay: DICE_PAUSE };
@@ -859,6 +865,44 @@ function goblinGoals(ctx: Ctx, ours: Model[], out: Map<string, Goal>) {
   }
 }
 
+/**
+ * Escape from Osgiliath. The Good side makes for the west edge, Faramir in the middle of it. The Evil side: the Orcs
+ * that started west hold a line across the west of the city, the rest hunt the Good side (no more than three to a
+ * man), and Gothmog goes for Faramir.
+ */
+function osgiliathGoals(ctx: Ctx, ours: Model[], out: Map<string, Goal>) {
+  const { state, seat } = ctx;
+  if (seat === state.narrative?.good) {
+    for (const m of ours) if (!out.has(m.id)) out.set(m.id, { at: westSpot(state, m), pull: 2.5, bold: true });
+    return;
+  }
+  const prey = side(state, other(seat)).filter(e => !e.waiting);
+  if (!prey.length) return;
+  const faramir = prey.find(e => e.cast === 'faramir');
+  // (The line: spread down the table, a little west of the westmost man, but never off the table's west quarter.)
+  const westmost = Math.min(...prey.map(e => e.x));
+  const lineX = Math.max(3, Math.min(10, westmost - 4));
+  const holders = ours.filter(m => !m.hero && m.cast !== 'troll' && m.x < state.board.w / 2 - 2).sort((a, b) => a.y - b.y);
+  const hunting = new Map<string, number>();
+  holders.forEach((m, i) => {
+    // (Once a man is within reach, the nearest holder goes for him instead.)
+    const close = prey.filter(e => centre(m, e) <= (moveAllowance(state, m) ?? m.move) + 2 && (hunting.get(e.id) ?? 0) < 2).sort((a, b) => centre(m, a) - centre(m, b))[0];
+    if (close) {
+      hunting.set(close.id, (hunting.get(close.id) ?? 0) + 1);
+      out.set(m.id, { at: { x: close.x, y: close.y }, pull: 1.5, bold: true });
+      return;
+    }
+    out.set(m.id, { at: { x: lineX, y: ((i + 0.5) * state.board.h) / holders.length }, pull: 1.2, near: 1.5 });
+  });
+  for (const m of ours) {
+    if (out.has(m.id)) continue;
+    const target = m.cast === 'gothmog' && faramir ? faramir : prey.filter(e => (hunting.get(e.id) ?? 0) < 3).sort((a, b) => centre(m, a) - centre(m, b))[0];
+    if (!target) continue;
+    hunting.set(target.id, (hunting.get(target.id) ?? 0) + 1);
+    out.set(m.id, { at: { x: target.x, y: target.y }, pull: 1.5, bold: true });
+  }
+}
+
 function assignGoals(ctx: Ctx): Map<string, Goal> {
   const { state, seat } = ctx;
   const out = new Map<string, Goal>();
@@ -889,6 +933,7 @@ function assignGoals(ctx: Ctx): Map<string, Goal> {
   const lanes: [Point, Point][] = [];
   if (isFire(state)) fireGoals(ctx, ours, out);
   if (isGoblin(state)) goblinGoals(ctx, ours, out);
+  if (isOsgiliath(state)) osgiliathGoals(ctx, ours, out);
   for (const m of ours) {
     const carried = carriedBy(state, m);
     if (!carried.length || out.has(m.id)) continue;
