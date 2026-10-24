@@ -6,7 +6,7 @@ import { markModel } from '../src/shared/marking.ts';
 import { distanceBetween } from '../src/shared/geometry.ts';
 import { limitMove, moveAllowance } from '../src/shared/movement.ts';
 import { crossingAhead, crossBlocked } from '../src/shared/terrainTests.ts';
-import { hasRule, isUnarmed } from '../src/shared/wargear.ts';
+import { isUnarmed } from '../src/shared/wargear.ts';
 import { canEscape, exitEdges } from '../src/shared/objects.ts';
 import { canDeclare } from '../src/shared/heroics.ts';
 import { supporters } from '../src/shared/support.ts';
@@ -346,10 +346,18 @@ describe('Escape from Goblin-town: who wins', () => {
   });
 });
 
-describe('Escape from Goblin-town: computer against computer', () => {
-  it('plays a whole game to a result without a refused action', () => {
-    let s = setup();
-    s = play({ ...s, bot: 'p1' }, seeded(1), 4000);
-    expect(s.flow.deploy?.step).toBe('done');
-  }, 120000);
+describe('Escape from Goblin-town: the computer', () => {
+  it('names the escape edge, then plays both sides through to a result with nothing refused', () => {
+    const refused: string[] = [];
+    const watch = (st: GameState, seat: Seat, a: Action, ok: boolean) => void (ok || refused.push(`${st.turn}:${st.phase}:${seat}:${a.type}`));
+    const pre = play(setup(), seeded(3), 2000, st => st.flow.deploy?.step === 'done', watch).state;
+    expect(escapeEdge(pre)).toBeDefined();
+    const { state } = play(run(pre, { type: 'startGame', at: 1 }), seeded(3), 60000, st => !!st.result || st.turn > 12, watch);
+    expect(refused).toEqual([]);
+    expect(state.result?.winner).toBeDefined();
+    const back = loadState(JSON.parse(JSON.stringify(state)));
+    expect(back.narrative).toEqual(state.narrative);
+    expect(back.models).toEqual(state.models);
+    expect(back.flow).toEqual(state.flow);
+  }, 600000);
 });

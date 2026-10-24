@@ -1387,6 +1387,11 @@ function step(state: GameState, action: Action): GameState {
         const thorin = Object.values(state.models).find(m => m.cast === 'thorin');
         if (thorin) next.flow = { ...next.flow, stopped: [...new Set([...(next.flow.stopped ?? []), thorin.id])] };
       }
+      // Escape from Goblin-town: Gandalf, put on as the Good side's move ends, doesn't move this phase.
+      if (action.gandalf !== undefined && isGoblin(state)) {
+        const g = Object.values(next.models).find(m => m.cast === 'gandalf');
+        if (g) next.flow = { ...next.flow, stopped: [...new Set([...(next.flow.stopped ?? []), g.id])] };
+      }
       // Amon Hen: knocked-out Hobbits who rolled a 6 come round.
       if (Array.isArray(action.revive) && isAmon(state)) return moveOn(reviveHobbits(next, action.revive.slice(0, 4).map(x => str(x, 80))));
       return moveOn(next);
