@@ -1378,3 +1378,18 @@ select.ready-made {
 .terrain .gob-stone-1 { fill: #3d3833; }
 .terrain .gob-stone-2 { fill: #57504a; }
 .terrain .gob-stone-lit { fill: #ffffff; opacity: 0.08; }
+/* Osgiliath: pale dressed stone, weathered and broken. */
+.terrain .osg-wall { fill: #cbbd9f; stroke: #5b4c37; stroke-width: 0.05; }
+.terrain .osg-seam { stroke: #7d6c52; stroke-width: 0.035; }
+.terrain .osg-break { fill: none; stroke: #6b5a42; stroke-width: 0.06; stroke-linejoin: round; }
+.terrain .osg-step { stroke: #5b4c37; stroke-width: 0.05; }
+.terrain .osg-step-0 { fill: #a8987a; }
+.terrain .osg-step-1 { fill: #b9a98a; }
+.terrain .osg-step-2 { fill: #c8b999; }
+.terrain .osg-step-3 { fill: #d6c8a8; }
+.terrain .osg-court { fill: #9b8b6e; stroke: #5b4c37; stroke-width: 0.06; }
+.terrain .osg-heap { fill: #8e7f66; opacity: 0.55; }
+.terrain .osg-block { stroke: #4e4130; stroke-width: 0.04; stroke-linejoin: round; }
+.terrain .osg-block-0 { fill: #c4b598; }
+.terrain .osg-block-1 { fill: #aa9a7d; }
+.terrain .osg-block-2 { fill: #d3c6a9; }

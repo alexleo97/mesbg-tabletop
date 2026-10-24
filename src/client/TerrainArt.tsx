@@ -243,6 +243,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
       if (t.kind === 'cliff' && t.path && t.path.length > 1) return <CliffEdge t={t} d={d} tex={tex} />;
       if (t.look === 'floe') return <LakePiece t={t} />;
       if (t.look === 'crag' || t.look === 'cavewall') return <GoblinPiece t={t} />;
+      if (t.look === 'rubble') return <OsgiliathPiece t={t} />;
       return (
         <>
           <path className={`ground ${t.kind}-face`} d={d} fill={tex} filter="url(#hard-shadow)" />
@@ -280,6 +281,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
     case 'building':
       if (t.look === 'orthanc') return <IsengardPiece t={t} />;
       if (t.look === 'throne') return <GoblinPiece t={t} />;
+      if (t.look === 'stepped') return <OsgiliathPiece t={t} />;
       if (t.look === 'trunk') return <MirkwoodPiece t={t} />;
       if (t.look === 'pine') return <PinePiece t={t} />;
       if (t.look === 'stone') return <StoneTower t={t} tex={tex} />;
@@ -326,6 +328,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
       );
     case 'wall':
       if (t.look === 'scaffold') return <IsengardPiece t={t} />;
+      if (t.look === 'osgwall') return <OsgiliathPiece t={t} />;
       if (t.barricade) {
         // A wooden barricade: a row of logs, with stakes poking out both ways if it is spiked. Broken, only splinters.
         const logs = Math.max(3, Math.round(t.w / 0.5));
@@ -968,6 +971,73 @@ function GoblinPiece({ t }: { t: Terrain }) {
 }
 
 /**
+ * Osgiliath (Escape from Osgiliath): broken walls of pale dressed stone, their tops ragged where they fell; the great
+ * ruined buildings, roofed in steps of stone round an open court; and heaps of fallen masonry.
+ */
+function OsgiliathPiece({ t }: { t: Terrain }) {
+  const { w, h } = t;
+  if (t.look === 'osgwall') {
+    // Courses of blocks along the wall, a jagged line where the top broke off, a chipped end or two.
+    const blocks = Math.max(1, Math.round(w / 0.55));
+    const bw = w / blocks;
+    const top = Array.from({ length: blocks + 1 }, (_, i) => `${(-w / 2 + i * bw).toFixed(3)},${(-h / 2 + seeded(t.id, i) * h * 0.35).toFixed(3)}`).join(' ');
+    return (
+      <>
+        <rect className="ground osg-wall" x={-w / 2} y={-h / 2} width={w} height={h} filter="url(#hard-shadow)" />
+        {Array.from({ length: blocks - 1 }, (_, i) => {
+          const x = -w / 2 + (i + 1) * bw + (seeded(t.id, i + 50) - 0.5) * 0.1;
+          return <line key={i} className="osg-seam" x1={x} x2={x} y1={-h / 2} y2={h / 2} />;
+        })}
+        <line className="osg-seam" x1={-w / 2} x2={w / 2} y1={0} y2={0} />
+        <polyline className="osg-break" points={top} />
+      </>
+    );
+  }
+  if (t.look === 'stepped') {
+    // Four steps of stone up to a parapet round an open court in the middle, each step paler than the one below.
+    const steps = [1, 0.84, 0.68, 0.52];
+    const sx = (k: number) => (w * k) / 2;
+    const sy = (k: number) => (h * k) / 2;
+    return (
+      <>
+        {steps.map((k, i) => (
+          <rect key={k} className={`${i ? '' : 'ground '}osg-step osg-step-${i}`} x={-sx(k)} y={-sy(k)} width={2 * sx(k)} height={2 * sy(k)} {...(i ? {} : { filter: 'url(#hard-shadow)' })} />
+        ))}
+        {/* The step edges meeting at the corners, as the book's plan draws them. */}
+        {[-1, 1].flatMap(i => [-1, 1].map(j => <line key={`${i}${j}`} className="osg-seam" x1={i * sx(1)} y1={j * sy(1)} x2={i * sx(0.52)} y2={j * sy(0.52)} />))}
+        <rect className="osg-court" x={-sx(0.38)} y={-sy(0.38)} width={2 * sx(0.38)} height={2 * sy(0.38)} />
+      </>
+    );
+  }
+  // Rubble: a heap of broken blocks and chips, the bigger pieces toppled slabs.
+  const n = Math.max(3, Math.round(w * h * 3));
+  const stones = Array.from({ length: n }, (_, i) => {
+    const a = seeded(t.id, i) * Math.PI * 2;
+    const q = Math.sqrt(seeded(t.id, i + 50)) * 0.75;
+    const r = Math.min(w, h) * (0.1 + seeded(t.id, i + 100) ** 1.5 * 0.25) + 0.06;
+    return { x: (Math.cos(a) * q * w) / 2, y: (Math.sin(a) * q * h) / 2, r, k: i };
+  }).sort((p, q) => p.y - q.y);
+  const shape = (x: number, y: number, r: number, k: number) => {
+    const sides = 4 + Math.floor(seeded(t.id, k + 200) * 3);
+    return Array.from({ length: sides }, (_, j) => {
+      const a = (j / sides) * Math.PI * 2 + seeded(t.id, k * 7 + j + 300);
+      const m = r * (0.7 + seeded(t.id, k * 11 + j + 400) * 0.45);
+      return `${(x + Math.cos(a) * m).toFixed(3)},${(y + Math.sin(a) * m).toFixed(3)}`;
+    }).join(' ');
+  };
+  return (
+    <>
+      <path className="ground osg-heap" d={blob(t, 1, 0.18, 5)} filter="url(#soft-shadow)" />
+      <g className="tint" pointerEvents="none">
+        {stones.map(({ x, y, r, k }) => (
+          <polygon key={k} className={`osg-block osg-block-${k % 3}`} points={shape(x, y, r, k)} />
+        ))}
+      </g>
+    </>
+  );
+}
+
+/**
  * Lake-town (Lake-town Escape): plank walkways on posts over the lake, rowing boats tied up, ice floes, and timber
  * houses with shingled roofs: a ridge along a long house, four slopes meeting at a point on a square one.
  */
@@ -1373,7 +1443,7 @@ function hull(pts: Point[]): Point[] {
 }
 
 /** Whether a piece is part of a fortress that stands tall (its walls, gates, keep, towers and the rock under them), or a stone piece of Balin's Tomb. */
-const tall = (t: Terrain) => !t.gone && ((t.sheer && t.look !== 'trunk' && t.look !== 'pine') || t.kind === 'gate' || (t.look === 'stone' && t.kind !== 'road') || t.look === 'pillar' || t.look === 'tomb' || t.look === 'well' || t.look === 'scaffold');
+const tall = (t: Terrain) => !t.gone && ((t.sheer && t.look !== 'trunk' && t.look !== 'pine') || t.look === 'osgwall' || t.look === 'stepped' || t.kind === 'gate' || (t.look === 'stone' && t.kind !== 'road') || t.look === 'pillar' || t.look === 'tomb' || t.look === 'well' || t.look === 'scaffold');
 /** Orthanc's faces are cut short, so the tower doesn't hide the table round it (its height is written on top). */
 const FACE_CAP = 5.5;
 
@@ -1401,7 +1471,7 @@ export function TerrainFaces({ terrain, turn = 0 }: { terrain: Terrain[]; /** Ho
         return (
           <g key={t.id}>
             <polygon className="face-shadow" points={pts} transform="translate(0.35 0.45)" filter="url(#bank-blur)" />
-            <polygon className="face" points={pts} fill={t.look === 'orthanc' ? '#1d1e23' : t.look === 'scaffold' ? '#5a3d1f' : t.kind === 'rock' ? 'url(#tex-cliff)' : 'url(#tex-wall)'} />
+            <polygon className="face" points={pts} fill={t.look === 'orthanc' ? '#1d1e23' : t.look === 'scaffold' ? '#5a3d1f' : t.look === 'osgwall' || t.look === 'stepped' ? '#a8977c' : t.kind === 'rock' ? 'url(#tex-cliff)' : 'url(#tex-wall)'} />
             <polygon className="face-shade" points={pts} />
           </g>
         );

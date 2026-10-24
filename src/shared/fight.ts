@@ -184,6 +184,8 @@ export interface ShotRequest {
   woundBonus?: number;
   /** Aldor's Lucky Shot: the dice that miss to hit are rolled again. */
   lucky?: boolean;
+  /** Damrod's Well-aimed Shot: the first In the Way roll he fails, an Intelligence test (2D6, this or more) gets it past. */
+  wellAimed?: number;
   /** Legolas's Pinpoint Shot: his one Shooting Attack this phase (asked for by the player). */
   pinpoint?: boolean;
   /** Flaming Arrows (Last March of the Ents): a natural 6 To Hit that wounds does 2 Wounds and Sets the target Ablaze. */
@@ -625,6 +627,7 @@ export function cleanPausedShot(raw: unknown): ShotRequest | null {
     ...(o.knockDown === true ? { knockDown: true } : {}),
     ...(o.sharp === true ? { sharp: true } : {}),
     ...(o.lucky === true ? { lucky: true } : {}),
+    ...(o.wellAimed ? { wellAimed: clamp(o.wellAimed, 2, 12, 7) } : {}),
     ...(o.woundBonus ? { woundBonus: clamp(o.woundBonus, -3, 3, 0) } : {}),
     ...(o.target?.mount && typeof o.target.mount === 'object' ? { target: { ...base.target, mount: { name: str(o.target.mount.name, 40), d: clamp(o.target.mount.d, 1, 10, 4), ...(o.target.mount.monster === true ? { monster: true } : {}), ...(o.target.mount.chariot === true ? { chariot: true } : {}) } } } : {}),
   };
@@ -686,12 +689,19 @@ export function resolveShot(req: ShotRequest, d6: D6, by: Role, group: string, n
     else if (count > 0) struck.push({ id, name, d, count });
   };
   // Each test lets 4+ through; Heroic Accuracy re-rolls the ones that fail.
+  let aimed = !!req.wellAimed;
   const test = (label: string) => {
     const dice = take(label, flying, { target: 4, model: shooter.id }).dice;
     let past = dice.filter(d => d >= 4).length;
     if (req.rerolls && past < dice.length) {
       const again = take(`${label.replace(/ \(.*$/, '')} re-rolled (Heroic Accuracy)`, dice.length - past, { target: 4, model: shooter.id }).dice;
       past += again.filter(d => d >= 4).length;
+    }
+    // Damrod's Well-aimed Shot: the first one he fails, an Intelligence test gets it past.
+    if (aimed && past < dice.length) {
+      aimed = false;
+      const iq = take(`Well-aimed Shot: ${shooter.name}'s Intelligence test (${req.wellAimed}+)`, 2, { sum: req.wellAimed, model: shooter.id }).dice;
+      if (iq[0] + iq[1] >= req.wellAimed!) past += 1;
     }
     return past;
   };

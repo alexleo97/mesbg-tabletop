@@ -3,7 +3,8 @@ import { ElvesEdge } from './ElvesEdge.tsx';
 import { bilboTargets } from '../shared/eagles.ts';
 import { useState } from 'react';
 import { ResultReport } from './ResultReport.tsx';
-import { activeSeat, other, type Combat } from '../shared/flow.ts';
+import { activeSeat, dreadDue, other, type Combat } from '../shared/flow.ts';
+import { DREAD_ROLL, mayOrcTime } from '../shared/osgiliath.ts';
 import { phaseFinished } from '../shared/autoPhase.ts';
 import { breachesLeft } from '../shared/breach.ts';
 import { engaged, fightDone } from '../shared/movement.ts';
@@ -771,6 +772,32 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openFight
           {flow.started && <SkitterStep state={state} dispatch={dispatch} role={role} />}
           {flow.started && state.phase === 'move' && <ElvesEdge state={state} dispatch={dispatch} role={role} />}
           {flow.started && <PlacingStep state={state} dispatch={dispatch} role={role} name={name} />}
+          {/* Escape from Osgiliath: the Evil player picks a Good Warrior for the Nazgûl to freeze, before anyone moves. */}
+          {flow.started && dreadDue(state) && (
+            <div className="spell-step">
+              {me && me !== state.narrative?.good ? (
+                <>
+                  <p>"Nazgûl!": pick a Good Warrior and press <b>Freeze with fear</b> on its card. On a {DREAD_ROLL}+ it can't move, shoot or act this turn, and fights with Fight 1.</p>
+                  <button {...locked({ type: 'nazgul' })} onClick={() => dispatch({ type: 'nazgul' })}>Nobody this turn</button>
+                </>
+              ) : (
+                <p>{name(other(state.narrative!.good))} is picking a Warrior for the Nazgûl to freeze with fear.</p>
+              )}
+            </div>
+          )}
+          {flow.started &&
+            me &&
+            state.phase === 'fight' &&
+            Object.values(state.models)
+              .filter(m => m.owner === me && mayOrcTime(state, catalog, m))
+              .map(m => (
+                <div className="spell-step" key={`orc-${m.id}`}>
+                  <p>Once a game, as a Fight phase begins, {m.name} can call "The time of the Orc has come": until the turn ends, Mordor Orcs within 12" of him re-roll failed To Wound rolls.</p>
+                  <button {...locked({ type: 'orcTime', id: m.id })} onClick={() => dispatch({ type: 'orcTime', id: m.id })}>
+                    Call the time of the Orc
+                  </button>
+                </div>
+              ))}
           {flow.started && role !== 'spectator' && mayCry(state, role) && (
             <div className="spell-step">
               <p>Once a game, before anyone moves, the Nazgûl can give their Cry: every Good model's Courage is 3 worse this turn, and Aragorn comes at once.</p>

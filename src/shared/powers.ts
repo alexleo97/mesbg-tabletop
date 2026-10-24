@@ -107,19 +107,24 @@ function auras(state: GameState, m: Model, power: string, side: 'friend' | 'enem
   );
 }
 
+/** Escape from Osgiliath's "Nazgûl!": a Warrior frozen with fear. */
+export const FROZEN = 'Frozen with fear by the Nazgûl';
+
 /** Why a model can't act at all this turn, if it can't: Transfixed, Paralysed, thrown from its mount or dazed by the Haze. */
 export function heldBy(state: GameState, m: Model): string | null {
   if (under(state, m, 'Paralyse')) return 'Paralysed';
   if (under(state, m, 'Transfix')) return 'Transfixed';
   if (m.stunned === state.turn) return 'Thrown from its mount';
   if (m.hazed === state.turn) return 'Dazed by the Haze of Mirkwood';
+  if (m.dread === state.turn) return FROZEN;
   return null;
 }
 export const cannotAct = (state: GameState, m: Model) => !m.dead && heldBy(state, m) !== null;
 
-/** Why a model that wins a fight makes no strikes, if it doesn't. */
+/** Why a model that wins a fight makes no strikes, if it doesn't. (Frozen with fear, it still strikes, at Fight 1.) */
 export function noStrikes(state: GameState, m: Model): string | null {
-  return heldBy(state, m) ?? (m.prone && !fightsUpright(state, m) ? 'Prone' : null);
+  const held = heldBy(state, m);
+  return (held !== FROZEN ? held : null) ?? (m.prone && !fightsUpright(state, m) ? 'Prone' : null);
 }
 
 /** Terrifying Aura gives its caster Terror. */
