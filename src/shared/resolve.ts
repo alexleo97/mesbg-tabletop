@@ -14,7 +14,8 @@ import { bannerFor, cantShield, fighterOf, hasRule, strikeAgainst } from './warg
 import { canActivate, heroicNow, mayActivate, orderRoll, orderRollLabel, orderRollNeeded } from './heroics.ts';
 import { modelStats, type Catalog } from './catalog.ts';
 import { missileWeapon, woundNeed } from './rules.ts';
-import { isWebs, planShot, throwingPoint } from './shooting.ts';
+import { maySwapWith } from './goblin.ts';
+import { goblinAmmo, isGoblinThrow, isWebs, planShot, throwingPoint } from './shooting.ts';
 import { fallDamage, resolveCross } from './terrainTests.ts';
 import { heightOf } from './sight.ts';
 import { BPA_NAMES, TROLL_BRUTALS, cleanFight, cleanShot, duelSettled, mightCouldHelp, resolveDuel, resolveShot, resolveStrikes, strikeWounds, type BrutalAttack, type DrawRule, type Fighter, type FightRequest, type ShotRequest } from './fight.ts';
@@ -562,7 +563,11 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
             const by = [...new Set(at.map(r => r.model!).filter(Boolean))];
             // Strikes at a rider's mount wound the mount.
             if (h.target.id.endsWith('#mount')) return woundAction(state, at, h.target.id.slice(0, -6), h.wounds, by, 'fight', group).map(a => ({ ...a, mount: true }) as Action);
-            return woundAction(state, at, h.target.id, h.wounds, by, 'fight', group).map(a => (slays.has(h.target.id) ? ({ ...a, slay: true } as Action) : a));
+            // (Against Blubbery Mass, the game notes how many of them Elven blades struck: those can't be stopped.)
+            const victim = state.models[h.target.id];
+            const plain = victim && hasRule(catalog, victim, 'Blubbery Mass') ? by.filter(id => !hasElvenWeapon(catalog, state.models[id])).reduce((n, id) => n + strikeWounds(at.filter(r => r.model === id)), 0) : h.wounds;
+            const elven = Math.max(0, h.wounds - plain);
+            return woundAction(state, at, h.target.id, h.wounds, by, 'fight', group).map(a => ({ ...a, ...(slays.has(h.target.id) ? { slay: true } : {}), ...(elven ? { elven } : {}) }) as Action);
           }),
           ...bladeUsed,
           ...(moves.length ? [{ type: 'backAway', moves } as Action] : []),
@@ -657,6 +662,16 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       }
       if (state.flow.shotPause) return null;
       const group = `s-${uid()}`;
+      // The Goblin King's Goblin Projectile: the Goblin he throws is removed as a casualty, and whoever it hits goes down.
+      if (isGoblinThrow(plan.weapon)) {
+        const ammo = goblinAmmo(state, catalog, shooter);
+        if (!ammo) return null;
+        before.push({ type: 'rolled', roll: { id: `${group}-ammo`, by: seat, label: `Goblin Projectile: ${shooter.name} picks up ${ammo.name} and hurls him`.slice(0, 80), dice: [], model: shooter.id, at: now, group, note: `${ammo.name} is removed as a casualty.` } }, { type: 'affect', id: ammo.id, patch: { dead: true, wounds: 0 } });
+        req.knockDown = true;
+        // (Nor is he in the way of his own flight.)
+        req.inWay = (req.inWay ?? []).filter(o => o.id !== ammo.id);
+        req.obstacles = req.inWay.length;
+      }
       if (bolts) before.push({ type: 'rolled', roll: { id: `${group}-bolts`, by: seat, label: `${shooter.name} looses its bolts${bolts.dice.length > 1 ? ' (Swift Reload, best of two)' : ''}`, dice: bolts.dice, model: shooter.id, at: now, group, note: `${bolts.n} shot${bolts.n === 1 ? '' : 's'}.` } });
       return { apply: [...before, ...shotActions(state, req, shooter, d6, seat, group, now, [])] };
     }
@@ -755,7 +770,13 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       // Kíli and Fíli swap places as a phase starts (Combat Synergy): not a move.
       const a = state.models[String(action.a)];
       const b = state.models[String(action.b)];
-      if (!a || !b || a.owner !== seat || !maySwap(state, catalog, a, b)) return null;
+      if (!a || !b || a.owner !== seat) return null;
+      // Grinnah's Swap with Me: as the Fight phase starts, with a Goblin within 3" of him.
+      if (maySwapWith(state, catalog, a, b)) {
+        const note: DiceRoll = { id: `r-${uid()}`, by: seat, label: `Swap with Me: ${a.name} and ${b.name} swap places`.slice(0, 80), dice: [], at: now, model: a.id };
+        return { apply: [{ type: 'rolled', roll: note }, { type: 'backAway', moves: [{ id: a.id, x: b.x, y: b.y }, { id: b.id, x: a.x, y: a.y }] }, { type: 'usedTurn', key: 'grinnah', model: a.id }] };
+      }
+      if (!maySwap(state, catalog, a, b)) return null;
       const roll: DiceRoll = { id: `r-${uid()}`, by: seat, label: `Combat Synergy: ${a.name} and ${b.name} swap places`.slice(0, 80), dice: [], at: now, note: 'They may each re-roll a die in their duels this turn.' };
       return { apply: [{ type: 'rolled', roll }, { type: 'backAway', moves: [{ id: a.id, x: b.x, y: b.y }, { id: b.id, x: a.x, y: a.y }] }, { type: 'usedTurn', key: `swap-${state.phase}`, model: seat }] };
     }
@@ -903,11 +924,14 @@ function shotActions(state: GameState, req: ShotRequest, shooter: Model, d6: () 
       }),
     ];
   }
+  // A Goblin Projectile knocks whoever it hits Prone.
+  const floored = req.knockDown ? shot.hits.filter(h => h.id === req.target.id && state.models[h.id]).map((h): Action => ({ type: 'affect', id: h.id, patch: { prone: true } })) : [];
   // A flaming arrow that wounds an Ent Sets it Ablaze.
   const lit = (shot.ablaze ?? []).filter(id => state.models[id] && !state.models[id].ablaze).map((id): Action => ({ type: 'affect', id, patch: { ablaze: true } }));
   return [
     ...rolled,
     ...lit,
+    ...floored,
     ...shot.hits.flatMap(h =>
       // A shot that hit a rider's mount wounds the mount.
       h.id.endsWith('#mount') ? woundAction(state, all.filter(r => r.against === h.id), h.id.slice(0, -6), h.wounds, [shooter.id], 'shoot', group).map(a => ({ ...a, mount: true }) as Action)

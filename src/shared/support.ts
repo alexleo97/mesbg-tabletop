@@ -2,7 +2,7 @@
 import type { Catalog } from './catalog.ts';
 import { CONTACT_SLACK, type Combat } from './flow.ts';
 import { hasGear, hasPike, hasSpear as plainSpear } from './gear.ts';
-import { hasRule } from './wargear.ts';
+import { hasRule, twoHandedChoice } from './wargear.ts';
 import { distanceBetween } from './geometry.ts';
 import { onLadder } from './defenders.ts';
 import { engaged } from './movement.ts';
@@ -16,6 +16,13 @@ const area = (m: Model) => m.base.w * m.base.h;
  * thrown this turn: a model that shot can't support anyway.
  */
 const hasSpear = (catalog: Catalog | null | undefined, m: Model) => plainSpear(catalog, m) || (hasRule(catalog, m, 'Spear Mastery') && hasGear(catalog, m, /throwing spears?/));
+/**
+ * Chittering Hordes (Goblin-town's Goblins): it supports as if it had a spear, though only a friend with the same rule,
+ * and not if it must fight two-handed.
+ */
+const chitters = (catalog: Catalog | null | undefined, m: Model) => hasRule(catalog, m, 'Chittering Hordes') && twoHandedChoice(catalog, m) !== 'must';
+/** What a supporter backs up: a spear any friend, a Goblin's Chittering Hordes only another Goblin with it. */
+const backsUp = (catalog: Catalog | null | undefined, s: Model, f: Model) => hasSpear(catalog, s) || hasPike(catalog, s) || hasRule(catalog, f, 'Chittering Hordes');
 const touching = (a: Model, b: Model) => Math.abs(a.x - b.x) < 5 && Math.abs(a.y - b.y) < 5 && distanceBetween(a, b) <= CONTACT_SLACK;
 
 /**
@@ -25,7 +32,7 @@ const touching = (a: Model, b: Model) => Math.abs(a.x - b.x) < 5 && Math.abs(a.y
  */
 export function canSupport(state: GameState, catalog: Catalog | null, m: Model): boolean {
   if (m.dead || m.waiting || m.escaped || m.prone || cannotAct(state, m) || engaged(state, m)) return false;
-  if (!(hasSpear(catalog, m) || hasPike(catalog, m)) || isCavalry(catalog, m)) return false;
+  if (!(hasSpear(catalog, m) || hasPike(catalog, m) || chitters(catalog, m)) || isCavalry(catalog, m)) return false;
   if (state.flow.shot?.includes(m.id) || state.flow.supported?.includes(m.id)) return false;
   if (m.hero && state.flow.heroics.some(h => h.model === m.id && h.phase === 'fight')) return false;
   return true;
@@ -45,7 +52,7 @@ export function supporters(state: GameState, catalog: Catalog | null, c: Combat)
     const front = c[seat].map(id => state.models[id]).filter(m => m && !m.dead && !onLadder(state, m) && !m.ringOn && !(foes.length && foes.every(o => invisibleTo(o, m))));
     const friends = Object.values(state.models).filter(m => m.owner === seat && !c[seat].includes(m.id) && front.some(f => Math.abs(f.x - m.x) < 8 && Math.abs(f.y - m.y) < 8));
     const able = friends.filter(m => canSupport(state, catalog, m));
-    const first = able.filter(m => front.some(f => touching(m, f) && area(f) <= area(m)));
+    const first = able.filter(m => front.some(f => touching(m, f) && area(f) <= area(m) && backsUp(catalog, m, f)));
     // A pike can also support another pike that is supporting: two ranks behind the fighter.
     const second = able.filter(m => !first.includes(m) && hasPike(catalog, m) && first.some(s => hasPike(catalog, s) && touching(m, s)));
     out[seat] = [...first, ...second].map(m => m.id);
@@ -59,7 +66,7 @@ export function supporters(state: GameState, catalog: Catalog | null, c: Combat)
  */
 export function oneSpearEach(state: GameState, catalog: Catalog | null, front: string[], ids: string[]): string[] {
   const fighters = front.map(id => state.models[id]).filter((m): m is Model => !!m);
-  const backs = (s: Model) => fighters.filter(f => touching(s, f) && area(f) <= area(s));
+  const backs = (s: Model) => fighters.filter(f => touching(s, f) && area(f) <= area(s) && backsUp(catalog, s, f));
   const by: Record<string, string> = {};
   // Hands the spear a fighter, moving an earlier spear on to another fighter if it has to.
   const place = (s: Model, seen: Set<string>): boolean =>
@@ -72,6 +79,6 @@ export function oneSpearEach(state: GameState, catalog: Catalog | null, front: s
     });
   return ids.filter(id => {
     const m = state.models[id];
-    return !m || hasPike(catalog, m) || !hasSpear(catalog, m) || place(m, new Set());
+    return !m || hasPike(catalog, m) || !(hasSpear(catalog, m) || chitters(catalog, m)) || place(m, new Set());
   });
 }

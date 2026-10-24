@@ -31,6 +31,19 @@ export const isWebs = (w: Weapon | undefined) => w?.name === SPIDER_WEBS.name;
 /** A Great Beast's Howdah full of Orc archers: as many shots as it has Wounds left, at its own Shoot Value, however far the beast moved. */
 export const howdahArchers = (m: Model) => (m.beast === 'war' && (m.howdahWounds ?? 0) > 0 ? howdahFor(m.name)?.sv : undefined);
 export const isThrowing = (w: Weapon) => /^throwing|brand/i.test(w.name);
+/** The Goblin King's Goblin Projectile: a Goblin he is touching, hurled 12" like a throwing weapon, at Strength 8. */
+export const GOBLIN_PROJECTILE: Weapon = { name: 'Throwing Goblin', range: 12, s: 8 };
+export const isGoblinThrow = (w: Weapon | undefined) => w?.name === GOBLIN_PROJECTILE.name;
+/**
+ * The Goblin a model with Goblin Projectile could throw now: a friend it is touching, neither of them in a fight, in
+ * the Shoot phase (a warrior before a hero).
+ */
+export function goblinAmmo(state: GameState, catalog: Catalog | null | undefined, m: Model): Model | undefined {
+  if (!hasRule(catalog, m, 'Goblin Projectile') || (state.flow.started && state.phase !== 'shoot') || engaged(state, m)) return undefined;
+  return Object.values(state.models)
+    .filter(g => g.id !== m.id && g.owner === m.owner && !g.dead && !g.waiting && !g.escaped && !g.aboard && !!g.ground?.includes('goblin') && !engaged(state, g) && distanceBetween(m, g) <= CONTACT_SLACK)
+    .sort((a, b) => Number(!!a.hero) - Number(!!b.hero) || distanceBetween(m, a) - distanceBetween(m, b))[0];
+}
 /** Aragorn's flaming brand, thrown once (Weathertop): a throwing weapon whose hit Sets the target Ablaze, with no roll To Wound. */
 export const FLAMING_BRAND: Weapon = { name: 'Flaming Brand', range: 6, s: 3 };
 /** Whether a model may still throw its flaming brand. */
@@ -150,7 +163,7 @@ export function planShot(
   // Thrown stones, for a model that has nothing better and didn't move.
   const rocks = !opts.charge ? stones(catalog, shooter) : undefined;
   // (The Unseen Hero: Bilbo's stones are a throwing weapon, thrown however far he moved, or as he charges.)
-  const weapon = opts.brand ? (canThrowBrand(shooter) ? FLAMING_BRAND : undefined) : (weaponFor(catalog, shooter) ?? bilboStones(state, shooter) ?? (rocks && !moved ? rocks : undefined) ?? opts.fallback?.weapon);
+  const weapon = opts.brand ? (canThrowBrand(shooter) ? FLAMING_BRAND : undefined) : (weaponFor(catalog, shooter) ?? bilboStones(state, shooter) ?? (!opts.charge && goblinAmmo(state, catalog, shooter) ? GOBLIN_PROJECTILE : undefined) ?? (rocks && !moved ? rocks : undefined) ?? opts.fallback?.weapon);
   const printed = archers ?? modelStats(catalog, shooter)?.Sv ?? opts.fallback?.shoot ?? 4;
   const dist = distanceBetween(shooter, target);
   const plan: ShotPlan = { weapon, printed, need: printed, moved, shots: 1, dist, inWay: [], rerolls: false };

@@ -17,6 +17,9 @@ import { unseenCast, unseenTerrain } from './unseenMap.ts';
 import { elvesWinner } from './elves.ts';
 import { elvesCast, elvesTerrain } from './elvesMap.ts';
 import { lakeWinner } from './lake.ts';
+import { goblinWinner, noFooting } from './goblin.ts';
+import { isWeaponItem } from './wargear.ts';
+import { gearOf } from './gear.ts';
 import { lakeCast, lakeTerrain } from './lakeMap.ts';
 import { fireWinner } from './eagles.ts';
 import { eaglesCast, eaglesTerrain } from './eaglesMap.ts';
@@ -167,6 +170,8 @@ export interface CastMember {
   bound?: boolean;
   crawls?: number;
   slips?: boolean;
+  /** Starts the game stripped of its weapons, though not its armour (Escape from Goblin-town). */
+  unarmed?: boolean;
   place: Placement;
 }
 
@@ -937,7 +942,8 @@ export function narrativeSetup(n: Narrative, good: Seat, catalog: Catalog, newId
       ...(c.slips ? { slips: true } : {}),
     };
     const p = at(c, m);
-    models.push({ ...m, ...p, rot: facing(c, p, owner) });
+    const lost = c.unarmed ? gearOf(catalog, m).filter(isWeaponItem) : [];
+    models.push({ ...m, ...p, rot: facing(c, p, owner), ...(lost.length ? { lostGear: lost } : {}) });
     // A siege engine's crew stand in base contact with it, behind or beside it, as close to the back as there is room.
     const hands = e.siege ? crew.flatMap(x => Array.from({ length: x.count }, () => x)) : [];
     const engine = models[models.length - 1];
@@ -973,6 +979,14 @@ export function narrativeTerrain(n: Narrative, good: Seat): Terrain[] {
  * round that friend, one touching a piece of terrain goes round its edge, and the rest stay put.
  */
 export function holdNarrative(state: GameState, mv: { id: string; x: number; y: number; rot?: number }): { id: string; x: number; y: number; rot?: number } {
+  const out = holdCast(state, mv);
+  // (Escape from Goblin-town: nobody sets up over the chasm.)
+  const m = state.models[mv.id];
+  if (m && state.narrative?.id === 'escape-from-goblin-town' && noFooting(state, out)) return { ...mv, x: m.x, y: m.y };
+  return out;
+}
+
+function holdCast(state: GameState, mv: { id: string; x: number; y: number; rot?: number }): { id: string; x: number; y: number; rot?: number } {
   const n = narrativeOf(state);
   const m = state.models[mv.id];
   const c = n && m?.cast ? n.cast.find(x => x.key === m.cast) : undefined;
@@ -1082,6 +1096,7 @@ export function narrativeWinner(state: GameState): Seat | 'draw' | null {
   if (n.id === 'the-unseen-hero') return unseenWinner(state);
   if (n.id === 'the-elves-of-mirkwood') return elvesWinner(state);
   if (n.id === 'lake-town-escape') return lakeWinner(state);
+  if (n.id === 'escape-from-goblin-town') return goblinWinner(state);
   if (n.id === 'and-into-the-fire') return fireWinner(state);
   if (n.id === 'weathertop') {
     // The Nazgûl win as soon as Frodo falls; the Hobbits when every one of them is gone.

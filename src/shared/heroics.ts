@@ -1,5 +1,6 @@
 import { distanceBetween } from './geometry.ts';
 import { longshanksFree } from './sam.ts';
+import { swordStill } from './goblin.ts';
 import { activeSeat, other } from './flow.ts';
 import { engaged, moveStart } from './movement.ts';
 import { cannotAct } from './powers.ts';
@@ -46,7 +47,7 @@ export function canDeclare(state: GameState, seat: Seat): Model[] {
   const fighting = state.phase === 'fight' && state.flow.started && state.flow.pairs ? new Set(state.flow.pairs.flatMap(k => k.split(','))) : null;
   // A hero held by a power (Transfix, Paralyse) can't call one.
   // A model with a war drum can call a free Heroic March in the Move phase.
-  return Object.values(state.models).filter(m => m.owner === seat && !m.dead && !done.has(m.id) && !cannotAct(state, m) && (!fighting || fighting.has(m.id)) && ((m.hero && (m.might > 0 || longshanksFree(state, m))) || (m.drum && state.phase === 'move')));
+  return Object.values(state.models).filter(m => m.owner === seat && !m.dead && !done.has(m.id) && !cannotAct(state, m) && !swordStill(state, m) && (!fighting || fighting.has(m.id)) && ((m.hero && (m.might > 0 || longshanksFree(state, m))) || (m.drum && state.phase === 'move')));
 }
 
 /** Both players have declared what they want (or have no one who could), so models can activate. */
@@ -162,6 +163,8 @@ export function canActivate(state: GameState, seat: Seat): boolean {
 export function mayDeclare(state: GameState, m: Model, action: string, heroics: string[] | undefined, rules: string[] = []): boolean {
   const info = heroicInfo(action);
   if (!info || info.phase !== state.phase) return false;
+  // (The Goblin King, in Goblin-town's first turn, can't: I Know That Sword!)
+  if (swordStill(state, m)) return false;
   // Bombur is too Lumbering for a Heroic Move; Bifur, his axe out, may have one for free.
   if (action === 'Heroic Move' && rules.includes('Lumbering')) return false;
   // Aldor's nerves won't let him lead a Heroic Shoot.

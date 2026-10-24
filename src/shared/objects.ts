@@ -2,6 +2,7 @@ import { mounted } from './cavalry.ts';
 import { isAmbush, isHobbit } from './ambush.ts';
 import { atBoats, carriesHobbit, isAmon, mayCarryHobbit } from './amon.ts';
 import { isLake } from './lake.ts';
+import { goblinExits, isGoblin } from './goblin.ts';
 import { eagleExits, isFire } from './eagles.ts';
 import { distanceToBase, halfExtents, inBaseContact, type Point } from './geometry.ts';
 import { fortressNotes, helpers, HEAVY } from './fortress.ts';
@@ -115,6 +116,8 @@ export function exitEdges(state: GameState, m: Model): ('top' | 'bottom' | 'left
   if (isAmon(state)) return carriesHobbit(state, m) ? ['top', 'bottom', 'right'] : [];
   // Lake-town Escape: Bolg may leave by the west edge, once he has lost a Wound.
   if (isLake(state)) return m.cast === 'bolg' && m.wounds < m.maxWounds ? ['left'] : [];
+  // Escape from Goblin-town: the Good side gets away by the edge the Evil player left open.
+  if (isGoblin(state)) return goblinExits(state, m);
   // And Into the Fire: an Eagle carrying Dwarves, Thorin or Bilbo flies off by any edge.
   if (isFire(state)) return eagleExits(state, m) ? ['top', 'bottom', 'left', 'right'] : [];
   switch (state.scenario) {

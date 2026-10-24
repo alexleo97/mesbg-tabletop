@@ -1,5 +1,5 @@
 import type { Point } from './geometry.ts';
-import { inDeepWater } from './sight.ts';
+import { inDeepWater, insidePolygon, outline } from './sight.ts';
 import type { GameState, Terrain } from './types.ts';
 
 // Lake-town Escape, for the computer player: finding the way along the walkways. The table is cut into half-inch
@@ -27,7 +27,13 @@ function gridOf(state: GameState): Grid {
     const w = Math.ceil(state.board.w / STEP);
     const h = Math.ceil(state.board.h / STEP);
     const dry = new Uint8Array(w * h);
-    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) dry[j * w + i] = inDeepWater(state, { x: (i + 0.5) * STEP, y: (j + 0.5) * STEP }) ? 0 : 1;
+    // (Goblin-town's cavern walls and the Goblin King's throne stand on the dry ground, but nobody walks over them.)
+    const solid = Object.values(state.terrain).filter(t => (t.look === 'cavewall' || t.look === 'throne') && !t.gone).map(t => outline(t));
+    for (let j = 0; j < h; j++)
+      for (let i = 0; i < w; i++) {
+        const p = { x: (i + 0.5) * STEP, y: (j + 0.5) * STEP };
+        dry[j * w + i] = inDeepWater(state, p) || solid.some(poly => insidePolygon(poly, p)) ? 0 : 1;
+      }
     g = { w, h, dry, fields: new Map() };
     grids.set(state.terrain, g);
   }

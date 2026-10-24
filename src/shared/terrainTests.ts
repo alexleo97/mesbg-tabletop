@@ -162,6 +162,8 @@ export function crossBlocked(state: GameState, m: Model, c: Crossing): string | 
     const guard = Object.values(state.models).find(e => e.owner !== m.owner && !e.dead && !e.waiting && !e.escaped && !e.prone && Math.abs(e.x - c.stop.x) < 4 && Math.abs(e.y - c.stop.y) < 4 && distanceToTerrain(e, t) <= 0.2 && (distanceBetween({ ...m, ...c.stop }, e) < 1 || distanceBetween({ ...m, ...c.landing }, e) < 1) && !engaged(state, e));
     if (guard) return `${guard.name} is defending the wall here: charge it instead`;
   }
+  // Goblin-town's chasm has no bottom to swim in: a gap too wide to leap can't be crossed at all.
+  if (t?.look === 'chasm' && c.test === 'Swim') return 'A bottomless chasm: too wide to leap';
   // Nor can it land on top of another model.
   if (c.test !== 'Swim' && crowded(state, m, c.landing)) return c.test === 'Climb' ? 'No room at the top' : c.test === 'Climb down' ? 'No room at the bottom' : 'No room on the far side';
   const left = moveLeft(state, m) ?? Infinity;
@@ -172,7 +174,7 @@ export function crossBlocked(state: GameState, m: Model, c: Crossing): string | 
 }
 
 const NAMES: Record<string, string> = { wall: 'wall', rock: 'rocks', cliff: 'cliff', building: 'building', water: 'stream' };
-export const terrainName = (t: Terrain | undefined) => (t ? (isPit(t) ? 'pit' : isDeep(t) ? 'deep water' : t.look === 'floe' ? 'ice floe' : t.look === 'boat' ? 'boat' : t.look === 'planks' ? 'walkway' : t.look === 'scaffold' ? 'scaffold' : t.look === 'orthanc' ? 'tower' : t.look === 'roots' ? 'roots' : t.look === 'trunk' ? 'tree' : (NAMES[t.kind] ?? t.kind)) : 'obstacle');
+export const terrainName = (t: Terrain | undefined) => (t ? (isPit(t) ? 'pit' : t.look === 'chasm' ? 'chasm' : isDeep(t) ? 'deep water' : t.look === 'floe' ? 'ice floe' : t.look === 'boat' ? 'boat' : t.look === 'planks' ? 'walkway' : t.look === 'scaffold' ? 'scaffold' : t.look === 'orthanc' ? 'tower' : t.look === 'roots' ? 'roots' : t.look === 'trunk' ? 'tree' : (NAMES[t.kind] ?? t.kind)) : 'obstacle');
 
 /** S3 hits for a fall further than the model's own height: one, and another for each full inch beyond it. */
 export const fallingHits = (m: Model, drop: number) => (drop > heightOfModel(m) + 1e-6 ? 1 + Math.floor(drop - heightOfModel(m) + 1e-6) : 0);

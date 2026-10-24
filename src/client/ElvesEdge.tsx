@@ -1,5 +1,6 @@
 import { EDGES, elvesEdge, elvesWaiting, isElves } from '../shared/elves.ts';
 import { EDGES as EAGLE_EDGES, EAGLES_TURN, eaglesComing, eaglesEdge, isFire } from '../shared/eagles.ts';
+import { EDGES as GOBLIN_EDGES, hordeEdge, isGoblin } from '../shared/goblin.ts';
 import type { Action, GameState, Role } from '../shared/types.ts';
 
 /**
@@ -8,6 +9,21 @@ import type { Action, GameState, Role } from '../shared/types.ts';
  */
 export function ElvesEdge({ state, dispatch, role }: { state: GameState; dispatch: (a: Action) => void; role: Role }) {
   const good = state.narrative?.good;
+  // Escape from Goblin-town: the Evil player chooses the edge the slain Goblins come back from (and can change it).
+  if (isGoblin(state) && role !== good && (role === 'p1' || role === 'p2') && state.flow.picks?.[role]?.exit) {
+    return (
+      <label className="decoy-pick">
+        <span className="hint">Slain Goblins come back as your Move phase ends, from the</span>
+        <select value={hordeEdge(state)} onChange={e => dispatch({ type: 'setPick', seat: role, key: 'edge', value: e.target.value })}>
+          {GOBLIN_EDGES.map(x => (
+            <option key={x} value={x}>
+              {x} edge
+            </option>
+          ))}
+        </select>
+      </label>
+    );
+  }
   // And Into the Fire: the Eagles (and those coming back) fly on from the north or the south edge.
   if (isFire(state) && role === good && (eaglesComing(state).length || state.turn < EAGLES_TURN)) {
     const edge = eaglesEdge(state);

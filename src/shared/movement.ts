@@ -11,6 +11,7 @@ import { invisibleTo, mayChargeAt } from './ring.ts';
 import { isSpider, ringPower, skittersInto } from './unseen.ts';
 import { surprised } from './ambush.ts';
 import { tramplesThrough } from './balin.ts';
+import { relentlessThrough, swordStill } from './goblin.ts';
 import type { GameState, Model, Seat } from './types.ts';
 
 /**
@@ -27,7 +28,7 @@ export function moveAllowance(state: GameState, m: Model): number | null {
     if (sk?.model === m.id) return sk.dist;
     if (ringPower(state) && isSpider(m)) return 0;
     // A model held by a power or a Compel (or stunned by Sam's Frying Pan) stays put; one getting up from Prone has half its Move left.
-    if (!canActivate(state, m.owner) || state.flow.courage?.[m.id] === false || cannotAct(state, m) || state.flow.held?.includes(m.id) || m.panned === state.turn || m.noMove === state.turn || surprised(state, m)) return 0;
+    if (!canActivate(state, m.owner) || state.flow.courage?.[m.id] === false || cannotAct(state, m) || state.flow.held?.includes(m.id) || m.panned === state.turn || m.noMove === state.turn || surprised(state, m) || swordStill(state, m)) return 0;
     // A model already in a fight when its turn to move comes can't move (one that has just charged may still adjust).
     if (!state.flow.starts?.[m.id] && engaged(state, m)) return 0;
     // A model whose move has ended (a failed test, or a test passed on 2-5) goes no further; a Prone one crawls 1".
@@ -330,7 +331,9 @@ export function blockMove(state: GameState, m: Model, from: Point, to: Point, sk
   // (A Spider moving its D6" under the Power of the Ring stops on touching Bilbo: see unseen.ts.)
   const ghosts = all.filter(e => passesThrough(m, e) && !skittersInto(state, m, e));
   // Balin's Tomb's Cave Troll, the turn it bursts in, goes through its own side and may stop on them (see balin.ts).
-  const trodden = all.filter(e => tramplesThrough(state, m, e));
+  // So does a model with Relentless Advance, charging, through its own Goblins (see goblin.ts).
+  const relentless = charge && state.phase === 'move' && !!m.ground?.includes('relentless') && all.some(e => e.owner !== m.owner && distanceBetween(at(to), e) < 1);
+  const trodden = all.filter(e => tramplesThrough(state, m, e) || (relentless && relentlessThrough(m, e)));
   const others = all.filter(e => !ghosts.includes(e) && !trodden.includes(e));
   const zonesApply = state.phase === 'move' || fightsAgain(state, m);
   const enemies = zonesApply ? others.filter(e => e.owner !== m.owner) : [];

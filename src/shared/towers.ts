@@ -10,6 +10,7 @@ import { engaged } from './movement.ts';
 import { isCavalry } from './powers.ts';
 import { formatNeed, woundNeed } from './rules.ts';
 import { hasRule, isKind } from './wargear.ts';
+import { elvenBow } from './gear.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
 const alive = (m: Model | undefined): m is Model => !!m && !m.dead && !m.escaped && !m.waiting;
@@ -240,6 +241,18 @@ export function shrugOff(state: GameState, catalog: Catalog | null | undefined, 
     const dice = Array.from({ length: n }, d6);
     left -= dice.filter(d => d === 6).length;
     push(`Oblivious to Pain: ${m.name} ignores a Wound on a 6`, dice, { target: 6, note: left < n ? `${n - left} Wound${n - left === 1 ? '' : 's'} ignored.` : 'No Wounds ignored.' });
+  } else if (hasRule(catalog, m, 'Blubbery Mass')) {
+    // The Goblin King's Blubbery Mass: a 3+ stops each Wound, but not those of a Magical Power, nor of Elven weapons in a
+    // fight; an Elven bow's need a 4+.
+    if (action.how === 'other' && group.startsWith('p-')) return null;
+    const elven = action.how === 'fight' ? Math.max(0, Math.min(n, Math.round(Number(action.elven)) || 0)) : 0;
+    const rolled = n - elven;
+    if (!rolled) return null;
+    const bow = action.how === 'shoot' && (action.by ?? []).some(id => state.models[id] && elvenBow(catalog, state.models[id]));
+    const need = bow ? 4 : 3;
+    const dice = Array.from({ length: rolled }, d6);
+    left -= dice.filter(d => d >= need).length;
+    push(`Blubbery Mass: ${m.name} ignores a Wound on a ${need}+${bow ? ' (an Elven bow)' : ''}${elven ? `; ${elven} from Elven blades stand` : ''}`, dice, { target: need, note: left < n ? `${n - left} Wound${n - left === 1 ? '' : 's'} ignored.` : 'No Wounds ignored.' });
   } else return null;
   return [...rolls.map((roll): Action => ({ type: 'rolled', roll })), ...extra, { ...action, count: left, checked: true }];
 }

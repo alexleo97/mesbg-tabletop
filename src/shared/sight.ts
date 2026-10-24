@@ -276,6 +276,8 @@ export function inDeepWater(state: Pick<GameState, 'terrain'>, p: Point): boolea
   if (!all.some(t => isDeep(t) && inBox(t, p) && insidePolygon(outline(t), p))) return false;
   return !all.some(t => DRY.has(t.kind) && !t.gone && inBox(t, p) && insidePolygon(outline(t), p));
 }
+/** Whether a point is over Goblin-town's bottomless chasm, with nothing there to stand on. */
+export const inChasm = (state: Pick<GameState, 'terrain'>, p: Point) => Object.values(state.terrain).some(t => t.look === 'chasm' && !t.gone) && inDeepWater(state, p);
 /** Whether a model stands (its middle) in deep water. */
 export const swimming = (state: Pick<GameState, 'terrain'>, m: Pick<Model, 'x' | 'y' | 'dead' | 'escaped' | 'waiting'>) => !m.dead && !m.escaped && !m.waiting && inDeepWater(state, m);
 /** Whether a model this tall steps over a pit without breaking stride: it is no wider than half the model's height. */

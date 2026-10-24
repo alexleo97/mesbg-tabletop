@@ -163,7 +163,7 @@ export const GOBLIN_SPOTS: [number, number][] = [
   // Round the great platform, 3" clear of the Dwarves.
   [21.8, 17.5],
   [23.2, 17.5],
-  [28.2, 19.5],
+  [25.2, 16.8],
   [28.2, 28.5],
   [21.8, 30.5],
   [23.2, 31.5],
@@ -209,12 +209,14 @@ export function goblinCast(): CastMember[] {
         side: 'good',
         unit: `[thorin's-company] ${k === 'thorin' ? 'thorin-oakenshield' : `${k}-the-dwarf`}`,
         ...(k === 'thorin' ? { options: ['Orcrist', 'The Oakenshield'] } : {}),
+        // (Dwalin and Nori, Weapon Masters, never count as Unarmed, so they keep theirs.)
+        ...(k === 'dwalin' || k === 'nori' ? {} : { unarmed: true }),
         place: { area: company, at: ring[i] },
       }),
     ),
     { key: 'gandalf', side: 'good', unit: "[thorin's-company] gandalf-the-grey", place: { aside: true } },
     { key: 'goblin-king', side: 'evil', unit: '[goblin-town] the-goblin-king', place: { against: 'throne', at: [THRONE.x, THRONE.y + THRONE.h / 2 + 0.81] } },
-    { key: 'grinnah', side: 'evil', unit: '[goblin-town] grinnah-goblin-jailer', place: { clear: GOBLIN_GAP, at: [26.5, 18.6] } },
+    { key: 'grinnah', side: 'evil', unit: '[goblin-town] grinnah-goblin-jailer', place: { clear: GOBLIN_GAP, at: [28.2, 19.5] } },
     ...GOBLIN_SPOTS.map((at): CastMember => ({ key: 'goblin', side: 'evil', unit: '[goblin-town] goblin-warrior', place: { clear: GOBLIN_GAP, at } })),
   ];
 }
