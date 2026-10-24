@@ -110,6 +110,8 @@ export type Brutal = { by: string; kind: BrutalKind; target?: string; at?: strin
 export function brutalOptions(state: GameState, catalog: Catalog | null | undefined, m: Model): Brutal['kind'][] {
   // A Prone monster that wins its fight simply stands up (Rulebook FAQ).
   if (!isMonster(catalog, m) || m.prone || state.flow.brutal?.includes(m.id)) return [];
+  // And Into the Fire: an Eagle carrying Dwarves, Thorin or Bilbo makes none.
+  if (state.narrative?.id === 'and-into-the-fire' && (Object.values(state.terrain).some(t => t.carrier === m.id && !t.gone) || Object.values(state.models).some(r => r.aboard === m.id && !r.dead))) return [];
   // The Trolls' own: Bill minces, Bert roasts (by a campfire) and Tom squashes.
   const own: BrutalKind[] = [];
   const has = (re: RegExp) => rules(catalog, m).some(r => re.test(r));

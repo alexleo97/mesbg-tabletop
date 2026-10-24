@@ -18,6 +18,8 @@ import { elvesWinner } from './elves.ts';
 import { elvesCast, elvesTerrain } from './elvesMap.ts';
 import { lakeWinner } from './lake.ts';
 import { lakeCast, lakeTerrain } from './lakeMap.ts';
+import { fireWinner } from './eagles.ts';
+import { eaglesCast, eaglesTerrain } from './eaglesMap.ts';
 import { insidePolygon, outline } from './sight.ts';
 import { BALLISTA_BASE, deepingSlots, evilSlots, GATE_ANGLE, HELMS_TEAMS, helmsTerrain, hornburgSlots, inHelmsZone, onArc, OUTER, type HelmsZone } from './helmsMap.ts';
 import type { Action, Base, DiceRoll, GameState, Mat, Model, Seat, Terrain } from './types.ts';
@@ -422,6 +424,46 @@ export const NARRATIVES: Narrative[] = [
       },
     ],
     cast: lakeCast(),
+  },
+  {
+    id: 'and-into-the-fire',
+    name: 'Out of the Frying Pan... And Into the Fire',
+    from: 'The Hobbit: An Unexpected Journey',
+    saga: 'hobbit',
+    blurb: "Out of the mountains and straight into Azog's Hunters: the Company clings to the pines at the cliff's edge while Thorin goes for the Pale Orc, and the Eagles fly down to carry everyone away.",
+    board: { w: 48, h: 48, mat: 'plains' },
+    terrain: eaglesTerrain(),
+    sides: {
+      good: { name: "Thorin's Company and the Eagles", cast: 'Thorin Oakenshield with Orcrist and the Oakenshield; Bilbo Baggins with Sting and the One Ring; Gwaihir and 4 Great Eagles, who arrive later' },
+      evil: { name: "Azog's Hunters", cast: 'Azog on the White Warg; Fimbul, Hunter Orc Captain, on a Fell Warg; 12 Hunter Orc Warg Riders; 12 Fell Wargs' },
+    },
+    layout: "A 4' by 4' mountainside: a stand of pines runs down the east of the table, each tree on its own woodland base or sharing one, with a rocky cliff edge along the east edge beyond them. The open ground to the west has rocky outcrops and a patch of brush.",
+    setupOrder: ['evil', 'good'],
+    deployment: 'The Evil player sets up every model wholly within 6" of the west edge. Then the Good player sets up Thorin touching the tree nearest the middle of the open ground (the one the map marks). Bilbo and the Eagles are kept aside: they come later. Then the players take turns, the Good player first, to nominate five trees between them: the Dwarves hide in these, and a Dwarf Marker goes beside each.',
+    objectives: "The battle goes on until the Dwarf Markers, Thorin and Bilbo are all off the table. The Good side wins if the Eagles carry every one of them off. The Evil side wins if it stops that: once a Dwarf Marker, Thorin or Bilbo is lost, the game ends there and then.",
+    rules: [
+      {
+        name: 'Rescuing the Dwarves',
+        text: "As each Good Move phase ends, an Eagle that isn't in a fight picks up a Dwarf Marker it is touching, as a Light Object; Thorin and Bilbo can be carried the same way. (The game picks them up for you: an Eagle carries one at a time, Thorin first, then Bilbo, then the markers.) An Eagle that leaves the table carrying one has rescued it. A carrying Eagle can't make Brutal Power Attacks, and if it is slain, whoever it carries is lost and counts as slain.",
+      },
+      {
+        name: 'Friends on Swift-wings',
+        text: "As the Good side's second Move phase ends, Gwaihir and the Great Eagles fly on as reinforcements from the north or south edge (the Good player picks which). A Great Eagle that has carried a load off the table, or been slain, comes back as the Good side's next Move phase ends, the same way.",
+      },
+      {
+        name: "Thorin's Wrath",
+        text: "When Thorin moves he must charge an enemy if he can, Azog if he can reach him; if he can't charge anyone, he must move as close to Azog as he can. (The game moves him as the Good side's move begins.) Until he is wounded, Thorin is Fearless.",
+      },
+      {
+        name: 'Bilbo',
+        text: "As any Fight phase begins, the Good player may put Bilbo in base contact with an enemy fighting Thorin. Once he comes on, the Eagles must carry him off too; if he never does, he is rescued along with the Dwarves.",
+      },
+      {
+        name: 'Fly',
+        text: "The Eagles fly: they pass over models and terrain and ignore control zones on the way, and only where they land matters. They can't land on another model, in a wood, on a tree or a building, and landing in an enemy's control zone means charging it. An Eagle may walk 4\" instead (into the woods, if it likes), and can't fly again until it has left them.",
+      },
+    ],
+    cast: eaglesCast(),
   },
   {
     id: 'ambush-at-night',
@@ -999,6 +1041,7 @@ export function narrativeWinner(state: GameState): Seat | 'draw' | null {
   if (n.id === 'the-unseen-hero') return unseenWinner(state);
   if (n.id === 'the-elves-of-mirkwood') return elvesWinner(state);
   if (n.id === 'lake-town-escape') return lakeWinner(state);
+  if (n.id === 'and-into-the-fire') return fireWinner(state);
   if (n.id === 'weathertop') {
     // The Nazgûl win as soon as Frodo falls; the Hobbits when every one of them is gone.
     if (castModel(state, 'frodo')?.dead) return seatOf(state, 'evil') ?? null;

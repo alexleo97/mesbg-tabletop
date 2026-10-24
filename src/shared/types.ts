@@ -217,13 +217,13 @@ export interface Terrain {
    */
   deep?: boolean;
   /** Drawn in dressed stone (a fortress's courtyard, causeway, keep or tower), a wall with a culvert through it, a field of long grass, or a piece of Balin's Tomb (a pillar, the tomb, the well, a trapdoor, the doorway: the well and trapdoors are where its Goblins come back), undergrowth, or a piece of Isengard (the tower of Orthanc, a timber scaffold, a ladder up one, a pit). */
-  look?: 'stone' | 'culvert' | 'grass' | 'pillar' | 'tomb' | 'well' | 'trapdoor' | 'doorway' | 'brush' | 'orthanc' | 'scaffold' | 'ladder' | 'pit' | 'roots' | 'trunk' | 'gnarled' | 'planks' | 'boat' | 'floe' | 'lakehouse' | 'laketower' | 'lakewing';
+  look?: 'stone' | 'culvert' | 'grass' | 'pillar' | 'tomb' | 'well' | 'trapdoor' | 'doorway' | 'brush' | 'orthanc' | 'scaffold' | 'ladder' | 'pit' | 'roots' | 'trunk' | 'gnarled' | 'planks' | 'boat' | 'floe' | 'lakehouse' | 'laketower' | 'lakewing' | 'pinewood' | 'pine';
 }
 
 export const DOOR_TYPES = ['castle', 'dwarven', 'heavyArmoured', 'armoured', 'heavy', 'external', 'internal', 'dam'] as const;
 export type DoorType = (typeof DOOR_TYPES)[number];
 
-export const MARKER_OBJECTS = ['artefact', 'relic', 'heirloom', 'decoy', 'supply', 'ally', 'ladder', 'ram', 'rocks', 'oil', 'rally', 'campfire', 'charge', 'hobbit', 'boat', 'cocoon'] as const;
+export const MARKER_OBJECTS = ['artefact', 'relic', 'heirloom', 'decoy', 'supply', 'ally', 'ladder', 'ram', 'rocks', 'oil', 'rally', 'campfire', 'charge', 'hobbit', 'boat', 'cocoon', 'dwarf'] as const;
 export type MarkerObject = (typeof MARKER_OBJECTS)[number];
 
 /** Secret choices some scenarios ask each player to make, by model or terrain id. */
@@ -281,6 +281,8 @@ export interface DiceRoll {
   rerolled?: ('synergy' | 'portents')[];
   /** Grasper & Keeper: each natural 6 that wounds does 2 Wounds. */
   sixes?: boolean;
+  /** A Bane Weapon's strikes: the D3 Wounds each die does if it wounds (one per die To Wound, or per follow-up die). */
+  d3?: number[];
   /** A roll to recover from Paralyse (or a Troll's sack): the model a 6 frees. */
   frees?: string;
   /** Wounds this roll does without a roll To Wound (Mince 'em Fine). */
@@ -367,6 +369,11 @@ export interface NarrativeState {
   alarm?: string[];
   disturbed?: { id: string; turn: number }[];
   alarmed?: number;
+  /** And Into the Fire: the trees nominated for the Dwarves to hide in (a Dwarf Marker beside each), in turn, the turn
+   * Thorin's Wrath last moved him, and the turn each Great Eagle left the table (carried a load off, or was slain). */
+  hiding?: string[];
+  wrath?: number;
+  flown?: Record<string, number>;
 }
 
 export type BotSpeed = 'normal' | 'fast' | 'instant';
@@ -547,6 +554,8 @@ export interface Flow {
   sentried?: string[];
   /** Models that stood up from Prone this turn, which costs half their Move. */
   stood?: string[];
+  /** Flying models that walk this Move phase instead (4", into woods if they like), and can't fly again until it ends. */
+  grounded?: string[];
   /** Inches each model has spent climbing between floors this Move phase. */
   climbed?: Record<string, number>;
   /** The turn Paralysed models last rolled to recover. */
@@ -750,7 +759,13 @@ export type Action =
   /** Request: the Good player at Weathertop rolls for Aragorn this turn, or doesn't. */
   | { type: 'aragorn'; roll: boolean }
   /** Server only: bookkeeping for a narrative scenario's rules. */
-  | { type: 'narrativeNote'; rolled?: number; dawn?: number; bilbo?: boolean; breach?: number; troll?: number; crushed?: string[]; woke?: number; revive?: string[]; webbed?: number; hazed?: number; nested?: number; alarm?: string[]; alarmed?: number }
+  | { type: 'narrativeNote'; rolled?: number; dawn?: number; bilbo?: boolean; breach?: number; troll?: number; crushed?: string[]; woke?: number; revive?: string[]; webbed?: number; hazed?: number; nested?: number; alarm?: string[]; alarmed?: number; wrath?: number; flown?: Record<string, number> }
+  /** And Into the Fire: a player nominates a tree for the Dwarves to hide in, before the battle. */
+  | { type: 'nominate'; seat: Seat; tree: string }
+  /** A flying model walks this Move phase instead of flying (see movement.ts flying). */
+  | { type: 'walkInstead'; id: string }
+  /** And Into the Fire: as a Fight phase begins, the Good player puts Bilbo in base contact with an enemy fighting Thorin. */
+  | { type: 'bilboJoins'; seat: Seat; target: string }
   /** Helm's Deep: the Good player picks where on the south edge the Relief Force will ride on. */
   | { type: 'reliefPoint'; seat: Seat; x: number }
   /** Helm's Deep: a Good hero by the gate mounts up (resolved with the profiles). */

@@ -1,6 +1,7 @@
 import { bandName, bandsOf, currentBand, deployProblems, mayPutDown, procedureOf, rollDue, rollMeans } from '../shared/deploy.ts';
 import { narrativeOf } from '../shared/narrative.ts';
 import { bundles, isUnseen } from '../shared/unseen.ts';
+import { nominationTurn, pines, treeName } from '../shared/eagles.ts';
 import { ElvesEdge } from './ElvesEdge.tsx';
 import { objectivesMissing } from '../shared/scenarios.ts';
 import { BOT_NAME, type Action, type GameState, type Role, type Seat } from '../shared/types.ts';
@@ -183,6 +184,36 @@ export function DeployTurns({ state, dispatch, role }: { state: GameState; dispa
     case 'sides': {
       const n = narrativeOf(state);
       const turn = d.turn!;
+      // And Into the Fire: once both sides are set up, the players take turns to nominate the trees the Dwarves hide in.
+      const nom = nominationTurn(state);
+      if (nom) {
+        const picked = state.narrative?.hiding ?? [];
+        const left = pines(state).filter(t => !picked.includes(t.id)).sort((a, b) => Number(a.id.replace(/\D/g, '')) - Number(b.id.replace(/\D/g, '')));
+        return (
+          <>
+            <p className="hint">
+              The Dwarves are hiding in five trees, nominated in turn{picked.length ? ` (${picked.length} so far: ${picked.map(id => treeName(state, state.terrain[id])).join(', ')})` : ''}. A Dwarf Marker goes beside each.
+            </p>
+            {nom === me ? (
+              <label className="decoy-pick">
+                <span className="hint">Your turn: which tree are Dwarves hiding in? (The numbers are on the trees.)</span>
+                <select value="" onChange={e => e.target.value && dispatch({ type: 'nominate', seat: me, tree: e.target.value })}>
+                  <option value="" disabled>
+                    Nominate a tree…
+                  </option>
+                  {left.map(t => (
+                    <option key={t.id} value={t.id}>
+                      {treeName(state, t)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              waitFor(nom, 'nominate a tree')
+            )}
+          </>
+        );
+      }
       const side = state.narrative?.good === turn ? 'good' : 'evil';
       // The Unseen Hero: the Spiders' player sets out the webbed bundles too, and secretly picks the decoy.
       const webs = isUnseen(state) && side === 'evil' ? bundles(state).sort((a, b) => (a.id < b.id ? -1 : 1)) : [];

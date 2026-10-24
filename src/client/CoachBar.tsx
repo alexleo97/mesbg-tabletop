@@ -1,5 +1,6 @@
 import { skitterDone, skitterLeft } from '../shared/unseen.ts';
 import { ElvesEdge } from './ElvesEdge.tsx';
+import { bilboTargets } from '../shared/eagles.ts';
 import { useState } from 'react';
 import { ResultReport } from './ResultReport.tsx';
 import { activeSeat, other, type Combat } from '../shared/flow.ts';
@@ -748,6 +749,16 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openFight
             <div className="spell-step">
               <p>Once a game, before anyone moves, the Nazgûl can give their Cry: every Good model's Courage is 3 worse this turn, and Aragorn comes at once.</p>
               <button {...locked({ type: 'cry', seat: role })} onClick={() => dispatch({ type: 'cry', seat: role })}>Give the Cry of the Nazgûl</button>
+            </div>
+          )}
+          {flow.started && role === state.narrative?.good && bilboTargets(state).length > 0 && (
+            <div className="spell-step">
+              <p>Bilbo can come to Thorin's aid: put him beside an enemy fighting Thorin before the fights are rolled. Once he's on the table, the Eagles must carry him off too.</p>
+              {bilboTargets(state).map(e => (
+                <button key={e.id} {...locked({ type: 'bilboJoins', seat: role, target: e.id })} onClick={() => dispatch({ type: 'bilboJoins', seat: role, target: e.id })}>
+                  Bilbo joins in beside {e.name}
+                </button>
+              ))}
             </div>
           )}
           {flow.started && arrivalDue(state) && !arrivalAuto(state) && (

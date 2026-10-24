@@ -131,6 +131,8 @@ export const madeFearful = (state: GameState, m: Model) => auras(state, m, 'Inst
 /** Why a model passes Courage tests without rolling, if it does. */
 export function courageAuto(state: GameState, catalog: Catalog | null, m: Model): string | null {
   if (hasRule(catalog, m, /^Fearless\b/) || under(state, m, 'Enrage Beast')) return 'Fearless';
+  // And Into the Fire: Thorin's Wrath makes him Fearless until he is wounded.
+  if (state.narrative?.id === 'and-into-the-fire' && m.cast === 'thorin' && m.wounds >= m.maxWounds) return "Thorin's Wrath";
   if (auras(state, m, 'Aura of Command', 'friend').length) return 'Aura of Command';
   const fury = Object.values(state.models).find(
     c =>

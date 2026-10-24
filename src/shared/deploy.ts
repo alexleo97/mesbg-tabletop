@@ -1,3 +1,4 @@
+import { nominationTurn } from './eagles.ts';
 import { nearestSpot, placeNear, solidOutlines, type Move } from './deployment.ts';
 import { distanceBetween, halfExtents, OBJECTIVE_SIZE, type Point } from './geometry.ts';
 import { inZone, scaleZone, whollyIn, zonesOf } from './objects.ts';
@@ -306,7 +307,8 @@ export function nextTurn(state: GameState, d: Deploying, just: Seat): Seat | nul
     const order = narrativeOf(state)?.setupOrder ?? [];
     const good = state.narrative?.good ?? 'p1';
     const seats = order.map(s => (s === 'good' ? good : other(good)));
-    return seats.find(s => !d.placed.includes(`${s}:*`)) ?? null;
+    // (And Into the Fire: then the players take turns nominating the trees the Dwarves hide in.)
+    return seats.find(s => !d.placed.includes(`${s}:*`)) ?? nominationTurn({ ...state, flow: { ...state.flow, deploy: d } });
   }
   const left = (s: Seat) => bandsOf(state, s, true).length > 0;
   return left(other(just)) ? other(just) : left(just) ? just : null;

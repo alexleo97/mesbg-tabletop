@@ -37,6 +37,7 @@ import { bringDownTarget, dam, isEnt, isEnts } from './ents.ts';
 import { bundles as webBundles, isUnseen, keepOnTable, skitterDone, skitterLeft, spidersDue } from './unseen.ts';
 import { courageOf, willOfEvil } from './courage.ts';
 import { bolgChargeAt, isLake, isSentry, legolasOf, sentriesDue } from './lake.ts';
+import { bilboTargets, carrying, eagleExits, isEagle, isFire, landingBeside, nominationTurn, pines, stillToCarry } from './eagles.ts';
 import { walkDistance, waypoint } from './lakeNav.ts';
 import { hasMorgulBlade } from './morgul.ts';
 import { AXE_FREED, canHeadbutt, hasMattock, longbeardFor, mayAxeTest, mayTend, rerollFor, spentPoints, swapPair, trumpetDue } from './company.ts';
@@ -364,6 +365,18 @@ function deployStep({ state, seat, now }: Ctx): BotStep | null {
         const all = webBundles(state).sort((a, b) => (a.id < b.id ? -1 : 1));
         if (all.length) return { action: { type: 'setPick', seat, key: 'decoy', value: all[Math.floor(now / 7) % all.length].id }, delay: THINK_PAUSE };
       }
+      // And Into the Fire: the trees the Dwarves hide in, a side at a time once both are set up. The Good side picks
+      // trees the Eagles can get to before the Wargs do (out east, towards the north and south edges); the Evil side
+      // picks those nearest its Wargs (the brush, and the west side of the stand, in the middle).
+      if (isFire(state) && state.flow.deploy?.placed.includes(`${seat}:*`)) {
+        if (nominationTurn(state) !== seat) return nominationTurn(state) ? null : { delay: WAIT_PAUSE };
+        const taken = state.narrative?.hiding ?? [];
+        const good = seat === state.narrative?.good;
+        const mid = state.board.h / 2;
+        const worth = (t: Terrain) => (good ? t.x * 0.5 + Math.abs(t.y - mid) : -t.x - Math.abs(t.y - mid) * 0.3);
+        const tree = pines(state).filter(t => !taken.includes(t.id)).sort((a, b) => worth(b) - worth(a))[0];
+        if (tree) return { action: { type: 'nominate', seat, tree: tree.id }, delay: THINK_PAUSE };
+      }
       // A narrative scenario's cast is already where its story puts it.
       return { action: { type: 'warbandDone', seat }, delay: THINK_PAUSE };
     }
@@ -537,7 +550,7 @@ function moveStep(ctx: Ctx): BotStep {
   const hauling = (m: Model) => (heavy.some(t => t.carrier === m.id) ? 1 : heavy.some(t => touchingMarker(m, t)) ? 2 : 0);
   // A siege engine doesn't move itself, and its crew stay beside it to shoot it.
   const queue = side(state, seat)
-    .filter(m => !memo.acted.includes(m.id) && !m.siege && !(m.crewOf && state.models[m.crewOf] && !state.models[m.crewOf].dead))
+    .filter(m => !memo.acted.includes(m.id) && !m.siege && !(m.crewOf && state.models[m.crewOf] && !state.models[m.crewOf].dead) && !(isFire(state) && m.aboard))
     .sort((a, b) => Number(hauling(a)) - Number(hauling(b)) || Number(reach(b)) - Number(reach(a)) || (reach(a) ? nearest(a) - nearest(b) : nearest(b) - nearest(a)));
   const goals = assignGoals(ctx);
   let stayed = 0;
@@ -616,7 +629,7 @@ function markerStep(ctx: Ctx, m: Model): BotStep | null {
     if (a.kind === 'pickUp' && (object?.object === 'rocks' || object?.object === 'oil')) continue;
     if (a.kind === 'escape') {
       // Leave the table with something worth carrying off, or in a scenario that scores getting models away.
-      if (carriedBy(state, m).length || state.scenario === 'reconnoitre' || (isAmbush(state) && isHobbit(m)) || atBoats(state, m) || (isLake(state) && m.cast === 'bolg')) return { action: { type: 'escape', model: m.id }, delay: MOVE_PAUSE };
+      if (carriedBy(state, m).length || state.scenario === 'reconnoitre' || (isAmbush(state) && isHobbit(m)) || atBoats(state, m) || (isLake(state) && m.cast === 'bolg') || eagleExits(state, m)) return { action: { type: 'escape', model: m.id }, delay: MOVE_PAUSE };
       continue;
     }
     if (a.kind === 'uncover') return { action: { type: 'uncover', model: m.id, marker: a.marker!, intelligence: profile(ctx, m).i }, delay: DICE_PAUSE };
@@ -708,6 +721,64 @@ function roundOrthanc(state: GameState, m: Model, to: Point): Point {
   return { x: t.x - uy * side * (reach + 1.5), y: t.y + ux * side * (reach + 1.5) };
 }
 
+/**
+ * And Into the Fire. The Eagles: one with a load flies for the nearest table edge; the rest each go for a different
+ * Dwarf Marker, Thorin or Bilbo (Thorin, in the most danger, counts as nearer), landing touching it. The Hunters go for
+ * an Eagle carrying someone off, then Thorin (Azog always), and otherwise stand over the Dwarf Markers so the Eagles
+ * can't land beside them.
+ */
+function fireGoals(ctx: Ctx, ours: Model[], out: Map<string, Goal>) {
+  const { state, seat } = ctx;
+  const { w, h } = state.board;
+  const loads = stillToCarry(state);
+  if (seat === state.narrative?.good) {
+    const free: Model[] = [];
+    for (const m of ours.filter(isEagle)) {
+      if (!carrying(state, m)) {
+        free.push(m);
+        continue;
+      }
+      const r = radius(m) + 0.02;
+      const at = [{ x: m.x, y: r }, { x: m.x, y: h - r }, { x: r, y: m.y }, { x: w - r, y: m.y }].sort((a, b) => centre(m, a) - centre(m, b))[0];
+      out.set(m.id, { at, pull: 3, bold: true });
+    }
+    const pairs = free.flatMap(m => loads.map(l => ({ m, l, d: centre(m, l) - ('cast' in l && l.cast === 'thorin' ? 10 : 0) }))).sort((a, b) => a.d - b.d);
+    const claimed = new Set<string>();
+    for (const { m, l } of pairs) {
+      if (out.has(m.id) || claimed.has(l.id)) continue;
+      const at = landingBeside(state, m, l);
+      if (!at) continue;
+      claimed.add(l.id);
+      out.set(m.id, { at, pull: 3, bold: true });
+    }
+    return;
+  }
+  const foes = side(state, other(seat));
+  const carriers = foes.filter(e => isEagle(e) && carrying(state, e));
+  const thorin = foes.find(e => e.cast === 'thorin' && !e.aboard);
+  const markers = loads.filter((l): l is Terrain => 'kind' in l);
+  const guards = new Map<string, number>();
+  for (const m of [...ours].sort((a, b) => (a.cast === 'azog' ? -1 : 0) - (b.cast === 'azog' ? -1 : 0))) {
+    if (out.has(m.id)) continue;
+    const reach = (moveAllowance(state, m) ?? m.move) * 1.5;
+    const prey = carriers.filter(e => centre(m, e) <= reach).sort((a, b) => centre(m, a) - centre(m, b))[0];
+    if (prey) {
+      out.set(m.id, { at: { x: prey.x, y: prey.y }, pull: 2, bold: true });
+      continue;
+    }
+    if (thorin && (m.cast === 'azog' || centre(m, thorin) <= reach)) {
+      out.set(m.id, { at: { x: thorin.x, y: thorin.y }, pull: 1.5, bold: true });
+      continue;
+    }
+    // (Two to a marker, the nearest first.)
+    const post = markers.filter(t => (guards.get(t.id) ?? 0) < 2).sort((a, b) => centre(m, a) - centre(m, b))[0];
+    if (post) {
+      guards.set(post.id, (guards.get(post.id) ?? 0) + 1);
+      out.set(m.id, { at: { x: post.x, y: post.y }, pull: 1.2, near: 1.6 });
+    } else if (thorin) out.set(m.id, { at: { x: thorin.x, y: thorin.y }, pull: 1, bold: true });
+  }
+}
+
 function assignGoals(ctx: Ctx): Map<string, Goal> {
   const { state, seat } = ctx;
   const out = new Map<string, Goal>();
@@ -736,9 +807,10 @@ function assignGoals(ctx: Ctx): Map<string, Goal> {
     return to && { at: to, pull: 1.2 };
   };
   const lanes: [Point, Point][] = [];
+  if (isFire(state)) fireGoals(ctx, ours, out);
   for (const m of ours) {
     const carried = carriedBy(state, m);
-    if (!carried.length) continue;
+    if (!carried.length || out.has(m.id)) continue;
     const gear = carried.find(t => t.object === 'ladder' || t.object === 'ram' || t.object === 'charge');
     const goal = gear && heavyGoal(m, gear);
     if (goal) {
@@ -1147,6 +1219,8 @@ function scoreFor(ctx: Ctx, m: Model, at: Point, goal?: Goal, vpBefore?: number)
     score += (withUs.score - without) * 3 + (aggressive(ctx) ? 1.2 : 0.4);
     // Amon Hen: an Uruk-hai carrying off a Hobbit, and Frodo making for the boats, keep out of fights.
     if (isAmon(state) && (carriesHobbit(state, m) || m.cast === 'frodo')) score -= 6;
+    // And Into the Fire: so does an Eagle with a load to carry off or pick up (in a fight, it can't).
+    if (isFire(state) && isEagle(m) && goal?.bold) score -= 6;
   } else {
     // Danger: enemies that could charge it here next turn, eased by friends close enough to help.
     let danger = 0;
@@ -1882,6 +1956,13 @@ function fightStep(ctx: Ctx): BotStep | null {
   // Tom's cold goes on as fights start, whoever starts them.
   const cold = coldPick(ctx);
   if (cold) return cold;
+  // And Into the Fire: Bilbo comes out of the trees to help Thorin when Thorin is in real trouble (hurt, or swamped).
+  const bilboFor = seat === state.narrative?.good ? bilboTargets(state) : [];
+  const thorin = bilboFor.length ? castModel(state, 'thorin') : undefined;
+  if (thorin && (thorin.wounds < thorin.maxWounds || bilboFor.length >= 3)) {
+    const weakest = [...bilboFor].sort((a, b) => profile(ctx, a).value - profile(ctx, b).value)[0];
+    return { action: { type: 'bilboJoins', seat, target: weakest.id }, delay: THINK_PAUSE };
+  }
   // A Demolition Charge set off where it would do the most good.
   const boom = detonateStep(ctx);
   if (boom) return boom;
