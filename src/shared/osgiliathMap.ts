@@ -263,9 +263,9 @@ function gap(t: Terrain, x: number, y: number): number {
  * Spots for `count` models on 25mm bases, in staggered rows `pitch` apart (1.1" packs them shoulder to shoulder), as near a point as they'll go: wholly within `reach` of it
  * (when given) or wholly inside a box, and clear of every wall, building and pile of rubble.
  */
-export function packSpots(count: number, at: { x: number; y: number }, keep: { reach?: number; box?: [number, number, number, number]; pitch?: number; tall?: number }, taken: [number, number][] = []): [number, number][] {
+export function packSpots(count: number, at: { x: number; y: number }, keep: { reach?: number; box?: [number, number, number, number]; pitch?: number; tall?: number; radius?: number }, taken: [number, number, number?][] = []): [number, number][] {
   const terrain = osgiliathTerrain();
-  const r = 0.5;
+  const r = keep.radius ?? 0.5;
   const pitch = keep.pitch ?? 1.1;
   const out: [number, number][] = [];
   const grid: [number, number][] = [];
@@ -278,7 +278,7 @@ export function packSpots(count: number, at: { x: number; y: number }, keep: { r
     if (keep.reach !== undefined && Math.hypot(x - at.x, y - at.y) + r > keep.reach - 0.05) continue;
     if (keep.box && (x - r < keep.box[0] + 0.05 || x + r > keep.box[2] - 0.05 || y - r < keep.box[1] + 0.05 || y + r > keep.box[3] - 0.05)) continue;
     if (terrain.some(t => gap(t, x, y) < r + 0.05)) continue;
-    if ([...out, ...taken].some(([a, b]) => Math.hypot(a - x, b - y) < 1.02)) continue;
+    if ([...out, ...taken].some(([a, b, rb]) => Math.hypot(a - x, b - y) < r + (rb ?? 0.5) + 0.05)) continue;
     out.push([x, y]);
   }
   return out;
@@ -298,6 +298,9 @@ const GOOD: Omit<CastMember, 'place'>[] = [
 const ORC_KITS: string[][] = [['Shield'], ['Spear'], ['Shield and spear'], []];
 const orcs = (): Omit<CastMember, 'place'>[] => ORC_KITS.flatMap(o => Array.from({ length: 3 }, (): Omit<CastMember, 'place'> => ({ key: 'orc', side: 'evil', unit: '[army-of-gothmog] morannon-orc', ...(o.length ? { options: o } : {}) })));
 
+/** Room for the Mordor Troll: half its 60mm base and a little over, so nobody stands touching it. */
+const TROLL_RADIUS = 1.4;
+
 /** Where the cast starts: the Good side in the middle, Gothmog's half to the east and Guritz's to the west. */
 export function osgiliathCast(): CastMember[] {
   const good = { circle: [MIDDLE.x, MIDDLE.y, GOOD_REACH] as [number, number, number] };
@@ -312,11 +315,12 @@ export function osgiliathCast(): CastMember[] {
     { key: 'troll', side: 'evil', unit: '[army-of-gothmog] mordor-troll' },
     ...orcs(),
   ];
-  // Each half across the ruins in front of the Good side: the east half along the zone's west side, the west half
-  // along its east side (the Troll, on a bigger base, at the back of it).
-  const eastSpots = packSpots(east.length, { x: 38.5, y: 24 }, { box: EAST_ZONE, pitch: 2.1, tall: 2 });
-  const westSpots = packSpots(west.length - 1, { x: 9.5, y: 23 }, { box: WEST_ZONE, pitch: 2.1, tall: 2 });
-  const trollSpot = packSpots(1, { x: 5.5, y: 24 }, { box: WEST_ZONE }, westSpots);
+  // The Orcs come in from beyond the table, so each half starts strung out along its own edge, as far from the Good
+  // side as its zone lets it: the leaders in the middle of the line, the Troll (on a bigger base) among the west half.
+  const line = { pitch: 2.1, tall: 3 };
+  const eastSpots = packSpots(east.length, { x: BOARD - 2, y: 24 }, { box: EAST_ZONE, ...line });
+  const trollSpot = packSpots(1, { x: 2.5, y: 26 }, { box: WEST_ZONE, radius: TROLL_RADIUS });
+  const westSpots = packSpots(west.length - 1, { x: 2, y: 23 }, { box: WEST_ZONE, ...line }, [[...trollSpot[0], TROLL_RADIUS]]);
   return [
     ...GOOD.map((c, i): CastMember => ({ ...c, place: { area: good, at: goodSpots[i] } })),
     ...east.map((c, i): CastMember => ({ ...c, place: { area: { box: EAST_ZONE }, at: eastSpots[i] } })),

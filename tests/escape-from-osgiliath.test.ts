@@ -87,9 +87,12 @@ describe('Escape from Osgiliath: the table and the cast', () => {
     expect(inBox(castModel(s, 'troll')!, WEST_ZONE)).toBe(true);
     expect(orcs(s).filter(m => inBox(m, EAST_ZONE)).length).toBe(12);
     expect(orcs(s).filter(m => inBox(m, WEST_ZONE)).length).toBe(12);
-    // Nobody shares a spot.
+    // Nobody's base overlaps another's.
     const ms = Object.values(s.models);
-    for (const a of ms) for (const b of ms) if (a.id < b.id) expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThan(0.95);
+    const half = (m: Model) => Math.max(m.base.w, m.base.h) / 25.4 / 2;
+    for (const a of ms) for (const b of ms) if (a.id < b.id) expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThan(half(a) + half(b));
+    // The Orcs come in from beyond the table, so each half starts along its own edge, well back from the Good side.
+    expect(orcs(s).every(m => m.x < 6 || m.x > BOARD - 6)).toBe(true);
   });
 });
 
