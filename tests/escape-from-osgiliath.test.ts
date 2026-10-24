@@ -18,7 +18,7 @@ import {
   slainOrcs,
   wellAimed,
 } from '../src/shared/osgiliath.ts';
-import { BOARD, BUILDING_HEIGHT, EAST_ZONE, GOOD_REACH, MIDDLE, WEST_ZONE, WHOLE_HEIGHT } from '../src/shared/osgiliathMap.ts';
+import { BOARD, DOOR_WIDTH, EAST_ZONE, GOOD_REACH, MIDDLE, RUIN_HEIGHT, WALL_HEIGHT, WEST_ZONE, WHOLE_HEIGHT } from '../src/shared/osgiliathMap.ts';
 import type { Action, GameState, Model, Seat } from '../src/shared/types.ts';
 import { catalog, play, seeded } from './botsim.ts';
 
@@ -47,13 +47,24 @@ const moveFor = (s: GameState, turn = 1, seat: Seat = 'p1'): GameState => {
 };
 
 describe('Escape from Osgiliath: the table and the cast', () => {
-  it("a 4' by 4' ruined city: broken walls, two whole walls, tower stumps, three stepped buildings and rubble", () => {
+  it("a 4' by 4' ruined city: broken walls, two whole walls, tower stumps, three roofless ruins and rubble", () => {
     const s = setup();
     expect(s.board).toMatchObject({ w: BOARD, h: BOARD });
     const t = Object.values(s.terrain);
     expect(t.filter(x => x.look === 'osgwall').length).toBeGreaterThan(50);
     expect(t.filter(x => x.look === 'osgwall' && x.height === WHOLE_HEIGHT).length).toBe(5);
-    expect(t.filter(x => x.look === 'stepped' && x.height === BUILDING_HEIGHT).length).toBe(4);
+    // The ruins: thick walls a storey and more high, with a doorway in each.
+    const ruins = t.filter(x => x.id.includes('ruin-'));
+    expect(ruins.every(x => x.height === RUIN_HEIGHT)).toBe(true);
+    for (const i of [1, 2, 3]) {
+      const [a, b] = ruins.filter(x => /a$|b$/.test(x.id) && x.id.includes(`ruin-${i}-`));
+      const ends = (x: typeof a) => [-1, 1].map(k => ({ x: x.x + (k * (x.w / 2) * Math.cos((x.rot * Math.PI) / 180)), y: x.y + (k * (x.w / 2) * Math.sin((x.rot * Math.PI) / 180)) }));
+      const gap = Math.min(...ends(a).flatMap(p => ends(b).map(q => Math.hypot(p.x - q.x, p.y - q.y))));
+      expect(gap).toBeCloseTo(DOOR_WIDTH, 1);
+    }
+    // The broken walls are low enough to jump; nothing but the ruins and the two whole walls needs climbing.
+    expect(t.filter(x => x.look === 'osgwall' && x.height! > WALL_HEIGHT).every(x => x.height === RUIN_HEIGHT || x.height === WHOLE_HEIGHT)).toBe(true);
+    expect(WALL_HEIGHT).toBeLessThanOrEqual(1.1);
     expect(t.filter(x => x.look === 'rubble').every(x => x.difficult)).toBe(true);
   });
 
@@ -189,9 +200,11 @@ describe('Escape from Osgiliath: the computer', () => {
     const { state } = play(run(pre, { type: 'startGame', at: 1 }), seeded(3), 60000, st => !!st.result || st.turn > 30, watch);
     expect(refused).toEqual([]);
     expect(state.result?.winner).toBeDefined();
-    const back = loadState(JSON.parse(JSON.stringify(state)));
-    expect(back.narrative).toEqual(state.narrative);
-    expect(back.models).toEqual(state.models);
-    expect(back.flow).toEqual(state.flow);
+    // (Compared as saved: a save is JSON, where a turn of -0 is just 0.)
+    const json = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
+    const back = loadState(json(state));
+    expect(json(back.narrative)).toEqual(json(state.narrative));
+    expect(json(back.models)).toEqual(json(state.models));
+    expect(json(back.flow)).toEqual(json(state.flow));
   }, 600000);
 });

@@ -3,7 +3,7 @@ import type { Terrain } from './types.ts';
 
 // Escape from Osgiliath: the table, drawn in our own way from the scenario's map, and where the cast starts. Inches
 // from the north-west corner of a 4' by 4' table. The ruined city: broken walls running every which way between open
-// streets, the stumps of round towers, three great ruined buildings with stepped roofs, two stretches of wall still
+// streets, the stumps of round towers, three great roofless ruins, two stretches of wall still
 // standing to full height, and piles of rubble and fallen masonry everywhere. The Good side starts in the middle and
 // must get off the west edge, with Orcs on both sides of it and more coming in from the north and south.
 // (Heights and where they come from are in plans/escape-from-osgiliath-audit.md.)
@@ -19,11 +19,12 @@ export const WEST_ZONE: [number, number, number, number] = [0, 0, EVIL_DEPTH, BO
 export const POINTS = { north: { x: BOARD / 2, y: 0 }, south: { x: BOARD / 2, y: BOARD } } as const;
 
 /** Broken walls stand a storey high; the two stretches still whole stand taller; the stumps of the round towers are low. */
-export const WALL_HEIGHT = 2;
+export const WALL_HEIGHT = 1;
 export const WHOLE_HEIGHT = 4;
-export const RING_HEIGHT = 1;
-/** The ruined buildings, roofed with steps of stone; fallen masonry, and the rubble round it. */
-export const BUILDING_HEIGHT = 4;
+export const RING_HEIGHT = 0.5;
+/** The great ruined buildings' walls, still a storey and more; fallen masonry, and the rubble round it. */
+export const RUIN_HEIGHT = 3;
+export const RUIN_THICK = 0.7;
 export const SLAB_HEIGHT = 1;
 export const RUBBLE_HEIGHT = 0.5;
 /** How thick a wall is. */
@@ -34,61 +35,55 @@ const piece = (t: Partial<Terrain> & Pick<Terrain, 'id' | 'kind' | 'x' | 'y' | '
 /** The broken walls, a storey high: from, to (each x, y). */
 export const WALLS: [number, number, number, number][] = [
   // North-west: a low stub, the long wall along the road west, and the walls south of it.
-  [10.6, 3.8, 13.2, 3.8],
+  [10.6, 3.8, 12.8, 3.8],
   [0, 12.9, 17.8, 12.9],
   [2.7, 13.4, 2.7, 21.5],
-  [2.9, 18.1, 8.2, 18.1],
-  [8.8, 19.1, 8.8, 27],
+  [2.9, 18.1, 8.8, 18.1],
+  [8.8, 18.1, 8.8, 27],
   [8.8, 27, 16, 27],
-  // North: the wall down from the round tower, and the T west of the stepped building.
-  [16.5, 8.7, 16.5, 11.8],
-  [16.4, 14, 16.4, 16.8],
+  // North: the wall down from the round tower, and the T west of the northern ruin.
+  [16.5, 9.2, 16.5, 12.9],
+  [16.5, 12.9, 16.5, 16.1],
   [23.3, 6.6, 23.3, 7.3],
   // North-east.
   [35.2, 0.1, 35.2, 3.2],
-  [43.6, 1.8, 43.6, 5.3],
-  [43.6, 6, 43.6, 7.3],
-  [44.2, 1.2, 48, 1.2],
+  [43.6, 0.6, 43.6, 7.3],
+  [43.6, 0.6, 48, 0.6],
   [47, 10.1, 48, 10.1],
   [32, 11.2, 37.2, 11.2],
   // The middle: the T to the north of the Good side's ground, the long wall to its east, and the walls south of it.
   [22.5, 16.6, 29.8, 16.6],
   [25.8, 16.8, 25.8, 19.3],
-  [31.2, 18.8, 31.2, 20.3],
-  [31.2, 20.6, 31.2, 30.2],
+  [31.2, 18.8, 31.2, 30.2],
   [20.2, 26.8, 20.2, 29.3],
-  [27.2, 29.6, 27.2, 32.6],
-  [27.3, 30.2, 30, 30.2],
+  [27.2, 29.6, 27.2, 31.6],
+  [27.3, 30.2, 31.2, 30.2],
   [28.8, 33.4, 30.4, 33.4],
   // East.
-  [41.9, 16.1, 44.3, 16.1],
-  [42, 16.1, 42, 17.5],
-  [45, 15.9, 46.3, 15.9],
+  [41.9, 16, 46.3, 16],
+  [42, 16, 42, 17.5],
   [42, 21, 42, 22.5],
   [37.2, 18, 37.2, 25.6],
   [37.2, 25.6, 39.5, 25.6],
-  [42, 27.3, 42, 28.2],
-  [42, 29.2, 42, 32.2],
+  [42, 27.3, 42, 32.2],
   [44.2, 32.3, 45.8, 32.3],
-  [36.2, 36.5, 40.8, 36.5],
+  [35, 36.5, 40.8, 36.5],
   // South-west.
-  [0, 40.9, 0.5, 40.9],
-  [1.3, 40.9, 2.2, 40.9],
+  [0, 40.9, 2.2, 40.9],
   [5.2, 40.9, 7.3, 40.9],
   [12.5, 40.9, 13.7, 40.9],
-  [13.6, 40.9, 13.6, 43.4],
-  [13.5, 44.2, 13.5, 44.9],
+  [13.6, 40.9, 13.6, 44.9],
   [15.5, 32.6, 15.5, 38.3],
   [15.5, 32.6, 20, 32.6],
   [18.3, 35, 17.1, 36.4],
-  [17.1, 36.4, 18, 37.9],
+  [17.1, 36.4, 17.75, 37.5],
   [18.3, 35.2, 19.8, 35.2],
-  [16.5, 38.2, 20, 38.2],
+  [15.5, 38.2, 20, 38.2],
   [16.5, 38.3, 16.5, 39.5],
   // South: the long wall along the road, the wall south from it, and the wall up the east side of the open ground.
-  [26, 41.5, 33.6, 41.5],
-  [29.6, 41.7, 29.6, 47.5],
-  [35, 35.1, 35, 43.8],
+  [26, 41.5, 35, 41.5],
+  [29.6, 41.7, 29.6, 48],
+  [35, 35.1, 35, 43.5],
   [35, 45.3, 35, 48],
 ];
 
@@ -112,18 +107,28 @@ export const RINGS: { x: number; y: number; r: number; arcs: [number, number][] 
   { x: 15.6, y: 20.2, r: 2.9, arcs: [[-78, -45], [-38, 18]] },
 ];
 
-/** The three ruined buildings, roofed in steps of stone: each as one or two blocks (x0, y0, x1, y1). */
-export const BUILDINGS: [number, number, number, number][][] = [
-  [[25.3, 2.2, 30.8, 7]],
-  [
-    [5.4, 28.4, 7.8, 34.2],
-    [7.6, 31.8, 9.8, 34.2],
-  ],
-  [[39.7, 40.9, 44.6, 46.4]],
+/**
+ * The three great ruined buildings, their roofs long gone: thick walls round an open floor, each with a doorway broken
+ * through on the side facing the street. Each as its outline (corners in order) and the side the doorway is in
+ * (the edge from corner `door` to the next).
+ */
+export const RUINS: { outline: [number, number][]; door: number }[] = [
+  // North: a square block, its doorway to the south.
+  { outline: [[25.3, 2.2], [30.8, 2.2], [30.8, 7], [25.3, 7]], door: 2 },
+  // South-west: an L, its doorway to the east.
+  { outline: [[5.4, 28.4], [7.8, 28.4], [7.8, 31.8], [9.8, 31.8], [9.8, 34.2], [5.4, 34.2]], door: 3 },
+  // South-east: a square block, its doorway to the north.
+  { outline: [[39.7, 40.9], [44.6, 40.9], [44.6, 46.4], [39.7, 46.4]], door: 0 },
 ];
+/** How wide a broken doorway is: room for a model on a 25mm base and a little over. */
+export const DOOR_WIDTH = 1.6;
 
 /** Fallen masonry and piles of rubble: middle, size, turn, height. */
 export const RUBBLE: [number, number, number, number, number, number][] = [
+  // Inside the three ruins, fallen from their upper floors.
+  [28.6, 4.2, 1.6, 1.2, 20, RUBBLE_HEIGHT],
+  [6.6, 31.6, 1, 1.4, 0, RUBBLE_HEIGHT],
+  [41.6, 43.4, 1.8, 1.4, -25, RUBBLE_HEIGHT],
   // North-west.
   [8, 11.5, 1, 1, 15, SLAB_HEIGHT],
   [0.6, 12.2, 1, 0.8, 0, RUBBLE_HEIGHT],
@@ -194,9 +199,9 @@ export const RUBBLE: [number, number, number, number, number, number][] = [
 ];
 
 /** A straight wall from one point to another. */
-function wall(id: string, [x0, y0, x1, y1]: [number, number, number, number], height: number, extra: Partial<Terrain> = {}): Terrain {
+function wall(id: string, [x0, y0, x1, y1]: [number, number, number, number], height: number, extra: Partial<Terrain> = {}, thick = WALL_THICK): Terrain {
   const len = Math.hypot(x1 - x0, y1 - y0);
-  return piece({ id, kind: 'wall', x: (x0 + x1) / 2, y: (y0 + y1) / 2, w: len + WALL_THICK, h: WALL_THICK, rot: Math.round(((Math.atan2(y1 - y0, x1 - x0) * 180) / Math.PI) * 10) / 10, height, ...extra });
+  return piece({ id, kind: 'wall', x: (x0 + x1) / 2, y: (y0 + y1) / 2, w: len + thick, h: thick, rot: Math.round(((Math.atan2(y1 - y0, x1 - x0) * 180) / Math.PI) * 10) / 10, height, ...extra });
 }
 
 /** The arcs of a broken round tower, each as a run of short straight walls. */
@@ -216,9 +221,24 @@ function ringWalls(): Terrain[] {
   return out;
 }
 
+/** A ruin's walls, one along each side of its outline, the doorway side in two parts either side of the gap. */
+function ruinWalls(): Terrain[] {
+  return RUINS.flatMap(({ outline, door }, i) =>
+    outline.flatMap(([x0, y0], k) => {
+      const [x1, y1] = outline[(k + 1) % outline.length];
+      const id = `ruin-${i + 1}-${k + 1}`;
+      const make = (a: number, b: number, part = '') => wall(`${id}${part}`, [x0 + (x1 - x0) * a, y0 + (y1 - y0) * a, x0 + (x1 - x0) * b, y0 + (y1 - y0) * b].map(v => +v.toFixed(2)) as [number, number, number, number], RUIN_HEIGHT, { look: 'osgwall' }, RUIN_THICK);
+      if (k !== door) return [make(0, 1)];
+      const len = Math.hypot(x1 - x0, y1 - y0);
+      const half = (DOOR_WIDTH + RUIN_THICK) / 2 / len;
+      return [make(0, 0.5 - half, 'a'), make(0.5 + half, 1, 'b')];
+    }),
+  );
+}
+
 export function osgiliathTerrain(): NarrativeTerrain[] {
   return [
-    ...BUILDINGS.flatMap((blocks, i) => blocks.map(([x0, y0, x1, y1], j) => piece({ id: `building-${i + 1}${blocks.length > 1 ? `-${j + 1}` : ''}`, kind: 'building', x: (x0 + x1) / 2, y: (y0 + y1) / 2, w: x1 - x0, h: y1 - y0, height: BUILDING_HEIGHT, look: 'stepped' }))),
+    ...ruinWalls(),
     ...WALLS.map((w, i) => wall(`wall-${i + 1}`, w, WALL_HEIGHT, { look: 'osgwall' })),
     ...WHOLE.map((w, i) => wall(`whole-wall-${i + 1}`, w, WHOLE_HEIGHT, { look: 'osgwall' })),
     ...ringWalls(),

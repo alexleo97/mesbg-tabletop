@@ -1386,14 +1386,6 @@ select.ready-made {
 .terrain .osg-break { fill: none; stroke: #7c786d; stroke-width: 0.07; stroke-linejoin: round; }
 .terrain .osg-pilaster { fill: #e9e6de; stroke: #6d695f; stroke-width: 0.04; }
 .terrain .osg-coping { fill: none; stroke: #f4f2ec; stroke-width: 0.06; }
-.terrain .osg-step { stroke: #6d695f; stroke-width: 0.05; }
-.terrain .osg-step-0 { fill: #bdb9ae; }
-.terrain .osg-step-1 { fill: #cbc7bc; }
-.terrain .osg-step-2 { fill: #d8d4ca; }
-.terrain .osg-step-3 { fill: #e4e1d8; }
-.terrain .osg-court { fill: #a9a59a; stroke: #6d695f; stroke-width: 0.06; }
-.terrain .osg-drum { fill: #f0ede6; stroke: #6d695f; stroke-width: 0.04; }
-.terrain .osg-flute { fill: none; stroke: #b3afa4; stroke-width: 0.03; }
 .terrain .osg-dust { fill: #a39a88; opacity: 0.4; filter: blur(0.15px); }
 .terrain .osg-heap { fill: #8f8b82; opacity: 0.5; }
 .terrain .osg-block { stroke: #57534a; stroke-width: 0.04; stroke-linejoin: round; }

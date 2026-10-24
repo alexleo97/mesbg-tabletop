@@ -698,7 +698,7 @@ export const NARRATIVES: Narrative[] = [
       evil: { name: 'The Army of Gothmog', cast: "Gothmog, Lieutenant of Sauron; Gothmog's Enforcer; Guritz, Master of Reserves; 24 Morannon Orc Warriors (6 with shields, 6 with spears, 6 with shields and spears, 6 with neither); a Mordor Troll" },
     },
     layout:
-      "A 4' by 4' corner of the ruined city: broken walls run every which way between the streets, some wide enough for a whole warband, others narrow alleys. Three great ruined buildings with stepped roofs stand to the north, south-west and south-east, two stretches of wall still stand to full height, and the stumps of round towers, fallen masonry and rubble lie everywhere.",
+      "A 4' by 4' corner of the ruined city: broken walls run every which way between the streets, some wide enough for a whole warband, others narrow alleys. Three great ruined buildings, their roofs long gone, stand to the north, south-west and south-east, each with a doorway broken through; two stretches of wall still stand to full height, and the stumps of round towers, fallen masonry and rubble lie everywhere.",
     setupOrder: ['good', 'evil'],
     deployment:
       "The Good side sets up wholly within 6\" of the middle of the table. Then the Evil side sets up Gothmog, his Enforcer and half the Orcs wholly within 12\" of the east edge, and the rest (Guritz, the other Orcs and the Troll) wholly within 12\" of the west edge.",

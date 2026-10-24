@@ -281,7 +281,6 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
     case 'building':
       if (t.look === 'orthanc') return <IsengardPiece t={t} />;
       if (t.look === 'throne') return <GoblinPiece t={t} />;
-      if (t.look === 'stepped') return <OsgiliathPiece t={t} />;
       if (t.look === 'trunk') return <MirkwoodPiece t={t} />;
       if (t.look === 'pine') return <PinePiece t={t} />;
       if (t.look === 'stone') return <StoneTower t={t} tex={tex} />;
@@ -972,9 +971,8 @@ function GoblinPiece({ t }: { t: Terrain }) {
 
 /**
  * Osgiliath (Escape from Osgiliath): the white stone of Gondor, broken. Walls of pale ashlar in staggered courses with
- * pilasters along them and their tops ragged where they fell (the stretches still standing whole keep a coping); the
- * great ruined buildings, roofed in steps of stone round an open court ringed with column stumps; and heaps of fallen
- * masonry, toppled column drums among them.
+ * pilasters along them and their tops ragged where they fell (the stretches still standing whole, and the thick walls
+ * of the great roofless ruins, keep a coping); and heaps of fallen masonry, toppled column drums among them.
  */
 function OsgiliathPiece({ t }: { t: Terrain }) {
   const { w, h } = t;
@@ -1002,38 +1000,6 @@ function OsgiliathPiece({ t }: { t: Terrain }) {
           return <rect key={k} className={`osg-pilaster${whole ? ' osg-whole' : ''}`} x={x - 0.22} y={-h / 2 - 0.1} width={0.44} height={h + 0.2} />;
         })}
         {whole ? <rect className="osg-coping" x={-w / 2 + 0.05} y={-h / 2 + 0.05} width={w - 0.1} height={h - 0.1} /> : <polyline className="osg-break" points={top} />}
-      </>
-    );
-  }
-  if (t.look === 'stepped') {
-    // Four steps of stone up to a parapet round an open court, each step paler than the one below, and a ring of
-    // broken column stumps round the court.
-    const steps = [1, 0.84, 0.68, 0.52];
-    const sx = (k: number) => (w * k) / 2;
-    const sy = (k: number) => (h * k) / 2;
-    const cols: [number, number][] = [];
-    const per = 3;
-    for (let i = 0; i <= per; i++)
-      for (const [u, v] of [[i / per, 0], [i / per, 1], [0, i / per], [1, i / per]]) {
-        const p: [number, number] = [-sx(0.45) + u * 2 * sx(0.45), -sy(0.45) + v * 2 * sy(0.45)];
-        if (!cols.some(c => Math.hypot(c[0] - p[0], c[1] - p[1]) < 0.1)) cols.push(p);
-      }
-    return (
-      <>
-        {steps.map((k, i) => (
-          <rect key={k} className={`${i ? '' : 'ground '}osg-step osg-step-${i}`} x={-sx(k)} y={-sy(k)} width={2 * sx(k)} height={2 * sy(k)} {...(i ? {} : { filter: 'url(#hard-shadow)' })} />
-        ))}
-        {/* The step edges meeting at the corners, as the book's plan draws them. */}
-        {[-1, 1].flatMap(i => [-1, 1].map(j => <line key={`${i}${j}`} className="osg-seam" x1={i * sx(1)} y1={j * sy(1)} x2={i * sx(0.52)} y2={j * sy(0.52)} />))}
-        <rect className="osg-court" x={-sx(0.38)} y={-sy(0.38)} width={2 * sx(0.38)} height={2 * sy(0.38)} />
-        <g className="tint" pointerEvents="none">
-          {cols.map(([x, y], k) => (
-            <g key={k}>
-              <circle className="osg-drum" cx={x} cy={y} r={0.2} />
-              {seeded(t.id, k + 500) > 0.45 && <circle className="osg-flute" cx={x} cy={y} r={0.12} />}
-            </g>
-          ))}
-        </g>
       </>
     );
   }
@@ -1488,7 +1454,7 @@ function hull(pts: Point[]): Point[] {
 }
 
 /** Whether a piece is part of a fortress that stands tall (its walls, gates, keep, towers and the rock under them), or a stone piece of Balin's Tomb. */
-const tall = (t: Terrain) => !t.gone && ((t.sheer && t.look !== 'trunk' && t.look !== 'pine') || t.look === 'osgwall' || t.look === 'stepped' || t.kind === 'gate' || (t.look === 'stone' && t.kind !== 'road') || t.look === 'pillar' || t.look === 'tomb' || t.look === 'well' || t.look === 'scaffold');
+const tall = (t: Terrain) => !t.gone && ((t.sheer && t.look !== 'trunk' && t.look !== 'pine') || t.look === 'osgwall' || t.kind === 'gate' || (t.look === 'stone' && t.kind !== 'road') || t.look === 'pillar' || t.look === 'tomb' || t.look === 'well' || t.look === 'scaffold');
 /** Orthanc's faces are cut short, so the tower doesn't hide the table round it (its height is written on top). */
 const FACE_CAP = 5.5;
 
@@ -1514,9 +1480,9 @@ export function TerrainFaces({ terrain, turn = 0 }: { terrain: Terrain[]; /** Ho
       {pieces.map(t => {
         const pts = face(t, lean).map(p => `${p.x.toFixed(3)},${p.y.toFixed(3)}`).join(' ');
         return (
-          <g key={t.id} className={t.look === 'osgwall' || t.look === 'stepped' ? 'osg-face' : undefined}>
+          <g key={t.id} className={t.look === 'osgwall' ? 'osg-face' : undefined}>
             <polygon className="face-shadow" points={pts} transform="translate(0.35 0.45)" filter="url(#bank-blur)" />
-            <polygon className="face" points={pts} fill={t.look === 'orthanc' ? '#1d1e23' : t.look === 'scaffold' ? '#5a3d1f' : t.look === 'osgwall' || t.look === 'stepped' ? '#b9b5ab' : t.kind === 'rock' ? 'url(#tex-cliff)' : 'url(#tex-wall)'} />
+            <polygon className="face" points={pts} fill={t.look === 'orthanc' ? '#1d1e23' : t.look === 'scaffold' ? '#5a3d1f' : t.look === 'osgwall' ? '#b9b5ab' : t.kind === 'rock' ? 'url(#tex-cliff)' : 'url(#tex-wall)'} />
             <polygon className="face-shade" points={pts} />
           </g>
         );
