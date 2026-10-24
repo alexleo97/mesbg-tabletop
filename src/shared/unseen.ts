@@ -117,8 +117,8 @@ export function skitterStuck(state: GameState): boolean {
 /** How near the whole D6" a Spider's move must come (a quarter of an inch: no hand on a table measures closer). */
 export const SKITTER_SLACK = 0.25;
 
-/** Whether the player moving the Spider may say it's done: it has gone the whole way, or can't go on. */
-export const skitterDone = (state: GameState) => !!state.flow.skitter && (skitterLeft(state) <= SKITTER_SLACK || skitterStuck(state));
+/** Whether the player moving the Spider may say it's done: it has gone the whole way, or can't go on (a Sentry moving up to half its Move, at Lake-town, any time). */
+export const skitterDone = (state: GameState) => !!state.flow.skitter && (!!state.flow.skitter.upTo || skitterLeft(state) <= SKITTER_SLACK || skitterStuck(state));
 
 /** Keeps a Spider moving under the Power of the Ring on the table. */
 export function keepOnTable(state: GameState, m: Model, to: { x: number; y: number }) {

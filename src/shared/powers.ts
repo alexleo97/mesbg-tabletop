@@ -107,11 +107,12 @@ function auras(state: GameState, m: Model, power: string, side: 'friend' | 'enem
   );
 }
 
-/** Why a model can't act at all this turn, if it can't: Transfixed, Paralysed or thrown from its mount. */
+/** Why a model can't act at all this turn, if it can't: Transfixed, Paralysed, thrown from its mount or dazed by the Haze. */
 export function heldBy(state: GameState, m: Model): string | null {
   if (under(state, m, 'Paralyse')) return 'Paralysed';
   if (under(state, m, 'Transfix')) return 'Transfixed';
   if (m.stunned === state.turn) return 'Thrown from its mount';
+  if (m.hazed === state.turn) return 'Dazed by the Haze of Mirkwood';
   return null;
 }
 export const cannotAct = (state: GameState, m: Model) => !m.dead && heldBy(state, m) !== null;

@@ -552,6 +552,7 @@ const MAT_NAMES: Record<Mat, string> = {
   stone: 'Flagstones',
   snow: 'Snow',
   sand: 'Sand',
+  water: 'Open water',
 };
 
 const TERRAIN_PRESETS: { label: string; t: Omit<Terrain, 'id' | 'x' | 'y' | 'locked'> }[] = [

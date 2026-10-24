@@ -1,4 +1,5 @@
 import { skitterDone, skitterLeft } from '../shared/unseen.ts';
+import { ElvesEdge } from './ElvesEdge.tsx';
 import { useState } from 'react';
 import { ResultReport } from './ResultReport.tsx';
 import { activeSeat, other, type Combat } from '../shared/flow.ts';
@@ -741,6 +742,7 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openFight
           {flow.started && <SpellStep state={state} dispatch={dispatch} role={role} name={name} />}
           {flow.started && <CompelStep state={state} dispatch={dispatch} role={role} />}
           {flow.started && <SkitterStep state={state} dispatch={dispatch} role={role} />}
+          {flow.started && state.phase === 'move' && <ElvesEdge state={state} dispatch={dispatch} role={role} />}
           {flow.started && <PlacingStep state={state} dispatch={dispatch} role={role} name={name} />}
           {flow.started && role !== 'spectator' && mayCry(state, role) && (
             <div className="spell-step">

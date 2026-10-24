@@ -10,12 +10,13 @@ import { phaseHeroics } from './heroics.ts';
 import { engaged, limitMove, moveAllowance, moveStart } from './movement.ts';
 import { cannotAct, shotNeed } from './powers.ts';
 import { missileWeapon, MISSILE_WEAPONS } from './rules.ts';
-import { distanceToTerrain, heightOf, obstructions, sightTo, type Obstruction } from './sight.ts';
+import { distanceToTerrain, heightOf, obstructions, sightTo, swimming, type Obstruction } from './sight.ts';
 import { howdahFor } from './warBeasts.ts';
 import { acrossCable, engineBlocked, engineCantHit, firingCrew, siegeWeapon } from './siege.ts';
 import { cloaked, hasRule, poisonedShot, shotDefence, stalks, stones } from './wargear.ts';
 import { invisibleTo } from './ring.ts';
 import { bilboStones } from './unseen.ts';
+import { isSentry } from './lake.ts';
 import { deadlyShot, finalCount, luckyShot, shotsPerPhase, shotsTaken, steadyOnTheMove, unsteady } from './towers.ts';
 import type { GameState, Model } from './types.ts';
 
@@ -110,6 +111,10 @@ export function shooterBlocked(state: GameState, m: Model, weapon: Weapon, charg
   if (shotsTaken(state, m) >= (charge || m.siege ? 1 : shotsPerPhase(catalog, m))) return 'has shot this turn';
   if (m.prone) return 'is Prone';
   if (cannotAct(state, m)) return 'is held and can’t act';
+  // Nobody shoots while swimming.
+  if (swimming(state, m)) return 'is in deep water';
+  // A Sentry doesn't know the enemy is there.
+  if (isSentry(state, m)) return 'is a Sentry, and doesn’t know the enemy is there';
   // Legolas shoots even in a fight (Deadly Shot), on foot or mounted.
   if (engaged(state, m) && !(deadlyShot(catalog, m) && !charge && isBow(weapon))) return 'is in a fight';
   // A siege engine shoots only if it stayed put, with enough crew beside it and no enemy.

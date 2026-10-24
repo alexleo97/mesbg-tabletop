@@ -14,6 +14,10 @@ import { entsWinner } from './ents.ts';
 import { entsCast, entsTerrain } from './entsMap.ts';
 import { unseenWinner } from './unseen.ts';
 import { unseenCast, unseenTerrain } from './unseenMap.ts';
+import { elvesWinner } from './elves.ts';
+import { elvesCast, elvesTerrain } from './elvesMap.ts';
+import { lakeWinner } from './lake.ts';
+import { lakeCast, lakeTerrain } from './lakeMap.ts';
 import { insidePolygon, outline } from './sight.ts';
 import { BALLISTA_BASE, deepingSlots, evilSlots, GATE_ANGLE, HELMS_TEAMS, helmsTerrain, hornburgSlots, inHelmsZone, onArc, OUTER, type HelmsZone } from './helmsMap.ts';
 import type { Action, Base, DiceRoll, GameState, Mat, Model, Seat, Terrain } from './types.ts';
@@ -56,7 +60,9 @@ export type Placement =
   /** Starting at `at`, and kept at least so far from every friend (Amon Hen: Sam, 12" from the rest of the Fellowship). */
   | { apart: number; at: [number, number] }
   /** Starting at `at`, touching whichever table edge it is dragged nearest (The Unseen Hero: Bilbo). */
-  | { anyEdge: true; at: [number, number] };
+  | { anyEdge: true; at: [number, number] }
+  /** Starting at `at`, and kept at least so far from every enemy (The Elves of Mirkwood: the Spiders, 10" from the Dwarves). */
+  | { clear: number; at: [number, number] };
 
 /**
  * A deployment zone: a circle round a point (x, y, radius), a box (x0, y0, x1, y1), a ring round a point (x, y, from,
@@ -72,7 +78,9 @@ export type Area =
   /** Wholly on top of one of these pieces (Last March of the Ents: any of the scaffolds). */
   | { on: string[] }
   /** Wholly within any one of these areas. */
-  | { any: Area[] };
+  | { any: Area[] }
+  /** Wholly within every one of these areas (Lake-town Escape: section D, and within 3" of Bard's House). */
+  | { all: Area[] };
 
 /** What an area can be measured from: the scenario's pieces (by id, as on the table) and the cast on the table. */
 export interface AreaFrom {
@@ -94,6 +102,7 @@ export const toPiece = (t: Pick<Terrain, 'x' | 'y' | 'w' | 'h'>, p: Point) => Ma
 /** Whether a model this far across (from its middle) stands wholly within an area. */
 export function whollyInArea(a: Area, p: Point, r: number, from: AreaFrom = {}): boolean {
   if ('any' in a) return a.any.some(x => whollyInArea(x, p, r, from));
+  if ('all' in a) return a.all.every(x => whollyInArea(x, p, r, from));
   if ('on' in a) {
     const all = Object.values(from.terrain ?? {});
     if (!all.length) return true;
@@ -321,7 +330,7 @@ export const NARRATIVES: Narrative[] = [
       evil: { name: 'The Spiders', cast: '6 Mirkwood Giant Spiders, and three webbed bundles: two hold Dwarves, one is a decoy' },
     },
     layout:
-      "A 4' by 4' stretch of Mirkwood, thick with trees: great gnarled trees on mounds of roots and stones, lesser trees in tangles of undergrowth between them, boulders, and a low rocky bank across the south-west.",
+      "A 4' by 4' stretch of Mirkwood, thick with trees: great gnarled trees on mounds of roots and stones, crooked lesser trees in tangles of undergrowth between them, and boulders.",
     setupOrder: ['evil', 'good'],
     deployment:
       'The Evil player places the three webbed bundles at least 6" apart and secretly picks which one is the decoy; then sets up the Spiders at least 6" from one another. Then Bilbo starts touching any table edge, wearing the Ring.',
@@ -342,6 +351,77 @@ export const NARRATIVES: Narrative[] = [
       },
     ],
     cast: unseenCast(),
+  },
+  {
+    id: 'the-elves-of-mirkwood',
+    name: 'The Elves of Mirkwood',
+    from: 'The Hobbit: The Desolation of Smaug',
+    saga: 'hobbit',
+    blurb: 'Freed from the webs, the Dwarves stagger about the forest floor in the choking air of Mirkwood, and the Spiders keep coming. Hold on until the Elves of the Woodland Realm arrive.',
+    board: { w: 48, h: 48, mat: 'forest' },
+    terrain: elvesTerrain(),
+    sides: {
+      good: { name: "Thorin's Company and the Elves", cast: 'Thorin Oakenshield with Orcrist, the twelve other Dwarves, and Bilbo Baggins with Sting and the One Ring; Legolas with an Elven cloak, Tauriel with an Elf bow and 10 Mirkwood Rangers, who arrive later' },
+      evil: { name: 'The Spiders', cast: '10 Mirkwood Giant Spiders' },
+    },
+    layout: "A 4' by 4' stretch of Mirkwood's overgrown floor: great gnarled trees on mounds of roots and stones, crooked lesser trees in tangles of undergrowth, boulders, and a long rocky ridge running down from the north-east of the middle.",
+    setupOrder: ['good', 'evil'],
+    deployment: 'The Good player sets up the Dwarves and Bilbo within 6" of the middle of the table. Then the Evil player sets up the Spiders anywhere at least 10" from every Good model. Legolas, Tauriel and the Rangers are kept aside: they arrive later.',
+    objectives: 'The battle lasts 12 turns. The Spiders win as soon as they have slain six of Thorin\'s Company. Otherwise, if ten or more of the company are alive at the end, the Good side wins; anything else is a draw.',
+    rules: [
+      {
+        name: 'The Haze of Mirkwood',
+        text: "At the start of each Dwarf's activation, roll a D6. On a 4+ it acts as normal. On a 1-3 it can't act that turn: it rolls a single die in a fight, and makes no strikes if it wins. (The game rolls for all the Dwarves at once, as each Move phase begins. Bilbo isn't affected.)",
+      },
+      {
+        name: 'The Rangers',
+        text: "As the Good side's fourth Move phase ends, Legolas, Tauriel and the Mirkwood Rangers move onto the table as reinforcements from any table edge. (The Good player picks the edge, and can change it until they arrive.)",
+      },
+      {
+        name: "The Spider's Nest",
+        text: 'Slain Spiders are set aside. At the start of each Priority phase, before Priority is rolled, the Evil player may put any of them back on the table at least 10" from every Good model, to fight on as normal.',
+      },
+    ],
+    cast: elvesCast(),
+  },
+  {
+    id: 'lake-town-escape',
+    name: 'Lake-town Escape',
+    from: 'The Hobbit: The Desolation of Smaug',
+    saga: 'hobbit',
+    blurb: 'Their raid on Bard’s House has failed to find Thorin, and the Orcs are creeping back through Lake-town to report to their masters. Legolas means to hunt down every one of them before they get away.',
+    board: { w: 48, h: 48, mat: 'water' },
+    terrain: lakeTerrain(),
+    sides: {
+      good: { name: 'Legolas', cast: 'Legolas Greenleaf, Prince of Mirkwood, with Orcrist' },
+      evil: { name: 'Bolg’s Orcs', cast: 'Bolg, Spawn of Azog; Fimbul, Hunter Orc Captain; 24 Hunter Orc Warriors (6 with Orc bows, 6 with two-handed weapons)' },
+    },
+    layout:
+      "A 4' by 4' corner of Lake-town on the Long Lake: wooden walkways winding between houses and towers, with boats tied up and ice floes drifting between. Bard's House stands on the east edge. Everything else is the lake: Deep Water.",
+    setupOrder: ['evil', 'good'],
+    deployment:
+      'The table is split into four sections, A to D from west to east, each 12" wide. The Evil player sets up a group of 6 Hunter Orc Warriors in each section, not within 3" of another section; the group in section D wholly within 3" of Bard\'s House. Bolg sets up with the group in section A, and Fimbul with the group in section C. Then Legolas sets up touching Bard\'s House.',
+    objectives:
+      'The battle goes on until the end of a turn in which a side has done what it came to do. Legolas wins once every Evil model is slain. The Evil side wins if Legolas is slain, or if Bolg leaves by the west edge without being seriously injured. (Once Legolas or the last Orc falls, the game ends there and then.)',
+    rules: [
+      {
+        name: 'Silent Assassins',
+        text: "Only the Orcs in section D start knowing Legolas is there; the rest are Sentries until the alarm is raised in their section. A Sentry can't charge, shoot or leave its own section, and as it activates, before the rest of its side moves, it rolls on the Sentry Chart: on a 1 it searches about and doesn't move; on a 2-3 it hears a noise, and the Good player moves it up to half its Move; on a 4-5 it is suspicious, and the Evil player moves it up to half its Move; on a 6 it moves as normal. The alarm goes up in a section at once when an Orc that knows walks into base contact with one of its Sentries, or in the End phase if Legolas charged or shot at one of its Sentries that turn and it is still alive.",
+      },
+      {
+        name: "Legolas' Fury",
+        text: 'Legolas has 3 Attacks and Fight 7.',
+      },
+      {
+        name: 'The Spawn of Azog',
+        text: "Bolg has 3 Fate points. While he has all his Wounds he can't leave the table, and as he activates he must charge Legolas if he can (unless he is still a Sentry). On his last Wound he is seriously injured: if he leaves by the west edge then, the Evil side can do no better than a draw.",
+      },
+      {
+        name: 'Deep Water',
+        text: "Away from the walkways, houses, boats and floes, the lake is Deep Water. A model going into it, or starting its move in it, takes a Swim test: on a 1 it sinks and is lost; on a 2-5 it swims on with half the Move it has left; on a 6 with all of it. A gap no wider than twice a model's height can be leapt instead. Nobody shoots from the water.",
+      },
+    ],
+    cast: lakeCast(),
   },
   {
     id: 'ambush-at-night',
@@ -889,6 +969,13 @@ export function holdNarrative(state: GameState, mv: { id: string; x: number; y: 
     const spot = { x: k === 0 ? r : k === 1 ? w - r : x, y: k === 2 ? r : k === 3 ? h - r : y };
     return onTable.some(o => Math.hypot(o.x - spot.x, o.y - spot.y) < radius(o) + r - 0.02) ? { ...mv, x: m.x, y: m.y } : { ...mv, ...spot };
   }
+  if ('clear' in p) {
+    // Anywhere at least so far from every enemy, and on no one else.
+    const r = radius(m);
+    const near = onTable.some(o => (o.owner !== m.owner ? distanceBetween(here, o) < p.clear - 0.01 : Math.hypot(o.x - mv.x, o.y - mv.y) < radius(o) + r - 0.02));
+    const inside = mv.x >= r && mv.y >= r && mv.x <= state.board.w - r && mv.y <= state.board.h - r;
+    return !near && inside ? mv : { ...mv, x: m.x, y: m.y };
+  }
   if ('apart' in p) {
     // Anywhere at least so far from every friend.
     const near = onTable.some(o => o.owner === m.owner && distanceBetween(here, o) < p.apart - 0.01);
@@ -910,6 +997,8 @@ export function narrativeWinner(state: GameState): Seat | 'draw' | null {
   if (n.id === 'amon-hen') return amonWinner(state);
   if (n.id === 'last-march-of-the-ents') return entsWinner(state);
   if (n.id === 'the-unseen-hero') return unseenWinner(state);
+  if (n.id === 'the-elves-of-mirkwood') return elvesWinner(state);
+  if (n.id === 'lake-town-escape') return lakeWinner(state);
   if (n.id === 'weathertop') {
     // The Nazgûl win as soon as Frodo falls; the Hobbits when every one of them is gone.
     if (castModel(state, 'frodo')?.dead) return seatOf(state, 'evil') ?? null;
