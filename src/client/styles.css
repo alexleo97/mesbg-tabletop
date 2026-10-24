@@ -136,6 +136,7 @@ h1, h3, h4, .topbar .room, .phases .turn, .roster-summary b, .name-input, .tabs 
 .terrain .keep-top { stroke: #1d1b19; stroke-width: 0.06; }
 .fortress-faces .face { stroke: #1d1b19; stroke-width: 0.05; stroke-linejoin: round; }
 .fortress-faces .face-shade { fill: #00000073; }
+.fortress-faces .osg-face .face-shade { fill: #00000038; }
 .fortress-faces .face-shadow { fill: #0000004d; }
 .terrain .wall-joint { stroke: #0004; stroke-width: 0.04; pointer-events: none; }
 .terrain.building .ground { stroke: #2b2722; stroke-width: 0.1; }
@@ -1379,17 +1380,25 @@ select.ready-made {
 .terrain .gob-stone-2 { fill: #57504a; }
 .terrain .gob-stone-lit { fill: #ffffff; opacity: 0.08; }
 /* Osgiliath: pale dressed stone, weathered and broken. */
-.terrain .osg-wall { fill: #cbbd9f; stroke: #5b4c37; stroke-width: 0.05; }
-.terrain .osg-seam { stroke: #7d6c52; stroke-width: 0.035; }
-.terrain .osg-break { fill: none; stroke: #6b5a42; stroke-width: 0.06; stroke-linejoin: round; }
-.terrain .osg-step { stroke: #5b4c37; stroke-width: 0.05; }
-.terrain .osg-step-0 { fill: #a8987a; }
-.terrain .osg-step-1 { fill: #b9a98a; }
-.terrain .osg-step-2 { fill: #c8b999; }
-.terrain .osg-step-3 { fill: #d6c8a8; }
-.terrain .osg-court { fill: #9b8b6e; stroke: #5b4c37; stroke-width: 0.06; }
-.terrain .osg-heap { fill: #8e7f66; opacity: 0.55; }
-.terrain .osg-block { stroke: #4e4130; stroke-width: 0.04; stroke-linejoin: round; }
-.terrain .osg-block-0 { fill: #c4b598; }
-.terrain .osg-block-1 { fill: #aa9a7d; }
-.terrain .osg-block-2 { fill: #d3c6a9; }
+.terrain .osg-wall { fill: #dedbd2; stroke: #6d695f; stroke-width: 0.05; }
+.terrain .osg-wall.osg-whole { fill: #e6e3db; }
+.terrain .osg-seam { stroke: #9a968b; stroke-width: 0.03; }
+.terrain .osg-break { fill: none; stroke: #7c786d; stroke-width: 0.07; stroke-linejoin: round; }
+.terrain .osg-pilaster { fill: #e9e6de; stroke: #6d695f; stroke-width: 0.04; }
+.terrain .osg-coping { fill: none; stroke: #f4f2ec; stroke-width: 0.06; }
+.terrain .osg-step { stroke: #6d695f; stroke-width: 0.05; }
+.terrain .osg-step-0 { fill: #bdb9ae; }
+.terrain .osg-step-1 { fill: #cbc7bc; }
+.terrain .osg-step-2 { fill: #d8d4ca; }
+.terrain .osg-step-3 { fill: #e4e1d8; }
+.terrain .osg-court { fill: #a9a59a; stroke: #6d695f; stroke-width: 0.06; }
+.terrain .osg-drum { fill: #f0ede6; stroke: #6d695f; stroke-width: 0.04; }
+.terrain .osg-flute { fill: none; stroke: #b3afa4; stroke-width: 0.03; }
+.terrain .osg-dust { fill: #a39a88; opacity: 0.4; filter: blur(0.15px); }
+.terrain .osg-heap { fill: #8f8b82; opacity: 0.5; }
+.terrain .osg-block { stroke: #57534a; stroke-width: 0.04; stroke-linejoin: round; }
+.terrain .osg-block-0 { fill: #d6d3ca; }
+.terrain .osg-block-1 { fill: #b8b4aa; }
+.terrain .osg-block-2 { fill: #e4e1d9; }
+.terrain .osg-column { fill: #e8e5dd; stroke: #625e55; stroke-width: 0.04; }
+.terrain .osg-flute-line { stroke: #b3afa4; stroke-width: 0.03; }

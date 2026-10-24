@@ -691,7 +691,7 @@ export const NARRATIVES: Narrative[] = [
     from: 'The Return of the King',
     saga: 'lotr',
     blurb: "Gothmog's Orcs pour across the Anduin into the ruined city, and Faramir's garrison, caught in the middle, must fight its way out to the west before it is cut down.",
-    board: { w: 48, h: 48, mat: 'dirt' },
+    board: { w: 48, h: 48, mat: 'ruin' },
     terrain: osgiliathTerrain(),
     sides: {
       good: { name: 'The Garrison of Osgiliath', cast: 'Faramir, Captain of Gondor; Madril, Captain of Ithilien; Damrod, Ranger of Ithilien; 12 Warriors of Minas Tirith (4 with shields, 4 with shields and spears, 4 with bows); 12 Rangers of Gondor (4 with spears)' },

@@ -52,7 +52,7 @@ describe('Escape from Osgiliath: the table and the cast', () => {
     expect(s.board).toMatchObject({ w: BOARD, h: BOARD });
     const t = Object.values(s.terrain);
     expect(t.filter(x => x.look === 'osgwall').length).toBeGreaterThan(50);
-    expect(t.filter(x => x.look === 'stone' && x.height === WHOLE_HEIGHT).length).toBe(5);
+    expect(t.filter(x => x.look === 'osgwall' && x.height === WHOLE_HEIGHT).length).toBe(5);
     expect(t.filter(x => x.look === 'stepped' && x.height === BUILDING_HEIGHT).length).toBe(4);
     expect(t.filter(x => x.look === 'rubble').every(x => x.difficult)).toBe(true);
   });

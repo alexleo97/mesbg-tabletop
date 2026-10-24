@@ -971,33 +971,53 @@ function GoblinPiece({ t }: { t: Terrain }) {
 }
 
 /**
- * Osgiliath (Escape from Osgiliath): broken walls of pale dressed stone, their tops ragged where they fell; the great
- * ruined buildings, roofed in steps of stone round an open court; and heaps of fallen masonry.
+ * Osgiliath (Escape from Osgiliath): the white stone of Gondor, broken. Walls of pale ashlar in staggered courses with
+ * pilasters along them and their tops ragged where they fell (the stretches still standing whole keep a coping); the
+ * great ruined buildings, roofed in steps of stone round an open court ringed with column stumps; and heaps of fallen
+ * masonry, toppled column drums among them.
  */
 function OsgiliathPiece({ t }: { t: Terrain }) {
   const { w, h } = t;
   if (t.look === 'osgwall') {
-    // Courses of blocks along the wall, a jagged line where the top broke off, a chipped end or two.
-    const blocks = Math.max(1, Math.round(w / 0.55));
-    const bw = w / blocks;
-    const top = Array.from({ length: blocks + 1 }, (_, i) => `${(-w / 2 + i * bw).toFixed(3)},${(-h / 2 + seeded(t.id, i) * h * 0.35).toFixed(3)}`).join(' ');
+    const whole = (t.height ?? 0) >= 3;
+    // Two courses of blocks, the joints of one falling between those of the other.
+    const bw = 0.62;
+    const courses = [-h / 4, h / 4].map((y, row) => {
+      const out: number[] = [];
+      for (let x = -w / 2 + (row ? bw / 2 : bw) + (seeded(t.id, row + 90) - 0.5) * 0.2; x < w / 2 - 0.15; x += bw * (0.8 + seeded(t.id, out.length + row * 40) * 0.4)) out.push(x);
+      return { y, out, row };
+    });
+    // A broken wall's top is jagged where blocks came away; a whole one keeps a straight coping.
+    const n = Math.max(2, Math.round(w / 0.45));
+    const top = Array.from({ length: n + 1 }, (_, i) => `${(-w / 2 + (i * w) / n).toFixed(3)},${(-h / 2 + seeded(t.id, i) * h * 0.45).toFixed(3)}`).join(' ');
+    // Pilasters every few inches along a long wall, standing out a little either side.
+    const pil = w > 3.2 ? Math.floor(w / 2.8) : 0;
     return (
       <>
-        <rect className="ground osg-wall" x={-w / 2} y={-h / 2} width={w} height={h} filter="url(#hard-shadow)" />
-        {Array.from({ length: blocks - 1 }, (_, i) => {
-          const x = -w / 2 + (i + 1) * bw + (seeded(t.id, i + 50) - 0.5) * 0.1;
-          return <line key={i} className="osg-seam" x1={x} x2={x} y1={-h / 2} y2={h / 2} />;
-        })}
+        <rect className={`ground osg-wall${whole ? ' osg-whole' : ''}`} x={-w / 2} y={-h / 2} width={w} height={h} filter="url(#hard-shadow)" />
         <line className="osg-seam" x1={-w / 2} x2={w / 2} y1={0} y2={0} />
-        <polyline className="osg-break" points={top} />
+        {courses.flatMap(({ y, out, row }) => out.map((x, k) => <line key={`${row}-${k}`} className="osg-seam" x1={x} x2={x} y1={y - h / 4} y2={y + h / 4} />))}
+        {Array.from({ length: pil }, (_, k) => {
+          const x = -w / 2 + ((k + 1) * w) / (pil + 1);
+          return <rect key={k} className={`osg-pilaster${whole ? ' osg-whole' : ''}`} x={x - 0.22} y={-h / 2 - 0.1} width={0.44} height={h + 0.2} />;
+        })}
+        {whole ? <rect className="osg-coping" x={-w / 2 + 0.05} y={-h / 2 + 0.05} width={w - 0.1} height={h - 0.1} /> : <polyline className="osg-break" points={top} />}
       </>
     );
   }
   if (t.look === 'stepped') {
-    // Four steps of stone up to a parapet round an open court in the middle, each step paler than the one below.
+    // Four steps of stone up to a parapet round an open court, each step paler than the one below, and a ring of
+    // broken column stumps round the court.
     const steps = [1, 0.84, 0.68, 0.52];
     const sx = (k: number) => (w * k) / 2;
     const sy = (k: number) => (h * k) / 2;
+    const cols: [number, number][] = [];
+    const per = 3;
+    for (let i = 0; i <= per; i++)
+      for (const [u, v] of [[i / per, 0], [i / per, 1], [0, i / per], [1, i / per]]) {
+        const p: [number, number] = [-sx(0.45) + u * 2 * sx(0.45), -sy(0.45) + v * 2 * sy(0.45)];
+        if (!cols.some(c => Math.hypot(c[0] - p[0], c[1] - p[1]) < 0.1)) cols.push(p);
+      }
     return (
       <>
         {steps.map((k, i) => (
@@ -1006,10 +1026,18 @@ function OsgiliathPiece({ t }: { t: Terrain }) {
         {/* The step edges meeting at the corners, as the book's plan draws them. */}
         {[-1, 1].flatMap(i => [-1, 1].map(j => <line key={`${i}${j}`} className="osg-seam" x1={i * sx(1)} y1={j * sy(1)} x2={i * sx(0.52)} y2={j * sy(0.52)} />))}
         <rect className="osg-court" x={-sx(0.38)} y={-sy(0.38)} width={2 * sx(0.38)} height={2 * sy(0.38)} />
+        <g className="tint" pointerEvents="none">
+          {cols.map(([x, y], k) => (
+            <g key={k}>
+              <circle className="osg-drum" cx={x} cy={y} r={0.2} />
+              {seeded(t.id, k + 500) > 0.45 && <circle className="osg-flute" cx={x} cy={y} r={0.12} />}
+            </g>
+          ))}
+        </g>
       </>
     );
   }
-  // Rubble: a heap of broken blocks and chips, the bigger pieces toppled slabs.
+  // Rubble: a heap of broken blocks and chips, with a toppled column in the bigger heaps.
   const n = Math.max(3, Math.round(w * h * 3));
   const stones = Array.from({ length: n }, (_, i) => {
     const a = seeded(t.id, i) * Math.PI * 2;
@@ -1025,13 +1053,30 @@ function OsgiliathPiece({ t }: { t: Terrain }) {
       return `${(x + Math.cos(a) * m).toFixed(3)},${(y + Math.sin(a) * m).toFixed(3)}`;
     }).join(' ');
   };
+  const column = Math.max(w, h) >= 1.4;
+  const len = Math.max(w, h) * 0.7;
+  const drums = Math.max(2, Math.round(len / 0.45));
+  const tilt = seeded(t.id, 900) * 160 - 80;
   return (
     <>
+      {/* Dust and grit spread round the heap over the paving. */}
+      <path className="osg-dust" d={blob(t, 1.9, 0.3, 9)} pointerEvents="none" />
       <path className="ground osg-heap" d={blob(t, 1, 0.18, 5)} filter="url(#soft-shadow)" />
       <g className="tint" pointerEvents="none">
         {stones.map(({ x, y, r, k }) => (
           <polygon key={k} className={`osg-block osg-block-${k % 3}`} points={shape(x, y, r, k)} />
         ))}
+        {column && (
+          <g transform={`rotate(${tilt.toFixed(1)})`}>
+            {Array.from({ length: drums }, (_, k) => {
+              const x0 = -len / 2 + (k * len) / drums + (k ? 0.04 : 0);
+              return <rect key={k} className="osg-column" x={x0} y={-0.22} width={len / drums - 0.04} height={0.44} rx={0.05} />;
+            })}
+            {[-0.1, 0.1].map(y => (
+              <line key={y} className="osg-flute-line" x1={-len / 2} x2={len / 2 - 0.04} y1={y} y2={y} />
+            ))}
+          </g>
+        )}
       </g>
     </>
   );
@@ -1469,9 +1514,9 @@ export function TerrainFaces({ terrain, turn = 0 }: { terrain: Terrain[]; /** Ho
       {pieces.map(t => {
         const pts = face(t, lean).map(p => `${p.x.toFixed(3)},${p.y.toFixed(3)}`).join(' ');
         return (
-          <g key={t.id}>
+          <g key={t.id} className={t.look === 'osgwall' || t.look === 'stepped' ? 'osg-face' : undefined}>
             <polygon className="face-shadow" points={pts} transform="translate(0.35 0.45)" filter="url(#bank-blur)" />
-            <polygon className="face" points={pts} fill={t.look === 'orthanc' ? '#1d1e23' : t.look === 'scaffold' ? '#5a3d1f' : t.look === 'osgwall' || t.look === 'stepped' ? '#a8977c' : t.kind === 'rock' ? 'url(#tex-cliff)' : 'url(#tex-wall)'} />
+            <polygon className="face" points={pts} fill={t.look === 'orthanc' ? '#1d1e23' : t.look === 'scaffold' ? '#5a3d1f' : t.look === 'osgwall' || t.look === 'stepped' ? '#b9b5ab' : t.kind === 'rock' ? 'url(#tex-cliff)' : 'url(#tex-wall)'} />
             <polygon className="face-shade" points={pts} />
           </g>
         );

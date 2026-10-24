@@ -220,7 +220,7 @@ export function osgiliathTerrain(): NarrativeTerrain[] {
   return [
     ...BUILDINGS.flatMap((blocks, i) => blocks.map(([x0, y0, x1, y1], j) => piece({ id: `building-${i + 1}${blocks.length > 1 ? `-${j + 1}` : ''}`, kind: 'building', x: (x0 + x1) / 2, y: (y0 + y1) / 2, w: x1 - x0, h: y1 - y0, height: BUILDING_HEIGHT, look: 'stepped' }))),
     ...WALLS.map((w, i) => wall(`wall-${i + 1}`, w, WALL_HEIGHT, { look: 'osgwall' })),
-    ...WHOLE.map((w, i) => wall(`whole-wall-${i + 1}`, w, WHOLE_HEIGHT, { look: 'stone' })),
+    ...WHOLE.map((w, i) => wall(`whole-wall-${i + 1}`, w, WHOLE_HEIGHT, { look: 'osgwall' })),
     ...ringWalls(),
     ...RUBBLE.map(([x, y, w, h, rot, height], i) => piece({ id: `rubble-${i + 1}`, kind: 'rock', shape: 'circle', x, y, w, h, rot, height, difficult: true, look: 'rubble' })),
   ];
