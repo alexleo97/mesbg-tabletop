@@ -6,7 +6,8 @@ import { ResultReport } from './ResultReport.tsx';
 import { activeSeat, other, type Combat } from '../shared/flow.ts';
 import { phaseFinished } from '../shared/autoPhase.ts';
 import { breachesLeft } from '../shared/breach.ts';
-import { fightDone } from '../shared/movement.ts';
+import { engaged, fightDone } from '../shared/movement.ts';
+import { swapCandidates } from '../shared/goblin.ts';
 import { canDeclare, GOES_FIRST, heroicInfo, heroicNow, heroicsSettled, heroicTurn, HEROICS, mayDeclare, orderRollLabel, orderRollNeeded, phaseHeroics, shoutedFor } from '../shared/heroics.ts';
 import { rulesFor, startingPoints } from '../shared/catalog.ts';
 import { longbeardFor, mayAxeTest, spentPoints, swapPair, trumpetDue } from '../shared/company.ts';
@@ -17,7 +18,7 @@ import { useLocked } from './lessonLock.ts';
 import { pendingSpell } from '../shared/magic.ts';
 import { challengeRivals, heroicBlocked } from '../shared/mightUse.ts';
 import { freeResistDice, isAreaPower, isLinePower } from '../shared/powers.ts';
-import { formatInches } from '../shared/geometry.ts';
+import { distanceBetween, formatInches } from '../shared/geometry.ts';
 import { useCatalog } from './ListBuilder.tsx';
 import { arrivalAuto, arrivalDue, mayCry } from '../shared/narrative.ts';
 import { placingNow } from '../shared/placing.ts';
@@ -194,6 +195,14 @@ function PlacingStep({ state, dispatch, role, name }: { state: GameState; dispat
         : mine
           ? `${m.name} won the Heroic Combat and goes to Frodo's aid. The game has put ${m.name} in Frodo's fight: drag ${m.name} elsewhere in it if you like, then confirm.`
           : `${m.name} goes to Frodo's aid: ${name(p.seat)} is placing ${m.name} in Frodo's fight.`
+      : p.kind === 'edge'
+      ? mine
+        ? `${m.name} arrives. Drag ${m.name} anywhere on a walkway touching a table edge, then confirm.`
+        : `${m.name} arrives: ${name(p.seat)} is putting ${m.name} on a walkway at the table's edge.`
+      : p.kind === 'nest'
+      ? mine
+        ? `${m.name} comes back out of the nest. Drag it anywhere 10" from every Good model, then confirm.`
+        : `${m.name} comes back out of the nest: ${name(p.seat)} is placing it.`
       : p.kind === 'arrive'
       ? mine
         ? `${m.name} has arrived. Drag ${m.name} anywhere round the edge of the ruin, touching it, then confirm.`
@@ -227,7 +236,9 @@ function CompanyStep({ state, dispatch, role, name }: { state: GameState; dispat
   const coming = onEdge(state);
   const caller = heard ? state.models[heard.heroic.model] : undefined;
   const deed = state.flow.chronicles?.[0];
-  if (!heard && !twins && !bifur && !coming && !deed && !reinforceDue(state)) return null;
+  // Grinnah's Swap with Me, as the Fight phase starts.
+  const swaps = me ? swapCandidates(state, catalog, me) : [];
+  if (!heard && !twins && !bifur && !coming && !deed && !swaps.length && !reinforceDue(state)) return null;
   const POINT = { might: 'Might', will: 'Will', fate: 'Fate' } as const;
   return (
     <div className="spell-step">
@@ -260,6 +271,21 @@ function CompanyStep({ state, dispatch, role, name }: { state: GameState; dispat
           <p>Combat Synergy: before any heroic action this phase, {twins[0].name} and {twins[1].name} may swap places (not a move). If they do, each may re-roll a die in his duels this turn.</p>
           <button {...locked({ type: 'swap', a: twins[0].id, b: twins[1].id })} onClick={() => dispatch({ type: 'swap', a: twins[0].id, b: twins[1].id })}>Swap {twins[0].name} and {twins[1].name}</button>
         </>
+      )}
+      {swaps.length > 0 && (
+        <label className="decoy-pick">
+          <span className="hint">Swap with Me: before any heroic action this phase, {swaps[0].a.name} may swap places with a Goblin within 3" (not a move).</span>
+          <select value="" onChange={e => e.target.value && dispatch({ type: 'swap', a: swaps[0].a.id, b: e.target.value })}>
+            <option value="" disabled>
+              Swap with…
+            </option>
+            {swaps.map(({ b }) => (
+              <option key={b.id} value={b.id}>
+                {b.name} ({formatInches(distanceBetween(swaps[0].a, b))} away{engaged(state, b) ? ', fighting' : ''})
+              </option>
+            ))}
+          </select>
+        </label>
       )}
       {bifur && (
         <>

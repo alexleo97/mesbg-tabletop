@@ -2,6 +2,7 @@ import { limitMove } from './movement.ts';
 import { along, angleOf, radius, rimPiece } from './narrative.ts';
 import { joinSpot } from './sam.ts';
 import { nestFits } from './elves.ts';
+import { edgeSpot } from './goblin.ts';
 import type { Point } from './geometry.ts';
 import type { GameState, Model, Placing, Seat } from './types.ts';
 
@@ -21,6 +22,8 @@ export function placeSpot(state: GameState, p: Placing, m: Model, asked: Point):
   if (p.kind === 'join') return joinSpot(state, p, m, asked);
   // A Spider back from its nest (The Elves of Mirkwood): anywhere 10" from every Good model.
   if (p.kind === 'nest') return nestFits(state, m, asked) ? asked : null;
+  // Gandalf arriving in Goblin-town: on a walkway, touching a table edge.
+  if (p.kind === 'edge') return edgeSpot(state, m, asked);
   if (p.kind === 'arrive') {
     const t = p.rim ? rimPiece(state, p.rim) : undefined;
     if (!t) return null;

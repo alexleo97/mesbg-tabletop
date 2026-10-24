@@ -43,4 +43,6 @@ export const hasSpear = (catalog: Catalog | null | undefined, m: Model) => hasGe
 /** A pike: supports like a spear, and can support another pike that is supporting. */
 export const hasPike = (catalog: Catalog | null | undefined, m: Model) => hasGear(catalog, m, /\bpikes?\b/);
 /** An Elven hand weapon, blade or other Elven melee weapon (not a bow), which helps in a drawn fight. */
+/** An Elven bow (or a Galadhrim one). */
+export const elvenBow = (catalog: Catalog | null | undefined, m: Model) => hasGear(catalog, m, /\belven\b.*\bbow\b|\belf ?bow\b|galadhrim bow|bow of the galadhrim/);
 export const hasElvenWeapon = (catalog: Catalog | null | undefined, m: Model) => hasGear(catalog, m, /\belven\b(?!.*\b(bow|cloak|throwing)\b)|\belf(?:-made)? (?:blade|weapon)|\bglamdring\b/);

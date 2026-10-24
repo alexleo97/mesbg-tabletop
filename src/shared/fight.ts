@@ -167,6 +167,8 @@ export interface ShotRequest {
   brand?: boolean;
   /** A Mirkwood Giant Spider's webs (set by the game): a model they hit is Paralysed rather than wounded. */
   webs?: boolean;
+  /** The Goblin King's Goblin Projectile (set by the game): the target is knocked Prone if it's hit. */
+  knockDown?: boolean;
   /** What's in the way, nearest first, worked out by the game from the table; a model in the way that stops the shot is hit. */
   inWay?: { name: string; id?: string; d?: number }[];
   /** Shooting into a fight: the shooter's friend a stray shot hits instead (on a 1-3). */
@@ -620,6 +622,7 @@ export function cleanPausedShot(raw: unknown): ShotRequest | null {
     ...(o.bane === true ? { bane: true } : {}),
     ...(o.deadeye === true ? { deadeye: true } : {}),
     ...(o.webs === true ? { webs: true } : {}),
+    ...(o.knockDown === true ? { knockDown: true } : {}),
     ...(o.sharp === true ? { sharp: true } : {}),
     ...(o.lucky === true ? { lucky: true } : {}),
     ...(o.woundBonus ? { woundBonus: clamp(o.woundBonus, -3, 3, 0) } : {}),

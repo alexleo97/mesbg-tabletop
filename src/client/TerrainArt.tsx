@@ -242,6 +242,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
       if (t.look === 'roots') return <MirkwoodPiece t={t} />;
       if (t.kind === 'cliff' && t.path && t.path.length > 1) return <CliffEdge t={t} d={d} tex={tex} />;
       if (t.look === 'floe') return <LakePiece t={t} />;
+      if (t.look === 'crag' || t.look === 'cavewall') return <GoblinPiece t={t} />;
       return (
         <>
           <path className={`ground ${t.kind}-face`} d={d} fill={tex} filter="url(#hard-shadow)" />
@@ -253,6 +254,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
       );
     case 'water':
       if (t.look === 'pit') return <IsengardPiece t={t} />;
+      if (t.look === 'chasm') return <GoblinPiece t={t} />;
       // Deep water under a whole table is the mat itself (Lake-town's Long Lake): only a darker sheen.
       if (t.deep) return <rect className="lake-depth" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} pointerEvents="none" />;
       if (t.path && t.path.length > 1) {
@@ -277,6 +279,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
       );
     case 'building':
       if (t.look === 'orthanc') return <IsengardPiece t={t} />;
+      if (t.look === 'throne') return <GoblinPiece t={t} />;
       if (t.look === 'trunk') return <MirkwoodPiece t={t} />;
       if (t.look === 'pine') return <PinePiece t={t} />;
       if (t.look === 'stone') return <StoneTower t={t} tex={tex} />;
@@ -441,6 +444,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
       if (t.look === 'trapdoor' || t.look === 'doorway') return <MoriaPiece t={t} />;
       if (t.look === 'ladder') return <IsengardPiece t={t} />;
       if (t.look === 'planks' || t.look === 'boat') return <LakePiece t={t} />;
+      if (t.look === 'gobplanks' || t.look === 'rungs') return <GoblinPiece t={t} />;
       if (t.stairs) {
         // A flight of steps up to a wall's walkway: treads running along the wall, rising towards it (local -y).
         const n = Math.max(4, Math.round(t.h / 0.3));
@@ -836,6 +840,134 @@ function CliffEdge({ t, d, tex }: { t: Terrain; d: string; tex: string }) {
 }
 
 /**
+ * Goblin-town (Escape from Goblin-town): rickety plank walkways and rope-and-rung ladders over a bottomless chasm,
+ * crags of dark rock, the cavern walls round the edges and the Goblin King's crude throne.
+ */
+function GoblinPiece({ t }: { t: Terrain }) {
+  const { w, h } = t;
+  if (t.look === 'chasm') {
+    // Nothing below: black, with a few far-off ledges and the faint glow of fires deep down.
+    return (
+      <g pointerEvents="none">
+        <rect className="chasm-void" x={-w / 2} y={-h / 2} width={w} height={h} />
+        {Array.from({ length: 26 }, (_, i) => (
+          <ellipse
+            key={i}
+            className={i % 5 === 0 ? 'chasm-glow' : 'chasm-ledge'}
+            cx={(seeded(t.id, i) - 0.5) * w}
+            cy={(seeded(t.id, i + 40) - 0.5) * h}
+            rx={1 + seeded(t.id, i + 80) * 3.5}
+            ry={0.6 + seeded(t.id, i + 120) * 2}
+            transform={`rotate(${seeded(t.id, i + 160) * 180})`}
+            filter="url(#bank-blur)"
+          />
+        ))}
+      </g>
+    );
+  }
+  if (t.look === 'gobplanks') {
+    // Odd boards nailed across the way, none quite the same length or colour, with lashed posts at the ends.
+    const boards = Math.max(2, Math.round(w / 0.45));
+    const bw = w / boards;
+    return (
+      <>
+        <rect className="ground gob-under" x={-w / 2} y={-h / 2 + 0.1} width={w} height={h - 0.2} filter="url(#hard-shadow)" />
+        {Array.from({ length: boards }, (_, i) => {
+          const top = -h / 2 - 0.08 + seeded(t.id, i) * 0.22;
+          const bottom = h / 2 + 0.08 - seeded(t.id, i + 300) * 0.22;
+          return (
+            <rect
+              key={i}
+              className={`gob-board gob-board-${Math.floor(seeded(t.id, i + 600) * 3)}`}
+              x={-w / 2 + i * bw + 0.02}
+              y={top}
+              width={bw - 0.05 - seeded(t.id, i + 900) * 0.06}
+              height={bottom - top}
+              transform={`rotate(${(seeded(t.id, i + 1200) - 0.5) * 3} ${-w / 2 + (i + 0.5) * bw} 0)`}
+            />
+          );
+        })}
+        {Array.from({ length: Math.round(w * h * 0.08) }, (_, i) => (
+          <circle key={`n${i}`} className="gob-nail" cx={(seeded(t.id, i + 1500) - 0.5) * (w - 0.3)} cy={(seeded(t.id, i + 1800) - 0.5) * (h - 0.3)} r={0.05} />
+        ))}
+        {w * h > 12 &&
+          Array.from({ length: Math.round(w * h * 0.025) }, (_, i) => {
+            const x = (seeded(t.id, i + 2100) - 0.5) * (w - 1);
+            const y = (seeded(t.id, i + 2400) - 0.5) * (h - 1);
+            return (
+              <g key={`b${i}`} className="gob-bone" transform={`translate(${x} ${y}) rotate(${seeded(t.id, i + 2700) * 180})`}>
+                <line x1={-0.28} x2={0.28} y1={0} y2={0} />
+                <circle cx={-0.28} cy={0} r={0.07} />
+                <circle cx={0.28} cy={0} r={0.07} />
+              </g>
+            );
+          })}
+        {[-1, 1].flatMap(i => [-1, 1].map(j => <circle key={`${i}${j}`} className="gob-post" cx={i * (w / 2 - 0.12)} cy={j * (h / 2 - 0.1)} r={0.17} />))}
+      </>
+    );
+  }
+  if (t.look === 'rungs') {
+    // A ladder laid flat across the gap: two poles, rungs lashed between them, the chasm showing through.
+    const rungs = Math.max(3, Math.round(w / 0.36));
+    return (
+      <>
+        {Array.from({ length: rungs }, (_, i) => {
+          const x = -w / 2 + 0.15 + (i * (w - 0.3)) / (rungs - 1);
+          return <line key={i} className="gob-rung" x1={x} x2={x + (seeded(t.id, i) - 0.5) * 0.08} y1={-h / 2 + 0.08} y2={h / 2 - 0.08} />;
+        })}
+        <rect className="gob-pole" x={-w / 2} y={-h / 2} width={w} height={0.16} rx={0.08} />
+        <rect className="gob-pole" x={-w / 2} y={h / 2 - 0.16} width={w} height={0.16} rx={0.08} />
+      </>
+    );
+  }
+  if (t.look === 'throne') {
+    // A great lump of a seat: a high back of rough-hewn stone, arms either side, and skulls along the top.
+    return (
+      <>
+        <rect className="ground throne-base" x={-w / 2} y={-h / 2} width={w} height={h} rx={0.2} filter="url(#hard-shadow)" />
+        <rect className="throne-back" x={-w / 2} y={-h / 2} width={w} height={h * 0.32} rx={0.15} />
+        <rect className="throne-arm" x={-w / 2} y={-h / 2} width={w * 0.2} height={h} rx={0.12} />
+        <rect className="throne-arm" x={w / 2 - w * 0.2} y={-h / 2} width={w * 0.2} height={h} rx={0.12} />
+        <rect className="throne-seat" x={-w * 0.3} y={-h / 2 + h * 0.32} width={w * 0.6} height={h * 0.62} rx={0.1} />
+        {[-0.3, 0, 0.3].map(k => (
+          <circle key={k} className="throne-skull" cx={w * k} cy={-h / 2 + 0.16} r={0.14} />
+        ))}
+      </>
+    );
+  }
+  // The rock: crags standing out of the chasm and the cavern walls at the edges, a heap of broken boulders on scree.
+  const wall = t.look === 'cavewall';
+  const n = Math.max(5, Math.round(w * h * (wall ? 0.9 : 1.1)));
+  const stones = Array.from({ length: n }, (_, i) => {
+    const a = seeded(t.id, i) * Math.PI * 2;
+    const q = Math.sqrt(seeded(t.id, i + 50)) * 0.8;
+    const r = Math.min(w, h) * (0.12 + seeded(t.id, i + 100) ** 1.5 * 0.2) + 0.15;
+    return { x: (Math.cos(a) * q * w) / 2, y: (Math.sin(a) * q * h) / 2, r, k: i };
+  }).sort((p, q) => p.y - q.y);
+  const shape = (x: number, y: number, r: number, k: number, grow = 1) => {
+    const sides = 5 + Math.floor(seeded(t.id, k + 200) * 3);
+    return Array.from({ length: sides }, (_, j) => {
+      const a = (j / sides) * Math.PI * 2 + seeded(t.id, k * 7 + j + 300);
+      const m = r * grow * (0.72 + seeded(t.id, k * 11 + j + 400) * 0.4);
+      return `${(x + Math.cos(a) * m).toFixed(3)},${(y + Math.sin(a) * m * 0.88).toFixed(3)}`;
+    }).join(' ');
+  };
+  return (
+    <>
+      <path className={`ground ${wall ? 'cave-wall' : 'gob-crag'}`} d={blob(t, 1, 0.14, 3)} filter="url(#hard-shadow)" />
+      <g className="tint" pointerEvents="none">
+        {stones.map(({ x, y, r, k }) => (
+          <g key={k}>
+            <polygon className={`gob-stone gob-stone-${k % 3}`} points={shape(x, y, r, k)} />
+            <polygon className="gob-stone-lit" points={shape(x - r * 0.18, y - r * 0.2, r, k, 0.55)} />
+          </g>
+        ))}
+      </g>
+    </>
+  );
+}
+
+/**
  * Lake-town (Lake-town Escape): plank walkways on posts over the lake, rowing boats tied up, ice floes, and timber
  * houses with shingled roofs: a ridge along a long house, four slopes meeting at a point on a square one.
  */
@@ -1198,7 +1330,7 @@ function StoneTower({ t, tex }: { t: Terrain; tex: string }) {
 }
 
 /** A letter on each kind of scenario marker, so you can tell them apart at a glance. */
-const GLYPHS: Record<NonNullable<Terrain['object']>, string> = { artefact: 'A', relic: 'R', heirloom: 'H', decoy: '✕', supply: 'S', ally: '+', ladder: 'L', ram: 'B', rocks: '●', oil: '♨', rally: '⚑', campfire: '♨', charge: '✸', hobbit: 'z', boat: '⛵', cocoon: '❋', dwarf: 'D' };
+const GLYPHS: Record<NonNullable<Terrain['object']>, string> = { artefact: 'A', relic: 'R', heirloom: 'H', decoy: '✕', supply: 'S', ally: '+', ladder: 'L', ram: 'B', rocks: '●', oil: '♨', rally: '⚑', campfire: '♨', charge: '✸', hobbit: 'z', boat: '⛵', cocoon: '❋', dwarf: 'D', weapons: '⚔' };
 
 function star(r: number) {
   const pts: string[] = [];

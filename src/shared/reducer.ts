@@ -33,6 +33,7 @@ import { longshanksFree } from './sam.ts';
 import { bundleFits, isUnseen, keepOnTable, skitterDone, spidersDue } from './unseen.ts';
 import { bolgOwesCharge, contactAlarms, disturbs, isLake, isSentry, keepInSection, sentriesDue, sentryDue } from './lake.ts';
 import { SECTIONS, type Section } from './lakeMap.ts';
+import { EDGES as GOBLIN_EDGES, exitPickDue, gandalfPending, goblinSync, hordePending, isGoblin } from './goblin.ts';
 import { bilboSpot, bilboTargets, eaglesPending, eaglesSync, isFire, mayNominate, nominate, nominationTurn, pickUps, wrathDue } from './eagles.ts';
 import { BOT_NAME, BOT_SPEEDS, type Deploying, DOOR_TYPES, FIGHT_TARGETS, MARKER_OBJECTS, MATS, PHASES, PICK_KEYS, TERRAIN_KINDS, type Action, type FightPicks, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type ModelEffect, type Phase, type Picks, type Placing, type Seat, type SpellPending, type Terrain } from './types.ts';
 
@@ -59,7 +60,7 @@ export function initialState(): GameState {
 }
 
 /** The terrain rules a model can carry (see wargear.terrainRules). */
-const GROUND = ['wood', 'rock', 'cave', 'spectral', 'swift', 'burly'];
+const GROUND = ['wood', 'rock', 'cave', 'spectral', 'swift', 'burly', 'lumbering', 'relentless', 'goblin'];
 const newFlow = (): Flow => ({ started: false, chooser: null, chooserTurn: 0, roll: null, done: [], resolved: [], heroics: [], passed: [], lastHeroic: null });
 
 /** Moves to a phase (and turn), clearing who has finished; a new turn also clears fights and priority. */
@@ -157,7 +158,7 @@ const int = (v: unknown, min: number, max: number, fallback: number) => Math.rou
 const str = (v: unknown, max: number, fallback = '') => (typeof v === 'string' ? v.slice(0, max) : fallback);
 /** A model waiting to be placed, kept to sensible values (null if its model is gone). */
 function cleanPlacing(p: Partial<Placing> | undefined, state: Pick<GameState, 'models'>): Placing | null {
-  if (!p || typeof p !== 'object' || typeof p.model !== 'string' || !state.models[p.model] || !isSeat(p.seat) || (p.kind !== 'arrive' && p.kind !== 'retreat' && p.kind !== 'join' && p.kind !== 'nest') || !Array.isArray(p.from)) return null;
+  if (!p || typeof p !== 'object' || typeof p.model !== 'string' || !state.models[p.model] || !isSeat(p.seat) || (p.kind !== 'arrive' && p.kind !== 'retreat' && p.kind !== 'join' && p.kind !== 'nest' && p.kind !== 'edge') || !Array.isArray(p.from)) return null;
   const m = state.models[p.model];
   return {
     model: p.model,
@@ -442,7 +443,7 @@ function cleanTerrain(t: Partial<Terrain>, prev?: Terrain): Terrain | null {
   if (('walk' in t ? t.walk : base.walk) === true && out.kind === 'wall') out.walk = true;
   if (('stairs' in t ? t.stairs : base.stairs) === true && out.kind === 'road') out.stairs = true;
   const look = 'look' in t ? t.look : base.look;
-  if (look === 'stone' || look === 'culvert' || look === 'grass' || look === 'pillar' || look === 'tomb' || look === 'well' || look === 'trapdoor' || look === 'doorway' || look === 'brush' || look === 'orthanc' || look === 'scaffold' || look === 'ladder' || look === 'pit' || look === 'roots' || look === 'trunk' || look === 'gnarled' || look === 'planks' || look === 'boat' || look === 'floe' || look === 'lakehouse' || look === 'laketower' || look === 'lakewing' || look === 'pinewood' || look === 'pine') out.look = look;
+  if (look === 'stone' || look === 'culvert' || look === 'grass' || look === 'pillar' || look === 'tomb' || look === 'well' || look === 'trapdoor' || look === 'doorway' || look === 'brush' || look === 'orthanc' || look === 'scaffold' || look === 'ladder' || look === 'pit' || look === 'roots' || look === 'trunk' || look === 'gnarled' || look === 'planks' || look === 'boat' || look === 'floe' || look === 'lakehouse' || look === 'laketower' || look === 'lakewing' || look === 'pinewood' || look === 'pine' || look === 'chasm' || look === 'cavewall' || look === 'crag' || look === 'gobplanks' || look === 'rungs' || look === 'throne') out.look = look;
   cleanObject(t, base, out);
   if ('vines' in t ? t.vines === true : base.vines) {
     const side = 'side' in t ? t.side : base.side;
@@ -619,7 +620,7 @@ function settle(m: Model): Model {
 export function reduce(state: GameState, action: Action): GameState {
   // Carried markers go wherever their carrier goes, and a Siege Ladder carried to a wall is raised against it.
   // (And at Amon Hen a Hobbit brought down is knocked out instead, and friends bring him round: see amon.ts.)
-  return raiseLadders(syncCarried(eaglesSync(findTheHalflings(state, challengesSettled(state, step(state, action))))));
+  return raiseLadders(syncCarried(goblinSync(eaglesSync(findTheHalflings(state, challengesSettled(state, step(state, action)))))));
 }
 
 /**
@@ -1140,6 +1141,8 @@ function step(state: GameState, action: Action): GameState {
       let placed: string[];
       // (The Unseen Hero: the Spiders' player picks the decoy bundle before they're done.)
       if (d.step === 'sides' && isUnseen(state) && action.seat !== state.narrative!.good && !state.flow.picks?.[action.seat]?.decoy) return state;
+      // (Escape from Goblin-town: the Evil player names the edge the Dwarves must escape by before they're done.)
+      if (d.step === 'sides' && exitPickDue(state, action.seat)) return state;
       if (d.step === 'sides') placed = [...d.placed, `${action.seat}:*`];
       else if (d.step === 'warbands' && d.current && !deployProblems(state).length) {
         const keys = d.current.endsWith(':*') ? [...new Set(Object.values(state.models).filter(m => !m.dead && inCurrent(d, m) && !m.waiting).map(bandKey))] : [d.current];
@@ -1175,7 +1178,7 @@ function step(state: GameState, action: Action): GameState {
       }
       // Roast Mutton: the Company still to come rolls (or comes) first, and moves on before the side is done (and the
       // same for Helm's Deep's Relief Force and Balin's Tomb's Goblin Tide).
-      if (state.flow.started && (reinforcementsPending(state, action.seat) || reliefPending(state, action.seat) || tidePending(state, action.seat) || legionsPending(state, action.seat) || elvesPending(state, action.seat) || eaglesPending(state, action.seat))) return state.flow.reinforce === action.seat ? state : { ...state, flow: { ...state.flow, reinforce: action.seat } };
+      if (state.flow.started && (reinforcementsPending(state, action.seat) || reliefPending(state, action.seat) || tidePending(state, action.seat) || legionsPending(state, action.seat) || elvesPending(state, action.seat) || eaglesPending(state, action.seat) || gandalfPending(state, action.seat) || hordePending(state, action.seat))) return state.flow.reinforce === action.seat ? state : { ...state, flow: { ...state.flow, reinforce: action.seat } };
       // Ambush at Night: the bound Hobbits roll to cut their bonds as the Good side finishes its move.
       if (bondsPending(state, action.seat)) return state.flow.bonds === action.seat ? state : { ...state, flow: { ...state.flow, bonds: action.seat } };
       // Ending it with a newcomer still at the edge lets it stay there, and the next one comes on.
@@ -1367,7 +1370,9 @@ function step(state: GameState, action: Action): GameState {
       const alarmed = action.alarmed === undefined ? state.narrative.alarmed : int(action.alarmed, 0, 99, 0);
       const wrath = action.wrath === undefined ? state.narrative.wrath : int(action.wrath, 0, 99, 0);
       const flown = action.flown && typeof action.flown === 'object' ? Object.fromEntries(Object.entries(action.flown).filter(([k]) => state.models[k]).map(([k, v]) => [k, int(v, 0, 99, 0)])) : state.narrative.flown;
-      const next = { ...state, narrative: { ...state.narrative, ...(rolled ? { rolled } : {}), ...(dawn ? { dawn } : {}), ...(breach ? { breach } : {}), ...(crushed ? { crushed } : {}), ...(woke ? { woke } : {}), ...(webbed ? { webbed } : {}), ...(hazed ? { hazed } : {}), ...(nested ? { nested } : {}), ...(alarm ? { alarm } : {}), ...(alarmed ? { alarmed } : {}), ...(wrath ? { wrath } : {}), ...(flown ? { flown } : {}) } };
+      const gandalf = action.gandalf === undefined ? state.narrative.gandalf : int(action.gandalf, 0, 99, 0);
+      const horde = action.horde === undefined ? state.narrative.horde : int(action.horde, 0, 99, 0);
+      const next = { ...state, narrative: { ...state.narrative, ...(rolled ? { rolled } : {}), ...(dawn ? { dawn } : {}), ...(breach ? { breach } : {}), ...(crushed ? { crushed } : {}), ...(woke ? { woke } : {}), ...(webbed ? { webbed } : {}), ...(hazed ? { hazed } : {}), ...(nested ? { nested } : {}), ...(alarm ? { alarm } : {}), ...(alarmed ? { alarmed } : {}), ...(wrath ? { wrath } : {}), ...(flown ? { flown } : {}), ...(gandalf ? { gandalf } : {}), ...(horde ? { horde } : {}) } };
       // Balin's Tomb: the Cave Troll has stepped in at the doorway, its move counted from just outside it.
       if (action.troll !== undefined && !state.narrative.troll) {
         const troll = Object.values(state.models).find(isCaveTroll);
@@ -1381,6 +1386,11 @@ function step(state: GameState, action: Action): GameState {
       if (action.wrath !== undefined && isFire(state)) {
         const thorin = Object.values(state.models).find(m => m.cast === 'thorin');
         if (thorin) next.flow = { ...next.flow, stopped: [...new Set([...(next.flow.stopped ?? []), thorin.id])] };
+      }
+      // Escape from Goblin-town: Gandalf, put on as the Good side's move ends, doesn't move this phase.
+      if (action.gandalf !== undefined && isGoblin(state)) {
+        const g = Object.values(next.models).find(m => m.cast === 'gandalf');
+        if (g) next.flow = { ...next.flow, stopped: [...new Set([...(next.flow.stopped ?? []), g.id])] };
       }
       // Amon Hen: knocked-out Hobbits who rolled a 6 come round.
       if (Array.isArray(action.revive) && isAmon(state)) return moveOn(reviveHobbits(next, action.revive.slice(0, 4).map(x => str(x, 80))));
@@ -1681,10 +1691,14 @@ function step(state: GameState, action: Action): GameState {
       // The decoy is a webbed bundle, chosen by the Spiders' player before the battle and kept to.
       if (action.key === 'decoy' && (state.flow.started || !isUnseen(state) || action.seat === state.narrative!.good || state.terrain[String(action.value)]?.object !== 'cocoon')) return state;
       // The Elves of Mirkwood: the Good player chooses the edge the Elves come on from, any time before they do.
-      if (action.key === 'edge' && !isFire(state) && (!isElves(state) || action.seat !== state.narrative!.good || !(EDGES as readonly unknown[]).includes(action.value) || elvesWaiting(state).length === 0)) return state;
+      if (action.key === 'edge' && !isFire(state) && !isGoblin(state) && (!isElves(state) || action.seat !== state.narrative!.good || !(EDGES as readonly unknown[]).includes(action.value) || elvesWaiting(state).length === 0)) return state;
+      // Escape from Goblin-town: the Evil player names the escape edge before the battle, and may choose the edge the
+      // slain Goblins come back from whenever they like.
+      if (action.key === 'exit' && (!isGoblin(state) || state.flow.started || action.seat === state.narrative!.good || !(GOBLIN_EDGES as readonly unknown[]).includes(action.value))) return state;
+      if (action.key === 'edge' && isGoblin(state) && (action.seat === state.narrative!.good || !(GOBLIN_EDGES as readonly unknown[]).includes(action.value))) return state;
       // And Into the Fire: the Good player chooses whether the Eagles come on from the north or the south edge.
       if (action.key === 'edge' && isFire(state) && (action.seat !== state.narrative!.good || (action.value !== 'north' && action.value !== 'south'))) return state;
-      const value = typeof action.value === 'string' && (state.models[action.value] || state.terrain[action.value] || action.key === 'edge') ? action.value : undefined;
+      const value = typeof action.value === 'string' && (state.models[action.value] || state.terrain[action.value] || action.key === 'edge' || action.key === 'exit') ? action.value : undefined;
       const mine: Picks = { ...state.flow.picks?.[action.seat] };
       if (value) mine[action.key] = value;
       else delete mine[action.key];
@@ -1916,7 +1930,7 @@ export function loadState(raw: unknown): GameState {
   if (o.advance === 'click') out = { ...out, advance: 'click' };
   const n = o.narrative;
   if (n && typeof n === 'object' && narrativeById(n.id) && isSeat(n.good))
-    out = { ...out, narrative: { id: n.id, good: n.good, ...(Number.isFinite(n.cry) ? { cry: int(n.cry, 0, 99, 0) } : {}), ...(Array.isArray(n.rolled) ? { rolled: n.rolled.slice(0, 40).map(t => int(t, 0, 99, 0)) } : {}), ...(Number.isFinite(n.dawn) ? { dawn: int(n.dawn, 1, 99, 1) } : {}), ...(n.bilbo === true ? { bilbo: true } : {}), ...(Number.isFinite(n.turns) ? { turns: int(n.turns, 1, 40, 15) } : {}), ...(Number.isFinite(n.relief) ? { relief: num(n.relief, 0, 200, 36) } : {}), ...(Number.isFinite(n.breach) ? { breach: int(n.breach, 0, 99, 0) } : {}), ...(Number.isFinite(n.troll) ? { troll: int(n.troll, 1, 99, 1) } : {}), ...(Array.isArray(n.crushed) ? { crushed: n.crushed.slice(0, 60).map(x => str(x, 80)) } : {}), ...(Number.isFinite(n.woke) ? { woke: int(n.woke, 0, 99, 0) } : {}), ...(Number.isFinite(n.webbed) ? { webbed: int(n.webbed, 0, 99, 0) } : {}), ...(Number.isFinite(n.hazed) ? { hazed: int(n.hazed, 0, 99, 0) } : {}), ...(Number.isFinite(n.nested) ? { nested: int(n.nested, 0, 99, 0) } : {}), ...(Array.isArray(n.alarm) ? { alarm: n.alarm.filter((x: unknown) => SECTIONS.includes(x as Section)) } : {}), ...(Array.isArray(n.disturbed) ? { disturbed: n.disturbed.slice(0, 40).filter((d: unknown) => d && typeof d === 'object').map((d: { id: unknown; turn: unknown }) => ({ id: str(d.id, 80), turn: int(d.turn, 0, 99, 0) })) } : {}), ...(Number.isFinite(n.alarmed) ? { alarmed: int(n.alarmed, 0, 99, 0) } : {}), ...(Array.isArray(n.hiding) ? { hiding: n.hiding.slice(0, 5).map((x: unknown) => str(x, 80)) } : {}), ...(Number.isFinite(n.wrath) ? { wrath: int(n.wrath, 0, 99, 0) } : {}), ...(n.flown && typeof n.flown === 'object' && !Array.isArray(n.flown) ? { flown: Object.fromEntries(Object.entries(n.flown as Record<string, unknown>).slice(0, 10).map(([k, v]) => [str(k, 80), int(v, 0, 99, 0)])) } : {}) } };
+    out = { ...out, narrative: { id: n.id, good: n.good, ...(Number.isFinite(n.cry) ? { cry: int(n.cry, 0, 99, 0) } : {}), ...(Array.isArray(n.rolled) ? { rolled: n.rolled.slice(0, 40).map(t => int(t, 0, 99, 0)) } : {}), ...(Number.isFinite(n.dawn) ? { dawn: int(n.dawn, 1, 99, 1) } : {}), ...(n.bilbo === true ? { bilbo: true } : {}), ...(Number.isFinite(n.turns) ? { turns: int(n.turns, 1, 40, 15) } : {}), ...(Number.isFinite(n.relief) ? { relief: num(n.relief, 0, 200, 36) } : {}), ...(Number.isFinite(n.breach) ? { breach: int(n.breach, 0, 99, 0) } : {}), ...(Number.isFinite(n.troll) ? { troll: int(n.troll, 1, 99, 1) } : {}), ...(Array.isArray(n.crushed) ? { crushed: n.crushed.slice(0, 60).map(x => str(x, 80)) } : {}), ...(Number.isFinite(n.woke) ? { woke: int(n.woke, 0, 99, 0) } : {}), ...(Number.isFinite(n.webbed) ? { webbed: int(n.webbed, 0, 99, 0) } : {}), ...(Number.isFinite(n.hazed) ? { hazed: int(n.hazed, 0, 99, 0) } : {}), ...(Number.isFinite(n.nested) ? { nested: int(n.nested, 0, 99, 0) } : {}), ...(Array.isArray(n.alarm) ? { alarm: n.alarm.filter((x: unknown) => SECTIONS.includes(x as Section)) } : {}), ...(Array.isArray(n.disturbed) ? { disturbed: n.disturbed.slice(0, 40).filter((d: unknown) => d && typeof d === 'object').map((d: { id: unknown; turn: unknown }) => ({ id: str(d.id, 80), turn: int(d.turn, 0, 99, 0) })) } : {}), ...(Number.isFinite(n.alarmed) ? { alarmed: int(n.alarmed, 0, 99, 0) } : {}), ...(Array.isArray(n.hiding) ? { hiding: n.hiding.slice(0, 5).map((x: unknown) => str(x, 80)) } : {}), ...(Number.isFinite(n.wrath) ? { wrath: int(n.wrath, 0, 99, 0) } : {}), ...(n.flown && typeof n.flown === 'object' && !Array.isArray(n.flown) ? { flown: Object.fromEntries(Object.entries(n.flown as Record<string, unknown>).slice(0, 10).map(([k, v]) => [str(k, 80), int(v, 0, 99, 0)])) } : {}), ...(Number.isFinite(n.gandalf) ? { gandalf: int(n.gandalf, 0, 99, 0) } : {}), ...(Number.isFinite(n.horde) ? { horde: int(n.horde, 0, 99, 0) } : {}) } };
   if (o.flow && typeof o.flow === 'object') {
     const f = o.flow as Partial<Flow>;
     const seats = (v: unknown) => (Array.isArray(v) ? [...new Set(v.filter(isSeat))] : []);

@@ -5,7 +5,7 @@ import { shutTo } from './fortress.ts';
 import { distanceBetween, halfExtents, type Point } from './geometry.ts';
 import { engaged, keptOffMarkers } from './movement.ts';
 import { cannotAct } from './powers.ts';
-import { climbedLevel, flooredAt, heightOf, heightOfModel, insidePolygon, outline } from './sight.ts';
+import { climbedLevel, flooredAt, heightOf, heightOfModel, inChasm, insidePolygon, outline } from './sight.ts';
 import type { GameState, Model } from './types.ts';
 
 /** How far a loser backs away. */
@@ -41,6 +41,8 @@ function step(state: GameState, models: Record<string, Model>, m: Model, at: Poi
   const { rx, ry } = halfExtents(m.base);
   const r = Math.max(rx, ry);
   if (at.x - r < 0 || at.y - r < 0 || at.x + r > state.board.w || at.y + r > state.board.h) return no;
+  // (Nobody steps back off a walkway into Goblin-town's chasm: a model with nowhere else to go is trapped.)
+  if (inChasm(state, at)) return no;
   const tall = heightOfModel(m);
   const inside = m.floor ? flooredAt(state, m) : undefined;
   for (const t of Object.values(state.terrain)) {

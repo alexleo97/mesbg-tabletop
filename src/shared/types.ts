@@ -217,13 +217,13 @@ export interface Terrain {
    */
   deep?: boolean;
   /** Drawn in dressed stone (a fortress's courtyard, causeway, keep or tower), a wall with a culvert through it, a field of long grass, or a piece of Balin's Tomb (a pillar, the tomb, the well, a trapdoor, the doorway: the well and trapdoors are where its Goblins come back), undergrowth, or a piece of Isengard (the tower of Orthanc, a timber scaffold, a ladder up one, a pit). */
-  look?: 'stone' | 'culvert' | 'grass' | 'pillar' | 'tomb' | 'well' | 'trapdoor' | 'doorway' | 'brush' | 'orthanc' | 'scaffold' | 'ladder' | 'pit' | 'roots' | 'trunk' | 'gnarled' | 'planks' | 'boat' | 'floe' | 'lakehouse' | 'laketower' | 'lakewing' | 'pinewood' | 'pine';
+  look?: 'stone' | 'culvert' | 'grass' | 'pillar' | 'tomb' | 'well' | 'trapdoor' | 'doorway' | 'brush' | 'orthanc' | 'scaffold' | 'ladder' | 'pit' | 'roots' | 'trunk' | 'gnarled' | 'planks' | 'boat' | 'floe' | 'lakehouse' | 'laketower' | 'lakewing' | 'pinewood' | 'pine' | 'chasm' | 'cavewall' | 'crag' | 'gobplanks' | 'rungs' | 'throne';
 }
 
 export const DOOR_TYPES = ['castle', 'dwarven', 'heavyArmoured', 'armoured', 'heavy', 'external', 'internal', 'dam'] as const;
 export type DoorType = (typeof DOOR_TYPES)[number];
 
-export const MARKER_OBJECTS = ['artefact', 'relic', 'heirloom', 'decoy', 'supply', 'ally', 'ladder', 'ram', 'rocks', 'oil', 'rally', 'campfire', 'charge', 'hobbit', 'boat', 'cocoon', 'dwarf'] as const;
+export const MARKER_OBJECTS = ['artefact', 'relic', 'heirloom', 'decoy', 'supply', 'ally', 'ladder', 'ram', 'rocks', 'oil', 'rally', 'campfire', 'charge', 'hobbit', 'boat', 'cocoon', 'dwarf', 'weapons'] as const;
 export type MarkerObject = (typeof MARKER_OBJECTS)[number];
 
 /** Secret choices some scenarios ask each player to make, by model or terrain id. */
@@ -239,10 +239,13 @@ export interface Picks {
   terrain?: string;
   /** The Unseen Hero: the web marker that holds no Dwarves. */
   decoy?: string;
-  /** The Elves of Mirkwood: the table edge Legolas, Tauriel and the Rangers come on from. */
+  /** The Elves of Mirkwood: the table edge Legolas, Tauriel and the Rangers come on from (Escape from Goblin-town: the
+   * edge the slain Goblins come back from). */
   edge?: string;
+  /** Escape from Goblin-town: the table edge the Evil player leaves the Dwarves to escape by. */
+  exit?: string;
 }
-export const PICK_KEYS = ['target', 'assassin', 'champion', 'protect', 'hunt', 'terrain', 'decoy', 'edge'] as const;
+export const PICK_KEYS = ['target', 'assassin', 'champion', 'protect', 'hunt', 'terrain', 'decoy', 'edge', 'exit'] as const;
 
 export interface DiceRoll {
   id: string;
@@ -374,6 +377,9 @@ export interface NarrativeState {
   hiding?: string[];
   wrath?: number;
   flown?: Record<string, number>;
+  /** Escape from Goblin-town: the turn Gandalf's arrival was rolled for, and the turn the slain Goblins last came back. */
+  gandalf?: number;
+  horde?: number;
 }
 
 export type BotSpeed = 'normal' | 'fast' | 'instant';
@@ -420,7 +426,7 @@ export interface SpellPending {
 export interface Placing {
   model: string;
   seat: Seat;
-  kind: 'arrive' | 'retreat' | 'join' | 'nest';
+  kind: 'arrive' | 'retreat' | 'join' | 'nest' | 'edge';
   from: [number, number];
   rim?: string;
   dist?: number;
@@ -759,7 +765,7 @@ export type Action =
   /** Request: the Good player at Weathertop rolls for Aragorn this turn, or doesn't. */
   | { type: 'aragorn'; roll: boolean }
   /** Server only: bookkeeping for a narrative scenario's rules. */
-  | { type: 'narrativeNote'; rolled?: number; dawn?: number; bilbo?: boolean; breach?: number; troll?: number; crushed?: string[]; woke?: number; revive?: string[]; webbed?: number; hazed?: number; nested?: number; alarm?: string[]; alarmed?: number; wrath?: number; flown?: Record<string, number> }
+  | { type: 'narrativeNote'; rolled?: number; dawn?: number; bilbo?: boolean; breach?: number; troll?: number; crushed?: string[]; woke?: number; revive?: string[]; webbed?: number; hazed?: number; nested?: number; alarm?: string[]; alarmed?: number; wrath?: number; flown?: Record<string, number>; gandalf?: number; horde?: number }
   /** And Into the Fire: a player nominates a tree for the Dwarves to hide in, before the battle. */
   | { type: 'nominate'; seat: Seat; tree: string }
   /** A flying model walks this Move phase instead of flying (see movement.ts flying). */
@@ -846,7 +852,7 @@ export type Action =
   /** A hero spends a Might point to raise one of its own dice by 1. `follow` picks the follow-up dice of a 6/4+ roll. */
   | { type: 'useMight'; roll: string; die: number; follow?: boolean; will?: boolean }
   /** Wounds dealt to a model. A hero with Fate holds them as pending until its player decides. */
-  | { type: 'wound'; id: string; count: number; by?: string[]; how?: 'fight' | 'shoot' | 'other'; group?: string; mount?: boolean; howdah?: boolean; /** A Morgul Blade's: the first wound taken slays outright. */ slay?: boolean; /** The game has already rolled for the wounds the model may shrug off (see towers.shrugOff). */ checked?: boolean }
+  | { type: 'wound'; id: string; count: number; by?: string[]; how?: 'fight' | 'shoot' | 'other'; group?: string; mount?: boolean; howdah?: boolean; /** A Morgul Blade's: the first wound taken slays outright. */ slay?: boolean; /** The game has already rolled for the wounds the model may shrug off (see towers.shrugOff). */ checked?: boolean; /** How many of them Elven weapons struck in a fight (the Goblin King's Blubbery Mass can't stop those). */ elven?: number }
   /** A model picks up a marker it is touching, turns a face-down marker over, or drops what it carries. */
   | { type: 'pickUp'; model: string; marker: string }
   | { type: 'flip'; model: string; marker: string }

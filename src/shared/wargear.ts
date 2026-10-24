@@ -67,6 +67,9 @@ const HAND_AND_A_HALF = /hand-and-a-half|hand and a half|berserker blade|glamdri
 const MELEE = /weapon|sword|blade|axe|spear|pike|dagger|knife|club|mace|hammer|whip|lance|staff|claws?|fangs?|teeth|beak|tusks?|glaive|flail|cleaver|scimitar|sting|glamdring|orcrist|grasper|and[uú]ril|herugrim|guthwin[eë]|narsil|grond|hand weapons?/;
 const NOT_MELEE = /\bbow\b|bows\b|crossbow|throwing|sling|blowpipe|javelin|armour|amour|shield|cloak|war horn|banner|drum|\bring\b|horse|warg\b|pony|goat|steed|camel|mount|chariot/;
 
+/** Whether an item of wargear is a weapon: one to fight or shoot with. */
+export const isWeaponItem = (g: string) => ((MELEE.test(g) || TWO_HANDED.test(g) || HAND_AND_A_HALF.test(g)) && !NOT_MELEE.test(g.replace(/two-handed|hand weapons?/g, ''))) || /\bbows?\b|crossbow|sling|throwing|blowpipe|javelin/.test(g);
+
 const melee = (catalog: Catalog | null | undefined, m: Model) => gearOf(catalog, m).filter(g => (MELEE.test(g) || TWO_HANDED.test(g) || HAND_AND_A_HALF.test(g)) && !NOT_MELEE.test(g.replace(/two-handed|hand weapons?/g, '')));
 
 /** How a model can fight with its weapons: whether it must, or may, wield a two-handed weapon. */
@@ -93,7 +96,8 @@ const royalStandard = (catalog: Catalog | null | undefined, m: Model) => hasGear
 const missile = (catalog: Catalog | null | undefined, m: Model) => hasGear(catalog, m, /\bbows?\b|crossbow|sling|blowpipe/);
 
 /** Whether a model carries Orcrist: an Elven hand-and-a-half sword with Orcbane, Goblinbane and Uruk-haibane, that gives its wielder Terror over them. */
-export const hasOrcrist = (catalog: Catalog | null | undefined, m: Model) => !!m.options?.some(o => /^Orcrist\b/i.test(o)) || !!unitOf(catalog, m)?.wargear.some(g => /^Orcrist\b/i.test(g));
+export const hasOrcrist = (catalog: Catalog | null | undefined, m: Model) =>
+  !m.lostGear?.some(g => /^orcrist\b/i.test(g)) && (!!m.options?.some(o => /^Orcrist\b/i.test(o)) || !!unitOf(catalog, m)?.wargear.some(g => /^Orcrist\b/i.test(g)));
 /** The kinds Orcrist's Bane Weapon rules name: a strike that wounds one of them does D3 Wounds. */
 export const ORCRIST_BANES = ['Orc', 'Goblin', 'Uruk-hai'];
 
@@ -354,6 +358,9 @@ export function terrainRules(catalog: Catalog | null | undefined, m: Model): str
   if (hasRule(catalog, m, 'Lumbering')) out.push('lumbering');
   // (Not terrain, but carried the same way: a Burly model or a monster carries a Heavy Object at full speed.)
   if (hasRule(catalog, m, 'Burly') || isMonster(catalog, m)) out.push('burly');
+  // (Nor these: the Goblin King's Relentless Advance takes him through his own Goblins, so the game marks who they are.)
+  if (hasRule(catalog, m, 'Relentless Advance')) out.push('relentless');
+  if (isKind(catalog, m, 'goblin')) out.push('goblin');
   return out;
 }
 

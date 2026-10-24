@@ -3,6 +3,7 @@ import { narrativeOf } from '../shared/narrative.ts';
 import { bundles, isUnseen } from '../shared/unseen.ts';
 import { nominationTurn, pines, treeName } from '../shared/eagles.ts';
 import { ElvesEdge } from './ElvesEdge.tsx';
+import { EDGES as GOBLIN_EDGES, escapeEdge, isGoblin } from '../shared/goblin.ts';
 import { objectivesMissing } from '../shared/scenarios.ts';
 import { BOT_NAME, type Action, type GameState, type Role, type Seat } from '../shared/types.ts';
 
@@ -218,6 +219,9 @@ export function DeployTurns({ state, dispatch, role }: { state: GameState; dispa
       // The Unseen Hero: the Spiders' player sets out the webbed bundles too, and secretly picks the decoy.
       const webs = isUnseen(state) && side === 'evil' ? bundles(state).sort((a, b) => (a.id < b.id ? -1 : 1)) : [];
       const decoy = me ? state.flow.picks?.[me]?.decoy : undefined;
+      // Escape from Goblin-town: the Evil player names the edge the Dwarves must escape by.
+      const exitPick = isGoblin(state) && side === 'evil';
+      const exit = escapeEdge(state);
       return turn === me ? (
         <>
           <p className="hint">Your turn to set up {n?.sides[side].name ?? 'your side'}: drag them where the scenario lets them stand, then you're done.</p>
@@ -236,8 +240,23 @@ export function DeployTurns({ state, dispatch, role }: { state: GameState; dispa
               </select>
             </label>
           )}
+          {exitPick && (
+            <label className="decoy-pick">
+              <span className="hint">Which table edge must the Dwarves escape by? (Nine of them off it wins the game for them.)</span>
+              <select value={exit ?? ''} onChange={e => dispatch({ type: 'setPick', seat: me, key: 'exit', value: e.target.value })}>
+                <option value="" disabled>
+                  Pick the escape edge…
+                </option>
+                {GOBLIN_EDGES.map(x => (
+                  <option key={x} value={x}>
+                    {x} edge
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           {me && <ElvesEdge state={state} dispatch={dispatch} role={me} />}
-          <button className="primary go" disabled={webs.length > 0 && !decoy} onClick={() => dispatch({ type: 'warbandDone', seat: me })}>
+          <button className="primary go" disabled={(webs.length > 0 && !decoy) || (exitPick && !exit)} onClick={() => dispatch({ type: 'warbandDone', seat: me })}>
             Done setting up
           </button>
         </>

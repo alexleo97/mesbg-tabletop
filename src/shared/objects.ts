@@ -2,6 +2,7 @@ import { mounted } from './cavalry.ts';
 import { isAmbush, isHobbit } from './ambush.ts';
 import { atBoats, carriesHobbit, isAmon, mayCarryHobbit } from './amon.ts';
 import { isLake } from './lake.ts';
+import { goblinExits, isGoblin } from './goblin.ts';
 import { eagleExits, isFire } from './eagles.ts';
 import { distanceToBase, halfExtents, inBaseContact, type Point } from './geometry.ts';
 import { fortressNotes, helpers, HEAVY } from './fortress.ts';
@@ -29,6 +30,7 @@ export const OBJECT_NAMES: Record<MarkerObject, string> = {
   boat: 'Boats',
   cocoon: 'Webbed bundle',
   dwarf: 'Dwarf Marker',
+  weapons: 'Weapon Pile',
 };
 
 /** How far a model's base is from a marker's edge. */
@@ -114,6 +116,8 @@ export function exitEdges(state: GameState, m: Model): ('top' | 'bottom' | 'left
   if (isAmon(state)) return carriesHobbit(state, m) ? ['top', 'bottom', 'right'] : [];
   // Lake-town Escape: Bolg may leave by the west edge, once he has lost a Wound.
   if (isLake(state)) return m.cast === 'bolg' && m.wounds < m.maxWounds ? ['left'] : [];
+  // Escape from Goblin-town: the Good side gets away by the edge the Evil player left open.
+  if (isGoblin(state)) return goblinExits(state, m);
   // And Into the Fire: an Eagle carrying Dwarves, Thorin or Bilbo flies off by any edge.
   if (isFire(state)) return eagleExits(state, m) ? ['top', 'bottom', 'left', 'right'] : [];
   switch (state.scenario) {
@@ -167,7 +171,7 @@ export function markerActions(state: GameState, m: Model): MarkerAction[] {
 export function canPickUp(state: GameState, m: Model, t: Terrain): boolean {
   if (!t.object || t.gone || t.carrier || t.hidden || !touching(m, t) || m.dead || m.escaped) return false;
   // (The Eagles pick up the Dwarves by themselves as the Good side's move ends: see eagles.ts.)
-  if (t.object === 'dwarf') return false;
+  if (t.object === 'dwarf' || t.object === 'weapons') return false;
   if (t.object === 'supply' || t.object === 'decoy' || t.object === 'rally' || t.object === 'campfire' || t.object === 'boat' || t.object === 'cocoon') return false;
   // A knocked-out Hobbit is carried off by the Uruk-hai, one apiece.
   if (t.object === 'hobbit') return !isCavalry(m) && mayCarryHobbit(state, m, t);
@@ -301,6 +305,8 @@ export function markerNotes(t: Terrain): string[] {
       return ['The boats on the Anduin. Frodo, touching them, can get away in one.'];
     case 'dwarf':
       return ['Dwarves hiding in a tree. An Eagle not in a fight that ends its side\'s move touching the marker picks them up, and they are rescued once it carries them off the table.'];
+    case 'weapons':
+      return ["The Dwarves' confiscated weapons. A Dwarf that moves into base contact with it during its move takes back the weapons on its profile, and is no longer Unarmed."];
     case 'cocoon':
       return ['Spun up tight by the Spiders: two of the three bundles hold Dwarves, one is a decoy. Bilbo touching it in the End phase cuts it open on a 3+.'];
     case 'campfire':

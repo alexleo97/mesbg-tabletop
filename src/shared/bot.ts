@@ -39,6 +39,7 @@ import { courageOf, willOfEvil } from './courage.ts';
 import { bolgChargeAt, isLake, isSentry, legolasOf, sentriesDue } from './lake.ts';
 import { bilboTargets, carrying, eagleExits, isEagle, isFire, landingBeside, nominationTurn, pines, stillToCarry } from './eagles.ts';
 import { walkDistance, waypoint } from './lakeNav.ts';
+import { bestExit, escapeEdge, exitPickDue, goblinExits, isDwarf as goblinDwarf, isGoblin, mouths, noFooting, swapCandidates, weaponPile } from './goblin.ts';
 import { hasMorgulBlade } from './morgul.ts';
 import { AXE_FREED, canHeadbutt, hasMattock, longbeardFor, mayAxeTest, mayTend, rerollFor, spentPoints, swapPair, trumpetDue } from './company.ts';
 import { fitsSack, keepsForLater, lingeringCold } from './trolls.ts';
@@ -377,6 +378,8 @@ function deployStep({ state, seat, now }: Ctx): BotStep | null {
         const tree = pines(state).filter(t => !taken.includes(t.id)).sort((a, b) => worth(b) - worth(a))[0];
         if (tree) return { action: { type: 'nominate', seat, tree: tree.id }, delay: THINK_PAUSE };
       }
+      // Escape from Goblin-town: the Evil side leaves the Dwarves the edge with the fewest, narrowest ways off it.
+      if (exitPickDue(state, seat)) return { action: { type: 'setPick', seat, key: 'exit', value: bestExit(state) }, delay: THINK_PAUSE };
       // A narrative scenario's cast is already where its story puts it.
       return { action: { type: 'warbandDone', seat }, delay: THINK_PAUSE };
     }
@@ -548,10 +551,12 @@ function moveStep(ctx: Ctx): BotStep {
   // carry it after them, to take hold of it again where it was set down.
   const heavy = onTable(state).filter(t => (t.object === 'ladder' || t.object === 'ram' || t.object === 'charge') && t.carrier && state.models[t.carrier]?.owner === seat);
   const hauling = (m: Model) => (heavy.some(t => t.carrier === m.id) ? 1 : heavy.some(t => touchingMarker(m, t)) ? 2 : 0);
+  // (One hemmed in by friends yet to move waits for them to make room, once.)
+  const waited = (m: Model) => !!memo.tested?.includes(`w:${m.id}`);
   // A siege engine doesn't move itself, and its crew stay beside it to shoot it.
   const queue = side(state, seat)
     .filter(m => !memo.acted.includes(m.id) && !m.siege && !(m.crewOf && state.models[m.crewOf] && !state.models[m.crewOf].dead) && !(isFire(state) && m.aboard))
-    .sort((a, b) => Number(hauling(a)) - Number(hauling(b)) || Number(reach(b)) - Number(reach(a)) || (reach(a) ? nearest(a) - nearest(b) : nearest(b) - nearest(a)));
+    .sort((a, b) => Number(waited(a)) - Number(waited(b)) || Number(hauling(a)) - Number(hauling(b)) || Number(reach(b)) - Number(reach(a)) || (reach(a) ? nearest(a) - nearest(b) : nearest(b) - nearest(a)));
   const goals = assignGoals(ctx);
   let stayed = 0;
   for (const m of queue) {
@@ -574,6 +579,12 @@ function moveStep(ctx: Ctx): BotStep {
     }
     memo.acted.push(m.id);
     const to = planMove(ctx, m, goal);
+    const r = radius(m);
+    if (!to && goal && !waited(m) && queue.some(f => f.id !== m.id && !memo.acted.includes(f.id) && centre(f, m) < r + radius(f) + 0.3)) {
+      memo.acted.pop();
+      (memo.tested ??= []).push(`w:${m.id}`);
+      continue;
+    }
     if (!to) {
       memo.pending = { kind: 'marker', model: m.id };
       const act = markerStep(ctx, m);
@@ -629,7 +640,7 @@ function markerStep(ctx: Ctx, m: Model): BotStep | null {
     if (a.kind === 'pickUp' && (object?.object === 'rocks' || object?.object === 'oil')) continue;
     if (a.kind === 'escape') {
       // Leave the table with something worth carrying off, or in a scenario that scores getting models away.
-      if (carriedBy(state, m).length || state.scenario === 'reconnoitre' || (isAmbush(state) && isHobbit(m)) || atBoats(state, m) || (isLake(state) && m.cast === 'bolg') || eagleExits(state, m)) return { action: { type: 'escape', model: m.id }, delay: MOVE_PAUSE };
+      if (carriedBy(state, m).length || state.scenario === 'reconnoitre' || (isAmbush(state) && isHobbit(m)) || atBoats(state, m) || (isLake(state) && m.cast === 'bolg') || eagleExits(state, m) || goblinExits(state, m).length > 0) return { action: { type: 'escape', model: m.id }, delay: MOVE_PAUSE };
       continue;
     }
     if (a.kind === 'uncover') return { action: { type: 'uncover', model: m.id, marker: a.marker!, intelligence: profile(ctx, m).i }, delay: DICE_PAUSE };
@@ -779,6 +790,75 @@ function fireGoals(ctx: Ctx, ours: Model[], out: Map<string, Goal>) {
   }
 }
 
+/**
+ * Escape from Goblin-town, along the walkways. The Dwarves without their weapons make for the Weapon Pile first, then
+ * everyone heads for the walkways off the escape edge. The Goblins: a few hold the ways off that edge, the rest hunt
+ * the Dwarves (no more than three to each), and the Goblin King goes for Thorin.
+ */
+function goblinGoals(ctx: Ctx, ours: Model[], out: Map<string, Goal>) {
+  const { state, seat } = ctx;
+  const edge = escapeEdge(state);
+  if (!edge) return;
+  const { w, h } = state.board;
+  const ways = mouths(state, edge).map(([a, b]): Point => {
+    const t = (a + b) / 2;
+    return edge === 'north' ? { x: t, y: 0.6 } : edge === 'south' ? { x: t, y: h - 0.6 } : edge === 'west' ? { x: 0.6, y: t } : { x: w - 0.6, y: t };
+  });
+  const along = (m: Model, to: Point, pull: number, near = 0): Goal | undefined => {
+    const wp = waypoint(state, m, to, (moveAllowance(state, m) ?? m.move) + 2);
+    return wp ? { at: wp, pull, bold: true, ...(near && centre(wp, to) < 0.01 ? { near } : {}) } : undefined;
+  };
+  const nearestWay = (m: Model) => [...ways].sort((a, b) => walkDistance(state, m, a) - walkDistance(state, m, b))[0];
+  if (seat === state.narrative?.good) {
+    const pile = weaponPile(state);
+    for (const m of ours) {
+      if (out.has(m.id)) continue;
+      // (Close enough to the edge, it goes straight for it; to the pile while it has no weapons and it's not too late.)
+      const way = nearestWay(m);
+      const arms = pile && goblinDwarf(m) && m.lostGear?.length && state.turn <= 5 && walkDistance(state, m, pile) < 14;
+      const goal = arms ? along(m, pile, 2.5) : way ? along(m, way, 2.5) : undefined;
+      if (goal) out.set(m.id, goal);
+    }
+    return;
+  }
+  const prey = side(state, other(seat)).filter(e => !e.waiting);
+  // (The guards stand a little way back along the walkway, leaving the edge clear for those coming back.)
+  const inward = edge === 'north' ? { x: 0, y: 1 } : edge === 'south' ? { x: 0, y: -1 } : edge === 'west' ? { x: 1, y: 0 } : { x: -1, y: 0 };
+  const posts = ways.map(p => {
+    for (const d of [3.5, 3, 2.5, 2]) {
+      const q = { x: p.x + inward.x * d, y: p.y + inward.y * d };
+      if (!noFooting(state, q)) return q;
+    }
+    return p;
+  });
+  const hunting = new Map<string, number>();
+  const guards = new Map<number, number>();
+  for (const m of [...ours].sort((a, b) => Number(b.hero) - Number(a.hero))) {
+    if (out.has(m.id)) continue;
+    if (m.cast === 'goblin-king') {
+      const thorin = prey.find(e => e.cast === 'thorin');
+      const t = thorin ?? [...prey].sort((a, b) => walkDistance(state, m, a) - walkDistance(state, m, b))[0];
+      const g = t && along(m, t, 1.5);
+      if (g) out.set(m.id, g);
+      continue;
+    }
+    // (Two Goblins to each way off, those nearest it.)
+    const post = posts.map((p, i) => ({ p, i })).filter(({ i }) => (guards.get(i) ?? 0) < 2).sort((a, b) => walkDistance(state, m, a.p) - walkDistance(state, m, b.p))[0];
+    const target = prey.filter(e => (hunting.get(e.id) ?? 0) < 3).sort((a, b) => walkDistance(state, m, a) - walkDistance(state, m, b))[0];
+    if (post && !m.hero && (!target || walkDistance(state, m, post.p) < walkDistance(state, m, target))) {
+      guards.set(post.i, (guards.get(post.i) ?? 0) + 1);
+      const g = along(m, post.p, 1.2, 1.5);
+      if (g) out.set(m.id, g);
+      continue;
+    }
+    if (target) {
+      hunting.set(target.id, (hunting.get(target.id) ?? 0) + 1);
+      const g = along(m, target, 1.5);
+      if (g) out.set(m.id, g);
+    }
+  }
+}
+
 function assignGoals(ctx: Ctx): Map<string, Goal> {
   const { state, seat } = ctx;
   const out = new Map<string, Goal>();
@@ -808,6 +888,7 @@ function assignGoals(ctx: Ctx): Map<string, Goal> {
   };
   const lanes: [Point, Point][] = [];
   if (isFire(state)) fireGoals(ctx, ours, out);
+  if (isGoblin(state)) goblinGoals(ctx, ours, out);
   for (const m of ours) {
     const carried = carriedBy(state, m);
     if (!carried.length || out.has(m.id)) continue;
@@ -1308,6 +1389,8 @@ const standoff = (ctx: Ctx) => (ctx.memo.quiet ?? 0) >= 4 || ((ctx.memo.quiet ??
 /** The stronger army presses forward; the weaker one picks its fights. */
 function aggressive(ctx: Ctx): boolean {
   const { state, seat } = ctx;
+  // (Thorin's Company, hemmed in on all sides in Goblin-town, has to fight its way out.)
+  if (isGoblin(state) && seat === state.narrative?.good) return true;
   const power = (s: Seat) => side(state, s).reduce((n, m) => n + profile(ctx, m).value * (1 + profile(ctx, m).f / 5), 0);
   return power(seat) >= power(other(seat)) * 0.85;
 }
@@ -1926,6 +2009,9 @@ function companyStep(ctx: Ctx): BotStep | null {
   if (bifur) return { action: { type: 'axeTest', model: bifur.id }, delay: DICE_PAUSE };
   const twins = swapPair(state, ctx.catalog, seat);
   if (twins && state.phase === 'fight' && twins.every(m => engagedWith(state, m).length)) return { action: { type: 'swap', a: twins[0].id, b: twins[1].id }, delay: THINK_PAUSE };
+  // Grinnah swaps into a Goblin's fight when he isn't in one himself.
+  const swap = swapCandidates(state, ctx.catalog, seat).find(x => !engagedWith(state, x.a).length && engagedWith(state, x.b).length);
+  if (swap) return { action: { type: 'swap', a: swap.a.id, b: swap.b.id }, delay: THINK_PAUSE };
   if (state.phase === 'move' && canActivate(state, seat))
     for (const m of side(state, seat)) {
       if (!mayActivate(state, m) || !rulesFor(ctx.catalog, m).some(r => /^(Healing Herbs|Raising Spirits)$/.test(r))) continue;
