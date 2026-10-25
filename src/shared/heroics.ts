@@ -2,6 +2,7 @@ import { distanceBetween } from './geometry.ts';
 import { longshanksFree } from './sam.ts';
 import { swordStill } from './goblin.ts';
 import { faramirsChance, rightHand, shoutsFrom } from './osgiliath.ts';
+import { rohirrimCharge } from './pelennor.ts';
 import { activeSeat, other } from './flow.ts';
 import { engaged, moveStart } from './movement.ts';
 import { cannotAct } from './powers.ts';
@@ -48,7 +49,7 @@ export function canDeclare(state: GameState, seat: Seat): Model[] {
   const fighting = state.phase === 'fight' && state.flow.started && state.flow.pairs ? new Set(state.flow.pairs.flatMap(k => k.split(','))) : null;
   // A hero held by a power (Transfix, Paralyse) can't call one.
   // A model with a war drum can call a free Heroic March in the Move phase.
-  return Object.values(state.models).filter(m => m.owner === seat && !m.dead && !done.has(m.id) && !cannotAct(state, m) && !swordStill(state, m) && (!fighting || fighting.has(m.id)) && ((m.hero && (m.might > 0 || longshanksFree(state, m) || (state.phase === 'move' && (faramirsChance(state, m) || !!rightHand(state, m))))) || (m.drum && state.phase === 'move')));
+  return Object.values(state.models).filter(m => m.owner === seat && !m.dead && !done.has(m.id) && !cannotAct(state, m) && !swordStill(state, m) && (!fighting || fighting.has(m.id)) && ((m.hero && (m.might > 0 || longshanksFree(state, m) || (state.phase === 'move' && (faramirsChance(state, m) || !!rightHand(state, m))) || (!!m.ground?.includes('deadking') && !!rightHand(state, m)))) || (m.drum && state.phase === 'move') || rohirrimCharge(state, m)));
 }
 
 /** Both players have declared what they want (or have no one who could), so models can activate. */
@@ -130,7 +131,9 @@ export function shoutedFor(state: GameState, hero: Model): Model[] {
   // (Gothmog's With Me may be measured from his Enforcer, standing within 3" of him.)
   const hand = shoutsFrom(state, hero);
   const from = hand ? [at, { ...hand, ...moveStart(state, hand) }] : [at];
-  return Object.values(state.models).filter(f => f.owner === hero.owner && f.id !== hero.id && !f.dead && !f.escaped && !f.waiting && !others.has(f.id) && from.some(p => distanceBetween(p, { ...f, ...moveStart(state, f) }) <= SHOUT_RANGE));
+  // (The King of the Dead's heroic actions reach only those of Dunharrow: The Dead and the Living.)
+  const deadOnly = !!hero.ground?.includes('deadking');
+  return Object.values(state.models).filter(f => f.owner === hero.owner && f.id !== hero.id && !f.dead && !f.escaped && !f.waiting && !others.has(f.id) && (!deadOnly || /\bof the dead\b/i.test(f.name)) && from.some(p => distanceBetween(p, { ...f, ...moveStart(state, f) }) <= SHOUT_RANGE));
 }
 
 /**
@@ -179,6 +182,9 @@ export function mayDeclare(state: GameState, m: Model, action: string, heroics: 
   // Faramir, his army Broken, has a free Heroic Resolve; Gothmog, beside his Enforcer, may spend the Enforcer's Will.
   if (m.hero && action === 'Heroic Resolve' && faramirsChance(state, m) && (!heroics || heroics.includes(action))) return true;
   if (m.hero && m.might < 1 && (action === 'Heroic Move' || action === 'Heroic March') && rightHand(state, m) && (info.universal || !heroics || heroics.includes(action))) return true;
+  // The King of the Dead may pay with a Herald's Will for any of his; a Rohan model that charged has a Heroic Combat for nothing.
+  if (m.hero && m.might < 1 && m.ground?.includes('deadking') && rightHand(state, m) && (info.universal || !heroics || heroics.includes(action))) return true;
+  if (action === 'Heroic Combat' && rohirrimCharge(state, m)) return true;
   if (!m.hero || m.might < 1) return !!m.drum && action === 'Heroic March';
   if (!info.universal && heroics && !heroics.includes(action)) return false;
   if ((action === 'Heroic Shoot' || action === 'Heroic Accuracy') && engaged(state, m)) return false;

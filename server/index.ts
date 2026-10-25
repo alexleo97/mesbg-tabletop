@@ -36,6 +36,9 @@ import { legionsArrive, legionsDue, wakeDue, wakeUp } from '../src/shared/amon.t
 import { gandalfArrives, gandalfDue, hordeArrives, hordeDue, relentlessDue, relentlessHits } from '../src/shared/goblin.ts';
 import { hordeArrives as osgHordeArrives, hordeDue as osgHordeDue, masterDue, masterRoll } from '../src/shared/osgiliath.ts';
 import { gollumHides, hideGollum, hordeArrives as doomHordeArrives, hordeDue as doomHordeDue, setDown, setDownDue } from '../src/shared/doom.ts';
+import { pelennorArrives, pelennorDue } from '../src/shared/pelennor.ts';
+import { unseat, unseatedDue } from '../src/shared/passengers.ts';
+import { imposingDue, imposingRoll } from '../src/shared/pelennorRules.ts';
 import { goblinTide, tideDue, trample as trollTramples, trampleDue, trollDue, trollEnters } from '../src/shared/balin.ts';
 import { dawnDue, reinforceDue, rollDawn, rollReinforcements as companyArrives } from '../src/shared/mutton.ts';
 import { bondsDue, rollBonds } from '../src/shared/ambush.ts';
@@ -416,6 +419,7 @@ function authorise(client: Client, action: Action, state: GameState): Action | n
     }
     case 'setPick':
     case 'reliefPoint':
+    case 'arrivalPoint':
     case 'nominate':
     case 'bilboJoins':
       return action.seat === client.role ? action : null;
@@ -751,12 +755,12 @@ function narrativeUpkeep(room: Room) {
     const s = room.state;
     const bearer = sauronDue(s, CATALOG);
     const sam = longshanksDue(s);
-    const out = mightyDue(s, CATALOG) ? mightyBonus(s, CATALOG, serverId) : sam ? longshanksMove(s, sam) : arrivalAuto(s) ? rollArrival(s, serverDice, serverId) : reinforceDue(s) ? companyArrives(s, serverDice, serverId) : bondsDue(s) ? rollBonds(s, serverDice, serverId) : trollDue(s) ? trollEnters(s, serverId) : trampleDue(s) ? trollTramples(s, CATALOG, serverDice, serverId) : tideDue(s) ? goblinTide(s, serverId) : legionsDue(s) ? legionsArrive(s, serverDice, serverId) : wakeDue(s) ? wakeUp(s, serverDice, serverId) : reliefDue(s) ? reliefArrives(s, serverId) : listenDue(s, CATALOG) ? listenFor(s, CATALOG) : dawnDue(s) ? rollDawn(s, serverDice, serverId) : webDue(s) ? cutWebs(s, serverDice, serverId) : nestDue(s) ? nestReturn(s, serverId) : hazeDue(s) ? hazeRolls(s, serverDice, serverId) : elvesDue(s) ? elvesArrive(s, serverId) : eaglesDue(s) ? eaglesArrive(s, serverId) : gandalfDue(s) ? gandalfArrives(s, serverDice, serverId) : hordeDue(s) ? hordeArrives(s, serverDice, serverId) : osgHordeDue(s) ? osgHordeArrives(s, serverDice, serverId) : doomHordeDue(s) ? doomHordeArrives(s, CATALOG, serverId) : gollumHides(s) ? hideGollum(s, serverId) : setDownDue(s) ? setDown() : masterDue(s, CATALOG) ? masterRoll(s, CATALOG, serverDice, serverId) : relentlessDue(s) ? relentlessHits(s, CATALOG, serverDice, serverId) : wrathDue(s) ? wrathMove(s, serverId) : alarmDue(s) ? alarmRaised(s, serverId) : bearer ? sauronRoll(s, bearer, serverDice, serverId) : burnDue(s) ? burns(s, CATALOG, serverDice, serverId) : [];
+    const out = mightyDue(s, CATALOG) ? mightyBonus(s, CATALOG, serverId) : sam ? longshanksMove(s, sam) : arrivalAuto(s) ? rollArrival(s, serverDice, serverId) : reinforceDue(s) ? companyArrives(s, serverDice, serverId) : bondsDue(s) ? rollBonds(s, serverDice, serverId) : trollDue(s) ? trollEnters(s, serverId) : trampleDue(s) ? trollTramples(s, CATALOG, serverDice, serverId) : tideDue(s) ? goblinTide(s, serverId) : legionsDue(s) ? legionsArrive(s, serverDice, serverId) : wakeDue(s) ? wakeUp(s, serverDice, serverId) : reliefDue(s) ? reliefArrives(s, serverId) : listenDue(s, CATALOG) ? listenFor(s, CATALOG) : dawnDue(s) ? rollDawn(s, serverDice, serverId) : webDue(s) ? cutWebs(s, serverDice, serverId) : nestDue(s) ? nestReturn(s, serverId) : hazeDue(s) ? hazeRolls(s, serverDice, serverId) : elvesDue(s) ? elvesArrive(s, serverId) : eaglesDue(s) ? eaglesArrive(s, serverId) : gandalfDue(s) ? gandalfArrives(s, serverDice, serverId) : hordeDue(s) ? hordeArrives(s, serverDice, serverId) : osgHordeDue(s) ? osgHordeArrives(s, serverDice, serverId) : doomHordeDue(s) ? doomHordeArrives(s, CATALOG, serverId) : pelennorDue(s) ? pelennorArrives(s, serverId) : unseatedDue(s) ? unseat(s, CATALOG, serverDice, serverId) : imposingDue(s, CATALOG) ? imposingRoll(s, CATALOG, serverDice, serverId) : gollumHides(s) ? hideGollum(s, serverId) : setDownDue(s) ? setDown() : masterDue(s, CATALOG) ? masterRoll(s, CATALOG, serverDice, serverId) : relentlessDue(s) ? relentlessHits(s, CATALOG, serverDice, serverId) : wrathDue(s) ? wrathMove(s, serverId) : alarmDue(s) ? alarmRaised(s, serverId) : bearer ? sauronRoll(s, bearer, serverDice, serverId) : burnDue(s) ? burns(s, CATALOG, serverDice, serverId) : [];
     for (const a of out) apply(room, a);
   } finally {
     upkeeping = false;
   }
-  if (mightyDue(room.state, CATALOG) || longshanksDue(room.state) || arrivalAuto(room.state) || reinforceDue(room.state) || bondsDue(room.state) || trollDue(room.state) || trampleDue(room.state) || tideDue(room.state) || legionsDue(room.state) || wakeDue(room.state) || reliefDue(room.state) || listenDue(room.state, CATALOG) || dawnDue(room.state) || webDue(room.state) || nestDue(room.state) || hazeDue(room.state) || elvesDue(room.state) || eaglesDue(room.state) || gandalfDue(room.state) || hordeDue(room.state) || osgHordeDue(room.state) || doomHordeDue(room.state) || gollumHides(room.state) || setDownDue(room.state) || !!masterDue(room.state, CATALOG) || relentlessDue(room.state) || wrathDue(room.state) || alarmDue(room.state) || sauronDue(room.state, CATALOG) || burnDue(room.state)) narrativeUpkeep(room);
+  if (mightyDue(room.state, CATALOG) || longshanksDue(room.state) || arrivalAuto(room.state) || reinforceDue(room.state) || bondsDue(room.state) || trollDue(room.state) || trampleDue(room.state) || tideDue(room.state) || legionsDue(room.state) || wakeDue(room.state) || reliefDue(room.state) || listenDue(room.state, CATALOG) || dawnDue(room.state) || webDue(room.state) || nestDue(room.state) || hazeDue(room.state) || elvesDue(room.state) || eaglesDue(room.state) || gandalfDue(room.state) || hordeDue(room.state) || osgHordeDue(room.state) || doomHordeDue(room.state) || pelennorDue(room.state) || unseatedDue(room.state) || !!imposingDue(room.state, CATALOG) || gollumHides(room.state) || setDownDue(room.state) || !!masterDue(room.state, CATALOG) || relentlessDue(room.state) || wrathDue(room.state) || alarmDue(room.state) || sauronDue(room.state, CATALOG) || burnDue(room.state)) narrativeUpkeep(room);
 }
 
 /** In the End phase, Paralysed models roll to recover. */

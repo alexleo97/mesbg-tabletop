@@ -41,7 +41,7 @@ export function sideOf(catalog: Catalog | null | undefined, m: Model): 'Good' | 
 /** A spear for fighting with (not one for throwing), which lets the model support a friend in a fight. */
 export const hasSpear = (catalog: Catalog | null | undefined, m: Model) => hasGear(catalog, m, /^(?!.*throwing).*\bspears?\b/);
 /** A pike: supports like a spear, and can support another pike that is supporting. */
-export const hasPike = (catalog: Catalog | null | undefined, m: Model) => hasGear(catalog, m, /\bpikes?\b/);
+export const hasPike = (catalog: Catalog | null | undefined, m: Model) => hasGear(catalog, m, /\bpikes?\b|easterling halberd/);
 /** An Elven hand weapon, blade or other Elven melee weapon (not a bow), which helps in a drawn fight. */
 /** An Elven bow (or a Galadhrim one). */
 export const elvenBow = (catalog: Catalog | null | undefined, m: Model) => hasGear(catalog, m, /\belven\b.*\bbow\b|\belf ?bow\b|galadhrim bow|bow of the galadhrim/);

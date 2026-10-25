@@ -193,8 +193,10 @@ export const endTheRace = (catalog: Catalog | null | undefined, m: Model, foes: 
  * Enforcer's Will rather than his own Might. (The game uses the Enforcer's Will first, while he has any.)
  */
 export function rightHand(state: GameState, m: Model | undefined): Model | undefined {
-  if (!m || !m.ground?.includes('gothmog')) return undefined;
-  return Object.values(state.models).find(e => e.owner === m.owner && e.ground?.includes('righthand') && alive(e) && e.will > 0 && distanceBetween(e, m) <= 3);
+  // (The King of the Dead's Heralds do the same for him, for any heroic action: The King's Counsel.)
+  const by = m?.ground?.includes('gothmog') ? 'righthand' : m?.ground?.includes('deadking') ? 'counsel' : undefined;
+  if (!m || !by) return undefined;
+  return Object.values(state.models).find(e => e.owner === m.owner && e.ground?.includes(by) && alive(e) && e.will > 0 && distanceBetween(e, m) <= 3);
 }
 export const RIGHT_HAND_ACTIONS = ['Heroic Move', 'Heroic March'];
 

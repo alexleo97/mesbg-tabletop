@@ -1428,3 +1428,38 @@ select.ready-made {
 .terrain .doom-gate-seam { stroke: #1a1917; stroke-width: 0.05; }
 .terrain .doom-merlon { fill: #1c1a18; stroke: #0a0909; stroke-width: 0.03; }
 .fortress-faces .doom-face .face-shade { fill: #00000055; }
+/* Battle of Pelennor Fields: the trampled green of the Pelennor, the pale stone of Minas Tirith, the broken Gate. */
+.terrain .pel-grass { fill: #6f7d45; }
+.terrain .pel-patch { opacity: 0.55; }
+.terrain .pel-patch-0 { fill: #8a7a4c; }
+.terrain .pel-patch-1 { fill: #5b6a37; }
+.terrain .pel-patch-2 { fill: #7a6a45; }
+.terrain .pel-tuft { fill: none; stroke-width: 0.045; stroke-linecap: round; opacity: 0.45; }
+.terrain .pel-tuft-0 { stroke: #95a25c; }
+.terrain .pel-tuft-1 { stroke: #4d5a2a; }
+.terrain .pel-tuft-2 { stroke: #a8975f; }
+.terrain .pel-road { fill: none; stroke: #9b8762; stroke-width: 2.6; stroke-linecap: round; opacity: 0.75; }
+.terrain .pel-road-edge { fill: none; stroke: #6c5d40; stroke-width: 3.4; stroke-linecap: round; opacity: 0.35; }
+.terrain .pel-burn { fill: #2b241d; opacity: 0.45; }
+.terrain .pel-ash { fill: #6d655b; opacity: 0.4; }
+.terrain .pel-scorch { fill: #3a3127; opacity: 0.45; }
+.terrain .pel-rock { fill: #8e8b84; }
+.terrain .pel-lichen { fill: #7c8656; opacity: 0.35; }
+.terrain .pel-rubble { fill: #7a7468; opacity: 0.7; }
+.terrain .pel-stone { stroke: #4d4943; stroke-width: 0.03; }
+.terrain .pel-stone-0 { fill: #b3aea3; }
+.terrain .pel-stone-1 { fill: #96918a; }
+.terrain .pel-stone-2 { fill: #cfcabf; }
+.terrain .mt-stone { fill: #e6e2d8; }
+.terrain .mt-walk { fill: #d8d3c7; opacity: 0.5; }
+.terrain .mt-walk-line { stroke: #a9a397; stroke-width: 0.06; }
+.terrain .mt-seam { stroke: #b6b0a3; stroke-width: 0.04; }
+.terrain .mt-merlon { stroke: #f4f1ea; stroke-width: 0.34; stroke-linecap: square; }
+.terrain .mt-roof { fill: #cdc7ba; stroke: #a49e91; stroke-width: 0.06; }
+.terrain .mt-roof-boss { fill: #b9b3a6; }
+.terrain .mt-flags { fill: #bdb7aa; }
+.terrain .mt-flag-seam { stroke: #8d8679; stroke-width: 0.05; }
+.terrain .mt-gate-wood { fill: #2a2420; stroke: #14110f; stroke-width: 0.06; }
+.terrain .mt-gate-iron { stroke: #5c5a58; stroke-width: 0.12; }
+.fortress-faces .mt-face .face { stroke: #8f897d; }
+.fortress-faces .mt-face .face-shade { fill: #0000002e; }

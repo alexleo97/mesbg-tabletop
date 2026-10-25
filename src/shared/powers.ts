@@ -10,7 +10,9 @@ import { basePerimeter, distanceBetween, distanceToBase, type Point } from './ge
 import { formatNeed, woundNeed } from './rules.ts';
 import { insidePolygon, outline } from './sight.ts';
 import { isWarBeast } from './warBeasts.ts';
-import { guards } from './wargear.ts';
+import { guards, hasRule as ruleOf } from './wargear.ts';
+import { crownedNear, dunharrow, eowynFearless } from './pelennorRules.ts';
+import { passengerBoon } from './passengers.ts';
 import type { Action, DiceRoll, GameState, Model, ModelEffect, Seat, SpellPending } from './types.ts';
 
 interface PowerInfo {
@@ -134,8 +136,12 @@ export const terrifying = (state: GameState, m: Model) => under(state, m, 'Terri
 export const madeFearful = (state: GameState, m: Model) => auras(state, m, 'Instil Fear', 'enemy').length > 0;
 
 /** Why a model passes Courage tests without rolling, if it does. */
-export function courageAuto(state: GameState, catalog: Catalog | null, m: Model): string | null {
+export function courageAuto(state: GameState, catalog: Catalog | null, m: Model, charging?: Model): string | null {
+  // (None of these help within 6" of the Witch-king wearing the Crown of Morgul, nor charging him.)
+  if (crownedNear(state, catalog, m, charging)) return null;
   if (hasRule(catalog, m, /^Fearless\b/) || under(state, m, 'Enrage Beast')) return 'Fearless';
+  // Éowyn, once Théoden has fallen: I Shall Kill You if You Touch Him.
+  if (eowynFearless(state, catalog, m)) return 'Fearless';
   // And Into the Fire: Thorin's Wrath makes him Fearless until he is wounded.
   if (state.narrative?.id === 'and-into-the-fire' && m.cast === 'thorin' && m.wounds >= m.maxWounds) return "Thorin's Wrath";
   if (auras(state, m, 'Aura of Command', 'friend').length) return 'Aura of Command';
@@ -158,8 +164,12 @@ export const intelligenceWorse = (state: GameState, m: Model) => (auras(state, m
 /** Free dice a model rolls to resist a power: Fortify Spirit, Resistant to Magic, and a friendly hero's Heroic Resolve. */
 export function freeResistDice(state: GameState, catalog: Catalog | null, m: Model): number {
   // (Not from an Invisible hero, whose friends can't benefit from its heroic actions.)
-  const resolve = state.flow.heroics.some(h => h.action === 'Heroic Resolve' && state.models[h.model] && state.models[h.model].owner === m.owner && (h.model === m.id || !state.models[h.model].ringOn) && distanceBetween(state.models[h.model], m) <= AURA_RANGE);
-  return (under(state, m, 'Fortify Spirit') ? 1 : 0) + (hasRule(catalog, m, /^Resistant to Magic/) ? 1 : 0) + (resolve ? 1 : 0);
+  // (The King of the Dead's reaches only those of Dunharrow: The Dead and the Living.)
+  const resolve = state.flow.heroics.some(h => h.action === 'Heroic Resolve' && state.models[h.model] && state.models[h.model].owner === m.owner && (h.model === m.id || !state.models[h.model].ringOn) && (h.model === m.id || !state.models[h.model].ground?.includes('deadking') || dunharrow(m)) && distanceBetween(state.models[h.model], m) <= AURA_RANGE);
+  // Resistant to Magic: its own, a Passenger's behind it, or a Pennant of the Dead within 3" for those of Dunharrow.
+  const pennant = dunharrow(m) && Object.values(state.models).some(o => o.owner === m.owner && !o.dead && !o.waiting && ruleOf(catalog, o, 'Pennant of the Dead') && distanceBetween(o, m) <= 3);
+  const resistant = hasRule(catalog, m, /^Resistant to Magic/) || !!passengerBoon(state, catalog, m) || pennant;
+  return (under(state, m, 'Fortify Spirit') ? 1 : 0) + (resistant ? 1 : 0) + (resolve ? 1 : 0);
 }
 
 /** What hitting this model at range needs now: a 6 near an enemy Blinding Light, one worse for Protection of the Valar. */

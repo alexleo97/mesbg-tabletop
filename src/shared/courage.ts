@@ -13,6 +13,7 @@ import { courageBonus, hasOrcrist, hasRule, isKind } from './wargear.ts';
 import { isChariot } from './warBeasts.ts';
 import { mounted } from './cavalry.ts';
 import { cryPenalty } from './narrative.ts';
+import { dunharrow, highKingFor } from './pelennorRules.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
 /** How close a hero's friends must be to share its Stand Fast! or Heroic Resolve. */
@@ -21,8 +22,8 @@ export const STAND_FAST_RANGE = 6;
 /** Théoden's "Forth, and Fear no Darkness!" carries his Stand Fast! twice as far. */
 export const standFastRange = (catalog: Catalog | null, h: Model) => (h.profileId && catalog?.units[h.profileId]?.rules.some(r => r === 'Forth, and Fear no Darkness' || r === 'General of the North') ? 12 : STAND_FAST_RANGE);
 
-/** Whose Stand Fast! a model may take: Gwaihir's (The Windlord) only reaches Eagles and Wizards. */
-const heeds = (catalog: Catalog | null, h: Model, m: Model) => !hasRule(catalog, h, 'The Windlord') || /eagle|gwaihir|gandalf|saruman|radagast|wizard/i.test(m.name);
+/** Whose Stand Fast! a model may take: Gwaihir's (The Windlord) only reaches Eagles and Wizards, the King of the Dead's only those of Dunharrow. */
+const heeds = (catalog: Catalog | null, h: Model, m: Model) => (!hasRule(catalog, h, 'The Windlord') || /eagle|gwaihir|gandalf|saruman|radagast|wizard/i.test(m.name)) && (!hasRule(catalog, h, 'The Dead and the Living') || dunharrow(m));
 
 /** Azog's Stand Fast! (General of the North) steadies friendly Orc heroes too, out to 12". */
 const generalOfTheNorth = (catalog: Catalog | null, h: Model, m: Model) => hasRule(catalog, h, 'General of the North') && isKind(catalog, m, 'Orc');
@@ -122,7 +123,8 @@ export function brokenTests(state: GameState, seat: Seat, catalog: Catalog | nul
   for (const m of models) {
     if (m.id in results) continue;
     // An Invisible hero can't give a Stand Fast!.
-    if (anchors.some(h => !h.ringOn && heeds(catalog, h, m) && distanceBetween(h, m) <= standFastRange(catalog, h) && sightTo(state, m, h) !== 'hidden') || courageAuto(state, catalog, m)) {
+    // (The Mûmak War Leader's reaches 12" from his Royal War Mûmak, which stands firm without a test: High King of the South.)
+    if (anchors.some(h => !h.ringOn && heeds(catalog, h, m) && distanceBetween(h, m) <= standFastRange(catalog, h) && sightTo(state, m, h) !== 'hidden') || highKingFor(state, catalog, m) || courageAuto(state, catalog, m)) {
       results[m.id] = true;
       continue;
     }
@@ -159,7 +161,7 @@ export function terrorTest(m: Model, enemy: Model, catalog: Catalog | null, d6: 
   const fearful = !!state && isFearful(state, catalog, m);
   // A Fearful model charging a terrifying one tests once for each rule (Rulebook FAQ).
   const whys = fearful && state && !causesTerror(catalog, m, state) && terrifies(catalog, enemy, m, state) ? ['Fearful', 'Terror'] : [fearful ? 'Fearful' : 'Terror'];
-  const auto = state && courageAuto(state, catalog, m);
+  const auto = state && courageAuto(state, catalog, m, enemy);
   if (auto) {
     const note: DiceRoll = { id: `c-${uid()}`, by: m.owner, label: `Courage to charge ${enemy.name} (${whys.join(' and ')}): ${m.name}`.slice(0, 80), dice: [], note: `Passes without a roll (${auto}).`, model: m.id, at: now };
     return { actions: [{ type: 'rolled', roll: note }, { type: 'courageTaken', results: { [m.id]: true } }], pass: true };

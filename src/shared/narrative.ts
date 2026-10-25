@@ -28,6 +28,8 @@ import { osgiliathCast, osgiliathTerrain } from './osgiliathMap.ts';
 import { osgiliathWinner } from './osgiliath.ts';
 import { BOARD_H, BOARD_W, doomCast, doomTerrain } from './doomMap.ts';
 import { doomWinner } from './doom.ts';
+import { pelennorCast, pelennorTerrain } from './pelennorMap.ts';
+import { pelennorWinner } from './pelennor.ts';
 import { insidePolygon, outline } from './sight.ts';
 import { BALLISTA_BASE, deepingSlots, evilSlots, GATE_ANGLE, HELMS_TEAMS, helmsTerrain, hornburgSlots, inHelmsZone, onArc, OUTER, type HelmsZone } from './helmsMap.ts';
 import type { Action, Base, DiceRoll, GameState, Mat, Model, Seat, Terrain } from './types.ts';
@@ -181,6 +183,14 @@ export interface CastMember {
   unarmed?: boolean;
   /** Wargear its profile has that it starts the game without (The End of All Things: Gandalf's Staff of Power). */
   lost?: string[];
+  /**
+   * Rides with another member of the cast, by its key (Battle of Pelennor Fields): a hero or warrior in a war beast's
+   * Howdah (a hero with no Commander aboard commands it), or a Passenger on a cavalry model. It starts where that one
+   * does, and its own `place` is not used.
+   */
+  rides?: string;
+  /** A war beast that comes without its own Commander, because a hero of the cast rides it instead (the Royal War Mûmak). */
+  commander?: false;
   place: Placement;
 }
 
@@ -766,6 +776,40 @@ export const NARRATIVES: Narrative[] = [
     ],
     cast: doomCast(),
   },
+  {
+    id: 'battle-of-pelennor-fields',
+    name: 'Battle of Pelennor Fields',
+    from: 'The Return of the King',
+    saga: 'lotr',
+    blurb: "Under the walls of Minas Tirith the host of Mordor meets the charge of the Rohirrim, the Dead of Dunharrow and the Mûmakil of Harad: the greatest battle of the age.",
+    board: { w: 96, h: 72, mat: 'grass' },
+    terrain: pelennorTerrain(),
+    sides: {
+      good: {
+        name: 'The Defenders of the Pelennor',
+        cast: "Gondor: Gandalf the White on Shadowfax with Pippin; Irolas, Captain of the Guard; 24 Warriors of Minas Tirith (8 with shields, 8 with shields and spears, 8 with bows); 6 Citadel Guard (3 with spears, 3 with longbows). Rohan: Théoden on armoured Snowmane, with heavy armour and a shield; Éomer on armoured Firefoot, with throwing spears; Éowyn with armour, a shield, a horse and Merry; Gamling with the Royal Standard of Rohan and a horse; 24 Riders of Rohan (8 with throwing spears). The Dead of Dunharrow: Aragorn (Strider) with Andúril and an Elven cloak; Legolas with armour and an Elven cloak; Gimli with an Elven cloak; the King of the Dead; 2 Heralds of the Dead; 20 Warriors of the Dead (10 with shields, 10 with spears)",
+      },
+      evil: {
+        name: 'The Legions of Mordor',
+        cast: "The Witch-king of Angmar (3 Attacks, 3 Might, 18 Will, 3 Fate) on an armoured Fell Beast, with the Crown of Morgul; Gothmog on a Warg; Gothmog's Enforcer; Guritz; the Mûmak War Leader on his Royal War Mûmak with 12 crew; 2 War Mûmakil of Harad with 12 crew each; a Haradrim Chieftain with a bow; an Easterling Captain; 48 Morannon Orc Warriors (12 with shields, 12 with spears, 12 with shields and spears, 12 with neither); 2 Mordor Trolls; 12 Haradrim Warriors (6 with spears, 6 with bows); 10 Easterling Warriors (4 with shields, 2 with halberds and shields, 4 with bows)",
+      },
+    },
+    layout:
+      "An 8' by 6' table: the fields of the Pelennor before Minas Tirith. The city's great wall runs along the whole north edge, with the Gatehouse in the middle, its two towers either side of the Great Gate, broken open. Everything else is open, barren ground, with room for the vast numbers that fight on it.",
+    setupOrder: ['evil', 'good'],
+    deployment:
+      'The Evil side first sets up the Mordor force (all but the Witch-king and the three Mûmakil) anywhere between 24" and 48" from the north edge and at least 24" from the east and west edges. Then the Good side sets up Rohan wholly within 6" of the east edge, and the Dead of Dunharrow wholly within 6" of the west edge and at least 24" from the north and south edges. Everyone else is kept aside to come on later.',
+    objectives:
+      'The players choose how long the battle lasts before it starts. When it ends, five objectives are scored, and whoever has claimed more of them wins (the same number is a draw). Heroes of the West: more of Aragorn, Legolas, Gimli, Gandalf, Théoden, Éomer and Éowyn alive than slain, Good; more slain, Evil. Servants of the Dark Lord: the same for the Witch-king, Gothmog, Guritz, Gothmog\'s Enforcer, the Mûmak War Leader, the Haradrim Chieftain and the Easterling Captain, alive for Evil and slain for Good. The Mûmakil: all three slain, Good; any left alive, Evil. Gates of Minas Tirith: whoever has more models within 12" of the Gates. The Pelennor: four Objective Markers stand at the corners of the Mordor force\'s ground, each held by whoever has more models within 3" of it, and whoever holds more of them claims it.',
+    rules: [
+      { name: 'Charge of the Rohirrim', text: 'Any Rohan model, hero or warrior, that charged in the Move phase may declare a Heroic Combat in that turn\'s Fight phase, for nothing.' },
+      { name: 'War Beasts of Harad', text: 'As the Evil side\'s move ends in the second turn, the three Mûmakil move on from the south edge, as reinforcements, wherever along it the Evil player picks.' },
+      { name: 'The Witch-king', text: 'As the Evil side\'s move ends in the fourth turn, the Witch-king flies on from the north edge, over the walls, wherever along it the Evil player picks.' },
+      { name: 'Defend the White City', text: 'As the Good side\'s move ends in the sixth turn, the Gondor force moves on through the Gates of Minas Tirith.' },
+    ],
+    cast: pelennorCast(),
+    turns: { choices: [8, 10, 12, 15, 20], default: 12 },
+  },
 ];
 
 /** Helm's Deep: the book's cast for both sides, set out where the scenario starts them. */
@@ -989,7 +1033,10 @@ export function narrativeSetup(n: Narrative, good: Seat, catalog: Catalog, newId
     const unit = catalog.units[c.unit];
     if (!unit) continue;
     const ids = unit.options.filter(o => c.options?.includes(o.name)).map(o => o.id);
-    const [e, ...crew] = entriesFor(c.unit, unit, ids, 1);
+    const entries = entriesFor(c.unit, unit, ids, 1);
+    // A war beast is the beast itself, its Commander riding it (see below).
+    const beastEntry = entries.find(x => x.beast === 'war');
+    const [e, ...crew] = beastEntry ? [beastEntry, ...entries.filter(x => x !== beastEntry)] : entries;
     if (!e) continue;
     const owner = c.side === 'good' ? good : other(good);
     const base = c.base ?? e.base ?? guessBase(e.name);
@@ -1023,10 +1070,33 @@ export function narrativeSetup(n: Narrative, good: Seat, catalog: Catalog, newId
       ...(c.bound ? { bound: true } : {}),
       ...(c.crawls ? { crawls: c.crawls } : {}),
       ...(c.slips ? { slips: true } : {}),
+      ...(e.dominant ? { dominant: e.dominant } : {}),
+      ...(e.beast ? { beast: e.beast } : {}),
+      ...(e.howdahWounds ? { howdahWounds: e.howdahWounds } : {}),
     };
-    const p = at(c, m);
     const lost = [...(c.unarmed ? gearOf(catalog, m).filter(isWeaponItem) : []), ...(c.lost ?? [])];
+    // Riding with another of the cast: in its Howdah, or behind its rider, wherever it is.
+    const carrier = c.rides ? [...models].reverse().find(o => o.cast === c.rides) : undefined;
+    if (c.rides) {
+      if (!carrier) continue;
+      const spot = carrier.beast === 'war' ? howdahSeat(carrier, models, m.hero && !models.some(o => o.aboard === carrier.id && o.hero)) : carrier;
+      // A Passenger's Might, Will and Fate are the rider's to spend while it rides (see passengers.ts).
+      const lend = carrier.beast !== 'war' && (m.might || m.will || m.fate);
+      if (lend) models[models.indexOf(carrier)] = { ...carrier, might: carrier.might + m.might, will: carrier.will + m.will, fate: carrier.fate + m.fate };
+      // (Off the table or on it, as its carrier is.)
+      const { waiting: _, ...rider } = m;
+      models.push({ ...rider, x: spot.x, y: spot.y, rot: carrier.rot, aboard: carrier.id, ...(lend ? { might: 0, will: 0, fate: 0, lent: [m.might, m.will, m.fate] as [number, number, number] } : {}), ...(carrier.waiting ? { waiting: true } : {}), ...(lost.length ? { lostGear: lost } : {}) });
+      continue;
+    }
+    const p = at(c, m);
     models.push({ ...m, ...p, rot: facing(c, p, owner), ...(lost.length ? { lostGear: lost } : {}) });
+    // A war beast's own Commander rides it, in the middle of its back (unless a hero of the cast takes his place).
+    const cmd = beastEntry && c.commander !== false ? crew.find(x => x.hero) : undefined;
+    if (cmd) {
+      const beast = models[models.length - 1];
+      models.push({ id: newId('m'), owner, name: cmd.name, x: beast.x, y: beast.y, rot: beast.rot, base: cmd.base ?? { shape: 'round', w: 25, h: 25 }, move: cmd.move ?? 6, wounds: cmd.wounds ?? 1, maxWounds: cmd.wounds ?? 1, might: cmd.might ?? 0, will: cmd.will ?? 0, fate: cmd.fate ?? 0, hero: true, dead: false, profileId: c.unit, cast: `${c.key}-commander`, aboard: beast.id, ...(beast.waiting ? { waiting: true } : {}) });
+    }
+    if (beastEntry) continue;
     // A siege engine's crew stand in base contact with it, behind or beside it, as close to the back as there is room.
     const hands = e.siege ? crew.flatMap(x => Array.from({ length: x.count }, () => x)) : [];
     const engine = models[models.length - 1];
@@ -1050,6 +1120,25 @@ export function narrativeSetup(n: Narrative, good: Seat, catalog: Catalog, newId
     }
   }
   return { terrain, models };
+}
+
+/**
+ * Where a rider sits on a war beast as the cast is set out: its Commander in the middle of its back, the rest in a
+ * grid well inside its base (as warBeasts.ts howdahSpot), clear of those already aboard.
+ */
+function howdahSeat(beast: Model, models: Model[], commands: boolean): Point {
+  if (commands) return { x: beast.x, y: beast.y };
+  const { rx, ry } = halfExtents(beast.base);
+  const taken = models.filter(o => o.aboard === beast.id);
+  const a = (beast.rot * Math.PI) / 180;
+  for (let row = -ry + 1.1; row <= ry - 1.1 + 1e-6; row += 1.05) {
+    for (let col = -rx + 1.1; col <= rx - 1.1 + 1e-6; col += 1.05) {
+      if (Math.hypot(col, row) < 0.9) continue;
+      const p = { x: beast.x + col * Math.cos(a) - row * Math.sin(a), y: beast.y + col * Math.sin(a) + row * Math.cos(a) };
+      if (!taken.some(t => Math.hypot(t.x - p.x, t.y - p.y) < 0.95)) return p;
+    }
+  }
+  return { x: beast.x, y: beast.y };
 }
 
 /** The scenario's table for this game: pieces held by a side go to whichever seat plays it. */
@@ -1183,6 +1272,7 @@ export function narrativeWinner(state: GameState): Seat | 'draw' | null {
   if (n.id === 'and-into-the-fire') return fireWinner(state);
   if (n.id === 'escape-from-osgiliath') return osgiliathWinner(state);
   if (n.id === 'the-end-of-all-things') return doomWinner(state);
+  if (n.id === 'battle-of-pelennor-fields') return pelennorWinner(state);
   if (n.id === 'weathertop') {
     // The Nazgûl win as soon as Frodo falls; the Hobbits when every one of them is gone.
     if (castModel(state, 'frodo')?.dead) return seatOf(state, 'evil') ?? null;

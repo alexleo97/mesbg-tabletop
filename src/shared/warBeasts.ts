@@ -200,7 +200,7 @@ interface Run {
  * that meet trade three Strength 8 hits. A chariot moves at half pace in difficult ground (and may be hurt by it),
  * crashes into obstacles (three Strength 6 hits on it), and turns up to 45° after each 4" towards where it's going.
  */
-export function drive(state: GameState, catalog: Catalog | null | undefined, m: Model, toward: Point, opts: { d6: D6; uid: () => string; now: number; by: Seat; stampede?: boolean; freeTurn?: boolean; group: string; skipHits?: boolean; skip?: string[] }): Run {
+export function drive(state: GameState, catalog: Catalog | null | undefined, m: Model, toward: Point, opts: { d6: D6; uid: () => string; now: number; by: Seat; stampede?: boolean; freeTurn?: boolean; group: string; skipHits?: boolean; skip?: string[]; arriving?: boolean }): Run {
   const kind = isWarBeast(catalog, m) ? 'war' : 'chariot';
   const { d6, uid, now, by, group } = opts;
   const rolls: DiceRoll[] = [];
@@ -273,6 +273,7 @@ export function drive(state: GameState, catalog: Catalog | null | undefined, m: 
       if (immovable(catalog, o)) {
         // Two war beasts meet: each takes three Strength 8 hits. Anything else it hits that can't be moved takes its
         // Impact Hits, but either way the charge stops there.
+        if (opts.arriving) return done(`It halts before ${o.name}.`);
         if (opts.skipHits) {
           // (Just looking where it would go.)
         } else if (kind === 'war' && isWarBeast(catalog, o)) {
@@ -281,7 +282,9 @@ export function drive(state: GameState, catalog: Catalog | null | undefined, m: 
         } else impacted(o);
         return done(`It runs into ${o.name}.`, o.owner !== m.owner ? o.id : undefined);
       }
-      // Arriving from reserve, it can't trample anyone yet: it stops against them.
+      // Arriving from reserve, it can't trample anyone yet: it stops against them (short of them, coming on as
+      // reinforcements, which may not charge).
+      if (opts.arriving) return done(`It halts before ${o.name}.`);
       if (opts.skipHits || impacted(o) === false) return done(`${o.name} stands firm.`, o.owner !== m.owner ? o.id : undefined);
     }
     // Difficult ground halves a chariot's pace, and may hurt it.

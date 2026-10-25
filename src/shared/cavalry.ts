@@ -121,6 +121,8 @@ export function onFoot(catalog: Catalog | null | undefined, m: Model): Partial<M
     options: (m.options ?? []).filter(o => !MOUNT_OPTION.test(o)).map(o => (WARG_RIDER.test(m.profileId ?? '') ? (WARG_RIDER_ON_FOOT[o.toLowerCase()] ?? o) : o)),
     mountWounds: undefined,
     throwPending: undefined,
+    // (On foot, a Fell Beast's rider no longer flies.)
+    ...(/fell beast|great eagle/i.test(m.mount ?? '') ? { fly: false } : {}),
     ...(lances.length ? { lostGear: [...new Set([...(m.lostGear ?? []), ...lances])] } : {}),
   };
 }

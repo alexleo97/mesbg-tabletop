@@ -133,6 +133,11 @@ export interface Model {
   crawls?: number;
   /** Underfoot (Ambush at Night): no control zone, ignores its foes', and it and its foes move through each other. */
   slips?: boolean;
+  /**
+   * A Passenger's own Might, Will and Fate, lent to the rider it sits behind while it rides (Pippin with Gandalf, Merry
+   * with Éowyn: the rider may spend them as its own); it takes back what is left of them when they part.
+   */
+  lent?: [number, number, number];
 }
 
 /** A power at work on a model: which one, who cast it and the turn it was cast. */
@@ -221,7 +226,7 @@ export interface Terrain {
    */
   deep?: boolean;
   /** Drawn in dressed stone (a fortress's courtyard, causeway, keep or tower), a wall with a culvert through it, a field of long grass, or a piece of Balin's Tomb (a pillar, the tomb, the well, a trapdoor, the doorway: the well and trapdoors are where its Goblins come back), undergrowth, or a piece of Isengard (the tower of Orthanc, a timber scaffold, a ladder up one, a pit). */
-  look?: 'stone' | 'culvert' | 'grass' | 'pillar' | 'tomb' | 'well' | 'trapdoor' | 'doorway' | 'brush' | 'orthanc' | 'scaffold' | 'ladder' | 'pit' | 'roots' | 'trunk' | 'gnarled' | 'planks' | 'boat' | 'floe' | 'lakehouse' | 'laketower' | 'lakewing' | 'pinewood' | 'pine' | 'chasm' | 'cavewall' | 'crag' | 'gobplanks' | 'rungs' | 'throne' | 'osgwall' | 'rubble' | 'void' | 'lava' | 'ashslope' | 'doomway' | 'ashpath' | 'cinder' | 'blackgate';
+  look?: 'stone' | 'culvert' | 'grass' | 'pillar' | 'tomb' | 'well' | 'trapdoor' | 'doorway' | 'brush' | 'orthanc' | 'scaffold' | 'ladder' | 'pit' | 'roots' | 'trunk' | 'gnarled' | 'planks' | 'boat' | 'floe' | 'lakehouse' | 'laketower' | 'lakewing' | 'pinewood' | 'pine' | 'chasm' | 'cavewall' | 'crag' | 'gobplanks' | 'rungs' | 'throne' | 'osgwall' | 'rubble' | 'void' | 'lava' | 'ashslope' | 'doomway' | 'ashpath' | 'cinder' | 'blackgate' | 'pelennor' | 'mtwall' | 'mttower' | 'mtgate' | 'pelrock' | 'pelrubble';
 }
 
 export const DOOR_TYPES = ['castle', 'dwarven', 'heavyArmoured', 'armoured', 'heavy', 'external', 'internal', 'dam'] as const;
@@ -400,6 +405,9 @@ export interface NarrativeState {
   resist?: number;
   wills?: Wills;
   ring?: 'destroyed' | 'corrupted';
+  /** Battle of Pelennor Fields: where along the south edge the Mûmakil come on, and along the north edge the Witch-king, in inches from the west edge. */
+  mumak?: number;
+  wraith?: number;
 }
 
 /** The End of All Things' battle of wills: each side's run of wins so far, and a roll Frodo lost that Might could still turn (his die, the Ring's). */
@@ -801,6 +809,14 @@ export type Action =
   | { type: 'bilboJoins'; seat: Seat; target: string }
   /** Helm's Deep: the Good player picks where on the south edge the Relief Force will ride on. */
   | { type: 'reliefPoint'; seat: Seat; x: number }
+  /** Battle of Pelennor Fields: where along their table edge the Mûmakil or the Witch-king come on. */
+  | { type: 'arrivalPoint'; seat: Seat; which: 'mumakil' | 'witch-king'; x: number }
+  /** A Passenger gets down from the mount it rides, beside it, during that mount's move. */
+  | { type: 'alight'; id: string }
+  /** The Witch-king sets his blade alight with the Crown of Morgul, as a Fight phase begins (once a game). */
+  | { type: 'crownBlade'; id: string }
+  /** A Heroic Move called off, its Might wasted (the Mûmak War Leader's Imposing Presence). */
+  | { type: 'cancelHeroic'; model: string }
   /** Helm's Deep: a Good hero by the gate mounts up (resolved with the profiles). */
   | { type: 'rideOut'; model: string }
   /** A model tries to set off a Demolition Charge it touches (resolved with dice). */
