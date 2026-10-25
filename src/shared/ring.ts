@@ -63,6 +63,8 @@ export function seekRequest(state: GameState, catalog: Catalog | null, seat: Sea
 export function cantWear(state: GameState, catalog: Catalog | null | undefined, m: Model): string | undefined {
   if (!ringbearer(catalog, m)) return 'doesn’t carry the One Ring';
   if (m.ringOn) return 'already wears the Ring';
+  // The End of All Things: "Not here, not so close to the Eye!"
+  if (state.narrative?.id === 'the-end-of-all-things') return 'won’t put it on so close to the Eye';
   if (!state.flow.started || state.phase !== 'move') return 'can only put it on as it activates, in the Move phase';
   if (activeSeat(state) !== m.owner || !mayActivate(state, m)) return 'isn’t activating now';
   if (engaged(state, m)) return 'is in a fight, so can’t activate';
@@ -74,7 +76,7 @@ export function cantWear(state: GameState, catalog: Catalog | null | undefined, 
 export function compelWear(state: GameState, catalog: Catalog | null | undefined, seat: Seat, m: Model): boolean {
   const c = state.flow.compel;
   if (!c || c.ring || c.model !== m.id || state.models[c.caster]?.owner !== seat || m.owner === seat) return false;
-  return ringbearer(catalog, m) && !m.ringOn && !m.dead && !mounted(m);
+  return ringbearer(catalog, m) && !m.ringOn && !m.dead && !mounted(m) && state.narrative?.id !== 'the-end-of-all-things';
 }
 
 /** Why a Ringbearer can't try to take the Ring off now (unset if it can). */

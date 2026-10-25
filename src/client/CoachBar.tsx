@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { ResultReport } from './ResultReport.tsx';
 import { activeSeat, dreadDue, other, type Combat } from '../shared/flow.ts';
 import { DREAD_ROLL, mayOrcTime } from '../shared/osgiliath.ts';
+import { POWER_NAMES, POWERS, resistLeft, ringPowerDue, ringPowers, WILLS_RUN, willsDue, willsOpen, type RingPower } from '../shared/doom.ts';
 import { phaseFinished } from '../shared/autoPhase.ts';
 import { breachesLeft } from '../shared/breach.ts';
 import { engaged, fightDone } from '../shared/movement.ts';
@@ -510,6 +511,41 @@ function Reinforcements({ state, name }: { state: GameState; name: (s: Seat) => 
   );
 }
 
+/** The End of All Things: the battle of wills at the precipice, rolled by the Good player. */
+function WillsStep({ state, dispatch, me, name }: { state: GameState; dispatch: (a: Action) => void; me: Seat | null; name: (s: Seat) => string }) {
+  const locked = useLocked();
+  const good = state.narrative!.good;
+  const w = state.narrative?.wills ?? { g: 0, e: 0 };
+  const open = willsOpen(state);
+  const frodo = Object.values(state.models).find(m => m.cast === 'frodo');
+  const tally = w.g ? `Frodo has won ${w.g} in a row.` : w.e ? `The Ring has won ${w.e} in a row.` : 'Nobody has won a roll yet.';
+  if (me !== good) return <div className="spell-step"><p>Frodo is at the edge of the fire, and {name(good)} rolls the battle of wills. {tally}</p></div>;
+  if (open) {
+    const need = open[1] - open[0] + 1;
+    return (
+      <div className="spell-step">
+        <p>The Ring wins this roll, {open[1]} to {open[0]}. Frodo can spend {need} Might to win it instead (he has {frodo?.might ?? 0}).</p>
+        <button className="primary" {...locked({ type: 'wills', might: need })} onClick={() => dispatch({ type: 'wills', might: need })}>
+          Spend {need} Might
+        </button>
+        <button {...locked({ type: 'wills', might: 0 })} onClick={() => dispatch({ type: 'wills', might: 0 })}>
+          Let it stand
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="spell-step">
+      <p>
+        Frodo is at the edge of the fire. Each of you rolls a D6, re-rolling ties: the first side to win {WILLS_RUN} rolls in a row decides the Ring's fate. {tally}
+      </p>
+      <button className="primary" {...locked({ type: 'wills' })} onClick={() => dispatch({ type: 'wills' })}>
+        Roll the battle of wills
+      </button>
+    </div>
+  );
+}
+
 export function CoachBar({ state, dispatch, role, combats: allCombats, openFight, auto, view, setView, table, log }: Props) {
   const locked = useLocked();
   let combats = allCombats;
@@ -539,6 +575,38 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openFight
         )}
       </>
     );
+  } else if (state.phase === 'priority' && ringPowerDue(state)) {
+    // The End of All Things: before Priority is rolled, the Evil player may turn one of the Ring's powers on Frodo.
+    title = 'The Power of the Ring';
+    const evil = other(state.narrative!.good);
+    const what: Record<RingPower, string> = {
+      exhaustion: 'this turn Frodo must pass a Courage test for every inch he moves, and collapses Prone at the first he fails. Sam may carry him.',
+      corruption: `roll another D6: equal to or over Frodo's Resistance (${resistLeft(state)} left), and he loses a point of it. At none, the Ring has him.`,
+      lure: 'Gollum leaps out of hiding, touching Frodo, and they fight this turn.',
+    };
+    body =
+      me === evil ? (
+        <>
+          <p>Before Priority is rolled you may try one of the Ring's powers on Frodo. Roll a D6 and score at least the number shown.</p>
+          <ul className="ring-powers">
+            {ringPowers(state).map(p => (
+              <li key={p}>
+                <b>{POWER_NAMES[p]} ({POWERS[p]}+)</b>: {what[p]}
+              </li>
+            ))}
+          </ul>
+          {ringPowers(state).map(p => (
+            <button key={p} className="primary" {...locked({ type: 'ringPower', power: p })} onClick={() => dispatch({ type: 'ringPower', power: p })}>
+              {POWER_NAMES[p]} ({POWERS[p]}+)
+            </button>
+          ))}
+          <button {...locked({ type: 'ringPower' })} onClick={() => dispatch({ type: 'ringPower' })}>
+            None this turn
+          </button>
+        </>
+      ) : (
+        <p>{name(evil)} is deciding whether to turn the Ring's power on Frodo before Priority is rolled.</p>
+      );
   } else if (state.phase === 'priority') {
     title = 'Priority';
     const rolled = flow.chooserTurn === state.turn && flow.chooser;
@@ -772,6 +840,8 @@ export function CoachBar({ state, dispatch, role, combats: allCombats, openFight
           {flow.started && <SkitterStep state={state} dispatch={dispatch} role={role} />}
           {flow.started && state.phase === 'move' && <ElvesEdge state={state} dispatch={dispatch} role={role} />}
           {flow.started && <PlacingStep state={state} dispatch={dispatch} role={role} name={name} />}
+          {/* The End of All Things: Frodo at the precipice, the battle of wills goes on until one side wins three in a row. */}
+          {flow.started && willsDue(state) && <WillsStep state={state} dispatch={dispatch} me={me} name={name} />}
           {/* Escape from Osgiliath: the Evil player picks a Good Warrior for the Nazgûl to freeze, before anyone moves. */}
           {flow.started && dreadDue(state) && (
             <div className="spell-step">

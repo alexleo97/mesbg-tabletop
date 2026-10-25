@@ -107,8 +107,12 @@ function centreLine(path: [number, number, number][]): string {
   return d;
 }
 
+/** A piece drawn to an exact outline (the fire of the Crack of Doom and the slope outside). */
+const polyPath = (poly: [number, number][]) => `M ${poly.map(([x, y]) => `${x.toFixed(3)} ${y.toFixed(3)}`).join(' L ')} Z`;
+
 /** The outline used for the ground of a piece. */
 function outline(t: Terrain): string {
+  if (t.poly && t.poly.length > 2) return polyPath(t.poly);
   if (t.path && t.path.length > 1) return bandPath(t.path);
   if (isRiver(t)) return riverPath(t);
   if (t.shape === 'rect') return rectPath(t.w, t.h);
@@ -244,6 +248,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
       if (t.look === 'floe') return <LakePiece t={t} />;
       if (t.look === 'crag' || t.look === 'cavewall') return <GoblinPiece t={t} />;
       if (t.look === 'rubble') return <OsgiliathPiece t={t} />;
+      if (t.look === 'cinder') return <DoomPiece t={t} />;
       return (
         <>
           <path className={`ground ${t.kind}-face`} d={d} fill={tex} filter="url(#hard-shadow)" />
@@ -256,6 +261,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
     case 'water':
       if (t.look === 'pit') return <IsengardPiece t={t} />;
       if (t.look === 'chasm') return <GoblinPiece t={t} />;
+      if (t.look === 'lava' || t.look === 'void') return <DoomPiece t={t} />;
       // Deep water under a whole table is the mat itself (Lake-town's Long Lake): only a darker sheen.
       if (t.deep) return <rect className="lake-depth" x={-t.w / 2} y={-t.h / 2} width={t.w} height={t.h} pointerEvents="none" />;
       if (t.path && t.path.length > 1) {
@@ -281,6 +287,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
     case 'building':
       if (t.look === 'orthanc') return <IsengardPiece t={t} />;
       if (t.look === 'throne') return <GoblinPiece t={t} />;
+      if (t.look === 'blackgate') return <DoomPiece t={t} />;
       if (t.look === 'trunk') return <MirkwoodPiece t={t} />;
       if (t.look === 'pine') return <PinePiece t={t} />;
       if (t.look === 'stone') return <StoneTower t={t} tex={tex} />;
@@ -328,6 +335,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
     case 'wall':
       if (t.look === 'scaffold') return <IsengardPiece t={t} />;
       if (t.look === 'osgwall') return <OsgiliathPiece t={t} />;
+      if (t.look === 'blackgate') return <DoomPiece t={t} />;
       if (t.barricade) {
         // A wooden barricade: a row of logs, with stakes poking out both ways if it is spiked. Broken, only splinters.
         const logs = Math.max(3, Math.round(t.w / 0.5));
@@ -426,6 +434,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
         </>
       );
     case 'road':
+      if (t.look === 'ashslope' || t.look === 'doomway' || t.look === 'ashpath') return <DoomPiece t={t} />;
       if (t.path && t.path.length > 1)
         return (
           <>
@@ -1049,6 +1058,134 @@ function OsgiliathPiece({ t }: { t: Terrain }) {
 }
 
 /**
+ * The End of All Things: inside Mount Doom, the fire of the Crack glowing orange under a black crust, the spur of rock
+ * that juts out over it to the precipice, and outside the ash-grey slope with its trodden path and cinder boulders;
+ * at the Black Gate, iron-dark walls and two great square towers, battlemented, and the empty floor between tables.
+ */
+function DoomPiece({ t }: { t: Terrain }) {
+  const { w, h } = t;
+  const d = outline(t);
+  if (t.look === 'void') return <rect className="doom-void" x={-w / 2} y={-h / 2} width={w} height={h} pointerEvents="none" />;
+  if (t.look === 'lava') {
+    // Molten rock: brightest in the cracks, crusted over in black floes that drift on it.
+    const floes = Math.round((w * h) / 9);
+    return (
+      <g pointerEvents="none">
+        <path className="doom-lava" d={d} />
+        <clipPath id={`clip-${t.id}`}>
+          <path d={d} />
+        </clipPath>
+        <g clipPath={`url(#clip-${t.id})`}>
+          {Array.from({ length: floes }, (_, i) => {
+            const x = (seeded(t.id, i) - 0.5) * w;
+            const y = (seeded(t.id, i + 300) - 0.5) * h;
+            const r = 0.5 + seeded(t.id, i + 600) * 1.4;
+            const sides = 5 + Math.floor(seeded(t.id, i + 900) * 3);
+            const pts = Array.from({ length: sides }, (_, j) => {
+              const a = (j / sides) * Math.PI * 2 + seeded(t.id, i * 7 + j);
+              const m = r * (0.6 + seeded(t.id, i * 11 + j + 50) * 0.5);
+              return `${(x + Math.cos(a) * m).toFixed(3)},${(y + Math.sin(a) * m * 0.8).toFixed(3)}`;
+            }).join(' ');
+            return <polygon key={i} className={`doom-crust doom-crust-${i % 3}`} points={pts} />;
+          })}
+          {Array.from({ length: Math.round(floes / 2) }, (_, i) => (
+            <ellipse key={`g${i}`} className="doom-flare" cx={(seeded(t.id, i + 1200) - 0.5) * w} cy={(seeded(t.id, i + 1500) - 0.5) * h} rx={0.8 + seeded(t.id, i + 1800) * 1.6} ry={0.5 + seeded(t.id, i + 2100)} filter="url(#bank-blur)" />
+          ))}
+        </g>
+        {/* The mountain's inner wall, where the fire meets the rock. */}
+        <path className="doom-rim" d={d} />
+      </g>
+    );
+  }
+  if (t.look === 'ashslope') {
+    const grit = Math.round(w * h * 0.5);
+    return (
+      <>
+        <path className={`ground doom-ash${t.id === 'plain' ? ' doom-plain' : ''}`} d={d} />
+        <g className="tint" pointerEvents="none">
+          {Array.from({ length: grit }, (_, i) => (
+            <circle key={i} className={`doom-grit doom-grit-${i % 3}`} cx={(seeded(t.id, i) - 0.5) * w} cy={(seeded(t.id, i + 5000) - 0.5) * h} r={0.05 + seeded(t.id, i + 9000) * 0.12} />
+          ))}
+        </g>
+      </>
+    );
+  }
+  if (t.look === 'ashpath' && t.path) {
+    return (
+      <g pointerEvents="none">
+        <path className="doom-path-edge" d={bandPath(t.path, 0.25)} filter="url(#bank-blur)" />
+        <path className="doom-path" d={d} />
+      </g>
+    );
+  }
+  if (t.look === 'doomway') {
+    // A spur of black rock, ragged along its sides, with the fire's glow on its end.
+    const n = Math.max(6, Math.round(w / 0.6));
+    const side = (sgn: number) => Array.from({ length: n + 1 }, (_, i) => `${(-w / 2 + (i * w) / n).toFixed(3)},${(sgn * (h / 2 - seeded(t.id, i + (sgn > 0 ? 0 : 50)) * 0.25)).toFixed(3)}`);
+    const pts = [...side(-1), ...side(1).reverse()].join(' ');
+    return (
+      <>
+        <polygon className="ground doom-spur" points={pts} filter="url(#hard-shadow)" />
+        <line className="doom-spur-ridge" x1={-w / 2} x2={w / 2 - 0.3} y1={0} y2={0} />
+        <ellipse className="doom-tip" cx={w / 2} cy={0} rx={1.1} ry={h / 2 + 0.3} filter="url(#bank-blur)" pointerEvents="none" />
+      </>
+    );
+  }
+  if (t.look === 'cinder') {
+    return (
+      <>
+        <path className="ground doom-cinder" d={d} filter="url(#hard-shadow)" />
+        <path className="tint" d={d} fill="url(#g-dome)" />
+        <path className="doom-cinder-crack" d={`M ${-w * 0.2} ${-h * 0.12} l ${w * 0.14} ${h * 0.1} l ${w * 0.1} ${-h * 0.05}`} />
+      </>
+    );
+  }
+  if (t.look === 'blackgate') {
+    // Battlements round the top: merlons along each side, the walk behind them, and on a tower a roof of plates.
+    const m = 0.45;
+    const merlons: ReactElement[] = [];
+    const edge = (len: number, horiz: boolean, at: number, key: string) => {
+      const k = Math.max(2, Math.floor(len / (m * 2)));
+      for (let i = 0; i < k; i++) {
+        const p = -len / 2 + (i + 0.25) * (len / k);
+        merlons.push(horiz ? <rect key={`${key}${i}`} className="doom-merlon" x={p} y={at - 0.14} width={(len / k) * 0.5} height={0.28} /> : <rect key={`${key}${i}`} className="doom-merlon" x={at - 0.14} y={p} width={0.28} height={(len / k) * 0.5} />);
+      }
+    };
+    const tower = t.kind === 'building';
+    if (tower) {
+      edge(w, true, -h / 2 + 0.14, 'n');
+      edge(w, true, h / 2 - 0.14, 's');
+      edge(h, false, -w / 2 + 0.14, 'w');
+      edge(h, false, w / 2 - 0.14, 'e');
+    } else if (w < h) {
+      edge(h, false, -w / 2 + 0.14, 'w');
+    } else {
+      edge(w, true, -h / 2 + 0.14, 'n');
+    }
+    return (
+      <>
+        <rect className="ground doom-gate" x={-w / 2} y={-h / 2} width={w} height={h} filter="url(#hard-shadow)" />
+        <rect className="doom-gate-walk" x={-w / 2 + 0.35} y={-h / 2 + 0.35} width={w - 0.7} height={h - 0.7} />
+        {tower && (
+          <>
+            <rect className="doom-gate-roof" x={-w / 2 + 0.9} y={-h / 2 + 0.9} width={w - 1.8} height={h - 1.8} />
+            <line className="doom-gate-seam" x1={-w / 2 + 0.9} y1={-h / 2 + 0.9} x2={w / 2 - 0.9} y2={h / 2 - 0.9} />
+            <line className="doom-gate-seam" x1={w / 2 - 0.9} y1={-h / 2 + 0.9} x2={-w / 2 + 0.9} y2={h / 2 - 0.9} />
+          </>
+        )}
+        {!tower &&
+          Array.from({ length: Math.floor(Math.max(w, h) / 1.2) }, (_, i) => {
+            const p = -Math.max(w, h) / 2 + (i + 1) * 1.2;
+            return w < h ? <line key={i} className="doom-gate-seam" x1={-w / 2 + 0.35} x2={w / 2 - 0.35} y1={p} y2={p} /> : <line key={i} className="doom-gate-seam" x1={p} x2={p} y1={-h / 2 + 0.35} y2={h / 2 - 0.35} />;
+          })}
+        <g pointerEvents="none">{merlons}</g>
+      </>
+    );
+  }
+  return <path className="ground" d={d} />;
+}
+
+/**
  * Lake-town (Lake-town Escape): plank walkways on posts over the lake, rowing boats tied up, ice floes, and timber
  * houses with shingled roofs: a ridge along a long house, four slopes meeting at a point on a square one.
  */
@@ -1454,7 +1591,7 @@ function hull(pts: Point[]): Point[] {
 }
 
 /** Whether a piece is part of a fortress that stands tall (its walls, gates, keep, towers and the rock under them), or a stone piece of Balin's Tomb. */
-const tall = (t: Terrain) => !t.gone && ((t.sheer && t.look !== 'trunk' && t.look !== 'pine') || t.look === 'osgwall' || t.kind === 'gate' || (t.look === 'stone' && t.kind !== 'road') || t.look === 'pillar' || t.look === 'tomb' || t.look === 'well' || t.look === 'scaffold');
+const tall = (t: Terrain) => !t.gone && ((t.sheer && t.look !== 'trunk' && t.look !== 'pine') || t.look === 'osgwall' || t.look === 'blackgate' || t.kind === 'gate' || (t.look === 'stone' && t.kind !== 'road') || t.look === 'pillar' || t.look === 'tomb' || t.look === 'well' || t.look === 'scaffold');
 /** Orthanc's faces are cut short, so the tower doesn't hide the table round it (its height is written on top). */
 const FACE_CAP = 5.5;
 
@@ -1480,9 +1617,9 @@ export function TerrainFaces({ terrain, turn = 0 }: { terrain: Terrain[]; /** Ho
       {pieces.map(t => {
         const pts = face(t, lean).map(p => `${p.x.toFixed(3)},${p.y.toFixed(3)}`).join(' ');
         return (
-          <g key={t.id} className={t.look === 'osgwall' ? 'osg-face' : undefined}>
+          <g key={t.id} className={t.look === 'osgwall' ? 'osg-face' : t.look === 'blackgate' ? 'doom-face' : undefined}>
             <polygon className="face-shadow" points={pts} transform="translate(0.35 0.45)" filter="url(#bank-blur)" />
-            <polygon className="face" points={pts} fill={t.look === 'orthanc' ? '#1d1e23' : t.look === 'scaffold' ? '#5a3d1f' : t.look === 'osgwall' ? '#b9b5ab' : t.kind === 'rock' ? 'url(#tex-cliff)' : 'url(#tex-wall)'} />
+            <polygon className="face" points={pts} fill={t.look === 'orthanc' ? '#1d1e23' : t.look === 'scaffold' ? '#5a3d1f' : t.look === 'osgwall' ? '#b9b5ab' : t.look === 'blackgate' ? '#24221f' : t.kind === 'rock' ? 'url(#tex-cliff)' : 'url(#tex-wall)'} />
             <polygon className="face-shade" points={pts} />
           </g>
         );

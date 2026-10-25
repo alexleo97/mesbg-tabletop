@@ -11,7 +11,7 @@ import { basePower, cannotAct, effectActive } from './powers.ts';
 import { basesOverlap, costOf, crowded, engaged as engagedNow, finishCharge, fightsAgain, frontFirst, leashed, limitMove, dropMove, moveAllowance, movedAtAll, movedTooFar, moveLeft, moveStart, retrace, RETRACE, spent, testsTerrain } from './movement.ts';
 import { FLOORED, floorHeight, flooredAt, insidePolygon, isDifficult, outline } from './sight.ts';
 import { cleanPausedShot, woundsTaken } from './fight.ts';
-import { dreadDue, pairOff } from './flow.ts';
+import { activeSeat, dreadDue, pairOff } from './flow.ts';
 import { crossingAhead } from './terrainTests.ts';
 import { distanceBetween, halfExtents } from './geometry.ts';
 import { touching as inContact, touchingEnemies } from './barriers.ts';
@@ -35,8 +35,9 @@ import { bolgOwesCharge, contactAlarms, disturbs, isLake, isSentry, keepInSectio
 import { SECTIONS, type Section } from './lakeMap.ts';
 import { EDGES as GOBLIN_EDGES, exitPickDue, gandalfPending, goblinSync, hordePending, isGoblin } from './goblin.ts';
 import { faramirsChance, hordePending as orcsPending, isOsgiliath, POINT_NAMES, pupilNow, rightHand, RIGHT_HAND_ACTIONS } from './osgiliath.ts';
+import { carryBlocked, carryingFrodo, hordePending as doomPending, isDoom, setDownSpot, strideAfterWill, willsDue } from './doom.ts';
 import { bilboSpot, bilboTargets, eaglesPending, eaglesSync, isFire, mayNominate, nominate, nominationTurn, pickUps, wrathDue } from './eagles.ts';
-import { BOT_NAME, BOT_SPEEDS, type Deploying, DOOR_TYPES, FIGHT_TARGETS, MARKER_OBJECTS, MATS, PHASES, PICK_KEYS, TERRAIN_KINDS, type Action, type FightPicks, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type ModelEffect, type Phase, type Picks, type Placing, type Seat, type SpellPending, type Terrain } from './types.ts';
+import { BOT_NAME, BOT_SPEEDS, type Deploying, DOOR_TYPES, FIGHT_TARGETS, MARKER_OBJECTS, MATS, PHASES, PICK_KEYS, TERRAIN_KINDS, type Action, type FightPicks, type Flow, type Mat, type Base, type DiceRoll, type GameState, type Model, type ModelEffect, type Phase, type Picks, type Placing, type Seat, type SpellPending, type Terrain, type Wills } from './types.ts';
 
 export const MAX_MODELS = 600;
 export const MAX_TERRAIN = 200;
@@ -93,7 +94,7 @@ function comeOn(state: GameState): GameState {
 }
 
 /** Play is held for a model being placed, or for the Good player at Weathertop to say whether they roll for Aragorn. */
-const waitingOn = (state: GameState) => !!placingNow(state) || arrivalDue(state) || dreadDue(state);
+const waitingOn = (state: GameState) => !!placingNow(state) || arrivalDue(state) || dreadDue(state) || willsDue(state);
 
 /** Once nothing holds it, a Move phase both sides have finished goes on to shooting (unless the players move it on). */
 function moveOn(state: GameState): GameState {
@@ -441,10 +442,12 @@ function cleanTerrain(t: Partial<Terrain>, prev?: Terrain): Terrain | null {
       base.path.map(([x, y, hw]) => [(x * out.w) / prev.w, (y * out.h) / prev.h, hw] as [number, number, number])
     : base.path);
   if (path) out.path = path;
+  const poly = cleanPoly(t.poly) ?? base.poly;
+  if (poly) out.poly = poly;
   if (('walk' in t ? t.walk : base.walk) === true && out.kind === 'wall') out.walk = true;
   if (('stairs' in t ? t.stairs : base.stairs) === true && out.kind === 'road') out.stairs = true;
   const look = 'look' in t ? t.look : base.look;
-  if (look === 'stone' || look === 'culvert' || look === 'grass' || look === 'pillar' || look === 'tomb' || look === 'well' || look === 'trapdoor' || look === 'doorway' || look === 'brush' || look === 'orthanc' || look === 'scaffold' || look === 'ladder' || look === 'pit' || look === 'roots' || look === 'trunk' || look === 'gnarled' || look === 'planks' || look === 'boat' || look === 'floe' || look === 'lakehouse' || look === 'laketower' || look === 'lakewing' || look === 'pinewood' || look === 'pine' || look === 'chasm' || look === 'cavewall' || look === 'crag' || look === 'gobplanks' || look === 'rungs' || look === 'throne' || look === 'osgwall' || look === 'rubble') out.look = look;
+  if (look === 'stone' || look === 'culvert' || look === 'grass' || look === 'pillar' || look === 'tomb' || look === 'well' || look === 'trapdoor' || look === 'doorway' || look === 'brush' || look === 'orthanc' || look === 'scaffold' || look === 'ladder' || look === 'pit' || look === 'roots' || look === 'trunk' || look === 'gnarled' || look === 'planks' || look === 'boat' || look === 'floe' || look === 'lakehouse' || look === 'laketower' || look === 'lakewing' || look === 'pinewood' || look === 'pine' || look === 'chasm' || look === 'cavewall' || look === 'crag' || look === 'gobplanks' || look === 'rungs' || look === 'throne' || look === 'osgwall' || look === 'rubble' || look === 'void' || look === 'lava' || look === 'ashslope' || look === 'doomway' || look === 'ashpath' || look === 'cinder' || look === 'blackgate') out.look = look;
   cleanObject(t, base, out);
   if ('vines' in t ? t.vines === true : base.vines) {
     const side = 'side' in t ? t.side : base.side;
@@ -458,6 +461,20 @@ function cleanPath(p: unknown): [number, number, number][] | undefined {
   const out = p.slice(0, 120).filter(v => Array.isArray(v) && v.length === 3 && v.every(n => typeof n === 'number' && Number.isFinite(n)));
   if (out.length < 2) return undefined;
   return out.map(([x, y, hw]) => [num(x, -60, 60, 0), num(y, -60, 60, 0), num(hw, 0.2, 8, 1)]);
+}
+
+/** The End of All Things' battle of wills from untrusted JSON. */
+function cleanWills(v: unknown): Wills {
+  const w = (v && typeof v === 'object' ? v : {}) as Partial<Wills>;
+  const open = Array.isArray(w.open) && w.open.length === 2 ? ([int(w.open[0], 1, 6, 1), int(w.open[1], 1, 6, 1)] as [number, number]) : undefined;
+  return { g: int(w.g, 0, 3, 0), e: int(w.e, 0, 3, 0), ...(open ? { open } : {}) };
+}
+
+function cleanPoly(p: unknown): [number, number][] | undefined {
+  if (!Array.isArray(p) || p.length < 3) return undefined;
+  const out = p.slice(0, 120).filter(v => Array.isArray(v) && v.length === 2 && v.every(n => typeof n === 'number' && Number.isFinite(n)));
+  if (out.length < 3) return undefined;
+  return out.map(([x, y]) => [num(x, -60, 60, 0), num(y, -60, 60, 0)]);
 }
 
 /** Numbers by id from untrusted JSON. */
@@ -702,7 +719,7 @@ function step(state: GameState, action: Action): GameState {
       // While a model waits to be placed, only it moves, and only where its placing allows.
       const placing = state.flow.started ? placingNow(state) : undefined;
       // Nothing moves while the Good player decides whether to roll for Aragorn.
-      if (state.flow.started && !placing && (arrivalDue(state) || dreadDue(state))) return state;
+      if (state.flow.started && !placing && (arrivalDue(state) || dreadDue(state) || willsDue(state))) return state;
       for (const mv of moves) {
         const prev = mv && models[mv.id];
         if (!prev || prev.escaped || prev.waiting) continue;
@@ -833,7 +850,8 @@ function step(state: GameState, action: Action): GameState {
         }
         models[prev.id] = next;
         // Its Commander and any in its Howdah ride along.
-        if (prev.beast === 'war' && (next.x !== prev.x || next.y !== prev.y || next.rot !== prev.rot))
+        // (And Frodo, when Sam carries him.)
+        if ((prev.beast === 'war' || carryingFrodo(state, prev)) && (next.x !== prev.x || next.y !== prev.y || next.rot !== prev.rot))
           for (const r of Object.values(models)) if (r.aboard === prev.id && !r.dead) models[r.id] = { ...r, ...carried(prev, next, r) };
       }
       const flow =
@@ -1179,7 +1197,7 @@ function step(state: GameState, action: Action): GameState {
       }
       // Roast Mutton: the Company still to come rolls (or comes) first, and moves on before the side is done (and the
       // same for Helm's Deep's Relief Force and Balin's Tomb's Goblin Tide).
-      if (state.flow.started && (reinforcementsPending(state, action.seat) || reliefPending(state, action.seat) || tidePending(state, action.seat) || legionsPending(state, action.seat) || elvesPending(state, action.seat) || eaglesPending(state, action.seat) || gandalfPending(state, action.seat) || hordePending(state, action.seat) || orcsPending(state, action.seat))) return state.flow.reinforce === action.seat ? state : { ...state, flow: { ...state.flow, reinforce: action.seat } };
+      if (state.flow.started && (reinforcementsPending(state, action.seat) || reliefPending(state, action.seat) || tidePending(state, action.seat) || legionsPending(state, action.seat) || elvesPending(state, action.seat) || eaglesPending(state, action.seat) || gandalfPending(state, action.seat) || hordePending(state, action.seat) || orcsPending(state, action.seat) || doomPending(state, action.seat))) return state.flow.reinforce === action.seat ? state : { ...state, flow: { ...state.flow, reinforce: action.seat } };
       // Ambush at Night: the bound Hobbits roll to cut their bonds as the Good side finishes its move.
       if (bondsPending(state, action.seat)) return state.flow.bonds === action.seat ? state : { ...state, flow: { ...state.flow, bonds: action.seat } };
       // Ending it with a newcomer still at the edge lets it stay there, and the next one comes on.
@@ -1377,7 +1395,18 @@ function step(state: GameState, action: Action): GameState {
       const gandalf = action.gandalf === undefined ? state.narrative.gandalf : int(action.gandalf, 0, 99, 0);
       const horde = action.horde === undefined ? state.narrative.horde : int(action.horde, 0, 99, 0);
       const dread = action.dread === undefined ? state.narrative.dread : int(action.dread, 0, 99, 0);
-      const next = { ...state, narrative: { ...state.narrative, ...(rolled ? { rolled } : {}), ...(dawn ? { dawn } : {}), ...(breach ? { breach } : {}), ...(crushed ? { crushed } : {}), ...(woke ? { woke } : {}), ...(webbed ? { webbed } : {}), ...(hazed ? { hazed } : {}), ...(nested ? { nested } : {}), ...(alarm ? { alarm } : {}), ...(alarmed ? { alarmed } : {}), ...(wrath ? { wrath } : {}), ...(flown ? { flown } : {}), ...(gandalf ? { gandalf } : {}), ...(horde ? { horde } : {}), ...(dread ? { dread } : {}) } };
+      // The End of All Things: the Power of the Ring, Frodo's struggle, and the battle of wills.
+      const doom = {
+        ...(action.power !== undefined ? { power: int(action.power, 0, 99, 0) } : {}),
+        ...(action.exhaust !== undefined ? { exhaust: int(action.exhaust, 0, 99, 0) } : {}),
+        ...(action.collapsed !== undefined ? { collapsed: int(action.collapsed, 0, 99, 0) } : {}),
+        ...(action.lured !== undefined ? { lured: int(action.lured, 0, 99, 0) } : {}),
+        ...(action.strides !== undefined ? { strides: int(action.strides, 0, 12, 0) } : {}),
+        ...(action.resist !== undefined ? { resist: int(action.resist, 0, 6, 6) } : {}),
+        ...(action.wills !== undefined ? { wills: cleanWills(action.wills) } : {}),
+        ...(action.ring === 'destroyed' || action.ring === 'corrupted' ? { ring: action.ring } : {}),
+      };
+      const next = { ...state, narrative: { ...state.narrative, ...(rolled ? { rolled } : {}), ...(dawn ? { dawn } : {}), ...(breach ? { breach } : {}), ...(crushed ? { crushed } : {}), ...(woke ? { woke } : {}), ...(webbed ? { webbed } : {}), ...(hazed ? { hazed } : {}), ...(nested ? { nested } : {}), ...(alarm ? { alarm } : {}), ...(alarmed ? { alarmed } : {}), ...(wrath ? { wrath } : {}), ...(flown ? { flown } : {}), ...(gandalf ? { gandalf } : {}), ...(horde ? { horde } : {}), ...(dread ? { dread } : {}), ...doom } };
       // Balin's Tomb: the Cave Troll has stepped in at the doorway, its move counted from just outside it.
       if (action.troll !== undefined && !state.narrative.troll) {
         const troll = Object.values(state.models).find(isCaveTroll);
@@ -1569,7 +1598,7 @@ function step(state: GameState, action: Action): GameState {
       // Might that makes a recovery roll a 6 frees the Paralysed model (from a Troll's sack too).
       const held = roll.frees ? models[roll.frees] : undefined;
       if (held && roll.target === 6 && roll.dice[0] === 6 && held.effects?.some(e => basePower(e.power) === 'Paralyse')) models = { ...models, [held.id]: { ...held, effects: held.effects.filter(e => basePower(e.power) !== 'Paralyse') } };
-      return ringAfterMight(afterMight({ ...state, log, flow, models }, roll.id), roll);
+      return strideAfterWill(ringAfterMight(afterMight({ ...state, log, flow, models }, roll.id), roll), roll);
     }
     case 'wound': {
       const m = state.models[action.id];
@@ -1658,6 +1687,23 @@ function step(state: GameState, action: Action): GameState {
       const passed = r.dice.reduce((a, b) => a + b, 0) >= (r.sum ?? 7);
       const next: Terrain = { ...t, tried: { ...t.tried, [m.owner]: state.turn }, ...(passed ? { hidden: undefined, carrier: m.id } : {}) };
       return { ...state, log: [...state.log, r].slice(-MAX_LOG), terrain: { ...state.terrain, [t.id]: cleanTerrain(next, t)! } };
+    }
+    case 'carryFrodo': {
+      // The End of All Things: in a turn the Ring has Frodo exhausted, Sam may pick him up and carry him (as a Heavy
+      // Object, at half speed), and put him down again beside him.
+      const frodo = Object.values(state.models).find(m => m.cast === 'frodo');
+      const sam = Object.values(state.models).find(m => m.cast === 'sam');
+      if (!isDoom(state) || !state.flow.started || !frodo || !sam || frodo.dead) return state;
+      if (action.carry) {
+        if (sam.dead) return state;
+        if (carryBlocked(state, sam, m => engagedNow(state, m)) || !mayActivate(state, sam) || activeSeat(state) !== sam.owner) return state;
+        return { ...state, models: { ...state.models, [frodo.id]: { ...frodo, aboard: sam.id, x: sam.x, y: sam.y } } };
+      }
+      if (frodo.aboard !== sam.id) return state;
+      // (Should Sam fall, Frodo is left where he was.)
+      const spot = setDownSpot(state, sam, frodo) ?? { x: sam.x, y: sam.y };
+      const { aboard: _, ...down } = frodo;
+      return { ...state, models: { ...state.models, [frodo.id]: { ...down, x: +spot.x.toFixed(3), y: +spot.y.toFixed(3) } } };
     }
     case 'escape': {
       const m = state.models[action.model];
@@ -1939,7 +1985,7 @@ export function loadState(raw: unknown): GameState {
   if (o.advance === 'click') out = { ...out, advance: 'click' };
   const n = o.narrative;
   if (n && typeof n === 'object' && narrativeById(n.id) && isSeat(n.good))
-    out = { ...out, narrative: { id: n.id, good: n.good, ...(Number.isFinite(n.cry) ? { cry: int(n.cry, 0, 99, 0) } : {}), ...(Array.isArray(n.rolled) ? { rolled: n.rolled.slice(0, 40).map(t => int(t, 0, 99, 0)) } : {}), ...(Number.isFinite(n.dawn) ? { dawn: int(n.dawn, 1, 99, 1) } : {}), ...(n.bilbo === true ? { bilbo: true } : {}), ...(Number.isFinite(n.turns) ? { turns: int(n.turns, 1, 40, 15) } : {}), ...(Number.isFinite(n.relief) ? { relief: num(n.relief, 0, 200, 36) } : {}), ...(Number.isFinite(n.breach) ? { breach: int(n.breach, 0, 99, 0) } : {}), ...(Number.isFinite(n.troll) ? { troll: int(n.troll, 1, 99, 1) } : {}), ...(Array.isArray(n.crushed) ? { crushed: n.crushed.slice(0, 60).map(x => str(x, 80)) } : {}), ...(Number.isFinite(n.woke) ? { woke: int(n.woke, 0, 99, 0) } : {}), ...(Number.isFinite(n.webbed) ? { webbed: int(n.webbed, 0, 99, 0) } : {}), ...(Number.isFinite(n.hazed) ? { hazed: int(n.hazed, 0, 99, 0) } : {}), ...(Number.isFinite(n.nested) ? { nested: int(n.nested, 0, 99, 0) } : {}), ...(Array.isArray(n.alarm) ? { alarm: n.alarm.filter((x: unknown) => SECTIONS.includes(x as Section)) } : {}), ...(Array.isArray(n.disturbed) ? { disturbed: n.disturbed.slice(0, 40).filter((d: unknown) => d && typeof d === 'object').map((d: { id: unknown; turn: unknown }) => ({ id: str(d.id, 80), turn: int(d.turn, 0, 99, 0) })) } : {}), ...(Number.isFinite(n.alarmed) ? { alarmed: int(n.alarmed, 0, 99, 0) } : {}), ...(Array.isArray(n.hiding) ? { hiding: n.hiding.slice(0, 5).map((x: unknown) => str(x, 80)) } : {}), ...(Number.isFinite(n.wrath) ? { wrath: int(n.wrath, 0, 99, 0) } : {}), ...(n.flown && typeof n.flown === 'object' && !Array.isArray(n.flown) ? { flown: Object.fromEntries(Object.entries(n.flown as Record<string, unknown>).slice(0, 10).map(([k, v]) => [str(k, 80), int(v, 0, 99, 0)])) } : {}), ...(Number.isFinite(n.gandalf) ? { gandalf: int(n.gandalf, 0, 99, 0) } : {}), ...(Number.isFinite(n.horde) ? { horde: int(n.horde, 0, 99, 0) } : {}), ...(Number.isFinite(n.dread) ? { dread: int(n.dread, 0, 99, 0) } : {}) } };
+    out = { ...out, narrative: { id: n.id, good: n.good, ...(Number.isFinite(n.cry) ? { cry: int(n.cry, 0, 99, 0) } : {}), ...(Array.isArray(n.rolled) ? { rolled: n.rolled.slice(0, 40).map(t => int(t, 0, 99, 0)) } : {}), ...(Number.isFinite(n.dawn) ? { dawn: int(n.dawn, 1, 99, 1) } : {}), ...(n.bilbo === true ? { bilbo: true } : {}), ...(Number.isFinite(n.turns) ? { turns: int(n.turns, 1, 40, 15) } : {}), ...(Number.isFinite(n.relief) ? { relief: num(n.relief, 0, 200, 36) } : {}), ...(Number.isFinite(n.breach) ? { breach: int(n.breach, 0, 99, 0) } : {}), ...(Number.isFinite(n.troll) ? { troll: int(n.troll, 1, 99, 1) } : {}), ...(Array.isArray(n.crushed) ? { crushed: n.crushed.slice(0, 60).map(x => str(x, 80)) } : {}), ...(Number.isFinite(n.woke) ? { woke: int(n.woke, 0, 99, 0) } : {}), ...(Number.isFinite(n.webbed) ? { webbed: int(n.webbed, 0, 99, 0) } : {}), ...(Number.isFinite(n.hazed) ? { hazed: int(n.hazed, 0, 99, 0) } : {}), ...(Number.isFinite(n.nested) ? { nested: int(n.nested, 0, 99, 0) } : {}), ...(Array.isArray(n.alarm) ? { alarm: n.alarm.filter((x: unknown) => SECTIONS.includes(x as Section)) } : {}), ...(Array.isArray(n.disturbed) ? { disturbed: n.disturbed.slice(0, 40).filter((d: unknown) => d && typeof d === 'object').map((d: { id: unknown; turn: unknown }) => ({ id: str(d.id, 80), turn: int(d.turn, 0, 99, 0) })) } : {}), ...(Number.isFinite(n.alarmed) ? { alarmed: int(n.alarmed, 0, 99, 0) } : {}), ...(Array.isArray(n.hiding) ? { hiding: n.hiding.slice(0, 5).map((x: unknown) => str(x, 80)) } : {}), ...(Number.isFinite(n.wrath) ? { wrath: int(n.wrath, 0, 99, 0) } : {}), ...(n.flown && typeof n.flown === 'object' && !Array.isArray(n.flown) ? { flown: Object.fromEntries(Object.entries(n.flown as Record<string, unknown>).slice(0, 10).map(([k, v]) => [str(k, 80), int(v, 0, 99, 0)])) } : {}), ...(Number.isFinite(n.gandalf) ? { gandalf: int(n.gandalf, 0, 99, 0) } : {}), ...(Number.isFinite(n.horde) ? { horde: int(n.horde, 0, 99, 0) } : {}), ...(Number.isFinite(n.dread) ? { dread: int(n.dread, 0, 99, 0) } : {}), ...(Number.isFinite(n.power) ? { power: int(n.power, 0, 99, 0) } : {}), ...(Number.isFinite(n.exhaust) ? { exhaust: int(n.exhaust, 0, 99, 0) } : {}), ...(Number.isFinite(n.collapsed) ? { collapsed: int(n.collapsed, 0, 99, 0) } : {}), ...(Number.isFinite(n.lured) ? { lured: int(n.lured, 0, 99, 0) } : {}), ...(Number.isFinite(n.strides) ? { strides: int(n.strides, 0, 12, 0) } : {}), ...(Number.isFinite(n.resist) ? { resist: int(n.resist, 0, 6, 6) } : {}), ...(n.wills && typeof n.wills === 'object' ? { wills: cleanWills(n.wills) } : {}), ...(n.ring === 'destroyed' || n.ring === 'corrupted' ? { ring: n.ring } : {}) } };
   if (o.flow && typeof o.flow === 'object') {
     const f = o.flow as Partial<Flow>;
     const seats = (v: unknown) => (Array.isArray(v) ? [...new Set(v.filter(isSeat))] : []);

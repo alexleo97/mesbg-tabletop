@@ -19,7 +19,7 @@ import { goblinAmmo, isGoblinThrow, isWebs, planShot, throwingPoint } from './sh
 import { fallDamage, resolveCross } from './terrainTests.ts';
 import { heightOf } from './sight.ts';
 import { BPA_NAMES, TROLL_BRUTALS, cleanFight, cleanShot, duelSettled, mightCouldHelp, resolveDuel, resolveShot, resolveStrikes, strikeWounds, type BrutalAttack, type DrawRule, type Fighter, type FightRequest, type ShotRequest } from './fight.ts';
-import { combatFromKey, CONTACT_SLACK, other, priorityChooser } from './flow.ts';
+import { activeSeat, combatFromKey, CONTACT_SLACK, other, priorityChooser } from './flow.ts';
 import { hasElvenWeapon, hasPike, sideOf } from './gear.ts';
 import { oneSpearEach, supporters } from './support.ts';
 import { fightDone, foughtThisTurn } from './movement.ts';
@@ -38,6 +38,7 @@ import { skitterRequest } from './unseen.ts';
 import { sentryRequest } from './lake.ts';
 import { isTroll, spareFor } from './mutton.ts';
 import { bag, roast, sneeze, steadyAgainst, trollSacks } from './trolls.ts';
+import { mayStride, ringPower, ringPowerDue, stride, willsRoll, type RingPower } from './doom.ts';
 import { ageOfMen, dreaded, endTheRace, faramirsChance, mayOrcTime, nazgulCry, orcTime, orcTimeFor, wellAimed } from './osgiliath.ts';
 import { AXE_FREED, axeMastery, axeTest, canHeadbutt, deadeye, goodSort, hasMattock, hasOakenshield, longbeard, loyalTo, mayAxeTest, mayLongbeard, maySwap, mayTend, rerollFor, spentPoints, tend, trumpet, trumpetDue } from './company.ts';
 import { tierOf } from './warbands.ts';
@@ -47,7 +48,7 @@ import { bandName, bandsOf, mayPutDown, procedureOf, rollDue, rollMeans } from '
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
 /** Dice requests a player sends, which only whoever holds the dice (the server, or the browser in practice games) can answer. */
-export const DICE_REQUESTS = new Set<Action['type']>(['setNarrative', 'ring', 'cry', 'nazgul', 'orcTime', 'aragorn', 'seek', 'skitter', 'sentry', 'roll', 'fight', 'strikes', 'shoot', 'shotOn', 'banner', 'dismount', 'trample', 'cross', 'rollFate', 'rollPriority', 'rollDeploy', 'deployWarband', 'uncover', 'cast', 'resist', 'breach', 'hurl', 'swap', 'reroll', 'tend', 'longbeard', 'trumpet', 'axeTest', 'chronicled', 'detonate', 'rideOut', 'raiseLadder']);
+export const DICE_REQUESTS = new Set<Action['type']>(['setNarrative', 'ring', 'cry', 'nazgul', 'orcTime', 'ringPower', 'stride', 'wills', 'aragorn', 'seek', 'skitter', 'sentry', 'roll', 'fight', 'strikes', 'shoot', 'shotOn', 'banner', 'dismount', 'trample', 'cross', 'rollFate', 'rollPriority', 'rollDeploy', 'deployWarband', 'uncover', 'cast', 'resist', 'breach', 'hurl', 'swap', 'reroll', 'tend', 'longbeard', 'trumpet', 'axeTest', 'chronicled', 'detonate', 'rideOut', 'raiseLadder']);
 
 export interface Resolved {
   /** Results everyone applies, in order. */
@@ -251,6 +252,21 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
     }
     case 'nazgul': {
       const out = nazgulCry(state, seat, typeof action.target === 'string' ? action.target : undefined, d6, uid, now);
+      return out && { apply: out };
+    }
+    case 'ringPower': {
+      const p = action.power;
+      const out = ringPower(state, seat, p === 'exhaustion' || p === 'corruption' || p === 'lure' ? (p as RingPower) : undefined, d6, uid, now);
+      return out && { apply: out };
+    }
+    case 'stride': {
+      // Frodo, exhausted, tests his Courage for another inch.
+      const m = Object.values(state.models).find(x => x.cast === 'frodo');
+      if (!m || m.owner !== seat || activeSeat(state) !== seat || !mayActivate(state, m) || !mayStride(state, m, m.prone || state.flow.stood?.includes(m.id) ? m.move / 2 : m.move)) return null;
+      return { apply: stride(state, catalog, m, d6, uid, now) };
+    }
+    case 'wills': {
+      const out = willsRoll(state, seat, action.might === undefined ? undefined : Math.max(0, Math.min(6, Math.round(Number(action.might) || 0))), d6, uid, now);
       return out && { apply: out };
     }
     case 'orcTime': {
@@ -887,6 +903,8 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       if (state.phase !== 'priority' || (state.flow.chooserTurn === state.turn && state.flow.chooser)) return null;
       // (Not while a model is being placed first: The Elves of Mirkwood's Spiders back from their nest.)
       if (placingNow(state)) return null;
+      // (Nor before the Evil player at the Black Gate has tried the Power of the Ring.)
+      if (ringPowerDue(state)) return null;
       // Roll off; a first-turn tie is simply rolled again.
       const apply: Action[] = [];
       let roll: [number, number];
