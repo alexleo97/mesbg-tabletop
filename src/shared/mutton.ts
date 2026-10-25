@@ -49,8 +49,8 @@ export function entrySpot(state: GameState, m: Model): { x: number; y: number } 
     }
   }
   // With no room left along its stretch of the edge, a reinforcement comes on at the nearest clear spot beyond it
-  // (though at Balin's Tomb there is no way in but the doorway, nor in Goblin-town but the walkway, nor at the Black Gate but the gateway: it waits for next turn).
-  if ((lo > 0 || hi < len) && state.narrative?.id !== 'balins-tomb' && state.narrative?.id !== 'escape-from-goblin-town' && state.narrative?.id !== 'the-end-of-all-things') {
+  // (though at Balin's Tomb there is no way in but the doorway, nor in Goblin-town but the walkway, nor at the Black Gate but the gateway, nor out of Minas Tirith but its Gates: it waits for next turn).
+  if ((lo > 0 || hi < len) && state.narrative?.id !== 'balins-tomb' && state.narrative?.id !== 'escape-from-goblin-town' && state.narrative?.id !== 'the-end-of-all-things' && state.narrative?.id !== 'battle-of-pelennor-fields') {
     for (const roomy of [true, false]) {
       for (let d = 0; d <= len; d += 0.05) {
         for (const t of [lo - d, hi + d]) if (t >= r && t <= len - r && clear(t, roomy)) return spot(t);

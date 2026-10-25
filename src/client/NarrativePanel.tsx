@@ -4,6 +4,8 @@ import { narrativeById, NARRATIVES, SAGAS, type Side } from '../shared/narrative
 import { MapPreview, randomRoom, SitePage } from './Home.tsx';
 import { HelmsTally } from './HelmsPanel.tsx';
 import { isHelms } from '../shared/helms.ts';
+import { isPelennor } from '../shared/pelennor.ts';
+import { PelennorTally } from './PelennorPanel.tsx';
 import { BOT_NAME, type Action, type GameState, type Role, type Seat } from '../shared/types.ts';
 
 type Dispatch = (a: Action) => void;
@@ -73,6 +75,7 @@ export function NarrativePanel({ state, dispatch, role, id }: { state: GameState
       <h4>Objectives</h4>
       <p>{n.objectives}</p>
       {set && isHelms(state) && <HelmsTally state={state} dispatch={dispatch} seat={seat} />}
+      {set && isPelennor(state) && <PelennorTally state={state} dispatch={dispatch} seat={seat} />}
       <h4>The table</h4>
       <p>
         {n.tables ?? `${n.board.w}"×${n.board.h}"`}. {n.layout}

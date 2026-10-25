@@ -76,7 +76,7 @@ export interface Fighter {
   c?: number;
   /** Per enemy: the Defence its strikes roll against, the bonus to wound, whether 1s are re-rolled, whether its Bane
    * Weapon does D3 Wounds a strike, and the natural roll that always wounds (see resolve.adjustFight). */
-  vs?: Record<string, { d: number; wound: number; ones: boolean; bane?: boolean; cap?: number }>;
+  vs?: Record<string, { d: number; wound: number; ones: boolean; bane?: boolean; cap?: number; reroll?: boolean }>;
   /** The kinds its Bane Weapon does D3 Wounds a strike against (Orcrist: Orcs, Goblins and Uruk-hai). */
   banes?: string[];
   /** I am the Master (Azog): against an enemy hero any natural 3+ To Wound succeeds. */
@@ -100,6 +100,10 @@ export interface Fighter {
   sixesAgain?: boolean;
   /** A Berserker blade swung two-handed: facing more foes than it has Attacks, one strike at each of them instead. */
   sweep?: boolean;
+  /** The Passenger riding behind it, whom an enemy that wins may strike as it would the rider (see passengers.ts). */
+  passenger?: { id: string; name: string; d: number };
+  /** Irolas's Defend the White City: Shielding and winning, he makes one strike all the same. */
+  whiteCity?: boolean;
 }
 
 /** A Brutal Power Attack a winning monster makes instead of its strikes (see monsters.ts). */
@@ -149,7 +153,7 @@ export interface FightRequest {
 
 export interface ShotRequest {
   shooter: { id: string; name: string; weapon: string; shoot: number; s: number; shots: number };
-  target: { id: string; name: string; d: number; mount?: { name: string; d: number; monster?: boolean; chariot?: boolean } };
+  target: { id: string; name: string; d: number; mount?: { name: string; d: number; monster?: boolean; chariot?: boolean }; passenger?: { id: string; name: string; d: number } };
   /** Sharpshooter: hits go to the part of a rider and mount aimed at (`atMount`), with no roll for which is hit. */
   sharp?: boolean;
   atMount?: boolean;
@@ -383,9 +387,11 @@ export function resolveStrikes(req: FightRequest, duel: DiceRoll[], d6: D6, by: 
   // a hero's chariot must be: the hero can't be struck apart from it).
   const losers = req.sides[1 - winner].filter(f => !f.support);
   const pool = losers.flatMap((l): Fighter[] => {
-    if (!l.mount) return [l];
+    // (And the Passenger riding behind it.)
+    const rider = l.passenger ? [{ id: l.passenger.id, name: l.passenger.name, f: 1, a: 1, s: 2, d: l.passenger.d }] : [];
+    if (!l.mount) return [l, ...rider];
     const steed = { id: `${l.id}#mount`, name: `${l.name}'s ${l.mount.name}`, f: 1, a: 1, s: l.mount.s, d: l.mount.d };
-    return l.mount.chariot ? [steed] : [l, steed];
+    return l.mount.chariot ? [steed] : [l, steed, ...rider];
   });
   const main = pool.find(f => f.id === req.targets[winner]) ?? pool[0];
   const trappedFor = new Map<string, boolean>();
@@ -426,14 +432,14 @@ export function resolveStrikes(req: FightRequest, duel: DiceRoll[], d6: D6, by: 
     }
     // Misses are re-rolled (Enchant Blades, Bane of Kings), or else just 1s (Poisoned Attacks, Ancient Enemies).
     // (A headbutt is still a Strike, so Thorin's Loyalty re-rolls its 1s: see `loyal`.)
-    const again = (d: number, at: number) => (f.reroll && !opt.s ? (d >= at ? d : d6()) : ((vs.ones && !opt.s) || (opt.loyal && f.ones)) && d === 1 ? d6() : d);
+    const again = (d: number, at: number) => ((f.reroll || vs.reroll) && !opt.s ? (d >= at ? d : d6()) : ((vs.ones && !opt.s) || (opt.loyal && f.ones)) && d === 1 ? d6() : d);
     const dice = Array.from({ length: strikes }, d6).map(d => again(d, need.target));
     const follow = need.then ? dice.filter(d => d >= need.target).map(d6).map(d => again(d, need.then!)) : undefined;
     const plain2 = !opt.s;
     const sixes = plain2 && f.sixes;
     // A Bane Weapon's strike that wounds does D3 Wounds: one D3 rolled for each die now, used if it wounds.
     const d3 = plain2 && vs.bane ? (need.then ? follow! : dice).map(() => Math.ceil(d6() / 2)) : undefined;
-    const what = [free && 'a free strike', trapped && 'trapped', plain2 && (f.reroll ? 're-rolling misses' : vs.ones && 're-rolling 1s'), bonus > 0 && `+${bonus} to wound`, bonus < 0 && `${bonus} to wound`, plain2 && f.mighty && '2 wounds each', sixes && '6s do 2 wounds', d3 && 'D3 wounds each (Bane)'].filter(Boolean).join(', ');
+    const what = [free && 'a free strike', trapped && 'trapped', plain2 && (f.reroll || vs.reroll ? 're-rolling misses' : vs.ones && 're-rolling 1s'), bonus > 0 && `+${bonus} to wound`, bonus < 0 && `${bonus} to wound`, plain2 && f.mighty && '2 wounds each', sixes && '6s do 2 wounds', d3 && 'D3 wounds each (Bane)'].filter(Boolean).join(', ');
     const label = opt.label ? `${opt.label} (${formatNeed(need)})` : `${f.name} strikes ${target.name}${what ? `, ${what},` : ''} (${formatNeed(need)})`;
     push(label, dice, { target: need.target, against: target.id, model: f.id, ...(need.then ? { then: need.then, follow } : {}), ...(plain2 && f.mighty ? { per: 2 } : {}), ...(sixes ? { sixes: true } : {}), ...(d3 ? { d3 } : {}) });
     let wounds = strikeWounds([rolls[rolls.length - 1]]);
@@ -555,6 +561,11 @@ export function resolveStrikes(req: FightRequest, duel: DiceRoll[], d6: D6, by: 
         }
     }
   }
+  // Defend the White City: Irolas, Shielding and winning, makes one strike against one foe.
+  for (const f of ended ? [] : req.sides[winner]) {
+    const foe = f.whiteCity && f.shielding && !f.support ? (pool.find(t => t.id === req.aims?.[f.id]?.[0]) ?? main) : undefined;
+    if (foe) strike(f, foe, 1, false, { label: `Defend the White City: ${f.name} strikes ${foe.name} from behind his guard` });
+  }
   // The Oakenshield: Thorin, Shielding and winning, hits one foe with it.
   for (const f of ended ? [] : req.sides[winner]) {
     const foe = f.oak && f.shielding ? pool.find(t => t.id === f.oak) ?? main : undefined;
@@ -630,6 +641,7 @@ export function cleanPausedShot(raw: unknown): ShotRequest | null {
     ...(o.wellAimed ? { wellAimed: clamp(o.wellAimed, 2, 12, 7) } : {}),
     ...(o.woundBonus ? { woundBonus: clamp(o.woundBonus, -3, 3, 0) } : {}),
     ...(o.target?.mount && typeof o.target.mount === 'object' ? { target: { ...base.target, mount: { name: str(o.target.mount.name, 40), d: clamp(o.target.mount.d, 1, 10, 4), ...(o.target.mount.monster === true ? { monster: true } : {}), ...(o.target.mount.chariot === true ? { chariot: true } : {}) } } } : {}),
+    ...(o.target?.passenger && typeof o.target.passenger === 'object' ? { target: { ...base.target, ...(o.target.mount && typeof o.target.mount === 'object' ? { mount: { name: str(o.target.mount.name, 40), d: clamp(o.target.mount.d, 1, 10, 4), ...(o.target.mount.monster === true ? { monster: true } : {}), ...(o.target.mount.chariot === true ? { chariot: true } : {}) } } : {}), passenger: { id: str(o.target.passenger.id, 64), name: str(o.target.passenger.name, 40), d: clamp(o.target.passenger.d, 1, 10, 4) } } } : {}),
   };
 }
 
@@ -740,6 +752,14 @@ export function resolveShot(req: ShotRequest, d6: D6, by: Role, group: string, n
       strike(steed.id, steed.name, mount.d, flying - rider);
       flying = rider;
     }
+  }
+  // A hit on a rider with a Passenger behind it strikes the Passenger instead on a 1-3.
+  const rider = target.passenger;
+  if (rider && flying > 0) {
+    const part = take(`Rider or Passenger: 4+ hits ${target.name}, else ${rider.name}`, flying, { target: 4, model: shooter.id }).dice;
+    const on = part.filter(d => d >= 4).length;
+    strike(rider.id, rider.name, rider.d, flying - on);
+    flying = on;
   }
   strike(target.id, target.name, target.d, flying);
   // A flaming brand doesn't wound: whatever it hits is Set Ablaze.

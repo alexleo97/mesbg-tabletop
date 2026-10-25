@@ -45,10 +45,12 @@ import { tierOf } from './warbands.ts';
 import { MORGUL, morgulBlades } from './morgul.ts';
 import { MAX_DICE } from './reducer.ts';
 import { bandName, bandsOf, mayPutDown, procedureOf, rollDue, rollMeans } from './deploy.ts';
+import { alight, alightBlocked, alightSpot, parting, passengerOf } from './passengers.ts';
+import { bladeAlight, lightBlade, mayLightBlade, pelennorFight, pelennorVs } from './pelennorRules.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
 /** Dice requests a player sends, which only whoever holds the dice (the server, or the browser in practice games) can answer. */
-export const DICE_REQUESTS = new Set<Action['type']>(['setNarrative', 'ring', 'cry', 'nazgul', 'orcTime', 'ringPower', 'stride', 'wills', 'aragorn', 'seek', 'skitter', 'sentry', 'roll', 'fight', 'strikes', 'shoot', 'shotOn', 'banner', 'dismount', 'trample', 'cross', 'rollFate', 'rollPriority', 'rollDeploy', 'deployWarband', 'uncover', 'cast', 'resist', 'breach', 'hurl', 'swap', 'reroll', 'tend', 'longbeard', 'trumpet', 'axeTest', 'chronicled', 'detonate', 'rideOut', 'raiseLadder']);
+export const DICE_REQUESTS = new Set<Action['type']>(['setNarrative', 'ring', 'cry', 'nazgul', 'orcTime', 'crownBlade', 'alight', 'ringPower', 'stride', 'wills', 'aragorn', 'seek', 'skitter', 'sentry', 'roll', 'fight', 'strikes', 'shoot', 'shotOn', 'banner', 'dismount', 'trample', 'cross', 'rollFate', 'rollPriority', 'rollDeploy', 'deployWarband', 'uncover', 'cast', 'resist', 'breach', 'hurl', 'swap', 'reroll', 'tend', 'longbeard', 'trumpet', 'axeTest', 'chronicled', 'detonate', 'rideOut', 'raiseLadder']);
 
 export interface Resolved {
   /** Results everyone applies, in order. */
@@ -221,8 +223,11 @@ export function adjustFight(state: GameState, req: FightRequest, catalog: Catalo
     if (!f.support && others.length === 1 && invisibleTo(others[0], m)) out.f = Math.ceil(out.f / 2);
     // The rules of the heroes and warriors at Helm's Deep (see towers.ts).
     if (catalog && modelStats(catalog, m)) towersFight(state, catalog, m, out);
+    // And those at the Pelennor (see pelennorRules.ts).
+    if (catalog && modelStats(catalog, m) && !f.support) pelennorFight(state, catalog, m, out);
     // What its strikes need against each enemy it could strike (Hatred, Ancient Enemies, Blades of the Dead).
     if (catalog) out.vs = Object.fromEntries(req.sides[1 - i].filter(t => !t.support).map(t => [t.id, strikeAgainst(catalog, state, out, t)]));
+    if (catalog && !f.support) pelennorVs(state, catalog, m, out);
     return out;
   };
   return { ...req, sides: [req.sides[0].map(f => adjust(f, 0)), req.sides[1].map(f => adjust(f, 1))] };
@@ -268,6 +273,17 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
     case 'wills': {
       const out = willsRoll(state, seat, action.might === undefined ? undefined : Math.max(0, Math.min(6, Math.round(Number(action.might) || 0))), d6, uid, now);
       return out && { apply: out };
+    }
+    case 'alight': {
+      // A Passenger gets down beside its mount.
+      const p = state.models[String(action.id)];
+      if (!p || alightBlocked(state, p, seat)) return null;
+      return { apply: alight(state, p, uid, now) };
+    }
+    case 'crownBlade': {
+      const m = state.models[String(action.id)];
+      if (!m || m.owner !== seat || !mayLightBlade(state, catalog, m)) return null;
+      return { apply: lightBlade(m, uid, now) };
     }
     case 'orcTime': {
       const m = state.models[String(action.id)];
@@ -461,6 +477,12 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       // The Morgul Blades that struck are used up; a wound one of them does that isn't prevented slays outright.
       const bladed = bargeOn || outcome.ended ? [] : blades.filter(x => winners.includes(x.by) && req.sides[outcome.winner].some(f => f.id === x.by && !f.noStrike && !f.shielding));
       const slays = new Set(bladed.filter(x => strikeWounds(strikes.filter(r => r.model === x.by && r.against === x.target)) > 0).map(x => x.target));
+      // The King of the Dead's Drain Soul: a wound he does that gets through slays outright. And the Witch-king's
+      // blade, set alight with the Crown of Morgul, sets ablaze anyone it wounds.
+      const struckBy = (f: Fighter) => [...new Set(strikes.filter(r => r.model === f.id && r.against && !r.against.includes('#')).map(r => r.against!))].filter(t => strikeWounds(strikes.filter(r => r.model === f.id && r.against === t)) > 0);
+      const winning = bargeOn || outcome.ended ? [] : req.sides[outcome.winner].filter(f => !f.support && state.models[f.id]);
+      for (const f of winning.filter(f => hasRule(catalog, state.models[f.id], 'Drain Soul'))) for (const t of struckBy(f)) slays.add(t);
+      const kindled = winning.filter(f => bladeAlight(state, state.models[f.id])).flatMap(struckBy).filter(t => state.models[t] && !state.models[t].ablaze).map((t): Action => ({ type: 'affect', id: t, patch: { ablaze: true } }));
       const bladeUsed = bladed.map((x): Action => ({ type: 'affect', id: x.by, patch: { used: [...(state.models[x.by].used ?? []), MORGUL] } }));
       // A Prone winner gets up instead of striking (unless Paralysed).
       const rise = winners.filter(id => downed(id) && !state.models[id].crawls && !under(state, state.models[id], 'Paralyse'));
@@ -615,6 +637,7 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
           ...panned,
           ...trolled,
           ...rise.map((id): Action => ({ type: 'affect', id, patch: { prone: false } })),
+          ...kindled,
         ],
         ...(req.combat ? { record: { type: 'resolveCombat', key: req.combat } } : {}),
       };
@@ -663,6 +686,9 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
         if (hasRule(catalog, shooter, 'Sharpshooter')) req.sharp = true;
         else delete req.atMount;
       } else delete req.atMount;
+      // A shot that would hit the rider may hit its Passenger instead.
+      const passenger = passengerOf(state, target);
+      if (passenger && mounted(target)) req.target.passenger = { id: passenger.id, name: passenger.name, d: dOf(passenger.id) };
       req.inWay = plan.inWay.slice(0, 6).map(o => (o.model ? { name: o.name, id: o.model, d: dOf(o.model) } : { name: o.name }));
       // A war beast's Howdah: it can be aimed at instead of the beast, and it's always in the way of those riding in it.
       const howdah = howdahFor(target.beast === 'war' ? target.name : target.aboard ? state.models[target.aboard]?.name : undefined);
@@ -727,10 +753,13 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       if (!m || m.owner !== seat || m.dead || !mounted(m) || !state.flow.started || state.phase !== 'move' || !mayActivate(state, m) || state.flow.stopped?.includes(m.id)) return null;
       const roll: DiceRoll = { id: `r-${uid()}`, by: seat, label: `${m.name} dismounts`.slice(0, 80), dice: [], model: m.id, at: now };
       const { actions, steed } = separatedMount(m, d6, uid, now, beside(state, m));
+      const passenger = passengerOf(state, m);
       return {
         apply: [
           { type: 'rolled', roll },
           { type: 'affect', id: m.id, patch: onFoot(catalog, m) },
+          // (Its Passenger gets down with it.)
+          ...(passenger ? parting(passenger, m, alightSpot(state, m, passenger)) : []),
           ...actions,
           // A mount that stays can't move any further this turn.
           ...(steed ? [{ type: 'addModels', models: [steed] } as Action, { type: 'crossed', id: steed.id, stop: true } as Action] : []),

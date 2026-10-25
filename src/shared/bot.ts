@@ -40,6 +40,8 @@ import { bolgChargeAt, isLake, isSentry, legolasOf, sentriesDue } from './lake.t
 import { bilboTargets, carrying, eagleExits, isEagle, isFire, landingBeside, nominationTurn, pines, stillToCarry } from './eagles.ts';
 import { walkDistance, waypoint } from './lakeNav.ts';
 import { dreadPick, isOsgiliath, mayOrcTime, mordorOrc, osgiliathExits, westSpot } from './osgiliath.ts';
+import { ARRIVAL_TURN, isPelennor, markers as pelennorMarkers, mayChoosePoint, mumakAim, pelennorTurns, rohirrimCharge, wraithAim } from './pelennor.ts';
+import { mayLightBlade } from './pelennorRules.ts';
 import { bestExit, escapeEdge, exitPickDue, goblinExits, isDwarf as goblinDwarf, isGoblin, mouths, noFooting, swapCandidates, weaponPile } from './goblin.ts';
 import { hasMorgulBlade } from './morgul.ts';
 import { carryBlocked, carryingFrodo, exhausted, isDoom, mayStride, ringPowerDue, ringPowers, resistLeft, willsDue, willsOpen } from './doom.ts';
@@ -300,7 +302,7 @@ function doomGoals(ctx: Ctx, ours: Model[], out: Map<string, Goal>) {
 
 function phaseStep(ctx: Ctx): BotStep | null {
   const { state, seat } = ctx;
-  const relief = reliefStep(ctx);
+  const relief = reliefStep(ctx) ?? pelennorPointStep(ctx);
   if (relief) return relief;
   switch (state.phase) {
     case 'priority':
@@ -313,6 +315,9 @@ function phaseStep(ctx: Ctx): BotStep | null {
       // Gothmog calls the time of the Orc in the first Fight phase with a few of his Orcs fighting near him.
       const gothmog = state.phase === 'fight' ? side(state, seat).find(m => mayOrcTime(state, ctx.catalog, m)) : undefined;
       if (gothmog && side(state, seat).filter(m => mordorOrc(ctx.catalog, m) && engagedWith(state, m).length && distanceBetween(m, gothmog) <= 12).length >= 3) return { action: { type: 'orcTime', id: gothmog.id }, delay: THINK_PAUSE };
+      // The Witch-king sets his blade alight with the Crown of Morgul the first time he is in a fight.
+      const wraith = state.phase === 'fight' ? side(state, seat).find(m => mayLightBlade(state, ctx.catalog, m) && engagedWith(state, m).length) : undefined;
+      if (wraith) return { action: { type: 'crownBlade', id: wraith.id }, delay: THINK_PAUSE };
       if (heroicTurn(state) === seat) return heroicStep(ctx);
       if (!heroicsSettled(state)) return null;
       if (orderRollNeeded(state) && state.priority === seat && !state.log.some(r => r.label === orderRollLabel(state))) {
@@ -513,8 +518,8 @@ function heroicStep(ctx: Ctx): BotStep {
     const ids = (s: Seat) => fight[s].map(id => state.models[id]).filter(Boolean);
     const odds = fightOdds(fighterSide(ctx, ids(seat)), fighterSide(ctx, ids(other(seat))));
     const declare = (action: string): BotStep => ({ action: { type: 'declareHeroic', model: h.id, action }, delay: DICE_PAUSE });
-    // Sam goes to Frodo's aid for nothing, whenever he can.
-    if (longshanksFree(state, h)) return declare('Heroic Combat');
+    // Sam goes to Frodo's aid for nothing, whenever he can; so do the Rohirrim who charged, at the Pelennor.
+    if (longshanksFree(state, h) || rohirrimCharge(state, h)) return declare('Heroic Combat');
     // A close duel is worth a Might point for D3 more Fight; a won duel that can't wound wants double Strength.
     if (has('Heroic Strike') && h.might >= 2 && odds.win > 0.2 && odds.win < 0.7) return declare('Heroic Strike');
     if (has('Heroic Strength') && h.might >= 2 && odds.win >= 0.6 && odds.dealt < 1) return declare('Heroic Strength');
@@ -626,9 +631,12 @@ function moveStep(ctx: Ctx): BotStep {
   // (One hemmed in by friends yet to move waits for them to make room, once.)
   const waited = (m: Model) => !!memo.tested?.includes(`w:${m.id}`);
   // A siege engine doesn't move itself, and its crew stay beside it to shoot it.
+  // (The Pelennor: those filing out through the Gate go front rank first, so the ranks behind can follow.)
+  const gate = isPelennor(state) ? state.terrain['n-gate'] : undefined;
+  const filing = (m: Model) => (gate && m.y <= gate.y + gate.h / 2 + 2 && Math.abs(m.x - gate.x) <= gate.w / 2 + 1 ? 1 + m.y : 0);
   const queue = side(state, seat)
-    .filter(m => !memo.acted.includes(m.id) && !m.siege && !(m.crewOf && state.models[m.crewOf] && !state.models[m.crewOf].dead) && !((isFire(state) || isDoom(state)) && m.aboard))
-    .sort((a, b) => Number(waited(a)) - Number(waited(b)) || Number(hauling(a)) - Number(hauling(b)) || Number(reach(b)) - Number(reach(a)) || (reach(a) ? nearest(a) - nearest(b) : nearest(b) - nearest(a)));
+    .filter(m => !memo.acted.includes(m.id) && !m.siege && !(m.crewOf && state.models[m.crewOf] && !state.models[m.crewOf].dead) && !((isFire(state) || isDoom(state) || isPelennor(state)) && m.aboard))
+    .sort((a, b) => Number(waited(a)) - Number(waited(b)) || filing(b) - filing(a) || Number(hauling(a)) - Number(hauling(b)) || Number(reach(b)) - Number(reach(a)) || (reach(a) ? nearest(a) - nearest(b) : nearest(b) - nearest(a)));
   const goals = assignGoals(ctx);
   let stayed = 0;
   for (const m of queue) {
@@ -1001,6 +1009,7 @@ function assignGoals(ctx: Ctx): Map<string, Goal> {
   if (isGoblin(state)) goblinGoals(ctx, ours, out);
   if (isOsgiliath(state)) osgiliathGoals(ctx, ours, out);
   if (isDoom(state)) doomGoals(ctx, ours, out);
+  if (isPelennor(state)) pelennorGoals(ctx, ours, out);
   for (const m of ours) {
     const carried = carriedBy(state, m);
     if (!carried.length || out.has(m.id)) continue;
@@ -2284,6 +2293,41 @@ function chargeGoal(state: GameState, from: Point, seat: Seat): Goal | undefined
   if (wall && !deepingDown(state)) return { at: { x: CULVERT.x + 2.6, y: CULVERT.y }, pull: 1.2, bold: true };
   const gate = Object.values(state.terrain).filter(t => gateStanding(t) && t.side && t.side !== seat).sort((a, b) => centre(from, a) - centre(from, b))[0];
   return gate ? { at: nearestEdge(gate, from), pull: 1.2 } : undefined;
+}
+
+/**
+ * Battle of Pelennor Fields: in the last two turns, those not fighting near an Objective Marker or the Gates go to hold
+ * it, a few to each (the rest of the time they fight the nearest enemy, as anywhere else).
+ */
+function pelennorGoals(ctx: Ctx, ours: Model[], out: Map<string, Goal>) {
+  const { state } = ctx;
+  // Out of the gateway first, fanning out before the Gate, so the rest of the sally can get through behind.
+  const gate = state.terrain['n-gate'];
+  if (gate && ctx.seat === state.narrative?.good)
+    for (const m of ours) {
+      if (out.has(m.id) || m.aboard || engagedWith(state, m).length || m.y > gate.y + gate.h / 2 + 2 || Math.abs(m.x - gate.x) > gate.w / 2 + 1) continue;
+      out.set(m.id, { at: { x: gate.x + (m.x - gate.x) * 3, y: gate.y + gate.h / 2 + 6 }, pull: 2, near: 1, bold: true });
+    }
+  if (state.turn < pelennorTurns(state) - 1) return;
+  const spots = [...pelennorMarkers(state), state.terrain['n-gate']].filter(Boolean);
+  const sent = new Map<string, number>();
+  for (const m of ours) {
+    if (out.has(m.id) || m.aboard || m.beast || engagedWith(state, m).length) continue;
+    const reach = (moveAllowance(state, m) ?? m.move) * 2;
+    const t = spots.filter(x => centre(m, x) <= reach && (sent.get(x.id) ?? 0) < 4).sort((a, b) => centre(m, a) - centre(m, b))[0];
+    if (!t) continue;
+    sent.set(t.id, (sent.get(t.id) ?? 0) + 1);
+    out.set(m.id, { at: { x: t.x, y: t.id === 'n-gate' ? t.y + 6 : t.y }, pull: 1.5, near: 2 });
+  }
+}
+
+/** The Evil player picks where the Mûmakil and the Witch-king come on, the turn before they do. */
+function pelennorPointStep(ctx: Ctx): BotStep | null {
+  const { state, seat } = ctx;
+  if (!isPelennor(state)) return null;
+  if (state.narrative?.mumak === undefined && state.turn >= ARRIVAL_TURN.mumakil - 1 && mayChoosePoint(state, seat, 'mumakil')) return { action: { type: 'arrivalPoint', seat, which: 'mumakil', x: mumakAim(state) }, delay: THINK_PAUSE };
+  if (state.narrative?.wraith === undefined && state.turn >= ARRIVAL_TURN['witch-king'] - 1 && mayChoosePoint(state, seat, 'witch-king')) return { action: { type: 'arrivalPoint', seat, which: 'witch-king', x: wraithAim(state) }, delay: THINK_PAUSE };
+  return null;
 }
 
 /** Good chooses where on the south edge the Relief Force rides on: where most of the enemy's back ranks are. */

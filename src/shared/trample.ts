@@ -5,6 +5,7 @@ import { hitModel, mounted, mountOf } from './cavalry.ts';
 import { touchingEnemies } from './barriers.ts';
 import { mayActivate } from './heroics.ts';
 import { carried, drive, heldBy, impactHits, isChariot, isWarBeast, riders, shoveAside } from './warBeasts.ts';
+import { entering } from './mutton.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
 type Trample = Extract<Action, { type: 'trample' }>;
@@ -16,6 +17,8 @@ export function mustCharge(state: GameState, catalog: Catalog | null | undefined
 
 /** A model that came on from reserve this turn (its side's arrivals are in, and it still stands at the table edge) tramples no one yet. */
 function justArrived(state: GameState, m: Model): boolean {
+  // (Or one moving on this turn as reinforcements, as the Mûmakil at the Pelennor.)
+  if (entering(state, m)) return true;
   if (!state.flow.arrived?.includes(m.owner)) return false;
   const r = Math.max(m.base.w, m.base.h) / 50.8 + 0.5;
   return m.x < r || m.y < r || m.x > state.board.w - r || m.y > state.board.h - r;
@@ -87,7 +90,7 @@ export function trample(state: GameState, catalog: Catalog | null, seat: Seat, a
     aim = { x: m.x + Math.sin(a) * 20, y: m.y - Math.cos(a) * 20 };
     log({ by: seat, label: `Stampede: ${m.name} bolts (a die picks the way)`.slice(0, 80), dice: [d], model: m.id });
   }
-  const run = drive(state, catalog, m, aim, { d6, uid, now, by: seat, stampede: wild, group, skip, skipHits: justArrived(state, m) });
+  const run = drive(state, catalog, m, aim, { d6, uid, now, by: seat, stampede: wild, group, skip, skipHits: justArrived(state, m), arriving: entering(state, m) });
   // As it turns, models in its way are shoved aside.
   const shoves = war ? shoveAside(state, m, run.at.rot).filter(s => !skip.includes(s.id)) : [];
   out.push(...run.rolls.map(roll => ({ type: 'rolled', roll }) as Action), ...run.actions);

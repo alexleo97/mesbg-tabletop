@@ -249,6 +249,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
       if (t.look === 'crag' || t.look === 'cavewall') return <GoblinPiece t={t} />;
       if (t.look === 'rubble') return <OsgiliathPiece t={t} />;
       if (t.look === 'cinder') return <DoomPiece t={t} />;
+      if (t.look === 'pelrock' || t.look === 'pelrubble') return <PelennorPiece t={t} />;
       return (
         <>
           <path className={`ground ${t.kind}-face`} d={d} fill={tex} filter="url(#hard-shadow)" />
@@ -288,6 +289,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
       if (t.look === 'orthanc') return <IsengardPiece t={t} />;
       if (t.look === 'throne') return <GoblinPiece t={t} />;
       if (t.look === 'blackgate') return <DoomPiece t={t} />;
+      if (t.look === 'mttower') return <PelennorPiece t={t} />;
       if (t.look === 'trunk') return <MirkwoodPiece t={t} />;
       if (t.look === 'pine') return <PinePiece t={t} />;
       if (t.look === 'stone') return <StoneTower t={t} tex={tex} />;
@@ -336,6 +338,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
       if (t.look === 'scaffold') return <IsengardPiece t={t} />;
       if (t.look === 'osgwall') return <OsgiliathPiece t={t} />;
       if (t.look === 'blackgate') return <DoomPiece t={t} />;
+      if (t.look === 'mtwall') return <PelennorPiece t={t} />;
       if (t.barricade) {
         // A wooden barricade: a row of logs, with stakes poking out both ways if it is spiked. Broken, only splinters.
         const logs = Math.max(3, Math.round(t.w / 0.5));
@@ -435,6 +438,7 @@ export function TerrainArt({ t, mat, turn = 0 }: { t: Terrain; mat: Mat; /** How
       );
     case 'road':
       if (t.look === 'ashslope' || t.look === 'doomway' || t.look === 'ashpath') return <DoomPiece t={t} />;
+      if (t.look === 'pelennor' || t.look === 'mtgate') return <PelennorPiece t={t} />;
       if (t.path && t.path.length > 1)
         return (
           <>
@@ -1251,6 +1255,155 @@ function DoomPiece({ t }: { t: Terrain }) {
 }
 
 /**
+ * Battle of Pelennor Fields, as the films show it: the wide green plain before Minas Tirith, its grass trampled to mud
+ * and scorched black by the siege fires nearest the city, and the road running out from the Gate; the outer wall of
+ * pale, almost white stone, battlemented, with its two great towers; the Great Gate broken in by Grond, the shattered
+ * leaves of black iron-bound timber lying in the gateway; and grey outcrops of rock out on the fields.
+ */
+function PelennorPiece({ t }: { t: Terrain }) {
+  const { w, h } = t;
+  const d = outline(t);
+  if (t.look === 'pelennor') {
+    // (The city's wall runs along the top edge, so the scorching and the trodden earth thicken towards it.)
+    const patches = Array.from({ length: 70 }, (_, i) => {
+      const x = (seeded(t.id, i) - 0.5) * w;
+      const y = (seeded(t.id, i + 100) ** 1.6 - 0.5) * h;
+      const r = 1.2 + seeded(t.id, i + 200) * 3.2;
+      return { x, y, rx: r, ry: r * (0.45 + seeded(t.id, i + 300) * 0.5), rot: seeded(t.id, i + 400) * 180, k: i % 3 };
+    });
+    const burns = Array.from({ length: 16 }, (_, i) => ({
+      x: (seeded(t.id, i + 500) - 0.5) * w * 0.9,
+      y: -h / 2 + 5 + seeded(t.id, i + 600) ** 1.5 * h * 0.45,
+      r: 0.8 + seeded(t.id, i + 700) * 1.8,
+    }));
+    // Tussocks of rough grass: little tufts of blades, darker and lighter.
+    const tufts = Array.from({ length: 700 }, (_, i) => {
+      const x = (seeded(t.id, i + 1000) - 0.5) * w;
+      const y = (seeded(t.id, i + 3000) - 0.5) * h;
+      const s = 0.18 + seeded(t.id, i + 5000) * 0.2;
+      return { d: `M ${(x - s * 0.5).toFixed(2)} ${(y - s * 0.7).toFixed(2)} L ${x.toFixed(2)} ${y.toFixed(2)} L ${(x + s * 0.1).toFixed(2)} ${(y - s).toFixed(2)} M ${x.toFixed(2)} ${y.toFixed(2)} L ${(x + s * 0.6).toFixed(2)} ${(y - s * 0.6).toFixed(2)}`, k: i % 3 };
+    });
+    // The road out from the Great Gate, south and then away east towards Osgiliath (drawn only: it is open ground like the rest).
+    const road = `M 0 ${-h / 2 + 4} C 0 ${-h / 2 + 14}, ${w * 0.08} ${-h / 2 + 22}, ${w * 0.2} ${-h / 2 + 30} S ${w * 0.42} ${-h / 2 + 38}, ${w / 2} ${-h / 2 + 41}`;
+    return (
+      <g pointerEvents="none">
+        <rect className="pel-grass" x={-w / 2} y={-h / 2} width={w} height={h} />
+        {patches.map((p, i) => (
+          <ellipse key={i} className={`pel-patch pel-patch-${p.k}`} cx={p.x} cy={p.y} rx={p.rx} ry={p.ry} transform={`rotate(${p.rot.toFixed(1)} ${p.x.toFixed(2)} ${p.y.toFixed(2)})`} filter="url(#bank-blur)" />
+        ))}
+        <path className="pel-road-edge" d={road} />
+        <path className="pel-road" d={road} />
+        {tufts.map((p, i) => (
+          <path key={`t${i}`} className={`pel-tuft pel-tuft-${p.k}`} d={p.d} />
+        ))}
+        {/* Scorched ground where fire fell from the siege: a ragged blackened patch, ash grey at its heart. */}
+        {burns.map((b, i) => (
+          <g key={`b${i}`} filter="url(#bank-blur)">
+            <ellipse className="pel-burn" cx={b.x} cy={b.y} rx={b.r} ry={b.r * 0.7} transform={`rotate(${Math.round(seeded(t.id, i + 800) * 180)} ${b.x.toFixed(2)} ${b.y.toFixed(2)})`} />
+            <ellipse className="pel-burn" cx={b.x + b.r * 0.5} cy={b.y + b.r * 0.3} rx={b.r * 0.6} ry={b.r * 0.45} />
+            <ellipse className="pel-ash" cx={b.x + b.r * 0.15} cy={b.y} rx={b.r * 0.35} ry={b.r * 0.25} />
+          </g>
+        ))}
+        {/* Under the wall, the earth churned and blackened by the assault. */}
+        <rect className="pel-scorch" x={-w / 2} y={-h / 2} width={w} height={7} filter="url(#bank-blur)" />
+      </g>
+    );
+  }
+  if (t.look === 'mtwall' || t.look === 'mttower') {
+    // Pale stone: courses of dressed blocks along the wall-walk, merlons all along the outer (south) face, and on a
+    // tower a parapet the whole way round its octagon.
+    const tower = t.look === 'mttower';
+    const poly: [number, number][] = t.poly && t.poly.length > 2 ? t.poly : [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]];
+    const merlons: ReactElement[] = [];
+    const run = (a: [number, number], b: [number, number], key: string) => {
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const n = Math.max(1, Math.floor(len / 0.9));
+      const ux = (b[0] - a[0]) / len;
+      const uy = (b[1] - a[1]) / len;
+      // (Set in a little from the edge, towards the middle.)
+      const nx = -uy * 0.18;
+      const ny = ux * 0.18;
+      for (let i = 0; i < n; i++) {
+        const f0 = (i + 0.2) / n;
+        const f1 = (i + 0.7) / n;
+        merlons.push(<line key={`${key}${i}`} className="mt-merlon" x1={a[0] + (b[0] - a[0]) * f0 + nx} y1={a[1] + (b[1] - a[1]) * f0 + ny} x2={a[0] + (b[0] - a[0]) * f1 + nx} y2={a[1] + (b[1] - a[1]) * f1 + ny} />);
+      }
+    };
+    if (tower) poly.forEach((p, i) => run(p, poly[(i + 1) % poly.length], `e${i}`));
+    else run([w / 2, h / 2], [-w / 2, h / 2], 's');
+    const courses = tower ? [] : Array.from({ length: Math.floor(w / 1.4) }, (_, i) => -w / 2 + (i + 1) * 1.4);
+    const pts = poly.map(([x, y]) => `${x.toFixed(3)},${y.toFixed(3)}`).join(' ');
+    const inner = poly.map(([x, y]) => `${(x * 0.62).toFixed(3)},${(y * 0.62).toFixed(3)}`).join(' ');
+    return (
+      <>
+        <polygon className="ground mt-stone" points={pts} filter="url(#hard-shadow)" />
+        <polygon className="tint mt-walk" points={pts} />
+        {!tower && <line className="mt-walk-line" x1={-w / 2} x2={w / 2} y1={h / 2 - 0.55} y2={h / 2 - 0.55} />}
+        {courses.map((x, i) => (
+          <line key={i} className="mt-seam" x1={x} x2={x + (i % 2 ? 0.3 : -0.3)} y1={-h / 2 + 0.2} y2={h / 2 - 0.7} />
+        ))}
+        {tower && (
+          <>
+            <polygon className="mt-roof" points={inner} />
+            <circle className="mt-roof-boss" r={0.5} />
+          </>
+        )}
+        <g pointerEvents="none">{merlons}</g>
+      </>
+    );
+  }
+  if (t.look === 'mtgate') {
+    // The gateway: flagstones under the arch, and the broken leaves of the Gate thrown in, black timber bound with iron.
+    const flags = Array.from({ length: Math.floor(h / 0.8) }, (_, i) => -h / 2 + (i + 1) * 0.8);
+    const shards: [number, number, number, number, number][] = [
+      [-w * 0.32, -h * 0.05, 1.1, 2.6, 18],
+      [w * 0.33, h * 0.08, 1.0, 2.3, -24],
+      [-w * 0.18, h * 0.36, 1.6, 0.35, 70],
+      [w * 0.12, -h * 0.34, 1.3, 0.3, -60],
+      [w * 0.05, h * 0.18, 0.7, 0.25, 35],
+    ];
+    return (
+      <g pointerEvents="none">
+        <rect className="mt-flags" x={-w / 2} y={-h / 2} width={w} height={h} />
+        {flags.map((y, i) => (
+          <line key={i} className="mt-flag-seam" x1={-w / 2} x2={w / 2} y1={y} y2={y} />
+        ))}
+        <line className="mt-flag-seam" x1={0} x2={0} y1={-h / 2} y2={h / 2} />
+        {shards.map(([x, y, sw, sh, rot], i) => (
+          <g key={`s${i}`} transform={`translate(${x.toFixed(2)} ${y.toFixed(2)}) rotate(${rot})`}>
+            <rect className="mt-gate-wood" x={-sw / 2} y={-sh / 2} width={sw} height={sh} />
+            {sh > 1 && <line className="mt-gate-iron" x1={-sw / 2} x2={sw / 2} y1={-sh * 0.25} y2={-sh * 0.25} />}
+            {sh > 1 && <line className="mt-gate-iron" x1={-sw / 2} x2={sw / 2} y1={sh * 0.25} y2={sh * 0.25} />}
+          </g>
+        ))}
+      </g>
+    );
+  }
+  if (t.look === 'pelrubble') {
+    const stones = Array.from({ length: Math.round(w * h * 4) + 6 }, (_, i) => ({ x: (seeded(t.id, i) - 0.5) * w * 0.9, y: (seeded(t.id, i + 50) - 0.5) * h * 0.8, r: 0.1 + seeded(t.id, i + 90) * 0.22, k: i % 3 }));
+    return (
+      <>
+        <path className="ground pel-rubble" d={d} />
+        <g pointerEvents="none">
+          {stones.map((p, i) => (
+            <circle key={i} className={`pel-stone pel-stone-${p.k}`} cx={p.x} cy={p.y} r={p.r} />
+          ))}
+        </g>
+      </>
+    );
+  }
+  // An outcrop of grey rock, weathered, with lichen on it and a crack or two.
+  return (
+    <>
+      <path className="ground pel-rock" d={d} filter="url(#hard-shadow)" />
+      <path className="tint" d={d} fill="url(#g-dome)" />
+      <path className="tint pel-lichen" d={blob(t, 0.35, 0.25, 5)} />
+      <path className="crack" d={`M ${-w * 0.2} ${-h * 0.12} l ${w * 0.14} ${h * 0.1} l ${w * 0.1} ${-h * 0.05}`} />
+    </>
+  );
+}
+
+/**
  * Lake-town (Lake-town Escape): plank walkways on posts over the lake, rowing boats tied up, ice floes, and timber
  * houses with shingled roofs: a ridge along a long house, four slopes meeting at a point on a square one.
  */
@@ -1682,9 +1835,9 @@ export function TerrainFaces({ terrain, turn = 0 }: { terrain: Terrain[]; /** Ho
       {pieces.map(t => {
         const pts = face(t, lean).map(p => `${p.x.toFixed(3)},${p.y.toFixed(3)}`).join(' ');
         return (
-          <g key={t.id} className={t.look === 'osgwall' ? 'osg-face' : t.look === 'blackgate' ? 'doom-face' : undefined}>
+          <g key={t.id} className={t.look === 'osgwall' ? 'osg-face' : t.look === 'blackgate' ? 'doom-face' : t.look === 'mtwall' || t.look === 'mttower' ? 'mt-face' : undefined}>
             <polygon className="face-shadow" points={pts} transform="translate(0.35 0.45)" filter="url(#bank-blur)" />
-            <polygon className="face" points={pts} fill={t.look === 'orthanc' ? '#1d1e23' : t.look === 'scaffold' ? '#5a3d1f' : t.look === 'osgwall' ? '#b9b5ab' : t.look === 'blackgate' ? '#24221f' : t.kind === 'rock' ? 'url(#tex-cliff)' : 'url(#tex-wall)'} />
+            <polygon className="face" points={pts} fill={t.look === 'orthanc' ? '#1d1e23' : t.look === 'scaffold' ? '#5a3d1f' : t.look === 'osgwall' ? '#b9b5ab' : t.look === 'blackgate' ? '#24221f' : t.look === 'mtwall' || t.look === 'mttower' ? '#cfcac0' : t.kind === 'rock' ? 'url(#tex-cliff)' : 'url(#tex-wall)'} />
             <polygon className="face-shade" points={pts} />
           </g>
         );

@@ -3,7 +3,7 @@
 import { fromMarker, onTable } from './objects.ts';
 import { modelStats, rulesFor, type Catalog } from './catalog.ts';
 import type { Fighter } from './fight.ts';
-import { gearOf, hasGear } from './gear.ts';
+import { gearOf, hasGear, hasPike } from './gear.ts';
 import { distanceBetween } from './geometry.ts';
 import { duelLeader, duelSettled } from './fight.ts';
 import { sightTo } from './sight.ts';
@@ -77,11 +77,12 @@ export function twoHandedChoice(catalog: Catalog | null | undefined, m: Model): 
   const weapons = melee(catalog, m);
   const big = weapons.filter(g => TWO_HANDED.test(g));
   const other = weapons.filter(g => !TWO_HANDED.test(g));
-  if (big.length && !other.length) return 'must';
+  if (big.length && !other.length && !weapons.some(g => /easterling halberd/.test(g))) return 'must';
   // (Azog swings his Stone flail two-handed, or fights with his hand weapons.)
   if (hasRule(catalog, m, 'Stone flail')) return 'may';
-  // (Bifur's Boar Spear is a spear or a two-handed weapon, as he likes.)
-  if (big.length || other.some(g => HAND_AND_A_HALF.test(g) || /boar spear/.test(g))) return 'may';
+  // (Bifur's Boar Spear is a spear or a two-handed weapon, as he likes; so are the Mûmak War Leader's long-bladed spear
+  // and an Easterling's halberd, which is a pike when not swung in both hands.)
+  if (big.length || other.some(g => HAND_AND_A_HALF.test(g) || /boar spear|long-bladed spear/.test(g)) || weapons.some(g => /easterling halberd/.test(g))) return 'may';
   return 'no';
 }
 
@@ -107,7 +108,8 @@ export const hasAnduril = (catalog: Catalog | null | undefined, m: Model) =>
 
 /** Why a model can't use Shielding in a fight, or null if it can: it needs a shield and must be on foot. */
 export function cantShield(catalog: Catalog | null | undefined, m: Model): string | null {
-  if (!hasShield(catalog, m)) return 'has no shield';
+  // (Irolas Shields without one: Defend the White City.)
+  if (!hasShield(catalog, m) && !hasRule(catalog, m, 'Defend the White City')) return 'has no shield';
   if (isCavalry(catalog ?? null, m)) return 'is mounted';
   if (twoHandedChoice(catalog, m) === 'must') return 'needs both hands for its weapon';
   return null;
@@ -206,7 +208,8 @@ export function fighterOf(state: GameState, catalog: Catalog | null | undefined,
     f.woundCap = 4;
     notes.push('Andúril: never worse than 4+ to wound');
   }
-  if (hasGear(catalog, m, /\bpikes?\b/) && (hasShield(catalog, m) || missile(catalog, m))) {
+  // (Phalanx: an Easterling's pike and shield go together.)
+  if (hasPike(catalog, m) && (hasShield(catalog, m) || missile(catalog, m)) && !(hasRule(catalog, m, 'Phalanx') && !missile(catalog, m))) {
     duel--;
     notes.push('Pike with a shield or bow: -1 duel');
   }
@@ -366,6 +369,9 @@ export function terrainRules(catalog: Catalog | null | undefined, m: Model): str
   if (hasRule(catalog, m, "Wizard's Pupil")) out.push('pupil');
   if (hasRule(catalog, m, "Gothmog's Right Hand")) out.push('righthand');
   if (hasRule(catalog, m, '"The Age of Men is Over"')) out.push('gothmog');
+  // (The King of the Dead may pay for his heroic actions with a Herald's Will: The King's Counsel.)
+  if (hasRule(catalog, m, "The King's Counsel")) out.push('counsel');
+  if (hasRule(catalog, m, 'The Dead and the Living')) out.push('deadking');
   return out;
 }
 
@@ -386,8 +392,10 @@ export function bannerFor(state: GameState, catalog: Catalog | null | undefined,
   const ours = rolls.filter(x => x.side === r.side && x.model).map(x => state.models[x.model!]).filter((m): m is Model => !!m && !m.dead);
   if (!ours.length || ours[0].owner !== seat) return undefined;
   if (duelLeader(rolls)?.winner === r.side) return undefined;
-  const reach = (b: Model) => (royalStandard(catalog, b) ? 6 : BANNER_RANGE);
-  const flag = Object.values(state.models).find(b => b.owner === seat && !b.dead && !b.escaped && !b.waiting && !b.prone && carriesBanner(catalog, b) && ours.some(m => (m.id === b.id || distanceBetween(b, m) <= reach(b)) && (m.id === b.id || sightTo(state, m, b) !== 'hidden')));
+  // (A Mûmak's Awesome Presence makes it a banner for its friends, out to 6".)
+  const awesome = (b: Model) => hasRule(catalog, b, 'Awesome Presence');
+  const reach = (b: Model) => (royalStandard(catalog, b) || awesome(b) ? 6 : BANNER_RANGE);
+  const flag = Object.values(state.models).find(b => b.owner === seat && !b.dead && !b.escaped && !b.waiting && !b.prone && (carriesBanner(catalog, b) || awesome(b)) && ours.some(m => (m.id === b.id || distanceBetween(b, m) <= reach(b)) && (m.id === b.id || sightTo(state, m, b) !== 'hidden')));
   if (flag) return flag;
   // A Rallying Point is the defenders' banner.
   const rally = onTable(state).find(t => t.object === 'rally' && t.side === seat && ours.some(m => fromMarker(m, t) <= BANNER_RANGE));
