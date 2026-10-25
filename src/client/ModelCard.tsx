@@ -34,6 +34,8 @@ import { STAT_TITLES } from './ListBuilder.tsx';
 import { distanceBetween, formatInches } from '../shared/geometry.ts';
 import { formatNeed, woundNeed } from '../shared/rules.ts';
 import type { Action, GameState, Model, Role } from '../shared/types.ts';
+import { carryBlocked, carryingFrodo, collapsed, exhausted, mayStride } from '../shared/doom.ts';
+import { activeSeat } from '../shared/flow.ts';
 
 interface Props {
   state: GameState;
@@ -586,6 +588,34 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
           <button className="primary" onClick={() => dispatch({ type: 'nazgul', target: m.id })} title={`"Nazgûl!": on a ${DREAD_ROLL}+ ${m.name} is frozen with fear: it can't move, shoot or act this turn, and fights with Fight 1.`}>
             Freeze with fear ({DREAD_ROLL}+)
           </button>
+        </div>
+      )}
+      {/* The End of All Things: Frodo exhausted struggles on an inch at a time; Sam may carry him. */}
+      {mine && m.cast === 'frodo' && exhausted(state) && state.phase === 'move' && !m.aboard && (
+        <div className="row wrap marker-actions">
+          {mayStride(state, m, m.prone || state.flow.stood?.includes(m.id) ? m.move / 2 : m.move) && activeSeat(state) === m.owner && mayActivate(state, m) ? (
+            <button className="primary" {...locked({ type: 'stride' })} onClick={() => dispatch({ type: 'stride' })} title={`Exhausted, ${m.name} must pass a Courage test for every inch he moves this turn. Fail one and he collapses, Prone, and goes no further.`}>
+              Struggle on 1" (Courage test)
+            </button>
+          ) : (
+            <p className="warn">{collapsed(state) ? `${m.name} has collapsed: he can go no further this turn unless Sam carries him.` : `Exhausted: ${m.name} has passed ${state.narrative?.strides ?? 0} Courage tests, an inch each.`}</p>
+          )}
+        </div>
+      )}
+      {mine && m.cast === 'sam' && state.phase === 'move' && (carryingFrodo(state, m) || !carryBlocked(state, m, x => engaged(state, x))) && (
+        <div className="row wrap marker-actions">
+          {carryingFrodo(state, m) ? (
+            <button {...locked({ type: 'carryFrodo', carry: false })} onClick={() => dispatch({ type: 'carryFrodo', carry: false })} title="Put Frodo down beside Sam. He is put down anyway as the End phase begins.">
+              Put Frodo down
+            </button>
+          ) : (
+            activeSeat(state) === m.owner &&
+            mayActivate(state, m) && (
+              <button className="primary" {...locked({ type: 'carryFrodo', carry: true })} onClick={() => dispatch({ type: 'carryFrodo', carry: true })} title="Sam carries Frodo as a Heavy Object: Frodo goes where Sam goes, and Sam's Move is halved.">
+                Carry Frodo
+              </button>
+            )
+          )}
         </div>
       )}
       {mine && skitterDue(state, m) && (

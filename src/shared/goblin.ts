@@ -68,8 +68,8 @@ export function mouths(state: GameState, edge: Edge): [number, number][] {
 
 // ——— Bottomless Pits ———
 
-/** The models standing over the chasm (a failed leap, or knocked off a platform): they fall, and are lost. */
-export const fallen = (state: GameState) => (isGoblin(state) && state.flow.started ? Object.values(state.models).filter(m => alive(m) && !m.aboard && inChasm(state, m)) : []);
+/** The models standing over the chasm (a failed leap, or knocked off a platform): they fall, and are lost. (So at the Crack of Doom, over the fire.) */
+export const fallen = (state: GameState) => ((isGoblin(state) || state.narrative?.id === 'the-end-of-all-things') && state.flow.started ? Object.values(state.models).filter(m => alive(m) && !m.aboard && inChasm(state, m)) : []);
 
 /** A line for the log, from rules the game applies by itself (the same on every screen). */
 function note(state: GameState, key: string, by: Seat, label: string, text: string, model?: string): DiceRoll {
@@ -86,7 +86,10 @@ export function goblinSync(state: GameState): GameState {
   const log: DiceRoll[] = [];
   for (const m of fallen(state)) {
     models = { ...models, [m.id]: { ...models[m.id], dead: true, wounds: 0 } };
-    log.push(note(state, `fall-${m.id}`, m.owner, 'Bottomless Pits', `${m.name} falls into the chasm and is lost.`, m.id));
+    // (The End of All Things: the fire of the Crack of Doom, or off the edge of a table.)
+    const fire = Object.values(state.terrain).some(t => t.look === 'lava' && !t.gone && insidePolygon(outline(t), m));
+    if (isGoblin(state)) log.push(note(state, `fall-${m.id}`, m.owner, 'Bottomless Pits', `${m.name} falls into the chasm and is lost.`, m.id));
+    else log.push(note(state, `fall-${m.id}`, m.owner, fire ? 'The Crack of Doom' : 'Off the table', fire ? `${m.name} falls into the fire and is lost.` : `${m.name} goes off the edge of the table and is lost.`, m.id));
   }
   // Take Up Arms: touching the pile at any point in its move (or now).
   const pile = isGoblin(state) ? weaponPile(state) : undefined;

@@ -12,6 +12,7 @@ import { isSpider, ringPower, skittersInto } from './unseen.ts';
 import { surprised } from './ambush.ts';
 import { tramplesThrough } from './balin.ts';
 import { relentlessThrough, swordStill } from './goblin.ts';
+import { carryingFrodo, holdGround, standsGround, strideAllowance } from './doom.ts';
 import type { GameState, Model, Seat } from './types.ts';
 
 /**
@@ -38,11 +39,14 @@ export function moveAllowance(state: GameState, m: Model): number | null {
     if (m.crawls) return m.crawls;
     // Climbing between floors of a building spends Move too.
     const climbed = state.flow.climbed?.[m.id] ?? 0;
-    // So does carrying a Heavy Object alone.
-    const halved = m.prone || state.flow.stood?.includes(m.id) || laden(state, m);
+    // So does carrying a Heavy Object alone (Sam carrying Frodo, too).
+    const halved = m.prone || state.flow.stood?.includes(m.id) || laden(state, m) || carryingFrodo(state, m);
     // A model that could fly but walks instead goes only 4".
     const move = m.fly && !flying(state, m) ? WALK_INSTEAD : m.move;
-    return Math.max(0, (halved ? move / 2 : move) + marchBonus(state, m) - climbed);
+    const full = Math.max(0, (halved ? move / 2 : move) + marchBonus(state, m) - climbed);
+    // The End of All Things: under Exhaustion, Frodo goes only as many inches as he has passed Courage tests for.
+    const strides = strideAllowance(state, m);
+    return strides === undefined ? full : Math.min(full, strides);
   }
   if (state.phase === 'fight') return heroicCombatWon(state, m) ? m.move : (bargeMove(state, m) ?? 1);
   return 0;
@@ -232,6 +236,8 @@ export function leashed(state: GameState, m: Model, here: Point, to: Point, toge
   if (leader && !together.has(leader.id)) to = keepNear(m, here, to, leader);
   const home = m.crewOf ? models[m.crewOf] : undefined;
   if (home && !home.dead) to = keepNear(m, here, to, home);
+  // The End of All Things: the Good side at the Black Gate goes no more than 12" from the middle of its table.
+  if (standsGround(state, m)) to = holdGround(m, here, to);
   return to;
 }
 

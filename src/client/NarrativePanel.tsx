@@ -75,7 +75,7 @@ export function NarrativePanel({ state, dispatch, role, id }: { state: GameState
       {set && isHelms(state) && <HelmsTally state={state} dispatch={dispatch} seat={seat} />}
       <h4>The table</h4>
       <p>
-        {n.board.w}"×{n.board.h}". {n.layout}
+        {n.tables ?? `${n.board.w}"×${n.board.h}"`}. {n.layout}
       </p>
       <h4>Starting positions</h4>
       <p>{n.deployment}</p>

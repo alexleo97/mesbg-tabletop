@@ -31,8 +31,9 @@ export const isMarker = (t: Terrain) => t.kind === 'objective' || !!t.vines;
  */
 export function drawLayer(t: Terrain): number {
   if (t.carrier) return 5;
-  // (Goblin-town's chasm is the floor of the whole table, under its walkways.)
-  if (t.look === 'chasm') return -1;
+  // (Goblin-town's chasm is the floor of the whole table, under its walkways; so are the fire of the Crack of Doom and
+  // the gap between two tables.)
+  if (t.look === 'chasm' || t.look === 'lava' || t.look === 'void') return -1;
   if (isMarker(t)) return 4;
   // (A trapdoor in Balin's Tomb lies on its ledge, and a ladder against a scaffold leans on it, so they go on top.)
   if (t.kind === 'bridge' || t.look === 'trapdoor' || t.look === 'ladder') return 3;

@@ -1394,3 +1394,37 @@ select.ready-made {
 .terrain .osg-block-2 { fill: #e4e1d9; }
 .terrain .osg-column { fill: #e8e5dd; stroke: #625e55; stroke-width: 0.04; }
 .terrain .osg-flute-line { stroke: #b3afa4; stroke-width: 0.03; }
+/* The End of All Things: the fire of Mount Doom, the ash outside, and the iron-dark Black Gate. */
+.terrain .doom-void { fill: #0d0c0c; }
+.terrain .doom-river { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.terrain .doom-river-0 { stroke: #ffd35a; stroke-width: 0.14; }
+.terrain .doom-river-1 { stroke: #ffae3a; stroke-width: 0.1; }
+.terrain .doom-river-glow { fill: none; stroke: #ff7a1e; stroke-width: 0.7; opacity: 0.35; stroke-linecap: round; stroke-linejoin: round; }
+.terrain .doom-wall-shade { fill: none; stroke: #120604; stroke-width: 2.2; opacity: 0.8; }
+.terrain .doom-slab { stroke: #120e0c; stroke-width: 0.05; stroke-linejoin: round; }
+.terrain .doom-slab-0 { fill: #3a322d; }
+.terrain .doom-slab-1 { fill: #2b2521; }
+.terrain .doom-slab-2 { fill: #4a3f37; }
+.terrain .doom-rim { fill: none; stroke: #ff8a2c; stroke-width: 0.1; opacity: 0.6; }
+.terrain .doom-ash { fill: #4a4440; }
+.terrain .doom-ash.doom-plain { fill: #5e554c; }
+.terrain .doom-grit { opacity: 0.5; }
+.terrain .doom-grit-0 { fill: #2a2624; }
+.terrain .doom-grit-1 { fill: #6a625b; }
+.terrain .doom-grit-2 { fill: #8a3a1e; }
+.terrain .doom-path { fill: #6b645d; }
+.terrain .doom-path-edge { fill: #5a534d; opacity: 0.7; }
+.terrain .doom-spur { fill: #2b2522; }
+.terrain .doom-spur-glow { fill: none; stroke: #ff6a1f; stroke-width: 0.5; opacity: 0.75; }
+.terrain .doom-spur-edge { fill: none; stroke: #120e0c; stroke-width: 0.07; stroke-linejoin: round; }
+.terrain .doom-chip-0 { fill: #1b1714; }
+.terrain .doom-chip-1 { fill: #5a4f47; }
+.terrain .doom-tip { fill: #ff7a2a; opacity: 0.35; }
+.terrain .doom-cinder { fill: #26221f; stroke: #0f0d0c; stroke-width: 0.04; }
+.terrain .doom-cinder-crack { fill: none; stroke: #8a3a1e; stroke-width: 0.04; opacity: 0.7; }
+.terrain .doom-gate { fill: #2c2a27; stroke: #0e0d0c; stroke-width: 0.08; }
+.terrain .doom-gate-walk { fill: #3a3733; }
+.terrain .doom-gate-roof { fill: #1f1d1b; stroke: #0e0d0c; stroke-width: 0.05; }
+.terrain .doom-gate-seam { stroke: #1a1917; stroke-width: 0.05; }
+.terrain .doom-merlon { fill: #1c1a18; stroke: #0a0909; stroke-width: 0.03; }
+.fortress-faces .doom-face .face-shade { fill: #00000055; }

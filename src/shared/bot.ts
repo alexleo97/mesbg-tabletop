@@ -42,6 +42,8 @@ import { walkDistance, waypoint } from './lakeNav.ts';
 import { dreadPick, isOsgiliath, mayOrcTime, mordorOrc, osgiliathExits, westSpot } from './osgiliath.ts';
 import { bestExit, escapeEdge, exitPickDue, goblinExits, isDwarf as goblinDwarf, isGoblin, mouths, noFooting, swapCandidates, weaponPile } from './goblin.ts';
 import { hasMorgulBlade } from './morgul.ts';
+import { carryBlocked, carryingFrodo, exhausted, isDoom, mayStride, ringPowerDue, ringPowers, resistLeft, willsDue, willsOpen } from './doom.ts';
+import { WALKWAY } from './doomMap.ts';
 import { AXE_FREED, canHeadbutt, hasMattock, longbeardFor, mayAxeTest, mayTend, rerollFor, spentPoints, swapPair, trumpetDue } from './company.ts';
 import { fitsSack, keepsForLater, lingeringCold } from './trolls.ts';
 import { canThrowBrand, FLAMING_BRAND } from './shooting.ts';
@@ -228,10 +230,72 @@ export function botStep(state: GameState, seat: Seat, catalog: Catalog | null, m
   if (arrivalDue(state)) return seat === state.narrative?.good && !arrivalAuto(state) ? { action: { type: 'aragorn', roll: true }, delay: DICE_PAUSE } : null;
   // Escape from Osgiliath: the Nazgûl freeze the Warrior nearest getting away.
   if (dreadDue(state)) return seat !== state.narrative?.good ? { action: { type: 'nazgul', ...(dreadPick(state) ? { target: dreadPick(state)!.id } : {}) }, delay: DICE_PAUSE } : null;
+  // The End of All Things: the Ring's power on Frodo before Priority is rolled; the battle of wills at the precipice.
+  if (ringPowerDue(state)) return seat !== state.narrative?.good ? { action: { type: 'ringPower', power: ringPick(state) }, delay: DICE_PAUSE } : null;
+  if (willsDue(state)) return seat === state.narrative?.good ? { action: { type: 'wills', ...willsMight(state) }, delay: DICE_PAUSE } : null;
   const spell = spellStep(ctx) ?? compelStep(ctx) ?? skitterStep(ctx);
   if (spell) return spell;
   if (++memo.steps > MAX_STEPS) return finish(ctx);
   return fateStep(ctx) ?? challengeStep(ctx) ?? (state.flow.shotPause ? pausedShot(ctx) : null) ?? companyStep(ctx) ?? phaseStep(ctx);
+}
+
+/** The Ring's power the Evil side tries: Corruption once he is near breaking, otherwise Exhaustion to slow him. */
+function ringPick(state: GameState) {
+  const can = ringPowers(state);
+  return resistLeft(state) <= 2 && can.includes('corruption') ? 'corruption' : 'exhaustion';
+}
+
+/** After a lost roll in the battle of wills: the Might to win it, if Frodo has that much (none lets it stand). */
+function willsMight(state: GameState): { might?: number } {
+  const open = willsOpen(state);
+  if (!open) return {};
+  const frodo = castModel(state, 'frodo');
+  const need = open[1] - open[0] + 1;
+  return { might: frodo && frodo.might >= need ? need : 0 };
+}
+
+/**
+ * The End of All Things, in the Good side's move: Sam picks up an exhausted Frodo if he is beside him, and otherwise
+ * Frodo struggles on an inch at a time, before either of them moves.
+ */
+function doomMoveStep(ctx: Ctx): BotStep | null {
+  const { state, seat, memo } = ctx;
+  if (seat !== state.narrative?.good || !exhausted(state)) return null;
+  const frodo = castModel(state, 'frodo');
+  const sam = castModel(state, 'sam');
+  if (!frodo || frodo.dead || frodo.aboard || memo.acted.includes(frodo.id)) return null;
+  if (sam && !sam.dead && !memo.acted.includes(sam.id) && mayActivate(state, sam) && !carryBlocked(state, sam, m => engagedWith(state, m).length > 0)) {
+    return { action: { type: 'carryFrodo', carry: true }, delay: MOVE_PAUSE };
+  }
+  const normal = frodo.prone || state.flow.stood?.includes(frodo.id) ? frodo.move / 2 : frodo.move;
+  if (mayActivate(state, frodo) && !engagedWith(state, frodo).length && mayStride(state, frodo, normal)) return { action: { type: 'stride' }, delay: DICE_PAUSE };
+  return null;
+}
+
+/** Where Frodo makes for: on the walkway, a little short of its end over the fire. */
+function precipiceSpot(): Point {
+  const [x0, y0] = WALKWAY.from;
+  const [x1, y1] = WALKWAY.to;
+  const len = Math.hypot(x1 - x0, y1 - y0);
+  return { x: x1 - ((x1 - x0) / len) * 0.8, y: y1 - ((y1 - y0) / len) * 0.8 };
+}
+
+/**
+ * The End of All Things. Frodo climbs to the precipice, Sam at his side (carrying him when he can); everyone else
+ * fights at the Black Gate as the computer would anyway.
+ */
+function doomGoals(ctx: Ctx, ours: Model[], out: Map<string, Goal>) {
+  const { state, seat } = ctx;
+  if (seat !== state.narrative?.good) return;
+  const tip = precipiceSpot();
+  const along = (m: Model, to: Point, pull: number, near?: number): Goal => {
+    const wp = waypoint(state, m, to, (moveAllowance(state, m) ?? m.move) + 2);
+    return { at: wp ?? to, pull, bold: true, ...(near && (!wp || centre(wp, to) < 0.01) ? { near } : {}) };
+  };
+  const frodo = ours.find(m => m.cast === 'frodo');
+  const sam = ours.find(m => m.cast === 'sam');
+  if (frodo && !frodo.aboard) out.set(frodo.id, along(frodo, tip, 3));
+  if (sam) out.set(sam.id, carryingFrodo(state, sam) || !frodo ? along(sam, tip, 3) : along(sam, frodo, 2.5, radius(sam) + radius(frodo) + 0.05));
 }
 
 function phaseStep(ctx: Ctx): BotStep | null {
@@ -520,6 +584,8 @@ function moveStep(ctx: Ctx): BotStep {
     return { action: { type: 'moveModels', moves: [{ id: bolgM.id, x: bolg.x, y: bolg.y, rot: facing(bolg, legolas) }] }, delay: MOVE_PAUSE };
   }
 
+  const doom = isDoom(state) ? doomMoveStep(ctx) : null;
+  if (doom) return doom;
   const cast = castStep(ctx);
   if (cast) return cast;
   const ride = rideOutStep(ctx);
@@ -561,7 +627,7 @@ function moveStep(ctx: Ctx): BotStep {
   const waited = (m: Model) => !!memo.tested?.includes(`w:${m.id}`);
   // A siege engine doesn't move itself, and its crew stay beside it to shoot it.
   const queue = side(state, seat)
-    .filter(m => !memo.acted.includes(m.id) && !m.siege && !(m.crewOf && state.models[m.crewOf] && !state.models[m.crewOf].dead) && !(isFire(state) && m.aboard))
+    .filter(m => !memo.acted.includes(m.id) && !m.siege && !(m.crewOf && state.models[m.crewOf] && !state.models[m.crewOf].dead) && !((isFire(state) || isDoom(state)) && m.aboard))
     .sort((a, b) => Number(waited(a)) - Number(waited(b)) || Number(hauling(a)) - Number(hauling(b)) || Number(reach(b)) - Number(reach(a)) || (reach(a) ? nearest(a) - nearest(b) : nearest(b) - nearest(a)));
   const goals = assignGoals(ctx);
   let stayed = 0;
@@ -934,6 +1000,7 @@ function assignGoals(ctx: Ctx): Map<string, Goal> {
   if (isFire(state)) fireGoals(ctx, ours, out);
   if (isGoblin(state)) goblinGoals(ctx, ours, out);
   if (isOsgiliath(state)) osgiliathGoals(ctx, ours, out);
+  if (isDoom(state)) doomGoals(ctx, ours, out);
   for (const m of ours) {
     const carried = carriedBy(state, m);
     if (!carried.length || out.has(m.id)) continue;

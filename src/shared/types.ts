@@ -173,6 +173,8 @@ export interface Terrain {
    * (in inches from the piece's centre, before rotation) and the half-width of the water there.
    */
   path?: [number, number, number][];
+  /** A piece drawn as an outline of its own (The End of All Things: the flank of Mount Doom): its corners, in inches from its centre before rotation. */
+  poly?: [number, number][];
   /** How tall it is in inches, when not the usual for its kind. */
   height?: number;
   /**
@@ -219,7 +221,7 @@ export interface Terrain {
    */
   deep?: boolean;
   /** Drawn in dressed stone (a fortress's courtyard, causeway, keep or tower), a wall with a culvert through it, a field of long grass, or a piece of Balin's Tomb (a pillar, the tomb, the well, a trapdoor, the doorway: the well and trapdoors are where its Goblins come back), undergrowth, or a piece of Isengard (the tower of Orthanc, a timber scaffold, a ladder up one, a pit). */
-  look?: 'stone' | 'culvert' | 'grass' | 'pillar' | 'tomb' | 'well' | 'trapdoor' | 'doorway' | 'brush' | 'orthanc' | 'scaffold' | 'ladder' | 'pit' | 'roots' | 'trunk' | 'gnarled' | 'planks' | 'boat' | 'floe' | 'lakehouse' | 'laketower' | 'lakewing' | 'pinewood' | 'pine' | 'chasm' | 'cavewall' | 'crag' | 'gobplanks' | 'rungs' | 'throne' | 'osgwall' | 'rubble';
+  look?: 'stone' | 'culvert' | 'grass' | 'pillar' | 'tomb' | 'well' | 'trapdoor' | 'doorway' | 'brush' | 'orthanc' | 'scaffold' | 'ladder' | 'pit' | 'roots' | 'trunk' | 'gnarled' | 'planks' | 'boat' | 'floe' | 'lakehouse' | 'laketower' | 'lakewing' | 'pinewood' | 'pine' | 'chasm' | 'cavewall' | 'crag' | 'gobplanks' | 'rungs' | 'throne' | 'osgwall' | 'rubble' | 'void' | 'lava' | 'ashslope' | 'doomway' | 'ashpath' | 'cinder' | 'blackgate';
 }
 
 export const DOOR_TYPES = ['castle', 'dwarven', 'heavyArmoured', 'armoured', 'heavy', 'external', 'internal', 'dam'] as const;
@@ -384,6 +386,27 @@ export interface NarrativeState {
   horde?: number;
   /** Escape from Osgiliath: the turn the Evil player last picked a Warrior for the Nazgûl to freeze. */
   dread?: number;
+  /**
+   * The End of All Things: the turn the Evil player last tried (or passed up) the Power of the Ring, and the last turns
+   * Exhaustion had Frodo, he collapsed under it and Gollum was lured out; the inches he has struggled on this turn;
+   * his Resistant Points left (unset: all 6); the battle of wills so far (each side's run of wins, and a roll Frodo
+   * lost that he may still turn with Might); and the Ring's fate.
+   */
+  power?: number;
+  exhaust?: number;
+  collapsed?: number;
+  lured?: number;
+  strides?: number;
+  resist?: number;
+  wills?: Wills;
+  ring?: 'destroyed' | 'corrupted';
+}
+
+/** The End of All Things' battle of wills: each side's run of wins so far, and a roll Frodo lost that Might could still turn (his die, the Ring's). */
+export interface Wills {
+  g: number;
+  e: number;
+  open?: [number, number];
 }
 
 export type BotSpeed = 'normal' | 'fast' | 'instant';
@@ -769,7 +792,7 @@ export type Action =
   /** Request: the Good player at Weathertop rolls for Aragorn this turn, or doesn't. */
   | { type: 'aragorn'; roll: boolean }
   /** Server only: bookkeeping for a narrative scenario's rules. */
-  | { type: 'narrativeNote'; rolled?: number; dawn?: number; bilbo?: boolean; breach?: number; troll?: number; crushed?: string[]; woke?: number; revive?: string[]; webbed?: number; hazed?: number; nested?: number; alarm?: string[]; alarmed?: number; wrath?: number; flown?: Record<string, number>; gandalf?: number; horde?: number; dread?: number }
+  | { type: 'narrativeNote'; rolled?: number; dawn?: number; bilbo?: boolean; breach?: number; troll?: number; crushed?: string[]; woke?: number; revive?: string[]; webbed?: number; hazed?: number; nested?: number; alarm?: string[]; alarmed?: number; wrath?: number; flown?: Record<string, number>; gandalf?: number; horde?: number; dread?: number; power?: number; exhaust?: number; collapsed?: number; lured?: number; strides?: number; resist?: number; wills?: Wills; ring?: 'destroyed' | 'corrupted' }
   /** And Into the Fire: a player nominates a tree for the Dwarves to hide in, before the battle. */
   | { type: 'nominate'; seat: Seat; tree: string }
   /** A flying model walks this Move phase instead of flying (see movement.ts flying). */
@@ -807,6 +830,14 @@ export type Action =
   | { type: 'trumpet'; listen: boolean }
   /** Request: Escape from Osgiliath's "Nazgûl!": the Evil player picks a Good Warrior to freeze with fear (none: nobody this turn). */
   | { type: 'nazgul'; target?: string }
+  /** Request: The End of All Things: the Evil player tries one of the Power of the Ring's powers on Frodo this turn (none: not this turn). */
+  | { type: 'ringPower'; power?: 'exhaustion' | 'corruption' | 'lure' }
+  /** Request: Frodo, exhausted, takes a Courage test to struggle on another inch. */
+  | { type: 'stride' }
+  /** Request: a roll-off in the battle of wills at the Crack of Doom; or, after one Frodo lost, the Might he spends to win it (0: none). */
+  | { type: 'wills'; might?: number }
+  /** Sam picks Frodo up to carry him (or puts him down again). */
+  | { type: 'carryFrodo'; carry: boolean }
   /** Request: Gothmog calls "The time of the Orc has come", once a game, as a Fight phase begins. */
   | { type: 'orcTime'; id: string }
   /** Request: Bifur, his axe freed, tests his Intelligence for a free Heroic Move this turn. */

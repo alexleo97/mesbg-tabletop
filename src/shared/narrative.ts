@@ -26,6 +26,8 @@ import { eaglesCast, eaglesTerrain } from './eaglesMap.ts';
 import { goblinCast, goblinTerrain } from './goblinMap.ts';
 import { osgiliathCast, osgiliathTerrain } from './osgiliathMap.ts';
 import { osgiliathWinner } from './osgiliath.ts';
+import { BOARD_H, BOARD_W, doomCast, doomTerrain } from './doomMap.ts';
+import { doomWinner } from './doom.ts';
 import { insidePolygon, outline } from './sight.ts';
 import { BALLISTA_BASE, deepingSlots, evilSlots, GATE_ANGLE, HELMS_TEAMS, helmsTerrain, hornburgSlots, inHelmsZone, onArc, OUTER, type HelmsZone } from './helmsMap.ts';
 import type { Action, Base, DiceRoll, GameState, Mat, Model, Seat, Terrain } from './types.ts';
@@ -69,8 +71,11 @@ export type Placement =
   | { apart: number; at: [number, number] }
   /** Starting at `at`, touching whichever table edge it is dragged nearest (The Unseen Hero: Bilbo). */
   | { anyEdge: true; at: [number, number] }
-  /** Starting at `at`, and kept at least so far from every enemy (The Elves of Mirkwood: the Spiders, 10" from the Dwarves). */
-  | { clear: number; at: [number, number] };
+  /**
+   * Starting at `at`, and kept at least so far from every enemy (The Elves of Mirkwood: the Spiders, 10" from the
+   * Dwarves); and, where given, within an area (The End of All Things: on the Black Gate's table).
+   */
+  | { clear: number; at: [number, number]; within?: Area };
 
 /**
  * A deployment zone: a circle round a point (x, y, radius), a box (x0, y0, x1, y1), a ring round a point (x, y, from,
@@ -174,6 +179,8 @@ export interface CastMember {
   slips?: boolean;
   /** Starts the game stripped of its weapons, though not its armour (Escape from Goblin-town). */
   unarmed?: boolean;
+  /** Wargear its profile has that it starts the game without (The End of All Things: Gandalf's Staff of Power). */
+  lost?: string[];
   place: Placement;
 }
 
@@ -194,6 +201,8 @@ export interface Narrative {
   /** A line on what happens, in our own words. */
   blurb: string;
   board: { w: number; h: number; mat: Mat };
+  /** The tables' sizes, where it is played on more than one (The End of All Things: they stand side by side on the board). */
+  tables?: string;
   /** The table's terrain; a piece's `id` is what the cast's placements refer to. */
   terrain: NarrativeTerrain[];
   /** What each side is called, and a line on who is in it. */
@@ -720,6 +729,43 @@ export const NARRATIVES: Narrative[] = [
     ],
     cast: osgiliathCast(),
   },
+  {
+    id: 'the-end-of-all-things',
+    name: 'The End of All Things',
+    from: 'The Return of the King',
+    saga: 'lotr',
+    blurb: 'Frodo and Sam struggle up the last slope of Mount Doom with the Ring fighting them every step, while before the Black Gate the Captains of the West make their last stand to keep the Eye on them.',
+    board: { w: BOARD_W, h: BOARD_H, mat: 'dirt' },
+    tables: '2\'×2\' and 4\'×4\'',
+    terrain: doomTerrain(),
+    sides: {
+      good: { name: 'The Free Peoples', cast: 'Frodo Baggins; Samwise Gamgee with Sting; Aragorn, King Elessar; Gandalf the White; Legolas; Gimli; Merry with a shield; Pippin; Éomer; 25 Warriors of Minas Tirith (8 with shields, 8 with shields and spears, 8 with bows, 1 with a banner); 25 Warriors of Rohan (8 with shields, 8 with shields and throwing spears, 8 with bows, 1 with a banner)' },
+      evil: { name: 'The Host of Mordor', cast: 'A Mordor Troll Chieftain; the Mouth of Sauron on an armoured horse; Gollum; 3 Morannon Orc Captains with shields; 50 Morannon Orc Warriors (12 with shields, 12 with spears, 12 with shields and spears, 12 with neither, 2 with banners)' },
+    },
+    layout:
+      "Two tables, side by side with a gap between them that nothing crosses. To the west, a 2' by 2' table for the Crack of Doom: the ashen slope of Mount Doom, with a path winding up it to the door in the mountain's side, and inside, the walkway out over the fire to the precipice at its end. To the east, a 4' by 4' table for the Black Gate: the Gate and its two towers along the east edge, and before it a barren plain strewn with boulders.",
+    setupOrder: ['good', 'evil'],
+    deployment:
+      'Frodo and Sam start in the south-west corner of the Crack of Doom. The rest of the Good side sets up wholly within 6" of the middle of the Black Gate\'s table. Then the Evil side sets up all of its models but Gollum on the Black Gate\'s table, at least 6" from every Good model. Gollum is kept aside.',
+    objectives:
+      'The battle goes on until the Ring is destroyed, Frodo is taken over by it or Frodo is slain. The Good side wins if the Ring is destroyed; the Evil side wins if Frodo is slain or taken over. If every Good hero at the Black Gate is slain, the best the Good side can get is a draw.',
+    rules: [
+      { name: '"Not here, not so close to the Eye!"', text: 'Frodo may not put the Ring on.' },
+      {
+        name: 'The Power of the Ring',
+        text: 'As each turn starts, before Priority is rolled, the Evil player may try one of these on Frodo, rolling a D6 and needing the score given. Exhaustion (3+): this turn Frodo takes a Courage test for each inch he moves, and at the first he fails he collapses, Prone; Sam may pick him up and carry him, as a Heavy Object. Corruption (4+): Frodo starts with 6 Resistant Points; roll another D6, and if it equals or beats the points he has left, he loses one. At none, the Ring has him and the game ends. Lure of the Ring (5+): Gollum leaps out, touching Frodo, and they fight in the Fight phase; then he slinks back into hiding. Once Gollum is slain this can\'t be used.',
+      },
+      {
+        name: 'Destroying the Ring',
+        text: "To destroy the Ring Frodo must stand touching the edge of the precipice, at the end of the walkway over the fire. Then he and the Ring fight a battle of wills: both players roll a D6, ties rolled again. If the Good player wins three in a row, the Ring is destroyed; if the Evil player does, the Ring takes Frodo and the game ends. Frodo may spend Might on his rolls.",
+      },
+      { name: "Gandalf's Staff", text: 'Since his clash with the Witch-king Gandalf has no Staff of Power, so no free Will point each turn.' },
+      { name: 'Teeming Hordes', text: "Slain Mordor Orcs are kept to one side. As the Evil side's move ends each turn, they all move back onto the table through the Black Gate, as reinforcements." },
+      { name: '"Stand Your Ground!"', text: 'Good models at the Black Gate may not move of their own accord more than 12" from the middle of its table.' },
+      { name: 'Greatest of the Trolls', text: 'The Mordor Troll Chieftain is Fearless, and has a point more of Might, Will and Fate.' },
+    ],
+    cast: doomCast(),
+  },
 ];
 
 /** Helm's Deep: the book's cast for both sides, set out where the scenario starts them. */
@@ -979,7 +1025,7 @@ export function narrativeSetup(n: Narrative, good: Seat, catalog: Catalog, newId
       ...(c.slips ? { slips: true } : {}),
     };
     const p = at(c, m);
-    const lost = c.unarmed ? gearOf(catalog, m).filter(isWeaponItem) : [];
+    const lost = [...(c.unarmed ? gearOf(catalog, m).filter(isWeaponItem) : []), ...(c.lost ?? [])];
     models.push({ ...m, ...p, rot: facing(c, p, owner), ...(lost.length ? { lostGear: lost } : {}) });
     // A siege engine's crew stand in base contact with it, behind or beside it, as close to the back as there is room.
     const hands = e.siege ? crew.flatMap(x => Array.from({ length: x.count }, () => x)) : [];
@@ -1019,7 +1065,7 @@ export function holdNarrative(state: GameState, mv: { id: string; x: number; y: 
   const out = holdCast(state, mv);
   // (Escape from Goblin-town: nobody sets up over the chasm.)
   const m = state.models[mv.id];
-  if (m && state.narrative?.id === 'escape-from-goblin-town' && noFooting(state, out)) return { ...mv, x: m.x, y: m.y };
+  if (m && (state.narrative?.id === 'escape-from-goblin-town' || state.narrative?.id === 'the-end-of-all-things') && noFooting(state, out)) return { ...mv, x: m.x, y: m.y };
   return out;
 }
 
@@ -1107,7 +1153,7 @@ function holdCast(state: GameState, mv: { id: string; x: number; y: number; rot?
     // Anywhere at least so far from every enemy, and on no one else.
     const r = radius(m);
     const near = onTable.some(o => (o.owner !== m.owner ? distanceBetween(here, o) < p.clear - 0.01 : Math.hypot(o.x - mv.x, o.y - mv.y) < radius(o) + r - 0.02));
-    const inside = mv.x >= r && mv.y >= r && mv.x <= state.board.w - r && mv.y <= state.board.h - r;
+    const inside = mv.x >= r && mv.y >= r && mv.x <= state.board.w - r && mv.y <= state.board.h - r && (!p.within || whollyInArea(p.within, mv, r, state));
     return !near && inside ? mv : { ...mv, x: m.x, y: m.y };
   }
   if ('apart' in p) {
@@ -1136,6 +1182,7 @@ export function narrativeWinner(state: GameState): Seat | 'draw' | null {
   if (n.id === 'escape-from-goblin-town') return goblinWinner(state);
   if (n.id === 'and-into-the-fire') return fireWinner(state);
   if (n.id === 'escape-from-osgiliath') return osgiliathWinner(state);
+  if (n.id === 'the-end-of-all-things') return doomWinner(state);
   if (n.id === 'weathertop') {
     // The Nazgûl win as soon as Frodo falls; the Hobbits when every one of them is gone.
     if (castModel(state, 'frodo')?.dead) return seatOf(state, 'evil') ?? null;
