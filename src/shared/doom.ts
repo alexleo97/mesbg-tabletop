@@ -4,7 +4,7 @@ import { distanceBetween, type Point } from './geometry.ts';
 import { castModel, radius, seatOf } from './narrative.ts';
 import { DOOM, GATE, GATEWAY, MIDDLE, PRECIPICE_REACH, STAND_REACH, walkwayPiece } from './doomMap.ts';
 import { mordorOrc } from './osgiliath.ts';
-import { inChasm } from './sight.ts';
+import { inChasm, insidePolygon, outline } from './sight.ts';
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
 // The End of All Things (The Return of the King): the scenario's own rules, in our own words. On the slopes of Mount
@@ -272,15 +272,22 @@ export function precipicePoint(): Point {
 export function atPrecipice(state: GameState, m: Model): boolean {
   const w = state.terrain['n-walkway'];
   if (!w || !alive(m) || m.aboard) return false;
+  const poly = outline(w);
+  if (!insidePolygon(poly, m)) return false;
+  // (How far along the walkway it stands, from the door.)
   const a = (w.rot * Math.PI) / 180;
-  const dx = m.x - w.x;
-  const dy = m.y - w.y;
-  const u = dx * Math.cos(a) + dy * Math.sin(a) + w.w / 2;
-  const v = Math.abs(-dx * Math.sin(a) + dy * Math.cos(a));
+  const u = (m.x - w.x) * Math.cos(a) + (m.y - w.y) * Math.sin(a) + w.w / 2;
   const r = radius(m) + 0.06;
-  if (u < 0 || u > w.w || v > w.h / 2) return false;
-  if (w.w - u <= r) return true;
-  return w.h / 2 - v <= r && w.w - u <= PRECIPICE_REACH;
+  if (w.w - u > PRECIPICE_REACH) return false;
+  return poly.some((q, j) => segmentGap(m, poly[(j || poly.length) - 1], q) <= r);
+}
+
+/** How far a point is from a line segment. */
+function segmentGap(p: Point, a: Point, b: Point): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy || 1)));
+  return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
 }
 
 /** The battle of wills is under way, or due: Frodo stands at the edge of the precipice, and nothing is settled yet. */

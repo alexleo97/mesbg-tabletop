@@ -1067,32 +1067,50 @@ function DoomPiece({ t }: { t: Terrain }) {
   const d = outline(t);
   if (t.look === 'void') return <rect className="doom-void" x={-w / 2} y={-h / 2} width={w} height={h} pointerEvents="none" />;
   if (t.look === 'lava') {
-    // Molten rock: brightest in the cracks, crusted over in black floes that drift on it.
-    const floes = Math.round((w * h) / 9);
+    // Inside the mountain: the Crack itself, a fissure dropping away into fire. Dark rock at the cavern's walls,
+    // smouldering red lower down, and molten rivers of orange and yellow glowing up out of the depths.
+    const glow = `glow-${t.id}`;
+    const clip = `clip-${t.id}`;
+    const rivers = Math.max(6, Math.round((w + h) / 3));
+    const river = (i: number) => {
+      // (Each a wandering line across the fissure.)
+      let x = (seeded(t.id, i) - 0.5) * w;
+      let y = (seeded(t.id, i + 40) - 0.5) * h;
+      let a = seeded(t.id, i + 80) * Math.PI * 2;
+      const pts = [`${x.toFixed(2)},${y.toFixed(2)}`];
+      for (let k = 0; k < 7; k++) {
+        a += (seeded(t.id, i * 13 + k + 120) - 0.5) * 1.2;
+        const step = 0.9 + seeded(t.id, i * 7 + k + 200) * 1.4;
+        x += Math.cos(a) * step;
+        y += Math.sin(a) * step;
+        pts.push(`${x.toFixed(2)},${y.toFixed(2)}`);
+      }
+      return pts.join(' ');
+    };
     return (
       <g pointerEvents="none">
-        <path className="doom-lava" d={d} />
-        <clipPath id={`clip-${t.id}`}>
-          <path d={d} />
-        </clipPath>
-        <g clipPath={`url(#clip-${t.id})`}>
-          {Array.from({ length: floes }, (_, i) => {
-            const x = (seeded(t.id, i) - 0.5) * w;
-            const y = (seeded(t.id, i + 300) - 0.5) * h;
-            const r = 0.5 + seeded(t.id, i + 600) * 1.4;
-            const sides = 5 + Math.floor(seeded(t.id, i + 900) * 3);
-            const pts = Array.from({ length: sides }, (_, j) => {
-              const a = (j / sides) * Math.PI * 2 + seeded(t.id, i * 7 + j);
-              const m = r * (0.6 + seeded(t.id, i * 11 + j + 50) * 0.5);
-              return `${(x + Math.cos(a) * m).toFixed(3)},${(y + Math.sin(a) * m * 0.8).toFixed(3)}`;
-            }).join(' ');
-            return <polygon key={i} className={`doom-crust doom-crust-${i % 3}`} points={pts} />;
-          })}
-          {Array.from({ length: Math.round(floes / 2) }, (_, i) => (
-            <ellipse key={`g${i}`} className="doom-flare" cx={(seeded(t.id, i + 1200) - 0.5) * w} cy={(seeded(t.id, i + 1500) - 0.5) * h} rx={0.8 + seeded(t.id, i + 1800) * 1.6} ry={0.5 + seeded(t.id, i + 2100)} filter="url(#bank-blur)" />
+        <defs>
+          <radialGradient id={glow} cx="0.62" cy="0.4" r="0.7">
+            <stop offset="0" stopColor="#ff9a2e" />
+            <stop offset="0.35" stopColor="#d8430f" />
+            <stop offset="0.7" stopColor="#6e1a08" />
+            <stop offset="1" stopColor="#2a0d06" />
+          </radialGradient>
+          <clipPath id={clip}>
+            <path d={d} />
+          </clipPath>
+        </defs>
+        <path d={d} fill={`url(#${glow})`} />
+        <g clipPath={`url(#${clip})`}>
+          {Array.from({ length: rivers }, (_, i) => (
+            <g key={i}>
+              <polyline className="doom-river-glow" points={river(i)} />
+              <polyline className={`doom-river doom-river-${i % 2}`} points={river(i)} />
+            </g>
           ))}
+          {/* The cavern's walls, falling away into shadow where the fire meets the rock. */}
+          <path className="doom-wall-shade" d={d} filter="url(#bank-blur)" />
         </g>
-        {/* The mountain's inner wall, where the fire meets the rock. */}
         <path className="doom-rim" d={d} />
       </g>
     );
@@ -1102,7 +1120,10 @@ function DoomPiece({ t }: { t: Terrain }) {
     return (
       <>
         <path className={`ground doom-ash${t.id === 'plain' ? ' doom-plain' : ''}`} d={d} />
-        <g className="tint" pointerEvents="none">
+        <clipPath id={`clip-${t.id}`}>
+          <path d={d} />
+        </clipPath>
+        <g className="tint" pointerEvents="none" clipPath={`url(#clip-${t.id})`}>
           {Array.from({ length: grit }, (_, i) => (
             <circle key={i} className={`doom-grit doom-grit-${i % 3}`} cx={(seeded(t.id, i) - 0.5) * w} cy={(seeded(t.id, i + 5000) - 0.5) * h} r={0.05 + seeded(t.id, i + 9000) * 0.12} />
           ))}
@@ -1118,16 +1139,60 @@ function DoomPiece({ t }: { t: Terrain }) {
       </g>
     );
   }
-  if (t.look === 'doomway') {
-    // A spur of black rock, ragged along its sides, with the fire's glow on its end.
-    const n = Math.max(6, Math.round(w / 0.6));
-    const side = (sgn: number) => Array.from({ length: n + 1 }, (_, i) => `${(-w / 2 + (i * w) / n).toFixed(3)},${(sgn * (h / 2 - seeded(t.id, i + (sgn > 0 ? 0 : 50)) * 0.25)).toFixed(3)}`);
-    const pts = [...side(-1), ...side(1).reverse()].join(' ');
+  if (t.look === 'doomway' && t.poly) {
+    // A natural spur of black volcanic rock jutting out over the fire, as the book's map and the film's Sammath Naur
+    // show it: no made path, but broken slabs and boulders heaped along it, jagged at its edges, lit orange from below.
+    const poly = t.poly;
+    // (Its edge, broken into small crags.)
+    const crags: string[] = [];
+    poly.forEach(([x0, y0], j) => {
+      const [x1, y1] = poly[(j + 1) % poly.length];
+      const len = Math.hypot(x1 - x0, y1 - y0);
+      const n = Math.max(1, Math.round(len / 0.35));
+      for (let k = 0; k < n; k++) {
+        const f = k / n;
+        const x = x0 + (x1 - x0) * f;
+        const y = y0 + (y1 - y0) * f;
+        // (Pushed in or out a little, at random, so the outline is ragged.)
+        const out = (seeded(t.id, j * 17 + k) - 0.55) * 0.22;
+        crags.push(`${(x - ((y1 - y0) / (len || 1)) * out).toFixed(3)},${(y + ((x1 - x0) / (len || 1)) * out).toFixed(3)}`);
+      }
+    });
+    // Broken rock heaped along it: irregular facets of basalt, lit from the fire on the side facing out over it.
+    const rocks = Array.from({ length: Math.round(w * h * 2.2) }, (_, i) => {
+      const cx = (seeded(t.id, i + 200) - 0.5) * w;
+      const cy = (seeded(t.id, i + 400) - 0.5) * h * 0.9;
+      const r = 0.25 + seeded(t.id, i + 600) ** 2 * 0.55;
+      const sides = 4 + Math.floor(seeded(t.id, i + 800) * 3);
+      const turn = seeded(t.id, i + 1000) * Math.PI;
+      const pts = Array.from({ length: sides }, (_, j) => {
+        const q = turn + (j / sides) * Math.PI * 2 + (seeded(t.id, i * 9 + j + 1200) - 0.5) * 0.7;
+        const m = r * (0.6 + seeded(t.id, i * 11 + j + 1400) * 0.6);
+        return `${(cx + Math.cos(q) * m).toFixed(3)},${(cy + Math.sin(q) * m * 0.8).toFixed(3)}`;
+      }).join(' ');
+      return { pts, k: i, cy };
+    }).sort((p, q) => p.cy - q.cy);
+    const clip = `clip-${t.id}`;
     return (
       <>
-        <polygon className="ground doom-spur" points={pts} filter="url(#hard-shadow)" />
-        <line className="doom-spur-ridge" x1={-w / 2} x2={w / 2 - 0.3} y1={0} y2={0} />
-        <ellipse className="doom-tip" cx={w / 2} cy={0} rx={1.1} ry={h / 2 + 0.3} filter="url(#bank-blur)" pointerEvents="none" />
+        {/* The fire's glow on the rock from below, round its edges. */}
+        <polygon className="doom-spur-glow" points={crags.join(' ')} filter="url(#bank-blur)" pointerEvents="none" />
+        <polygon className="ground doom-spur" points={crags.join(' ')} filter="url(#hard-shadow)" />
+        <clipPath id={clip}>
+          <polygon points={crags.join(' ')} />
+        </clipPath>
+        <g clipPath={`url(#${clip})`} pointerEvents="none">
+          {rocks.map(({ pts, k }) => (
+            <polygon key={k} className={`doom-slab doom-slab-${k % 3}`} points={pts} />
+          ))}
+          {/* Loose stones and chips along it. */}
+          {Array.from({ length: Math.round(w * 1.6) }, (_, i) => (
+            <circle key={`s${i}`} className={`doom-chip doom-chip-${i % 2}`} cx={(seeded(t.id, i + 500) - 0.5) * w * 0.95} cy={(seeded(t.id, i + 700) - 0.5) * h * 0.55} r={0.06 + seeded(t.id, i + 900) * 0.12} />
+          ))}
+          {/* Light from the fire on the end that hangs out over it. */}
+          <ellipse className="doom-tip" cx={w / 2} cy={0} rx={1.4} ry={h / 2} filter="url(#bank-blur)" />
+        </g>
+        <polygon className="doom-spur-edge" points={crags.join(' ')} pointerEvents="none" />
       </>
     );
   }

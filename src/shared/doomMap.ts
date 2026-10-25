@@ -62,7 +62,7 @@ export const FLANK: [number, number][] = [
 ];
 
 /** The walkway out over the fire: from the door in the mountain's side to the precipice at its end (its middle line), and how wide. */
-export const WALKWAY = { from: doom(10.04, 10.47), to: doom(17.2, 3.1), width: 2.2 };
+export const WALKWAY = { from: doom(10.04, 10.47), to: doom(17.2, 3.1), width: 3.1 };
 /** The end of the walkway that counts as the edge of the precipice: Frodo's base must touch the walkway's edge this near its end. */
 export const PRECIPICE_REACH = 1.5;
 
@@ -166,10 +166,32 @@ export const PLAIN_ROCKS: [number, number, number, number, number][] = [
 /** The ends of a straight line, as a piece's middle, length and turn. */
 const along = ([ax, ay]: [number, number], [bx, by]: [number, number]) => ({ x: (ax + bx) / 2, y: (ay + by) / 2, len: Math.hypot(bx - ax, by - ay), rot: (Math.atan2(by - ay, bx - ax) * 180) / Math.PI });
 
-/** The middle line of the walkway as a piece. */
+/**
+ * The walkway's shape, as the map draws it: a spur of rock broad where it leaves the mountain's side, narrowing along
+ * its length to about 1.8", and ending in a rounded knob over the fire. Each row: how far along it (0 the door, 1 the
+ * end) and how far it reaches either side of its middle line, north side then south.
+ */
+const SPUR: [number, number, number][] = [
+  [0, 1.45, 1.55], [0.06, 1.3, 1.35], [0.14, 1.12, 1.2], [0.24, 1, 1.05], [0.36, 0.93, 0.96], [0.5, 0.9, 0.92],
+  [0.62, 0.92, 0.9], [0.74, 0.98, 0.95], [0.84, 1.08, 1.02], [0.92, 1.05, 0.98], [0.97, 0.82, 0.78],
+];
+
+/** The walkway as a piece: along its middle line, in the shape of the spur. */
 export const walkwayPiece = (): Terrain => {
   const a = along(WALKWAY.from, WALKWAY.to);
-  return piece({ id: 'walkway', kind: 'road', x: +a.x.toFixed(3), y: +a.y.toFixed(3), w: +a.len.toFixed(3), h: WALKWAY.width, rot: +a.rot.toFixed(2), look: 'doomway' });
+  const len = a.len;
+  const at = (f: number) => -len / 2 + f * len;
+  const north = SPUR.map(([f, n]) => [+at(f).toFixed(3), -n] as [number, number]);
+  // (The rounded end: a half circle round the tip.)
+  const tipR = SPUR[SPUR.length - 1][1];
+  const cx = at(SPUR[SPUR.length - 1][0]);
+  const end = Array.from({ length: 7 }, (_, i) => {
+    const t = -Math.PI / 2 + ((i + 1) * Math.PI) / 8;
+    return [+(cx + Math.cos(t) * Math.max(len / 2 - cx, 0.01)).toFixed(3), +(Math.sin(t) * tipR).toFixed(3)] as [number, number];
+  });
+  const south = [...SPUR].reverse().map(([f, , sth]) => [+at(f).toFixed(3), sth] as [number, number]);
+  const poly = [...north, ...end, ...south];
+  return piece({ id: 'walkway', kind: 'road', x: +a.x.toFixed(3), y: +a.y.toFixed(3), w: +len.toFixed(3), h: WALKWAY.width, rot: +a.rot.toFixed(2), look: 'doomway', poly });
 };
 
 export function doomTerrain(): NarrativeTerrain[] {
