@@ -4,7 +4,8 @@ import { hurlOptions } from '../shared/defenders.ts';
 import { laden } from '../shared/fortress.ts';
 import { loadRulesText, modelStats, rulesFor, pictureUrl, startingPoints, statsWithOptions, STAT_NAMES, type Catalog } from '../shared/catalog.ts';
 import { strikeWounds, woundsTaken } from '../shared/fight.ts';
-import { CONTACT_SLACK, type Combat } from '../shared/flow.ts';
+import { CONTACT_SLACK, dreadDue, type Combat } from '../shared/flow.ts';
+import { DREAD_ROLL, dreadTargets } from '../shared/osgiliath.ts';
 import { engaged, fightDone, flying, inWoods, moveLeft, moveStart, WALK_INSTEAD } from '../shared/movement.ts';
 import { atCrossing, crossBlocked, fallingHits, terrainName, type CrossTest } from '../shared/terrainTests.ts';
 import { canActivate, heroicInfo, mayActivate, phaseAllows } from '../shared/heroics.ts';
@@ -578,6 +579,13 @@ export function ModelCard({ state, dispatch, role, model: m, catalog, target, cl
               {h.label}
             </button>
           ))}
+        </div>
+      )}
+      {(role === 'p1' || role === 'p2') && role !== state.narrative?.good && dreadDue(state) && dreadTargets(state).some(x => x.id === m.id) && (
+        <div className="row wrap marker-actions">
+          <button className="primary" onClick={() => dispatch({ type: 'nazgul', target: m.id })} title={`"Nazgûl!": on a ${DREAD_ROLL}+ ${m.name} is frozen with fear: it can't move, shoot or act this turn, and fights with Fight 1.`}>
+            Freeze with fear ({DREAD_ROLL}+)
+          </button>
         </div>
       )}
       {mine && skitterDue(state, m) && (

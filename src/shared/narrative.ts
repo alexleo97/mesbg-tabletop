@@ -24,6 +24,8 @@ import { lakeCast, lakeTerrain } from './lakeMap.ts';
 import { fireWinner } from './eagles.ts';
 import { eaglesCast, eaglesTerrain } from './eaglesMap.ts';
 import { goblinCast, goblinTerrain } from './goblinMap.ts';
+import { osgiliathCast, osgiliathTerrain } from './osgiliathMap.ts';
+import { osgiliathWinner } from './osgiliath.ts';
 import { insidePolygon, outline } from './sight.ts';
 import { BALLISTA_BASE, deepingSlots, evilSlots, GATE_ANGLE, HELMS_TEAMS, helmsTerrain, hornburgSlots, inHelmsZone, onArc, OUTER, type HelmsZone } from './helmsMap.ts';
 import type { Action, Base, DiceRoll, GameState, Mat, Model, Seat, Terrain } from './types.ts';
@@ -683,6 +685,41 @@ export const NARRATIVES: Narrative[] = [
     cast: helmsCast(),
     turns: { choices: [10, 12, 15, 20], default: 15 },
   },
+  {
+    id: 'escape-from-osgiliath',
+    name: 'Escape from Osgiliath',
+    from: 'The Return of the King',
+    saga: 'lotr',
+    blurb: "Gothmog's Orcs pour across the Anduin into the ruined city, and Faramir's garrison, caught in the middle, must fight its way out to the west before it is cut down.",
+    board: { w: 48, h: 48, mat: 'ruin' },
+    terrain: osgiliathTerrain(),
+    sides: {
+      good: { name: 'The Garrison of Osgiliath', cast: 'Faramir, Captain of Gondor; Madril, Captain of Ithilien; Damrod, Ranger of Ithilien; 12 Warriors of Minas Tirith (4 with shields, 4 with shields and spears, 4 with bows); 12 Rangers of Gondor (4 with spears)' },
+      evil: { name: 'The Army of Gothmog', cast: "Gothmog, Lieutenant of Sauron; Gothmog's Enforcer; Guritz, Master of Reserves; 24 Morannon Orc Warriors (6 with shields, 6 with spears, 6 with shields and spears, 6 with neither); a Mordor Troll" },
+    },
+    layout:
+      "A 4' by 4' corner of the ruined city: broken walls run every which way between the streets, some wide enough for a whole warband, others narrow alleys. Three great ruined buildings, their roofs long gone, stand to the north, south-west and south-east, each with a doorway broken through; two stretches of wall still stand to full height, and the stumps of round towers, fallen masonry and rubble lie everywhere.",
+    setupOrder: ['good', 'evil'],
+    deployment:
+      "The Good side sets up wholly within 6\" of the middle of the table. Then the Evil side sets up Gothmog, his Enforcer and half the Orcs wholly within 12\" of the east edge, and the rest (Guritz, the other Orcs and the Troll) wholly within 12\" of the west edge.",
+    objectives:
+      'The battle goes on until the end of a turn with no Good model left on the table. The Good side wins if 9 or more of its models (a third of them) escape off the west edge; otherwise the Evil side wins. If Faramir escapes off the west edge, the Evil side can do no better than a draw; if he is slain, the Good side can do no better than a draw.',
+    rules: [
+      {
+        name: 'Faramir',
+        text: 'Faramir matters to Gondor far beyond this fight. If he escapes off the west edge, the best the Evil side can get is a draw. If he is slain, the best the Good side can get is a draw.',
+      },
+      {
+        name: 'Hordes Without End',
+        text: "As the Evil side starts its move each turn, it rolls a D6 for every Morannon Orc slain so far (never the Troll): each 4+ comes back, moving on as reinforcements from one of the two Reinforcement Points, in the middle of the north and south edges. (The Evil player picks which; the game rolls as the Evil side's move ends, when reinforcements come on.)",
+      },
+      {
+        name: '"Nazgûl!"',
+        text: "As each Move phase begins, the Evil player may pick one Good Warrior and roll a D6. On a 3+ it is frozen with fear: it can't move, shoot or act this turn, and if it ends up in a fight it fights with a Fight value of 1.",
+      },
+    ],
+    cast: osgiliathCast(),
+  },
 ];
 
 /** Helm's Deep: the book's cast for both sides, set out where the scenario starts them. */
@@ -1098,6 +1135,7 @@ export function narrativeWinner(state: GameState): Seat | 'draw' | null {
   if (n.id === 'lake-town-escape') return lakeWinner(state);
   if (n.id === 'escape-from-goblin-town') return goblinWinner(state);
   if (n.id === 'and-into-the-fire') return fireWinner(state);
+  if (n.id === 'escape-from-osgiliath') return osgiliathWinner(state);
   if (n.id === 'weathertop') {
     // The Nazgûl win as soon as Frodo falls; the Hobbits when every one of them is gone.
     if (castModel(state, 'frodo')?.dead) return seatOf(state, 'evil') ?? null;

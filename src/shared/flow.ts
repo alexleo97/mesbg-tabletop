@@ -184,6 +184,16 @@ export function arrivalDue(state: GameState): boolean {
   return state.turn >= 2 || ns.cry === state.turn;
 }
 
+/**
+ * Escape from Osgiliath's "Nazgûl!": a Move phase has begun and the Evil player has yet to pick a Good Warrior for the
+ * Nazgûl to freeze with fear (or say nobody), so nobody moves until they do.
+ */
+export function dreadDue(state: GameState): boolean {
+  const ns = state.narrative;
+  if (ns?.id !== 'escape-from-osgiliath' || !state.flow.started || state.result || state.phase !== 'move' || ns.dread === state.turn) return false;
+  return Object.values(state.models).some(m => m.owner === ns.good && !m.hero && !m.dead && !m.waiting && !m.escaped);
+}
+
 /** In the Move and Shoot phases, the player who should be activating models now (priority first). */
 export function activeSeat(state: GameState): Seat | null {
   if (state.phase !== 'move' && state.phase !== 'shoot') return null;
@@ -191,7 +201,7 @@ export function activeSeat(state: GameState): Seat | null {
   const heroic = state.flow.started ? heroicNow(state) : null;
   if (heroic) return heroic.seat;
   // Nobody activates while the Good side at Weathertop decides whether to roll for Aragorn.
-  if (arrivalDue(state)) return null;
+  if (arrivalDue(state) || dreadDue(state)) return null;
   const first = state.priority ?? 'p1';
   if (!state.flow.done.includes(first)) return first;
   const second = other(first);

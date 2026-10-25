@@ -136,6 +136,7 @@ h1, h3, h4, .topbar .room, .phases .turn, .roster-summary b, .name-input, .tabs 
 .terrain .keep-top { stroke: #1d1b19; stroke-width: 0.06; }
 .fortress-faces .face { stroke: #1d1b19; stroke-width: 0.05; stroke-linejoin: round; }
 .fortress-faces .face-shade { fill: #00000073; }
+.fortress-faces .osg-face .face-shade { fill: #00000038; }
 .fortress-faces .face-shadow { fill: #0000004d; }
 .terrain .wall-joint { stroke: #0004; stroke-width: 0.04; pointer-events: none; }
 .terrain.building .ground { stroke: #2b2722; stroke-width: 0.1; }
@@ -1378,3 +1379,18 @@ select.ready-made {
 .terrain .gob-stone-1 { fill: #3d3833; }
 .terrain .gob-stone-2 { fill: #57504a; }
 .terrain .gob-stone-lit { fill: #ffffff; opacity: 0.08; }
+/* Osgiliath: pale dressed stone, weathered and broken. */
+.terrain .osg-wall { fill: #dedbd2; stroke: #6d695f; stroke-width: 0.05; }
+.terrain .osg-wall.osg-whole { fill: #e6e3db; }
+.terrain .osg-seam { stroke: #9a968b; stroke-width: 0.03; }
+.terrain .osg-break { fill: none; stroke: #7c786d; stroke-width: 0.07; stroke-linejoin: round; }
+.terrain .osg-pilaster { fill: #e9e6de; stroke: #6d695f; stroke-width: 0.04; }
+.terrain .osg-coping { fill: none; stroke: #f4f2ec; stroke-width: 0.06; }
+.terrain .osg-dust { fill: #a39a88; opacity: 0.4; filter: blur(0.15px); }
+.terrain .osg-heap { fill: #8f8b82; opacity: 0.5; }
+.terrain .osg-block { stroke: #57534a; stroke-width: 0.04; stroke-linejoin: round; }
+.terrain .osg-block-0 { fill: #d6d3ca; }
+.terrain .osg-block-1 { fill: #b8b4aa; }
+.terrain .osg-block-2 { fill: #e4e1d9; }
+.terrain .osg-column { fill: #e8e5dd; stroke: #625e55; stroke-width: 0.04; }
+.terrain .osg-flute-line { stroke: #b3afa4; stroke-width: 0.03; }

@@ -38,6 +38,7 @@ import { skitterRequest } from './unseen.ts';
 import { sentryRequest } from './lake.ts';
 import { isTroll, spareFor } from './mutton.ts';
 import { bag, roast, sneeze, steadyAgainst, trollSacks } from './trolls.ts';
+import { ageOfMen, dreaded, endTheRace, faramirsChance, mayOrcTime, nazgulCry, orcTime, orcTimeFor, wellAimed } from './osgiliath.ts';
 import { AXE_FREED, axeMastery, axeTest, canHeadbutt, deadeye, goodSort, hasMattock, hasOakenshield, longbeard, loyalTo, mayAxeTest, mayLongbeard, maySwap, mayTend, rerollFor, spentPoints, tend, trumpet, trumpetDue } from './company.ts';
 import { tierOf } from './warbands.ts';
 import { MORGUL, morgulBlades } from './morgul.ts';
@@ -46,7 +47,7 @@ import { bandName, bandsOf, mayPutDown, procedureOf, rollDue, rollMeans } from '
 import type { Action, DiceRoll, GameState, Model, Seat } from './types.ts';
 
 /** Dice requests a player sends, which only whoever holds the dice (the server, or the browser in practice games) can answer. */
-export const DICE_REQUESTS = new Set<Action['type']>(['setNarrative', 'ring', 'cry', 'aragorn', 'seek', 'skitter', 'sentry', 'roll', 'fight', 'strikes', 'shoot', 'shotOn', 'banner', 'dismount', 'trample', 'cross', 'rollFate', 'rollPriority', 'rollDeploy', 'deployWarband', 'uncover', 'cast', 'resist', 'breach', 'hurl', 'swap', 'reroll', 'tend', 'longbeard', 'trumpet', 'axeTest', 'chronicled', 'detonate', 'rideOut', 'raiseLadder']);
+export const DICE_REQUESTS = new Set<Action['type']>(['setNarrative', 'ring', 'cry', 'nazgul', 'orcTime', 'aragorn', 'seek', 'skitter', 'sentry', 'roll', 'fight', 'strikes', 'shoot', 'shotOn', 'banner', 'dismount', 'trample', 'cross', 'rollFate', 'rollPriority', 'rollDeploy', 'deployWarband', 'uncover', 'cast', 'resist', 'breach', 'hurl', 'swap', 'reroll', 'tend', 'longbeard', 'trumpet', 'axeTest', 'chronicled', 'detonate', 'rideOut', 'raiseLadder']);
 
 export interface Resolved {
   /** Results everyone applies, in order. */
@@ -202,6 +203,15 @@ export function adjustFight(state: GameState, req: FightRequest, catalog: Catalo
       // Tom's Lingering Cold halves its Fight until the turn ends (a Heroic Strike's bonus still comes on top).
       if (m.chilled === state.turn) out.f = Math.ceil(out.f / 2);
     }
+    // Escape from Osgiliath: a Warrior frozen with fear fights at Fight 1; Morannon Orcs and Guritz fight harder against
+    // Men, Gothmog's Orcs near him hate them, and his time of the Orc (and Faramir, his army Broken) re-rolls misses to wound.
+    if (dreaded(state, m)) out.f = 1;
+    if (!f.support) {
+      const foes = req.sides[1 - i].filter(x => !x.support).map(x => state.models[x.id]).filter(Boolean);
+      if (endTheRace(catalog, m, foes)) out.f = Math.min(10, out.f + 1);
+      if (ageOfMen(state, catalog, m)) out.hates = [...new Set([...(out.hates ?? []), 'Man'])];
+      if (orcTimeFor(state, catalog, m) || faramirsChance(state, m)) out.reroll = true;
+    }
     // Roast Mutton: the Trolls may not strike Bilbo at first.
     const spare = spareFor(state, m);
     if (spare.length) out.spare = [...new Set([...(out.spare ?? []), ...spare])];
@@ -238,6 +248,15 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
     case 'seek': {
       const out = seekRequest(state, catalog, seat, String(action.id), String(action.target), d6, uid, now);
       return out && { apply: out };
+    }
+    case 'nazgul': {
+      const out = nazgulCry(state, seat, typeof action.target === 'string' ? action.target : undefined, d6, uid, now);
+      return out && { apply: out };
+    }
+    case 'orcTime': {
+      const m = state.models[String(action.id)];
+      if (!m || m.owner !== seat || !mayOrcTime(state, catalog, m)) return null;
+      return { apply: orcTime(m, uid, now) };
     }
     case 'skitter': {
       const out = skitterRequest(state, catalog, seat, String(action.id), d6, uid, now);
@@ -616,6 +635,9 @@ export function resolveRequest(state: GameState, seat: Seat, action: Action, d6:
       if (plan.bane) req.bane = true;
       if (plan.woundBonus) req.woundBonus = plan.woundBonus;
       if (plan.lucky) req.lucky = true;
+      // Damrod's Well-aimed Shot.
+      const aimed = wellAimed(catalog, shooter);
+      if (aimed) req.wellAimed = aimed;
       if (isWebs(plan.weapon)) req.webs = true;
       if (!plan.pinpoint) delete req.pinpoint;
       // A rider can be hit, or its mount; a Sharpshooter picks which.
